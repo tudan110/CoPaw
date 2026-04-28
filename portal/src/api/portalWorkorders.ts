@@ -49,6 +49,19 @@ async function fetchPortalApi(baseUrl: string, path: string, init: RequestInit, 
   });
 }
 
+function bindAbortSignals(controller: AbortController, externalSignal?: AbortSignal | null) {
+  if (!externalSignal) {
+    return () => {};
+  }
+  if (externalSignal.aborted) {
+    controller.abort();
+    return () => {};
+  }
+  const abort = () => controller.abort();
+  externalSignal.addEventListener("abort", abort, { once: true });
+  return () => externalSignal.removeEventListener("abort", abort);
+}
+
 export interface AlarmWorkorderListResponse {
   total?: number;
   items?: AlarmWorkorder[];
@@ -61,10 +74,14 @@ export async function requestPortalApi<T = unknown>(
   timeoutMs = DEFAULT_REQUEST_TIMEOUT_MS,
 ): Promise<T> {
   const controller = new AbortController();
+  const externalSignal = init.signal;
+  const cleanupExternalAbort = bindAbortSignals(controller, externalSignal);
+  const requestInit = { ...init };
+  delete requestInit.signal;
   const timerId = window.setTimeout(() => controller.abort(), timeoutMs);
 
   try {
-    let response = await fetchPortalApi(PORTAL_API_BASE_URL, path, init, controller.signal);
+    let response = await fetchPortalApi(PORTAL_API_BASE_URL, path, requestInit, controller.signal);
     let errorText = "";
 
     if (!response.ok) {
@@ -73,7 +90,7 @@ export async function requestPortalApi<T = unknown>(
         response = await fetchPortalApi(
           SAME_ORIGIN_PORTAL_API_BASE_URL,
           path,
-          init,
+          requestInit,
           controller.signal,
         );
         errorText = "";
@@ -88,11 +105,12 @@ export async function requestPortalApi<T = unknown>(
     return response.json();
   } catch (error: any) {
     if (error?.name === "AbortError") {
-      throw new Error("请求超时，请稍后重试");
+      throw new Error(externalSignal?.aborted ? "请求已取消" : "请求超时，请稍后重试");
     }
     throw error;
   } finally {
     window.clearTimeout(timerId);
+    cleanupExternalAbort();
   }
 }
 

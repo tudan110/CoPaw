@@ -172,19 +172,29 @@ export function getKnowledgeBaseHealth() {
   );
 }
 
-export function queryKnowledgeBase(query: string, filters: Record<string, unknown> = {}) {
+export function queryKnowledgeBase(
+  query: string,
+  filters: Record<string, unknown> = {},
+  signal?: AbortSignal,
+) {
   return requestPortalApi<KnowledgeQueryResponse>(
     "/knowledge-base/query",
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ query, filters }),
+      signal,
     },
     60000,
   );
 }
 
-export function synthesizeKnowledgeAnswer(query: string, evidenceIds: string[], agentId = "knowledge") {
+export function synthesizeKnowledgeAnswer(
+  query: string,
+  evidenceIds: string[],
+  agentId = "knowledge",
+  signal?: AbortSignal,
+) {
   return requestPortalApi<KnowledgeRagResponse>(
     "/knowledge-base/rag-synthesize",
     {
@@ -194,6 +204,7 @@ export function synthesizeKnowledgeAnswer(query: string, evidenceIds: string[], 
         "X-Agent-Id": agentId,
       },
       body: JSON.stringify({ query, evidence_ids: evidenceIds }),
+      signal,
     },
     90000,
   );

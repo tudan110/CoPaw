@@ -1,4 +1,4 @@
-export const DEFAULT_KNOWLEDGE_AI_THRESHOLD_PERCENT = 80;
+export const DEFAULT_KNOWLEDGE_AI_THRESHOLD_PERCENT = 75;
 export const KNOWLEDGE_AI_THRESHOLD_CHANGED_EVENT = "portal-knowledge-ai-threshold-changed";
 
 const KNOWLEDGE_AI_THRESHOLD_STORAGE_KEY = "portal.knowledgeBase.aiThresholdPercent";

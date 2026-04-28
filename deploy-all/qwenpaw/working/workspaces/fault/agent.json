@@ -339,10 +339,6 @@
       "model": ""
     }
   },
-  "active_model": {
-    "provider_id": "ctyun",
-    "model": "5fea387da7f54ba38eab3d4a4fb4e9d8"
-  },
   "language": "en",
   "system_prompt_files": [
     "AGENTS.md",

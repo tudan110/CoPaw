@@ -402,8 +402,7 @@ export default function DigitalEmployeePage({
     remoteAgentId,
     setMessages,
   });
-  const isConversationRunning = isStreaming || currentChatStatus === "running";
-  const isInteractionLocked = isCreatingChat || isConversationRunning;
+  const isRemoteConversationRunning = isStreaming || currentChatStatus === "running";
 
   const {
     alarmWorkorders,
@@ -530,7 +529,9 @@ export default function DigitalEmployeePage({
     updateKnowledgeBaseFlowMessage,
     portalKnowledgeBaseSessions,
     activePortalKnowledgeBaseSessionId,
+    isKnowledgeBaseRunning,
     setActivePortalKnowledgeBaseSessionId,
+    stopKnowledgeBaseTask,
   } = usePortalKnowledgeBase({
     conversationStore,
     setConversationStore,
@@ -542,6 +543,8 @@ export default function DigitalEmployeePage({
     createAgentMessage,
     createUserMessage,
   });
+  const isConversationRunning = isRemoteConversationRunning || isKnowledgeBaseRunning;
+  const isInteractionLocked = isCreatingChat || isConversationRunning;
 
   const {
     inputMessage,
@@ -1479,7 +1482,11 @@ export default function DigitalEmployeePage({
                   onOpenResourceImport={() => openResourceImport()}
                   onSendPreset={handleQuickCommand}
                   onPrimaryAction={() => {
-                    if (isConversationRunning) {
+                    if (isKnowledgeBaseRunning) {
+                      stopKnowledgeBaseTask();
+                      return;
+                    }
+                    if (isRemoteConversationRunning) {
                       stopActiveStream(true);
                       return;
                     }
@@ -1541,7 +1548,11 @@ export default function DigitalEmployeePage({
                     isConversationRunning={isConversationRunning}
                     isCreatingChat={isCreatingChat}
                     onPrimaryAction={() => {
-                      if (isConversationRunning) {
+                      if (isKnowledgeBaseRunning) {
+                        stopKnowledgeBaseTask();
+                        return;
+                      }
+                      if (isRemoteConversationRunning) {
                         stopActiveStream(true);
                         return;
                       }

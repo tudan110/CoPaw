@@ -5,11 +5,6 @@ import {
   type ActiveModelsInfo,
   type ProviderInfo,
 } from "../../api/models";
-import {
-  portalGatewayAgentId,
-  portalGatewayDefaultModelId,
-  portalGatewayDefaultProviderId,
-} from "../../config/portalBranding";
 
 const DEFAULT_MODEL_AGENT_ID = "default";
 export const CT_CNOS_PROVIDER_ID = "ct-cnos";
@@ -188,22 +183,6 @@ function parseGenerateConfig(text?: string) {
   }
 }
 
-function getInitialActiveModels(agentId: string): ActiveModelsInfo | null {
-  if (
-    agentId === portalGatewayAgentId
-    && portalGatewayDefaultProviderId
-    && portalGatewayDefaultModelId
-  ) {
-    return {
-      active_llm: {
-        provider_id: portalGatewayDefaultProviderId,
-        model: portalGatewayDefaultModelId,
-      },
-    };
-  }
-  return null;
-}
-
 export function usePortalModels({
   agentId,
   enabled = true,
@@ -213,9 +192,7 @@ export function usePortalModels({
 }) {
   const resolvedAgentId = agentId || DEFAULT_MODEL_AGENT_ID;
   const [providers, setProviders] = useState<ProviderInfo[]>([]);
-  const [activeModels, setActiveModels] = useState<ActiveModelsInfo | null>(() =>
-    getInitialActiveModels(resolvedAgentId),
-  );
+  const [activeModels, setActiveModels] = useState<ActiveModelsInfo | null>(null);
   const [loading, setLoading] = useState(false);
   const [switching, setSwitching] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -292,7 +269,7 @@ export function usePortalModels({
   }, [enabled, pushNotice, resolvedAgentId]);
 
   useEffect(() => {
-    setActiveModels(getInitialActiveModels(resolvedAgentId));
+    setActiveModels(null);
     void fetchModelState();
   }, [fetchModelState, resolvedAgentId]);
 
