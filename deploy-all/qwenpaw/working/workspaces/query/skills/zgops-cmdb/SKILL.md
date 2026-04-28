@@ -3,7 +3,7 @@ name: zgops-cmdb
 description: 用于查询当前 `.env` 配置所指向的 CMDB 环境。当用户询问模型、关系、层级、IPAM、DCIM、应用拓扑、资源拓扑、资源数量统计、资源状态统计、制造商/厂商分布、CMDB count/group 类接口时使用。
 ---
 
-# VEOPS CMDB 查询技能
+# ZGOPS CMDB 查询技能
 
 仅面向 `.env` 中配置的当前 CMDB 环境。
 `.env.example` 只是模板示例，运行时实际读取的是 `.env`。

@@ -219,7 +219,7 @@ def fetch_with_auth_fallback(
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="VEOPS CMDB 后台 HTTP 客户端")
+    parser = argparse.ArgumentParser(description="ZGOPS CMDB 后台 HTTP 客户端")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     subparsers.add_parser("login", help="后台登录并检查会话是否可用")

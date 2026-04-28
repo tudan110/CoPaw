@@ -172,7 +172,7 @@ async def _preview(context: dict[str, Any]) -> dict[str, Any]:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="VEOPS CMDB 资源导入桥接脚本")
+    parser = argparse.ArgumentParser(description="ZGOPS CMDB 资源导入桥接脚本")
     parser.add_argument(
         "command",
         choices=["start", "metadata", "preview", "import", "topology-prompt"],

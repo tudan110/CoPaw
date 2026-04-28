@@ -3,7 +3,7 @@
   "evals": [
     {
       "id": 1,
-      "prompt": "登录当前 .env 配置的 VEOPS CMDB 环境，列出当前所有模型，并按业务、应用、计算资源、数据存储、网络、IPAM、DCIM 这些场景做一个简要分类。",
+      "prompt": "登录当前 .env 配置的 ZGOPS CMDB 环境，列出当前所有模型，并按业务、应用、计算资源、数据存储、网络、IPAM、DCIM 这些场景做一个简要分类。",
       "expected_output": "返回模型清单，并给出面向场景的分类说明。",
       "files": [],
       "expectations": [
@@ -36,7 +36,7 @@
     },
     {
       "id": 4,
-      "prompt": "给我一个可以直接渲染的 ECharts 图表，展示当前 .env 配置的 VEOPS CMDB 环境里模型分组分布和应用关联目标分布。",
+      "prompt": "给我一个可以直接渲染的 ECharts 图表，展示当前 .env 配置的 ZGOPS CMDB 环境里模型分组分布和应用关联目标分布。",
       "expected_output": "输出包含 ECharts 代码块的 Markdown，可直接用于页面渲染。",
       "files": [],
       "expectations": [
