@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { digitalEmployees } from "../../data/portalData";
 import { saveConversationStore } from "../../lib/conversationStore";
 import {
@@ -28,6 +28,13 @@ import type {
 import { readKnowledgeAiThresholdRatio } from "./knowledgeBaseSettings";
 
 type MessageRecord = { id: string; knowledgeBaseFlow?: Record<string, any> } & Record<string, any>;
+type KnowledgeBaseRun = {
+  id: string;
+  controller: AbortController;
+  agentMessageId: string;
+  sessionId: string;
+  visibleContent: string;
+};
 
 type NavigateToEmployeePage = (
   employee: any,
@@ -159,6 +166,9 @@ export function usePortalKnowledgeBase({
   createUserMessage: (content: string) => MessageRecord;
 }) {
   const [activePortalKnowledgeBaseSessionId, setActivePortalKnowledgeBaseSessionId] = useState("");
+  const [isKnowledgeBaseRunning, setIsKnowledgeBaseRunning] = useState(false);
+  const activeKnowledgeBaseRunRef = useRef<KnowledgeBaseRun | null>(null);
+  const isKnowledgeBaseRunningRef = useRef(false);
   const knowledgeBaseEmployee = useMemo(
     () => digitalEmployees.find((item) => item.id === KNOWLEDGE_BASE_OWNER_ID) || null,
     [],
@@ -199,6 +209,60 @@ export function usePortalKnowledgeBase({
       return nextStore;
     });
   }, [setConversationStore]);
+
+  const finishKnowledgeBaseRun = useCallback((runId: string) => {
+    if (activeKnowledgeBaseRunRef.current?.id !== runId) {
+      return false;
+    }
+    activeKnowledgeBaseRunRef.current = null;
+    isKnowledgeBaseRunningRef.current = false;
+    setIsKnowledgeBaseRunning(false);
+    return true;
+  }, []);
+
+  const stopKnowledgeBaseTask = useCallback(() => {
+    const activeRun = activeKnowledgeBaseRunRef.current;
+    if (!activeRun) {
+      return;
+    }
+    activeRun.controller.abort();
+    activeKnowledgeBaseRunRef.current = null;
+    isKnowledgeBaseRunningRef.current = false;
+    setIsKnowledgeBaseRunning(false);
+
+    if (!knowledgeBaseEmployee) {
+      return;
+    }
+
+    setMessages((currentMessages) => {
+      const nextMessages = ensureObjectArray<MessageRecord>(currentMessages).map((message) => (
+        message.id === activeRun.agentMessageId
+          ? {
+              ...message,
+              content: "本轮知识库任务已停止。你可以继续输入新的问题或重新发起检索。",
+              knowledgeAnswer: false,
+              knowledgeAnswerPayload: undefined,
+            }
+          : message
+      ));
+      const previousSessions = ensureSessionRecords(conversationStore[knowledgeBaseEmployee.id]);
+      const previous = previousSessions.find((session) => session.id === activeRun.sessionId) || null;
+      upsertPortalSession(
+        knowledgeBaseEmployee.id,
+        buildKnowledgeBaseSessionRecord(knowledgeBaseEmployee, nextMessages, {
+          sessionId: activeRun.sessionId,
+          previous,
+          visibleContent: activeRun.visibleContent,
+        }),
+      );
+      return nextMessages;
+    });
+  }, [
+    conversationStore,
+    knowledgeBaseEmployee,
+    setMessages,
+    upsertPortalSession,
+  ]);
 
   const updateKnowledgeBaseFlowMessage = useCallback((
     messageId: string,
@@ -241,6 +305,10 @@ export function usePortalKnowledgeBase({
 
   const searchKnowledgeBaseConversation = useCallback(async (visibleContent = KNOWLEDGE_BASE_SEARCH_COMMAND) => {
     if (!knowledgeBaseEmployee) {
+      return;
+    }
+
+    if (isKnowledgeBaseRunningRef.current) {
       return;
     }
 
@@ -292,8 +360,23 @@ export function usePortalKnowledgeBase({
       return;
     }
 
+    const controller = new AbortController();
+    const runId = `knowledge-run-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    activeKnowledgeBaseRunRef.current = {
+      id: runId,
+      controller,
+      agentMessageId: agentMessage.id,
+      sessionId: initialSession.id,
+      visibleContent,
+    };
+    isKnowledgeBaseRunningRef.current = true;
+    setIsKnowledgeBaseRunning(true);
+
     try {
-      const result = await queryKnowledgeBase(query);
+      const result = await queryKnowledgeBase(query, {}, controller.signal);
+      if (activeKnowledgeBaseRunRef.current?.id !== runId) {
+        return;
+      }
       const thresholdRatio = readKnowledgeAiThresholdRatio();
       const thresholdPercent = Math.round(thresholdRatio * 100);
       const hasConfidentEvidence = hasHighConfidenceEvidence(result, thresholdRatio);
@@ -356,8 +439,12 @@ export function usePortalKnowledgeBase({
           query,
           resolveEvidenceIds(result),
           KNOWLEDGE_BASE_OWNER_ID,
+          controller.signal,
         );
       } catch (error) {
+        if (controller.signal.aborted || activeKnowledgeBaseRunRef.current?.id !== runId) {
+          return;
+        }
         synthesis = {
           answer: "",
           error: error instanceof Error ? error.message : "AI 总结生成失败",
@@ -388,6 +475,9 @@ export function usePortalKnowledgeBase({
         }),
       );
     } catch (error) {
+      if (controller.signal.aborted || activeKnowledgeBaseRunRef.current?.id !== runId) {
+        return;
+      }
       const messageText = error instanceof Error ? error.message : "知识库检索失败";
       const failedMessages = initialMessages.map((message) => (
         message.id === agentMessage.id
@@ -406,6 +496,8 @@ export function usePortalKnowledgeBase({
           visibleContent,
         }),
       );
+    } finally {
+      finishKnowledgeBaseRun(runId);
     }
   }, [
     createAgentMessage,
@@ -416,6 +508,7 @@ export function usePortalKnowledgeBase({
     selectedEmployeeId,
     setCurrentChatId,
     setMessages,
+    finishKnowledgeBaseRun,
     upsertPortalSession,
   ]);
 
@@ -482,7 +575,9 @@ export function usePortalKnowledgeBase({
     knowledgeBaseEmployee,
     portalKnowledgeBaseSessions,
     activePortalKnowledgeBaseSessionId,
+    isKnowledgeBaseRunning,
     setActivePortalKnowledgeBaseSessionId,
+    stopKnowledgeBaseTask,
     openKnowledgeBaseConversation,
     searchKnowledgeBaseConversation,
     updateKnowledgeBaseFlowMessage,

@@ -74,7 +74,7 @@ EMBEDDING_ENV_FORCED_OFF = _embed_env_raw in ("false", "0", "off", "no", "disabl
 EMBEDDING_ENABLED = EMBEDDING_KEY_CONFIGURED and not EMBEDDING_ENV_FORCED_OFF
 EMBEDDING_DEFAULT_PROVIDER = "dashscope"
 EMBEDDING_BATCH_SIZE = 10
-QUERY_EMBEDDING_ENABLED = (os.environ.get("KNOWLEDGE_BASE_QUERY_EMBEDDING_ENABLED", "false") or "false").strip().lower() in ("true", "1", "on", "yes")
+QUERY_EMBEDDING_ENABLED = (os.environ.get("KNOWLEDGE_BASE_QUERY_EMBEDDING_ENABLED", "true") or "true").strip().lower() in ("true", "1", "on", "yes", "auto")
 QUERY_EMBEDDING_TIMEOUT_S = float(os.environ.get("KNOWLEDGE_BASE_QUERY_EMBED_TIMEOUT", "3.0") or "3.0")
 QUERY_EMBED_EXECUTOR = concurrent.futures.ThreadPoolExecutor(max_workers=2, thread_name_prefix="kb-query-embed")
 HYBRID_ALPHA = 0.5
@@ -646,6 +646,8 @@ def split_text(text: str) -> list[str]:
 
 MARKDOWN_HEADING_RE = re.compile(r"^(#{1,6})\s+(.+?)\s*$")
 DOCX_HEADING_STYLE_RE = re.compile(r"^(?:Heading|标题)\s*(\d+)$")
+DOCX_W_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+DOCX_W = f"{{{DOCX_W_NS}}}"
 
 
 def split_markdown_with_hierarchy(text: str) -> list[dict]:
@@ -704,53 +706,25 @@ def docx_zipbomb_check(
     return None
 
 
-def extract_docx(path: Path, filename: str) -> tuple[list[dict], int, str, dict]:
-    if DocxDocument is None:
-        units = [
-            {
-                "title": f"{filename} · Word 资料",
-                "content": "docx 已上传，但当前环境未装 python-docx，只保留资料记录。",
-                "locator": "整份 docx",
-                "meta": {"format": "docx", "docx_extract": False, "lightweight_mode": True, "section_path": []},
-            }
-        ]
-        return units, 0, "Word 已导入，但未启用正文抽取（python-docx 未装）", {"format": "docx", "docx_extract": False}
+def _docx_heading_level_from_style(style_name: str) -> int | None:
+    style_name = (style_name or "").strip()
+    if not style_name:
+        return None
+    m = DOCX_HEADING_STYLE_RE.match(style_name)
+    if m:
+        return int(m.group(1))
+    compact = re.sub(r"\s+", "", style_name)
+    m = re.match(r"^(?:Heading|标题)(\d+)$", compact, re.IGNORECASE)
+    if m:
+        return int(m.group(1))
+    return None
 
-    bomb_err = docx_zipbomb_check(path)
-    if bomb_err:
-        units = [
-            {
-                "title": f"{filename} · Word 资料",
-                "content": f"docx 已上传，但文件被拒绝：{bomb_err}",
-                "locator": "整份 docx",
-                "meta": {"format": "docx", "docx_extract": False, "zipbomb_rejected": True, "section_path": []},
-            }
-        ]
-        return units, 0, "docx 已导入，但文件异常未解析", {"format": "docx", "docx_extract": False}
 
-    try:
-        doc = DocxDocument(str(path))
-    except DocxPackageNotFoundError as exc:
-        units = [
-            {
-                "title": f"{filename} · Word 资料",
-                "content": f"docx 已上传，但打不开（可能已加密或损坏）：{exc}",
-                "locator": "整份 docx",
-                "meta": {"format": "docx", "docx_extract": False, "error": str(exc), "section_path": []},
-            }
-        ]
-        return units, 0, "docx 已导入，但打开失败（可能加密）", {"format": "docx", "docx_extract": False}
-    except Exception as exc:
-        units = [
-            {
-                "title": f"{filename} · Word 资料",
-                "content": f"docx 已上传，但解析失败：{exc}",
-                "locator": "整份 docx",
-                "meta": {"format": "docx", "docx_extract": False, "error": str(exc), "section_path": []},
-            }
-        ]
-        return units, 0, "docx 已导入，但解析失败", {"format": "docx", "docx_extract": False}
-
+def _build_docx_units_from_paragraphs(
+    filename: str,
+    paragraphs: list[tuple[str, int | None]],
+    extractor: str,
+) -> tuple[list[dict], int, bool]:
     heading_stack: list[tuple[int, str]] = []
     current_body: list[str] = []
     chunks: list[dict] = []
@@ -773,27 +747,150 @@ def extract_docx(path: Path, filename: str) -> tuple[list[dict], int, str, dict]
                         "format": "docx",
                         "section_path": list(current_path),
                         "docx_extract": True,
+                        "docx_extractor": extractor,
                     },
                 }
             )
 
-    for para in doc.paragraphs:
-        text = (para.text or "").strip()
+    for text, heading_level in paragraphs:
+        text = (text or "").strip()
         if not text:
             continue
         total_text_len += len(text)
-        style_name = (para.style.name or "") if para.style else ""
-        m = DOCX_HEADING_STYLE_RE.match(style_name)
-        if m:
-            level = int(m.group(1))
+        if heading_level:
             flush([t for (_, t) in heading_stack])
-            heading_stack = [(lv, t) for (lv, t) in heading_stack if lv < level]
-            heading_stack.append((level, text))
+            heading_stack = [(lv, t) for (lv, t) in heading_stack if lv < heading_level]
+            heading_stack.append((heading_level, text))
         else:
             current_body.append(text)
     flush([t for (_, t) in heading_stack])
 
-    if not chunks:
+    return chunks, total_text_len, bool(chunks)
+
+
+def _extract_docx_paragraphs_with_python_docx(path: Path) -> list[tuple[str, int | None]]:
+    if DocxDocument is None:
+        raise RuntimeError("python-docx is not installed")
+    doc = DocxDocument(str(path))
+    paragraphs: list[tuple[str, int | None]] = []
+    for para in doc.paragraphs:
+        text = (para.text or "").strip()
+        if not text:
+            continue
+        style_name = (para.style.name or "") if para.style else ""
+        paragraphs.append((text, _docx_heading_level_from_style(style_name)))
+    return paragraphs
+
+
+def _extract_docx_paragraphs_from_xml(path: Path) -> list[tuple[str, int | None]]:
+    """Extract docx text without resolving package relationships.
+
+    Some Word files contain internal anchors such as ``#bookmark1`` in
+    hyperlink/image relationship metadata. python-docx may try to resolve those
+    as package parts (``word/#bookmark1``) and fail before text extraction.
+    Reading ``word/document.xml`` directly avoids that class of failure while
+    still preserving the searchable body text.
+    """
+    with zipfile.ZipFile(path) as zf:
+        document_xml = zf.read("word/document.xml")
+    root = ET.fromstring(document_xml)
+    paragraphs: list[tuple[str, int | None]] = []
+    for para in root.iter(f"{DOCX_W}p"):
+        style = para.find(f"{DOCX_W}pPr/{DOCX_W}pStyle")
+        style_value = ""
+        if style is not None:
+            style_value = (
+                style.get(f"{DOCX_W}val")
+                or style.get("val")
+                or ""
+            )
+        text_parts: list[str] = []
+        for node in para.iter():
+            if node.tag == f"{DOCX_W}t" and node.text:
+                text_parts.append(node.text)
+            elif node.tag == f"{DOCX_W}tab":
+                text_parts.append("\t")
+            elif node.tag in (f"{DOCX_W}br", f"{DOCX_W}cr"):
+                text_parts.append("\n")
+        text = clean_display_text("".join(text_parts))
+        if text:
+            paragraphs.append((text, _docx_heading_level_from_style(style_value)))
+    return paragraphs
+
+
+def _docx_fallback_units(filename: str, content: str, note: str, meta: dict) -> tuple[list[dict], int, str, dict]:
+    units = [
+        {
+            "title": f"{filename} · Word 资料",
+            "content": content,
+            "locator": "整份 docx",
+            "meta": {"format": "docx", "docx_extract": False, "section_path": [], **meta},
+        }
+    ]
+    return units, 0, note, {"format": "docx", "docx_extract": False, **meta}
+
+
+def extract_docx(path: Path, filename: str) -> tuple[list[dict], int, str, dict]:
+    if DocxDocument is None:
+        try:
+            paragraphs = _extract_docx_paragraphs_from_xml(path)
+            chunks, total_text_len, has_chunks = _build_docx_units_from_paragraphs(filename, paragraphs, "document_xml")
+            if has_chunks:
+                return chunks, total_text_len, "docx 正文已解析（轻量模式）", {"format": "docx", "docx_extract": True, "docx_extractor": "document_xml"}
+        except Exception as exc:
+            return _docx_fallback_units(
+                filename,
+                f"docx 已上传，但当前环境未装 python-docx，轻量解析也失败：{exc}",
+                "Word 已导入，但未启用正文抽取（python-docx 未装）",
+                {"lightweight_mode": True, "error": str(exc)},
+            )
+        units = [
+            {
+                "title": f"{filename} · Word 资料",
+                "content": "docx 已上传，但当前环境未装 python-docx，只保留资料记录。",
+                "locator": "整份 docx",
+                "meta": {"format": "docx", "docx_extract": False, "lightweight_mode": True, "section_path": []},
+            }
+        ]
+        return units, 0, "Word 已导入，但未启用正文抽取（python-docx 未装）", {"format": "docx", "docx_extract": False}
+
+    bomb_err = docx_zipbomb_check(path)
+    if bomb_err:
+        units = [
+            {
+                "title": f"{filename} · Word 资料",
+                "content": f"docx 已上传，但文件被拒绝：{bomb_err}",
+                "locator": "整份 docx",
+                "meta": {"format": "docx", "docx_extract": False, "zipbomb_rejected": True, "section_path": []},
+            }
+        ]
+        return units, 0, "docx 已导入，但文件异常未解析", {"format": "docx", "docx_extract": False}
+
+    extractor = "python_docx"
+    try:
+        paragraphs = _extract_docx_paragraphs_with_python_docx(path)
+    except DocxPackageNotFoundError as exc:
+        return _docx_fallback_units(
+            filename,
+            f"docx 已上传，但打不开（可能已加密或损坏）：{exc}",
+            "docx 已导入，但打开失败（可能加密）",
+            {"error": str(exc)},
+        )
+    except Exception as exc:
+        try:
+            paragraphs = _extract_docx_paragraphs_from_xml(path)
+            extractor = "document_xml"
+        except Exception as fallback_exc:
+            return _docx_fallback_units(
+                filename,
+                f"docx 已上传，但解析失败：{exc}；轻量解析也失败：{fallback_exc}",
+                "docx 已导入，但解析失败",
+                {"error": str(exc), "fallback_error": str(fallback_exc)},
+            )
+
+    chunks, total_text_len, has_chunks = _build_docx_units_from_paragraphs(filename, paragraphs, extractor)
+
+    if not has_chunks:
         units = [
             {
                 "title": f"{filename} · Word 资料",
@@ -804,7 +901,8 @@ def extract_docx(path: Path, filename: str) -> tuple[list[dict], int, str, dict]
         ]
         return units, 0, "docx 已导入，但未抽取到正文", {"format": "docx", "docx_extract": False}
 
-    return chunks, total_text_len, "docx 正文已解析", {"format": "docx", "docx_extract": True}
+    note = "docx 正文已解析" if extractor == "python_docx" else "docx 正文已解析（轻量模式）"
+    return chunks, total_text_len, note, {"format": "docx", "docx_extract": True, "docx_extractor": extractor}
 
 
 def resolve_ocr_lang() -> str:
@@ -835,15 +933,103 @@ def clean_display_text(text: str) -> str:
     return text.strip()
 
 
-def tokenize_query(text: str) -> list[str]:
-    parts = re.findall(r"[A-Za-z0-9_\-]+|[\u4e00-\u9fff]+", text.lower())
+SEARCH_STOP_PHRASES = (
+    "目前",
+    "当前",
+    "现在",
+    "请问",
+    "帮我",
+    "帮忙",
+    "查询",
+    "查看",
+    "了解",
+    "有哪些",
+    "有什么",
+    "哪些",
+    "什么",
+    "多少",
+    "一下",
+    "一下子",
+    "相关",
+    "对应",
+)
+SEARCH_STOP_TOKENS = {
+    "的",
+    "了",
+    "和",
+    "与",
+    "或",
+    "及",
+    "在",
+    "中",
+    "有",
+    "是",
+    "吗",
+    "呢",
+    "吧",
+    "目前",
+    "当前",
+    "现在",
+    "哪些",
+    "什么",
+    "查询",
+    "查看",
+}
+DOMAIN_SEARCH_TERMS = (
+    "中国电信",
+    "电信",
+    "大模型",
+    "模型能力",
+    "人工智能",
+    "智能体",
+    "知识库",
+    "运维",
+    "智观",
+    "星辰",
+    "telechat",
+    "ai",
+    "agent",
+)
+GENERIC_LOW_VALUE_TERMS = {
+    "能力",
+    "模型",
+    "系统",
+    "平台",
+    "服务",
+    "应用",
+    "方案",
+    "产品",
+    "功能",
+    "智能",
+}
+
+
+def search_normalize(text: str) -> str:
+    return unicodedata.normalize("NFKC", text or "").lower()
+
+
+def tokenize_document(text: str) -> list[str]:
+    parts = re.findall(r"[A-Za-z0-9_\-]+|[\u4e00-\u9fff]+", search_normalize(text))
     tokens: list[str] = []
     for part in parts:
-        tokens.append(part)
-        if re.search(r"[\u4e00-\u9fff]", part) and len(part) > 2:
-            for size in (2, 3):
+        if part in SEARCH_STOP_TOKENS:
+            continue
+        if re.search(r"[\u4e00-\u9fff]", part):
+            if len(part) <= 6:
+                tokens.append(part)
+            for size in (2, 3, 4):
                 if len(part) >= size:
-                    tokens.extend(part[i:i + size] for i in range(len(part) - size + 1))
+                    tokens.extend(
+                        gram
+                        for gram in (part[i:i + size] for i in range(len(part) - size + 1))
+                        if gram not in SEARCH_STOP_TOKENS
+                    )
+        else:
+            tokens.append(part)
+    normalized = search_normalize(text)
+    for term in DOMAIN_SEARCH_TERMS:
+        if term in normalized:
+            tokens.append(term)
     # stable de-dup
     seen = set()
     ordered = []
@@ -852,6 +1038,120 @@ def tokenize_query(text: str) -> list[str]:
             seen.add(token)
             ordered.append(token)
     return ordered
+
+
+def extract_query_terms(text: str) -> dict[str, float]:
+    normalized = search_normalize(text)
+    terms: dict[str, float] = {}
+
+    def add(term: str, weight: float) -> None:
+        term = term.strip().lower()
+        if not term or term in SEARCH_STOP_TOKENS:
+            return
+        if len(term) == 1 and re.search(r"[\u4e00-\u9fff]", term):
+            return
+        terms[term] = max(terms.get(term, 0.0), weight)
+
+    for term in DOMAIN_SEARCH_TERMS:
+        if term in normalized:
+            if term in GENERIC_LOW_VALUE_TERMS:
+                add(term, 0.6)
+            elif len(term) >= 4 or term in {"ai", "agent"}:
+                add(term, 2.4)
+            else:
+                add(term, 1.3)
+
+    cleaned = normalized
+    for phrase in SEARCH_STOP_PHRASES:
+        cleaned = cleaned.replace(phrase, " ")
+
+    for part in re.findall(r"[A-Za-z0-9_\-]+|[\u4e00-\u9fff]+", cleaned):
+        if not part or part in SEARCH_STOP_TOKENS:
+            continue
+        if re.search(r"[\u4e00-\u9fff]", part):
+            if len(part) <= 6:
+                add(part, 1.8 if len(part) >= 4 else 1.2)
+            for size, weight in ((4, 1.6), (3, 1.3), (2, 0.8)):
+                if len(part) >= size:
+                    for i in range(len(part) - size + 1):
+                        gram = part[i:i + size]
+                        if gram not in SEARCH_STOP_TOKENS:
+                            add(gram, weight)
+        else:
+            add(part, 1.5)
+
+    for term in list(terms):
+        if term in GENERIC_LOW_VALUE_TERMS:
+            terms[term] = min(terms[term], 0.65)
+    return terms
+
+
+def semantic_similarity_score(cosine: float) -> float:
+    if cosine <= 0:
+        return 0.0
+    # Embedding cosine values are often high even for weak matches. Calibrate
+    # the useful band instead of treating raw cosine as confidence.
+    return max(0.0, min(1.0, (cosine - 0.45) / 0.35))
+
+
+def build_query_aspects(query: str, query_terms: dict[str, float]) -> list[set[str]]:
+    normalized = search_normalize(query)
+    aspects: list[set[str]] = []
+
+    def add_group(*terms: str) -> None:
+        group = {term.lower() for term in terms if term and (term.lower() in query_terms or term.lower() in normalized)}
+        if group:
+            aspects.append(group)
+
+    add_group("中国电信", "电信")
+    add_group("大模型", "模型能力", "大模型能力", "人工智能", "ai")
+    add_group("智能体", "agent")
+    add_group("知识库")
+    add_group("运维", "智观")
+    return aspects
+
+
+def query_aspect_coverage(haystack: str, aspects: list[set[str]]) -> float:
+    if not aspects:
+        return 1.0
+    matched = 0
+    for group in aspects:
+        if any(term and term in haystack for term in group):
+            matched += 1
+    return matched / len(aspects)
+
+
+def text_similarity(left: str, right: str) -> float:
+    left = clean_display_text(left)[:600]
+    right = clean_display_text(right)[:600]
+    if not left or not right:
+        return 0.0
+    return SequenceMatcher(None, left, right).ratio()
+
+
+def select_diverse_evidence(scored: list[dict], limit: int) -> list[dict]:
+    selected: list[dict] = []
+    remaining = list(scored)
+    while remaining and len(selected) < limit:
+        best_idx = 0
+        best_value = -1.0
+        for idx, candidate in enumerate(remaining):
+            redundancy = 0.0
+            same_source_count = 0
+            for chosen in selected:
+                if candidate.get("_source_record_id") == chosen.get("_source_record_id"):
+                    same_source_count += 1
+                    redundancy = max(redundancy, 0.12)
+                redundancy = max(
+                    redundancy,
+                    text_similarity(candidate.get("chunk_text", ""), chosen.get("chunk_text", "")) * 0.22,
+                )
+            value = candidate.get("_rank_score", 0.0) - redundancy - same_source_count * 0.05
+            if value > best_value:
+                best_value = value
+                best_idx = idx
+        selected.append(remaining.pop(best_idx))
+    return selected
 
 
 def build_source_label(filename: str, source_type: str) -> str:
@@ -1604,16 +1904,24 @@ def normalize_filters(filters: dict | None) -> dict:
 # BM25 parameters (Okapi BM25, standard defaults)
 BM25_K1 = 1.5
 BM25_B = 0.75
-# Confidence mapping: map raw (BM25 + boosts) score to [0.48, 0.95].
-# SAT_SCORE is the "fully confident" raw score — anything above saturates to 0.95.
-BM25_SAT_SCORE = 8.0
-CONFIDENCE_FLOOR = 0.48
-CONFIDENCE_CEIL = 0.95
+CONFIDENCE_FLOOR = 0.22
+CONFIDENCE_CEIL = 0.92
+HYBRID_VECTOR_WEIGHT = 0.36
+HYBRID_LEXICAL_WEIGHT = 0.44
+HYBRID_COVERAGE_WEIGHT = 0.16
+HYBRID_QUALITY_WEIGHT = 0.04
+LEXICAL_ONLY_WEIGHT = 0.72
+LEXICAL_ONLY_COVERAGE_WEIGHT = 0.23
+LEXICAL_ONLY_QUALITY_WEIGHT = 0.05
+MIN_RANK_SCORE = 0.18
+SUFFICIENT_CONFIDENCE = 0.66
 
 
 def query_units(query: str, limit: int = 3, filters: dict | None = None) -> tuple[list[dict], bool]:
-    query_tokens = tokenize_query(query)
-    lowered_query = query.lower().strip()
+    query_terms = extract_query_terms(query)
+    query_tokens = list(query_terms.keys())
+    query_aspects = build_query_aspects(query, query_terms)
+    lowered_query = search_normalize(query).strip()
     filters = normalize_filters(filters)
     where = []
     params: list[object] = []
@@ -1634,7 +1942,7 @@ def query_units(query: str, limit: int = 3, filters: dict | None = None) -> tupl
         rows = conn.execute(
             f"""
             SELECT ku.id, ku.source_type, ku.source_scope, ku.title, ku.content, ku.locator, ku.created_at,
-                   ku.embedding, sr.filename, sr.uploaded_at, sr.builtin_pack_id, sr.meta_json
+                   ku.embedding, sr.id AS source_record_id, sr.filename, sr.uploaded_at, sr.builtin_pack_id, sr.meta_json
             FROM knowledge_unit ku
             JOIN source_record sr ON sr.id = ku.source_record_id
             {where_clause}
@@ -1648,6 +1956,9 @@ def query_units(query: str, limit: int = 3, filters: dict | None = None) -> tupl
     if not rows:
         return [], True
 
+    if not query_tokens:
+        return [], True
+
     # Build corpus for BM25: tokenize each candidate's haystack once.
     docs: list[tuple[dict, dict, Counter, int, list]] = []
     for row in rows:
@@ -1655,7 +1966,7 @@ def query_units(query: str, limit: int = 3, filters: dict | None = None) -> tupl
         meta = json.loads(item.pop("meta_json") or "{}")
         display_title = (meta.get("display_title") or "").strip()
         haystack_text = f"{item['title']} {item['content']} {item['filename']} {display_title}"
-        doc_tokens = tokenize_query(haystack_text)
+        doc_tokens = tokenize_document(haystack_text)
         counter = Counter(doc_tokens)
         unit_vec = _blob_to_vector(item.pop("embedding", None))
         docs.append((item, meta, counter, len(doc_tokens), unit_vec))
@@ -1681,20 +1992,21 @@ def query_units(query: str, limit: int = 3, filters: dict | None = None) -> tupl
         df = sum(1 for _, _, counter, _, _ in docs if qt in counter)
         idf[qt] = max(0.0, math.log((n_docs - df + 0.5) / (df + 0.5) + 1.0))
 
-    scored = []
+    raw_scored = []
     for item, meta, counter, doc_len, unit_vec in docs:
         if doc_len == 0:
             continue
         bm25 = 0.0
-        token_hits = 0
+        hit_weight = 0.0
         for qt in query_tokens:
             tf = counter.get(qt, 0)
             if tf == 0:
                 continue
-            token_hits += 1
+            weight = query_terms.get(qt, 1.0)
+            hit_weight += weight
             numerator = tf * (BM25_K1 + 1.0)
             denom = tf + BM25_K1 * (1.0 - BM25_B + BM25_B * doc_len / avgdl)
-            bm25 += idf[qt] * (numerator / denom)
+            bm25 += weight * idf[qt] * (numerator / denom)
 
         haystack_lower = (
             f"{item['title']} {item['content']} {item['filename']} "
@@ -1707,71 +2019,153 @@ def query_units(query: str, limit: int = 3, filters: dict | None = None) -> tupl
         identity_bonus = 0.0
         for qt in query_tokens:
             if qt and qt in identity_lower:
-                identity_bonus += idf[qt] * 0.8
+                identity_bonus += query_terms.get(qt, 1.0) * idf[qt] * 0.7
 
-        substring_bonus = 1.5 if (lowered_query and lowered_query in haystack_lower) else 0.0
-        scope_bonus = 0.1 if item["source_scope"] != "system_builtin" else 0.0
+        substring_bonus = 1.4 if (lowered_query and lowered_query in haystack_lower) else 0.0
+        scope_quality = 0.08 if item["source_scope"] != "system_builtin" else 0.0
 
         # Cosine similarity (semantic) — 0 if we have no query/unit embedding
         cos = 0.0
         if query_vec and unit_vec:
             cos = max(0.0, embedding_provider.cosine_sim(query_vec, unit_vec))
+        semantic_norm = semantic_similarity_score(cos)
 
-        # Skip docs with no signal in either modality
-        if token_hits == 0 and substring_bonus == 0.0 and cos < 0.25:
+        important_weight = sum(weight for term, weight in query_terms.items() if weight >= 1.0)
+        if important_weight <= 0:
+            important_weight = sum(query_terms.values()) or 1.0
+        coverage_weight = 0.0
+        exact_phrase_weight = 0.0
+        for term, weight in query_terms.items():
+            if term in haystack_lower:
+                if weight >= 1.0:
+                    coverage_weight += weight
+                if len(term) >= 4 or term in DOMAIN_SEARCH_TERMS:
+                    exact_phrase_weight += weight
+        coverage = min(1.0, coverage_weight / important_weight)
+        aspect_coverage = query_aspect_coverage(haystack_lower, query_aspects)
+        exact_phrase_bonus = min(0.12, exact_phrase_weight * 0.025)
+
+        # Skip docs with no reliable signal in either modality.
+        if hit_weight == 0.0 and substring_bonus == 0.0 and semantic_norm < 0.25:
             continue
 
-        raw = bm25 + substring_bonus + scope_bonus + identity_bonus
-        bm25_norm = min(1.0, raw / BM25_SAT_SCORE)
-
-        # Hybrid: α·BM25 + (1-α)·cos, but only if we actually have a cosine signal
-        if query_vec and unit_vec:
-            final_norm = HYBRID_ALPHA * bm25_norm + (1.0 - HYBRID_ALPHA) * cos
-        else:
-            final_norm = bm25_norm
-
-        confidence_score = min(
-            CONFIDENCE_CEIL,
-            CONFIDENCE_FLOOR + final_norm * (CONFIDENCE_CEIL - CONFIDENCE_FLOOR),
-        )
-        scored.append(
+        lexical_raw = bm25 + substring_bonus + identity_bonus
+        raw_scored.append(
             {
-                "evidence_id": item["id"],
-                "confidence_score": round(confidence_score, 2),
-                "confidence_level": "high" if confidence_score >= 0.78 else "medium" if confidence_score >= 0.62 else "low",
-                "chunk_summary": clean_display_text(item["title"]),
-                "chunk_text": clean_display_text(item["content"]),
-                "source_time": item["uploaded_at"],
-                "source_type": normalize_response_source_type(item["source_type"]),
-                "citation": {
-                    "source_label": effective_source_label({**item, "meta": meta}, item["source_type"]),
-                    "source_type": normalize_response_source_type(item["source_type"]),
-                    "source_scope_label": meta.get("scope_label", scope_label(item["source_scope"])),
-                    "source_time": (item["uploaded_at"] or "")[:10],
-                    "locator": item["locator"] or "-",
-                },
+                "item": item,
                 "meta": meta,
-                "source_scope": item["source_scope"],
-                "_raw_bm25": round(bm25, 3),
-                "_cosine": round(cos, 3),
+                "lexical_raw": lexical_raw,
+                "coverage": coverage,
+                "aspect_coverage": aspect_coverage,
+                "scope_quality": scope_quality,
+                "exact_phrase_bonus": exact_phrase_bonus,
+                "cos": cos,
+                "semantic_norm": semantic_norm,
+                "hit_weight": hit_weight,
             }
         )
 
-    scored.sort(key=lambda x: (x["confidence_score"], x["source_time"]), reverse=True)
-    top = scored[:limit]
-    sufficient = any((ev.get("confidence_score") or 0) >= 0.62 for ev in top)
-    insufficient = len(top) == 0 or not sufficient
+    if not raw_scored:
+        top: list[dict] = []
+        insufficient = True
+    else:
+        max_lexical = max(entry["lexical_raw"] for entry in raw_scored) or 1.0
+        scored = []
+        for entry in raw_scored:
+            item = entry["item"]
+            meta = entry["meta"]
+            lexical_norm = 0.0
+            if entry["lexical_raw"] > 0:
+                relative = entry["lexical_raw"] / max_lexical
+                absolute = entry["lexical_raw"] / (entry["lexical_raw"] + 4.5)
+                lexical_norm = min(1.0, 0.55 * relative + 0.45 * absolute)
+
+            if query_vec:
+                rank_score = (
+                    HYBRID_LEXICAL_WEIGHT * lexical_norm
+                    + HYBRID_VECTOR_WEIGHT * entry["semantic_norm"]
+                    + HYBRID_COVERAGE_WEIGHT * entry["coverage"]
+                    + HYBRID_QUALITY_WEIGHT * entry["scope_quality"]
+                    + entry["exact_phrase_bonus"]
+                )
+            else:
+                rank_score = (
+                    LEXICAL_ONLY_WEIGHT * lexical_norm
+                    + LEXICAL_ONLY_COVERAGE_WEIGHT * entry["coverage"]
+                    + LEXICAL_ONLY_QUALITY_WEIGHT * entry["scope_quality"]
+                    + entry["exact_phrase_bonus"]
+                )
+
+            if len(query_aspects) >= 2 and entry["aspect_coverage"] < 1.0:
+                rank_score *= 0.58 + entry["aspect_coverage"] * 0.24
+
+            if rank_score < MIN_RANK_SCORE:
+                continue
+
+            confidence_score = CONFIDENCE_FLOOR + rank_score * (CONFIDENCE_CEIL - CONFIDENCE_FLOOR)
+            if len(query_aspects) >= 2 and entry["aspect_coverage"] < 1.0:
+                confidence_score = min(confidence_score, 0.58 if entry["aspect_coverage"] >= 0.5 else 0.48)
+            if entry["coverage"] < 0.25 and entry["semantic_norm"] < 0.55:
+                confidence_score = min(confidence_score, 0.54)
+            elif entry["coverage"] < 0.45 and entry["semantic_norm"] < 0.68:
+                confidence_score = min(confidence_score, 0.66)
+            elif entry["coverage"] < 0.65 and entry["semantic_norm"] < 0.78:
+                confidence_score = min(confidence_score, 0.78)
+
+            confidence_score = max(0.0, min(CONFIDENCE_CEIL, confidence_score))
+            confidence_level = (
+                "high" if confidence_score >= 0.78
+                else "medium" if confidence_score >= 0.62
+                else "low"
+            )
+            scored.append(
+                {
+                    "evidence_id": item["id"],
+                    "confidence_score": round(confidence_score, 2),
+                    "confidence_level": confidence_level,
+                    "chunk_summary": clean_display_text(item["title"]),
+                    "chunk_text": clean_display_text(item["content"]),
+                    "source_time": item["uploaded_at"],
+                    "source_type": normalize_response_source_type(item["source_type"]),
+                    "citation": {
+                        "source_label": effective_source_label({**item, "meta": meta}, item["source_type"]),
+                        "source_type": normalize_response_source_type(item["source_type"]),
+                        "source_scope_label": meta.get("scope_label", scope_label(item["source_scope"])),
+                        "source_time": (item["uploaded_at"] or "")[:10],
+                        "locator": item["locator"] or "-",
+                    },
+                    "meta": meta,
+                    "source_scope": item["source_scope"],
+                    "_source_record_id": item.get("source_record_id"),
+                    "_rank_score": round(rank_score, 4),
+                    "_lexical": round(lexical_norm, 3),
+                    "_coverage": round(entry["coverage"], 3),
+                    "_aspect_coverage": round(entry["aspect_coverage"], 3),
+                    "_cosine": round(entry["cos"], 3),
+                    "_semantic": round(entry["semantic_norm"], 3),
+                }
+            )
+
+        scored.sort(key=lambda x: (x["_rank_score"], x["confidence_score"], x["source_time"]), reverse=True)
+        top = select_diverse_evidence(scored, limit)
+        sufficient = any((ev.get("confidence_score") or 0) >= SUFFICIENT_CONFIDENCE for ev in top)
+        insufficient = len(top) == 0 or not sufficient
 
     algo = "hybrid" if query_vec else "bm25"
     print(
-        f"[query] {json.dumps({'ts': now_iso(), 'query_hash': query[:40], 'candidates': n_docs, 'scored': len(scored), 'top_score': (scored[0]['confidence_score'] if scored else 0), 'sufficient': not insufficient, 'algo': algo}, ensure_ascii=False)}",
+        f"[query] {json.dumps({'ts': now_iso(), 'query_hash': query[:40], 'query_terms': list(query_terms)[:12], 'candidates': n_docs, 'scored': len(raw_scored), 'top_score': (top[0]['confidence_score'] if top else 0), 'insufficient': insufficient, 'algo': algo}, ensure_ascii=False)}",
         flush=True,
     )
 
     # Strip internal debug fields before returning
     for ev in top:
-        ev.pop("_raw_bm25", None)
+        ev.pop("_source_record_id", None)
+        ev.pop("_rank_score", None)
+        ev.pop("_lexical", None)
+        ev.pop("_coverage", None)
+        ev.pop("_aspect_coverage", None)
         ev.pop("_cosine", None)
+        ev.pop("_semantic", None)
     return top, insufficient
 
 
