@@ -196,8 +196,22 @@ def _unwrap_portal_alarm_analyst_card_content(report_markdown: str) -> str:
         and "\n---\n" in normalized
     ):
         segments = normalized.split("\n---\n")
-        candidate = segments[-1].strip()
-        return candidate or normalized.strip()
+        marker_index = next(
+            (index for index, segment in enumerate(segments) if PORTAL_ALARM_ANALYST_CARD_MARKER in segment),
+            -1,
+        )
+        if marker_index != -1:
+            fallback = ""
+            for segment in segments[marker_index + 1 :]:
+                candidate = segment.strip()
+                if not candidate:
+                    continue
+                if not fallback:
+                    fallback = candidate
+                if re.search(r"^##+\s*.*?告警分析报告", candidate, flags=re.MULTILINE):
+                    return candidate
+            if fallback:
+                return fallback
     return normalized.strip()
 
 

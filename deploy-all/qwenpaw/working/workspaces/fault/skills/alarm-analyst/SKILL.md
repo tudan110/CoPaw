@@ -51,6 +51,28 @@ description: 面向单条活动告警或单个应用故障现象驱动的故障�
 
 ---
 
+## 本智能体本地 skill 优先级
+
+为减少多智能体协作带来的额外耗时，`alarm-analyst` 默认遵循以下执行顺序：
+
+1. **优先使用 fault 智能体当前工作区下已有的本地 skill**
+   - `skills/zgops-cmdb`
+   - `skills/real-alarm`
+   - `skills/alarm-analyst`
+2. 只有当本智能体下**不存在目标 skill**、本地 skill **配置缺失 / 未接通 / 执行失败**，或用户**明确要求协作其他智能体**时，才回退到跨智能体协作
+3. 如果发生回退，必须在过程说明里明确写出：
+   - 为什么没有直接使用本智能体下的本地 skill
+   - 准备协作给哪个智能体
+   - 准备调用哪个 skill
+
+因此：
+
+- 查 CMDB / 应用拓扑时，默认先使用 **fault 本地的 `zgops-cmdb`**
+- 查活动告警 / 关联资源告警时，默认先使用 **fault 本地的 `real-alarm`**
+- 只有本地 skill 不可用时，才回退去协作 `query` 或其他智能体
+
+---
+
 ## 一、面向当前方案的定位
 
 当前业务方案是：
@@ -113,13 +135,13 @@ Portal 落地时，需要体现以下链路：
 
 以下场景不要使用本技能：
 
-- 用户只是想看最近有哪些活动告警、告警数量、告警分布 -> 交给 `query` 数字员工的 `real-alarm`
+- 用户只是想看最近有哪些活动告警、告警数量、告警分布 -> 优先使用 fault 本地的 `real-alarm`；仅在本地 skill 不可用时再协作 `query`
 - 用户已经具备完整工单上下文，要继续工单闭环 -> 用 `fault-disposal`
 - 用户要做固定场景码或预定义剧本式的场景 RCA -> 当前工作区不提供专门 skill，优先回到 `alarm-analyst` 或直接走业务侧编排
 
 简化判断：
 
-- “看告警列表” -> `query` 数字员工的 `real-alarm`
+- “看告警列表” -> 优先使用 fault 本地的 `real-alarm`
 - “基于单条告警做分析与闭环” -> `alarm-analyst`
 - “基于工单继续处置” -> `fault-disposal`
 
@@ -132,6 +154,7 @@ Portal 落地时，需要体现以下链路：
 优先级如下：
 
 1. 先实际调用可用能力：
+   - 默认优先使用当前 fault 工作区下已有的本地 skill；只有本地 skill 不可用时，才考虑跨智能体协作
    - 如果需要跨智能体协作，**优先使用内置工具 `chat_with_agent`**；只有在 `chat_with_agent` 不可用或确实不适配当前任务时，才考虑 `list_agents` / `multi_agent_collaboration`
    - 使用 `execute_shell_command` 执行 `scripts/get_metric_definitions.py`
    - 已拿到 `resId/CI ID` 后，优先执行 `scripts/analyze_alarm_context.py` 聚合 CMDB 拓扑、关联告警和指标
@@ -163,7 +186,7 @@ Portal 落地时，需要体现以下链路：
 对于 `数据库锁异常（db_mysql_001 10.43.150.186）` 这类 MySQL 告警，默认最短路径是：
 
 1. 从告警文本中提取资产编号、IP、告警标题、`resId/CI ID`、告警时间
-2. 通过 query 数字员工的 `zgops-cmdb` 查询 CMDB，获取：
+2. 优先通过 fault 本地的 `zgops-cmdb` 查询 CMDB；仅在本地 skill 缺失或不可用时再协作 query。需要获取：
    - `ciType`
    - `CI ID`
    - 应用/环境/拓扑
@@ -210,7 +233,7 @@ cd skills/alarm-analyst && python scripts/get_metric_definitions.py --metric-typ
 ### 3. CMDB 系统
 
 - 是独立部署的资产管理系统
-- 资源信息查询优先通过 **query 数字员工** 下的 **`zgops-cmdb`** skill 完成
+- 资源信息查询优先通过 **fault 本地** 的 **`zgops-cmdb`** skill 完成；只有本地 skill 不可用时再回退到 query
 - 重点用于按资产编号确认资源类型、实例、所属应用、环境与关系拓扑
 
 ### 4. 故障处置员数字员工
@@ -256,7 +279,7 @@ ORDER_CREATE_NOTIFY_MENTION_ALL=true
   - 飞书：优先发送 `interactive` 卡片，不再依赖把 Markdown 原文塞进纯文本消息
   - 钉钉：发送 `markdown` 消息；避免依赖移动端不稳定的表格展示
   - 通用应用 webhook（如量子密信）：保持通用 text 协议，正文使用纯文本列表，不发送 `**`、`>` 等 Markdown 控制符
-- 当需要调用 `zgops-cmdb` 查询拓扑时，直接遵循 `zgops-cmdb` 自己的配置与访问规则，不在当前 skill 内重复声明
+- 当需要调用 `zgops-cmdb` 查询拓扑时，直接遵循当前工作区本地 `zgops-cmdb` skill 自己的配置与访问规则，不在当前 skill 内重复声明
 - 具体 API 路径、请求体和调用时机写在本 `SKILL.md` 中
 - 如果后续更换指标服务地址，优先只改 `.env`，不要在多个脚本或提示词里硬编码
 - 如果缺少 token，不要继续请求；直接返回配置缺失错误
@@ -266,7 +289,7 @@ ORDER_CREATE_NOTIFY_MENTION_ALL=true
 
 ### 当前指标定义接口
 
-当已经通过 query 数字员工 + `zgops-cmdb` 确认资源 `ciType` 后，应先调用指标定义接口，拿到该资源类型可分析的指标列表，再由 AI 从中筛选关键指标。
+当已经通过本智能体下的 `zgops-cmdb`（或回退协作获得结果）确认资源 `ciType` 后，应先调用指标定义接口，拿到该资源类型可分析的指标列表，再由 AI 从中筛选关键指标。
 
 - **Method**: `POST`
 - **Path**: `/resource/resource/threshold/getMetricDefinitions`
@@ -462,8 +485,8 @@ cd skills/alarm-analyst && python scripts/get_metric_definitions.py --metric-typ
 
 当前项目内置了 **`multi_agent_collaboration`** 协作能力，实际协作应优先遵循以下原则：
 
-1. 需要其他 agent 的专长时，优先走多智能体协作
-2. 查询 CMDB 时，优先找 query 数字员工，并使用其 `zgops-cmdb` skill
+1. 优先使用当前 fault 工作区下已有的本地 skill，只有需要其他 agent 专长时才走多智能体协作
+2. 查询 CMDB 时，默认先使用 fault 本地的 `zgops-cmdb`；只有本地 skill 不可用时才找 query 数字员工
 3. 协作术语应尽量使用仓库现有能力名：
    - `list_agents`
    - `chat_with_agent`
@@ -471,22 +494,23 @@ cd skills/alarm-analyst && python scripts/get_metric_definitions.py --metric-typ
 
 ### 当前 skill 中的协作默认规则
 
-- **CMDB 查询优先协作给 query 数字员工**
-- 如果用户明确要求“调用 query 看 CMDB”，必须在回复过程里体现这一点
-- 如果接口未接通，仍要在过程说明中写出“计划协作给 query -> zgops-cmdb”
-- 如果 query 返回的是应用或资源拓扑，优先保留并展示其返回的 ` ```echarts ` 代码块，不要把拓扑图改写成纯文字
+- **CMDB 查询优先使用 fault 本地的 `zgops-cmdb`**
+- **活动告警查询优先使用 fault 本地的 `real-alarm`**
+- 如果用户明确要求“调用 query 看 CMDB”，或本地 skill 不可用，必须在回复过程里体现协作回退
+- 如果本地接口未接通，仍要在过程说明中写出“计划协作给 query -> zgops-cmdb”
+- 如果本地或 query 返回的是应用或资源拓扑，优先保留并展示其返回的 ` ```echarts ` 代码块，不要把拓扑图改写成纯文字
 
 ### 过程展示要求
 
 即使当前没有真正发起 Agent-to-Agent 调用，也应在用户可见输出中体现类似信息：
 
-- `准备协作 query 数字员工，使用 zgops-cmdb 查询资产 db_mysql_001 的 CMDB 资源信息`
-- `协作目标：确认 ciType、实例、所属应用、环境与拓扑关系`
-- `当前阶段先按示例结果继续推演，后续将接入真实协作调用`
+- `准备使用 fault 本地 zgops-cmdb 查询资产 db_mysql_001 的 CMDB 资源信息`
+- `查询目标：确认 ciType、实例、所属应用、环境与拓扑关系`
+- `如果本地 zgops-cmdb 不可用，再协作 query 数字员工继续查询`
 
 ### 拓扑可视化要求
 
-当 query 数字员工通过 `zgops-cmdb` 返回应用拓扑或资源关系拓扑时，默认按下面规则处理：
+当本地 `zgops-cmdb` 或 query 回退链路返回应用拓扑或资源关系拓扑时，默认按下面规则处理：
 
 1. 优先展示为可渲染的 `echarts` 树状图，而不是只输出文字层级
 2. 图表结构优先使用：
@@ -518,14 +542,14 @@ cd skills/alarm-analyst && python scripts/get_metric_definitions.py --metric-typ
 - 用户说：`某应用新增数据失败了`
 - 用户说：`CMDB 插入数据失败了`
 
-这类问题不能只盯着应用本身，要先通过 **query -> zgops-cmdb** 查应用拓扑，把应用依赖的组件链路拆出来，再逐层分析。
+这类问题不能只盯着应用本身，要先通过 **fault -> zgops-cmdb** 查应用拓扑；只有本地 skill 不可用时再回退 query，把应用依赖的组件链路拆出来，再逐层分析。
 
 ### 典型拓扑拆解方式
 
 当用户描述的是“应用动作失败”而不是“单个资源直接告警”时，默认按下面的顺序做：
 
 1. 先识别目标应用或目标业务动作
-2. 通过 query 数字员工 + `zgops-cmdb` 查询应用拓扑关系
+2. 优先通过 fault 本地 `zgops-cmdb` 查询应用拓扑关系；必要时回退 query
 3. 列出该应用涉及的关键组件，例如：
    - 应用服务本身
    - 中间件组件
@@ -689,9 +713,9 @@ graph TD
 
 不要省略这一步，因为闭环与工单状态依赖智观上下文。
 
-### 第 3 阶段：协作 query 数字员工查询 CMDB / 应用拓扑
+### 第 3 阶段：优先使用本地 zgops-cmdb 查询 CMDB / 应用拓扑
 
-拿到资产编号、应用名、系统名或故障动作后，优先通过 query 数字员工的 `zgops-cmdb` 查询：
+拿到资产编号、应用名、系统名或故障动作后，优先通过 fault 本地的 `zgops-cmdb` 查询：
 
 - 该资产是否存在
 - 该资源的 `ciType`
@@ -701,12 +725,11 @@ graph TD
 - 上下游关联关系
 - 应用拓扑涉及的关键组件
 
-这一步必须突出“是通过 query 数字员工下的 `zgops-cmdb` 完成”，不要把 CMDB 查询写成一个抽象黑盒。
+这一步必须突出“优先通过 fault 本地的 `zgops-cmdb` 完成”；只有在本地 skill 不可用时，才写成协作 query 的回退链路，不要把 CMDB 查询写成一个抽象黑盒。
 
 如果当前无真实协作调用，也必须在过程里明确：
 
-- `准备通过 multi_agent_collaboration 协作 query 数字员工`
-- `计划使用 zgops-cmdb 查询资产 db_mysql_001`
+- `准备使用 fault 本地 zgops-cmdb 查询资产 db_mysql_001`
 - `预期确认：ciType / 应用 / 环境 / 拓扑关系`
 - `如果查到应用或资源拓扑，将直接以 echarts 树状图展示关键依赖链`
 
@@ -727,7 +750,7 @@ graph TD
 
 默认步骤：
 
-1. 通过 query + `zgops-cmdb` 确认 `ciType`
+1. 优先通过 fault 本地 `zgops-cmdb` 确认 `ciType`；必要时回退 query
 2. 如果是应用故障场景，先拆出应用依赖组件
 3. 使用 `ciType` / 组件类型 作为 `metricType` 调用指标定义接口
 4. 获取候选指标列表
@@ -990,7 +1013,7 @@ cd skills/alarm-analyst && python scripts/create_manual_workorder.py \
 
 1. `告警接收与解析`
 2. `智观告警上下文确认`
-3. `CMDB / 应用拓扑确认（query -> zgops-cmdb）`
+3. `CMDB / 应用拓扑确认（fault -> zgops-cmdb；必要时回退 query）`
 4. `组件拆解与故障类型识别`
 5. `指标采集计划`
 6. `关键指标与影响范围`
@@ -1050,7 +1073,7 @@ cd skills/alarm-analyst && python scripts/create_manual_workorder.py \
 - 每一步都尽量引用当前告警里的具体实体，如资产编号、IP、资源类型、实例名
 - 明确区分“已知信息”和“待确认信息”
 - 接口未接时，也要把“计划调用哪个系统”写出来
-- 需要协作时，要把 query 数字员工和 `zgops-cmdb` 明确写出来
+- 需要回退协作时，要把 query 数字员工和 `zgops-cmdb` 明确写出来
 - 涉及应用拓扑或资源关系拓扑时，优先输出或保留 `echarts` 树状图代码块
 - 需要闭环时，要把“清除告警 / 修改工单状态 / 恢复验证”明确写出来
 - RCA 结论形成后，必须明确体现“已自动调用 4.2 工单创建接口”或“工单创建失败原因”
@@ -1107,9 +1130,8 @@ cd skills/alarm-analyst && python scripts/create_manual_workorder.py \
 - 同时确认近 7 日是否出现过相同或相似告警，以及是否已有关联工单
 - 当前阶段先按单条活动告警继续分析
 
-### 3. CMDB 资源确认（query -> zgops-cmdb）
-- 准备通过 multi_agent_collaboration 协作 query 数字员工
-- 计划使用 zgops-cmdb 查询资产 `db_mysql_001` 的资源详情
+### 3. CMDB 资源确认（fault -> zgops-cmdb；必要时回退 query）
+- 准备使用 fault 本地 zgops-cmdb 查询资产 `db_mysql_001` 的资源详情
 - 目标是确认该资源的 `ciType`、实例信息、所属应用和运行环境
 - 当前按示例场景继续推演：该资产对应资源 `ciType = mysql`
 - 如果查到应用或资源拓扑，会直接用 `echarts` 树状图展示关键依赖关系
@@ -1202,7 +1224,7 @@ cd skills/alarm-analyst && python scripts/create_manual_workorder.py \
 
 - 识别资产编号 `db_mysql_001`
 - 说明会去智观确认活动告警与工单状态
-- 说明会协作 query 数字员工，用 `zgops-cmdb` 查询 CMDB
+- 说明默认优先使用 fault 本地的 `zgops-cmdb` 查询 CMDB；必要时再协作 query
 - 说明 `ciType = mysql` 后会先调 `getMetricDefinitions`
 - 再说明 AI 如何从候选指标里挑关键指标
 - 说明影响范围如何判断
@@ -1227,7 +1249,7 @@ cd skills/alarm-analyst && python scripts/create_manual_workorder.py \
 
 回复重点必须包含：
 
-- 先通过 query + `zgops-cmdb` 查询应用拓扑
+- 先通过 fault 本地 `zgops-cmdb` 查询应用拓扑；必要时回退 query
 - 如果已经拿到拓扑，优先直接展示 `echarts` 树状图
 - 列出该应用依赖的关键组件
 - 对数据库、中间件、网络、基础资源、应用本身分别进入分析
@@ -1251,13 +1273,13 @@ cd skills/alarm-analyst && python scripts/create_manual_workorder.py \
 - 当前阶段不要假装已经拿到了真实智观、指标或工单接口结果
 - 如果当前工具可用，必须优先做真实调用，不要只把 skill 内容原样展开给用户
 - 拿到用户告警后，不要在末尾反问“是否继续执行真实接口调用”；默认直接执行
-- 如果已经执行了 `execute_shell_command` 或协作 query 数字员工，回复中必须体现真实执行结果、失败原因或 mock 回退情况
+- 如果已经执行了本地 shell 调用或协作其他智能体，回复中必须体现真实执行结果、失败原因或 mock 回退情况
 - 如果 `ciType` 已经确认，必须优先执行 `scripts/get_metric_definitions.py`，不要只输出“计划调用指标定义接口”
 - RCA 结论形成后，必须优先执行 `scripts/create_manual_workorder.py` 创建工单，不要只输出“计划创建工单”
 - 工单创建成功后，必须优先通过 webhook 推送通知，不要只输出“计划通知”
 - webhook 可按配置推送到应用（可配置为量子密信）、钉钉、飞书；如果未配置，也要明确说明“通知未配置”
-- 但必须把“告警 -> 智观 -> query/zgops-cmdb -> `getMetricDefinitions` -> AI 挑关键指标 -> 指标值 -> 影响范围 -> 自动创建工单 -> webhook 通知 -> 处置 -> 恢复验证 -> 清除告警 -> 更新工单状态”这条链路完整写给用户
-- 查询 CMDB 时，默认体现为通过 query 数字员工下的 `zgops-cmdb` 完成
+- 但必须把“告警 -> 智观 -> fault/zgops-cmdb（必要时回退 query） -> `getMetricDefinitions` -> AI 挑关键指标 -> 指标值 -> 影响范围 -> 自动创建工单 -> webhook 通知 -> 处置 -> 恢复验证 -> 清除告警 -> 更新工单状态”这条链路完整写给用户
+- 查询 CMDB 时，默认体现为通过 fault 本地的 `zgops-cmdb` 完成；仅在本地 skill 不可用时再说明协作 query
 - 如果查询到拓扑，默认以 `echarts` 树状图展示，并保留 query 返回的图表代码块
 - 如果用户描述的是“应用动作失败”，默认先查应用拓扑，再查单个组件
 - 分析应用故障时，必须覆盖基础资源、网络、应用、数据库、中间件、业务逻辑这 6 类故障类型

@@ -147,6 +147,49 @@ test("merges stored cards when report markdown differs only by alarm marker wrap
   assert.equal(merged[0].alarmAnalystCard.summary.title, "数据库锁异常");
 });
 
+test("merges stored cards when raw report has trailing supplement after marker report", () => {
+  const messages = [
+    {
+      id: "agent-4",
+      enhancementSourceMessageId: "history-assistant-3",
+      processBlocks: [
+        {
+          kind: "response",
+          content:
+            "工单已创建成功\n\n---\n\n# PORTAL ALARM ANALYST CARD MODE\n\n---\n\n## 告警分析报告：数据库锁异常\n## 根因判断\n- 锁等待放大\n## 影响范围\n- 受影响应用：CMDB\n## 处置建议\n- P0：终止异常慢 SQL 会话\n## 📊 总结\n- 置信度：86%\n\n---\n\n> 补充说明：这里不应覆盖主报告",
+        },
+      ],
+    },
+  ];
+  const cards = [
+    {
+      type: "alarm-analyst-card",
+      version: "v1",
+      source: {
+        chatId: "chat-1",
+        messageId: "stream-assistant-3",
+        skillName: "alarm-analyst",
+        contentHash: "hash-3",
+      },
+      summary: {
+        title: "数据库锁异常",
+        conclusion: "锁等待放大",
+      },
+      rootCause: { reason: "锁等待放大" },
+      impact: { affectedApplications: [], affectedResources: [] },
+      topology: { nodes: [], edges: [] },
+      recommendations: [],
+      evidence: [],
+      rawReportMarkdown:
+        "## 告警分析报告：数据库锁异常\n## 根因判断\n- 锁等待放大\n## 影响范围\n- 受影响应用：CMDB\n## 处置建议\n- P0：终止异常慢 SQL 会话\n## 📊 总结\n- 置信度：86%",
+    },
+  ] as any;
+
+  const merged = mergeAlarmAnalystCards(messages, cards);
+
+  assert.equal(merged[0].alarmAnalystCard.summary.title, "数据库锁异常");
+});
+
 test("only enables alarm analyst cards for fault workorder sessions", () => {
   assert.equal(
     shouldEnableAlarmAnalystCards({
