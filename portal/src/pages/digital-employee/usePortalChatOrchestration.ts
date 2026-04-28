@@ -65,6 +65,16 @@ type ComposerSelectionEvent =
   | KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>
   | MouseEvent<HTMLInputElement | HTMLTextAreaElement>;
 
+function isComposingInput(
+  event: KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>,
+) {
+  const nativeEvent = event.nativeEvent as KeyboardEvent["nativeEvent"] & {
+    isComposing?: boolean;
+    keyCode?: number;
+  };
+  return Boolean(nativeEvent.isComposing || nativeEvent.keyCode === 229);
+}
+
 type NavigateToEmployeePage = (
   employee: any,
   options?: {
@@ -795,6 +805,10 @@ export function usePortalChatOrchestration({
     event: KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>,
     { multiline = false }: { multiline?: boolean } = {},
   ) => {
+    if (isComposingInput(event)) {
+      return;
+    }
+
     if (mentionSuggestions.length) {
       if (event.key === "ArrowDown") {
         event.preventDefault();
