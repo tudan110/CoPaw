@@ -927,8 +927,28 @@ export function unwrapPortalInspectionCardContent(content: string) {
     && normalized.includes("\n---\n")
   ) {
     const segments = normalized.split(/\n---\n/);
-    const candidate = segments[segments.length - 1]?.trim();
-    return candidate || normalized;
+    const markerIndex = segments.findIndex((segment) => segment.includes(PORTAL_INSPECTION_CARD_MARKER));
+    if (markerIndex !== -1) {
+      let fallback = "";
+      for (const segment of segments.slice(markerIndex + 1)) {
+        const candidate = segment.trim();
+        if (!candidate) {
+          continue;
+        }
+        if (!fallback) {
+          fallback = candidate;
+        }
+        if (
+          /(?:^|\n)##+\s*.*巡检结果/u.test(candidate)
+          || /(?:^|\n)##+\s*.*健康状态评估/u.test(candidate)
+        ) {
+          return candidate;
+        }
+      }
+      if (fallback) {
+        return fallback;
+      }
+    }
   }
   return normalized;
 }

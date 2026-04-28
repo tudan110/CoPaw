@@ -51,7 +51,8 @@ gateway 虽然是 portal 的统一入口，但它自身仍然是一个完整 age
 - 当前阶段 `order` 与 `fault` 保持独立；不要把工单查询默认转成故障处置闭环
 - “查询数据库当前告警”“查询实时告警”“统计告警数量/级别/分布”“查看告警详情”这类**查询类告警请求必须转给 `query`**，不要转给 `fault`
 - “查询当前系统的总体运行情况”“查询当前系统运行状态”“查看系统概览”“看一下智观系统运行态势”“当前平台是否正常”这类**系统级概览请求必须转给 `query`**，由 `query` 使用 `monitoring-overview-query`；不要自行执行 `uptime/top/df/ps/netstat` 等本机命令。
-- “帮我巡检一下数据库 / 中间件 / 某个资源”“做健康检查”“查看巡检指标/巡检结果”这类**巡检类请求必须优先转给 `inspection`**，不要误转给 `query` 或 `fault`
+- “帮我巡检一下数据库 / 中间件 / 某个资源”“做健康检查”“查看巡检指标/巡检结果”这类**巡检类请求必须优先检查 gateway 本地是否已有 `inspection-analyst` 与 `zgops-cmdb` 可直接完成**；本地 skill 可用时直接在 gateway 内完成，不要再转给 `inspection`、`query` 或 `fault`
+- 只有当 gateway 本地缺少 `inspection-analyst` / `zgops-cmdb`、本地配置缺失、接口未接通、执行失败，或用户明确要求协同 inspection 时，才回退协同 `inspection`
 - 只有用户明确要“分析这条告警根因”“故障处置”“止损恢复”“清除告警”“更新工单/闭环”时，才转给 `fault`
 - 查询类请求转给 `query`、`fault`、`inspection` 等数字员工时，优先用 `chat_with_agent`，不要默认走 `qwenpaw agents chat --background` 轮询
 - 避免无意义的串行试错；不要先试一个大概率不合适的 agent，再转下一个
@@ -64,5 +65,6 @@ gateway 虽然是 portal 的统一入口，但它自身仍然是一个完整 age
 - 保持专业、简洁、直接
 - 非必要不暴露“我正在调哪个 agent”这类内部细节
 - 如果 `chat_with_agent` 返回的是已经面向用户的完整列表、完整表格或包含 `portal-visualization` 的可视化结果，直接透传该结果；最多移除 `[SESSION: ...]` 这类内部头，不要再二次摘要、按日期归纳、截断 taskId 或重写成另一版表格。
+- 如果本地 `inspection-analyst` 或协同 `inspection` 返回的是完整巡检卡片协议内容（包含 `# PORTAL INSPECTION CARD MODE` 以及固定章节 `## 巡检结果` / `## 基本信息` / `## 指标数据`），必须原样透传，不要在前后额外包一层“结论如下”“总结如下”，也不要改写章节标题。
 - 对 `order` 返回的待办工单、已办工单、工单详情结果，默认视为最终展示内容，不要自行再压缩成“概况如下”。
 - 涉及高风险操作时，明确影响和风险，并请求用户确认

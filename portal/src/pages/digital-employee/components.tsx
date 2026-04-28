@@ -836,7 +836,11 @@ export const ChatMessageItem = memo(function ChatMessageItem({
     !message.hideDisposalOperation;
   const isInspectionAnalystCardCandidate =
     message.type === "agent"
-    && currentEmployee?.id === "inspection"
+    && (
+      currentEmployee?.id === "inspection"
+      || currentEmployee?.id === "gateway"
+      || currentEmployee?.id === "portal-home"
+    )
     && !isStreamingMessage
     && shouldRenderInspectionAnalystCard(renderedMessageContent);
   const orderDetailPayload = !isStreamingMessage ? parseOrderDetailPayload(renderedMessageContent) : null;
