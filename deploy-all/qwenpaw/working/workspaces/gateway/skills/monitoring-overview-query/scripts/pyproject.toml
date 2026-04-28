@@ -1,0 +1,8 @@
+[project]
+name = "monitoring-overview-query"
+version = "0.1.0"
+description = "INOE monitoring overview query helper"
+requires-python = ">=3.9"
+dependencies = [
+    "requests>=2.31.0",
+]

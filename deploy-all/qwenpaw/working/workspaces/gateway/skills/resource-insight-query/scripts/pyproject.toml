@@ -1,0 +1,9 @@
+[project]
+name = "resource-insight-query"
+version = "0.1.0"
+description = "INOE resource status and performance query helper"
+requires-python = ">=3.9"
+dependencies = [
+    "requests>=2.31.0",
+]
+
