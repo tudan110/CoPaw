@@ -390,7 +390,7 @@ class OrderWorkflowTests(unittest.TestCase):
             OrderWorkflowConfig(
                 base_url="http://example.com",
                 authorization="token",
-                create_notify_webhook_url="http://notify.example.com/webhook",
+                create_notify_push_url="http://notify.example.com/push",
                 create_notify_mention_all=True,
             )
         )
@@ -406,12 +406,11 @@ class OrderWorkflowTests(unittest.TestCase):
         )
         payload = client._build_create_notify_payload(context)
         self.assertEqual(payload["type"], "text")
-        self.assertTrue(payload["textMsg"]["isMentioned"])
-        self.assertEqual(payload["textMsg"]["mentionType"], 1)
-        self.assertIn("摘要：", payload["textMsg"]["content"])
-        self.assertIn("设备：db_mysql_001 / 10.43.150.186", payload["textMsg"]["content"])
-        self.assertIn("taskId：task-1", payload["textMsg"]["content"])
-        self.assertIn("procInsId：proc-1", payload["textMsg"]["content"])
+        self.assertEqual(payload["title"], "工单创建通知")
+        self.assertIn("摘要：", payload["content"])
+        self.assertIn("设备：db_mysql_001 / 10.43.150.186", payload["content"])
+        self.assertIn("taskId：task-1", payload["content"])
+        self.assertIn("procInsId：proc-1", payload["content"])
 
     def test_dingtalk_notification_payload_mentions_all_when_enabled(self) -> None:
         client = OrderWorkflowClient(
@@ -491,7 +490,7 @@ class OrderWorkflowTests(unittest.TestCase):
             OrderWorkflowConfig(
                 base_url="http://example.com",
                 authorization="token",
-                create_notify_webhook_url="http://notify.example.com/webhook",
+                create_notify_push_url="http://notify.example.com/push",
             )
         )
         with mock.patch.object(
@@ -518,7 +517,7 @@ class OrderWorkflowTests(unittest.TestCase):
             OrderWorkflowConfig(
                 base_url="http://example.com",
                 authorization="token",
-                create_notify_webhook_url="http://notify.example.com/app",
+                create_notify_push_url="http://notify.example.com/push",
                 create_notify_dingtalk_webhook_url="https://oapi.dingtalk.com/robot/send?access_token=test",
                 create_notify_feishu_webhook_url="https://open.feishu.cn/open-apis/bot/v2/hook/test",
                 create_notify_mention_all=True,

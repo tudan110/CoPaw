@@ -188,7 +188,7 @@ def test_build_workorder_payload_requires_alarm_id():
     {
         "INOE_API_BASE_URL": "http://example.com",
         "INOE_API_TOKEN": "token-123",
-        "ORDER_CREATE_NOTIFY_WEBHOOK_URL": "",
+        "ORDER_CREATE_NOTIFY_PUSH_URL": "",
         "ORDER_CREATE_NOTIFY_DINGTALK_WEBHOOK_URL": "",
         "ORDER_CREATE_NOTIFY_DINGTALK_SECRET": "",
         "ORDER_CREATE_NOTIFY_FEISHU_WEBHOOK_URL": "",
@@ -231,7 +231,7 @@ def test_create_manual_workorder_posts_expected_request():
 @patch.dict(
     "os.environ",
     {
-        "ORDER_CREATE_NOTIFY_WEBHOOK_URL": "http://notify.example.com/webhook",
+        "ORDER_CREATE_NOTIFY_PUSH_URL": "http://notify.example.com/push",
         "ORDER_CREATE_NOTIFY_MENTION_ALL": "true",
     },
     clear=False,
@@ -260,11 +260,12 @@ def test_app_notification_payload_mentions_all_when_enabled():
     payload = WORKORDER_MODULE._build_app_notify_payload(context)
 
     assert payload["type"] == "text"
-    assert payload["textMsg"]["isMentioned"] is True
-    assert payload["textMsg"]["mentionType"] == 1
-    assert "**AI创建处置工单**" in payload["textMsg"]["content"]
-    assert "- **根因方向**：疑似长事务" in payload["textMsg"]["content"]
-    assert "- **处置建议**：排查长事务；检查阻塞链" in payload["textMsg"]["content"]
+    assert payload["title"] == "AI创建处置工单"
+    assert "AI创建处置工单" in payload["content"]
+    assert "根因方向：疑似长事务" in payload["content"]
+    assert "处置建议：排查长事务；检查阻塞链" in payload["content"]
+    assert "**" not in payload["content"]
+    assert ">" not in payload["content"]
 
 
 @patch.dict(
@@ -370,7 +371,7 @@ def test_feishu_notification_payload_appends_timestamp_and_sign():
     {
         "INOE_API_BASE_URL": "http://example.com",
         "INOE_API_TOKEN": "token-123",
-        "ORDER_CREATE_NOTIFY_WEBHOOK_URL": "http://notify.example.com/webhook",
+        "ORDER_CREATE_NOTIFY_PUSH_URL": "http://notify.example.com/push",
         "ORDER_CREATE_NOTIFY_DINGTALK_WEBHOOK_URL": "",
         "ORDER_CREATE_NOTIFY_DINGTALK_SECRET": "",
         "ORDER_CREATE_NOTIFY_FEISHU_WEBHOOK_URL": "",
@@ -416,7 +417,7 @@ def test_create_manual_workorder_notification_failure_does_not_break_create():
     {
         "INOE_API_BASE_URL": "http://example.com",
         "INOE_API_TOKEN": "token-123",
-        "ORDER_CREATE_NOTIFY_WEBHOOK_URL": "http://notify.example.com/app",
+        "ORDER_CREATE_NOTIFY_PUSH_URL": "http://notify.example.com/push",
         "ORDER_CREATE_NOTIFY_DINGTALK_WEBHOOK_URL": "https://oapi.dingtalk.com/robot/send?access_token=test",
         "ORDER_CREATE_NOTIFY_FEISHU_WEBHOOK_URL": "https://open.feishu.cn/open-apis/bot/v2/hook/test",
         "ORDER_CREATE_NOTIFY_MENTION_ALL": "true",

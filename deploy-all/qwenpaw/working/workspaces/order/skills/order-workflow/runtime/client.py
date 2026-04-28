@@ -50,6 +50,7 @@ class OrderWorkflowConfig:
     verify_ssl: bool = True
     enable_curl_fallback: bool = False
     extra_headers: dict[str, str] | None = None
+    create_notify_push_url: str = ""
     create_notify_webhook_url: str = ""
     create_notify_dingtalk_webhook_url: str = ""
     create_notify_dingtalk_secret: str = ""
@@ -94,6 +95,10 @@ class OrderWorkflowConfig:
                     if value is not None
                 }
 
+        create_notify_push_url = os.getenv(
+            "ORDER_CREATE_NOTIFY_PUSH_URL",
+            "",
+        ).strip()
         create_notify_webhook_url = os.getenv(
             "ORDER_CREATE_NOTIFY_WEBHOOK_URL",
             "",
@@ -135,6 +140,7 @@ class OrderWorkflowConfig:
             verify_ssl=verify_ssl,
             enable_curl_fallback=enable_curl_fallback,
             extra_headers=extra_headers,
+            create_notify_push_url=create_notify_push_url,
             create_notify_webhook_url=create_notify_webhook_url,
             create_notify_dingtalk_webhook_url=create_notify_dingtalk_webhook_url,
             create_notify_dingtalk_secret=create_notify_dingtalk_secret,
@@ -667,10 +673,10 @@ class OrderWorkflowClient:
         response_payload: dict[str, Any],
         request_payload: dict[str, Any],
     ) -> dict[str, Any]:
-        app_webhook_url = self.config.create_notify_webhook_url.strip()
+        app_push_url = self.config.create_notify_push_url.strip() or self.config.create_notify_webhook_url.strip()
         dingtalk_webhook_url = self.config.create_notify_dingtalk_webhook_url.strip()
         feishu_webhook_url = self.config.create_notify_feishu_webhook_url.strip()
-        if not app_webhook_url and not dingtalk_webhook_url and not feishu_webhook_url:
+        if not app_push_url and not dingtalk_webhook_url and not feishu_webhook_url:
             return {
                 "enabled": False,
                 "status": "skipped",
@@ -694,14 +700,12 @@ class OrderWorkflowClient:
             request_payload=request_payload,
         )
         channels: list[dict[str, Any]] = []
-        if app_webhook_url:
+        if app_push_url:
             channels.append(
-                self._send_json_webhook(
+                self._send_app_push(
                     channel_name="app",
-                    webhook_url=app_webhook_url,
+                    push_url=app_push_url,
                     payload=self._build_create_notify_payload(context),
-                    success_predicate=lambda data: bool(data.get("ok"))
-                    or str(data.get("code") or "") == "200",
                 )
             )
         if dingtalk_webhook_url:
@@ -800,20 +804,10 @@ class OrderWorkflowClient:
             f"创建时间：{context['created_at']}",
             "请相关同事关注并尽快处理。",
         ]
-        text_msg: dict[str, Any] = {
-            "content": "\n".join(content_lines),
-        }
-        if self.config.create_notify_mention_all:
-            text_msg.update(
-                {
-                    "isMentioned": True,
-                    "mentionType": 1,
-                }
-            )
-
         return {
+            "title": "工单创建通知",
+            "content": "\n".join(content_lines),
             "type": "text",
-            "textMsg": text_msg,
         }
 
     def _build_dingtalk_create_notify_payload(self, context: dict[str, str]) -> dict[str, Any]:
@@ -890,6 +884,66 @@ class OrderWorkflowClient:
         encoded_sign = quote_plus(base64.b64encode(sign))
         separator = "&" if "?" in webhook_url else "?"
         return f"{webhook_url}{separator}timestamp={timestamp}&sign={encoded_sign}"
+
+    @staticmethod
+    def _is_successful_push_response(response_json: Any) -> bool:
+        if not isinstance(response_json, dict) or not response_json:
+            return True
+        if "success" in response_json:
+            return bool(response_json.get("success"))
+        if "ok" in response_json:
+            return bool(response_json.get("ok"))
+        if "code" in response_json:
+            return str(response_json.get("code") or "") in {"0", "200"}
+        if "status" in response_json:
+            return str(response_json.get("status") or "").lower() in {"ok", "success", "sent"}
+        if "errcode" in response_json:
+            return str(response_json.get("errcode") or "") == "0"
+        return True
+
+    def _send_app_push(
+        self,
+        *,
+        channel_name: str,
+        push_url: str,
+        payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        try:
+            response = requests.post(
+                push_url,
+                json=payload,
+                headers={"Content-Type": "application/json"},
+                timeout=self.config.create_notify_timeout_seconds,
+                verify=self.config.verify_ssl,
+            )
+            response.raise_for_status()
+        except Exception as exc:
+            return {
+                "channel": channel_name,
+                "status": "failed",
+                "reason": str(exc),
+            }
+
+        try:
+            response_json = response.json()
+        except (AttributeError, ValueError):
+            response_json = {}
+
+        if self._is_successful_push_response(response_json):
+            return {
+                "channel": channel_name,
+                "status": "sent",
+                "reason": "",
+            }
+
+        return {
+            "channel": channel_name,
+            "status": "failed",
+            "reason": response_json.get("errmsg")
+            or response_json.get("message")
+            or response_json.get("reason")
+            or "push_rejected",
+        }
 
     def _send_json_webhook(
         self,

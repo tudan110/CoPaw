@@ -203,20 +203,27 @@ def _build_notification_markdown_text(context: dict[str, str]) -> str:
     return "\n".join(_build_notification_markdown_lines(context))
 
 
+def _build_notification_plain_text_lines(context: dict[str, str]) -> list[str]:
+    return [
+        "AI创建处置工单",
+        f"标题：{context['title']}",
+        f"摘要：{context['summary']}",
+        f"资源：{context['device_name']} / {context['manage_ip']} / CI ID: {context['res_id']}",
+        f"等级：{context['level']}",
+        f"根因方向：{context['root_cause']}",
+        f"处置建议：{context['suggestions']}",
+        f"taskId：{context['task_id']}",
+        f"procInsId：{context['proc_ins_id']}",
+        f"创建时间：{context['created_at']}",
+        "此工单为 AI 自动创建，请尽快跟进处置。",
+    ]
+
+
 def _build_app_notify_payload(context: dict[str, str]) -> dict[str, Any]:
-    text_msg: dict[str, Any] = {
-        "content": _build_notification_markdown_text(context),
-    }
-    if _get_notify_mention_all():
-        text_msg.update(
-            {
-                "isMentioned": True,
-                "mentionType": 1,
-            }
-        )
     return {
+        "title": "AI创建处置工单",
+        "content": "\n".join(_build_notification_plain_text_lines(context)),
         "type": "text",
-        "textMsg": text_msg,
     }
 
 
@@ -378,6 +385,60 @@ def _build_dingtalk_signed_webhook_url(webhook_url: str) -> str:
     return f"{webhook_url}{separator}timestamp={timestamp}&sign={encoded_sign}"
 
 
+def _is_successful_push_response(response_json: Any) -> bool:
+    if not isinstance(response_json, dict) or not response_json:
+        return True
+    if "success" in response_json:
+        return bool(response_json.get("success"))
+    if "ok" in response_json:
+        return bool(response_json.get("ok"))
+    if "code" in response_json:
+        return str(response_json.get("code") or "") in {"0", "200"}
+    if "status" in response_json:
+        return str(response_json.get("status") or "").lower() in {"ok", "success", "sent"}
+    if "errcode" in response_json:
+        return str(response_json.get("errcode") or "") == "0"
+    return True
+
+
+def _send_app_push(*, channel_name: str, push_url: str, payload: dict[str, Any]) -> dict[str, Any]:
+    try:
+        response = requests.post(
+            push_url,
+            json=payload,
+            headers={"Content-Type": "application/json"},
+            timeout=_get_notify_timeout(),
+        )
+        response.raise_for_status()
+    except requests.RequestException as exc:
+        return {
+            "channel": channel_name,
+            "status": "failed",
+            "reason": str(exc),
+        }
+
+    try:
+        response_json = response.json()
+    except (AttributeError, ValueError):
+        response_json = {}
+
+    if _is_successful_push_response(response_json):
+        return {
+            "channel": channel_name,
+            "status": "sent",
+            "reason": "",
+        }
+
+    return {
+        "channel": channel_name,
+        "status": "failed",
+        "reason": response_json.get("errmsg")
+        or response_json.get("message")
+        or response_json.get("reason")
+        or "push_rejected",
+    }
+
+
 def _send_json_webhook(
     *,
     channel_name: str,
@@ -428,10 +489,10 @@ def _notify_workorder_created(
     payload: dict[str, Any],
     response_payload: dict[str, Any],
 ) -> dict[str, Any]:
-    app_webhook_url = _get_notify_env("WEBHOOK_URL")
+    app_push_url = _get_notify_env("PUSH_URL") or _get_notify_env("WEBHOOK_URL")
     dingtalk_webhook_url = _get_notify_env("DINGTALK_WEBHOOK_URL")
     feishu_webhook_url = _get_notify_env("FEISHU_WEBHOOK_URL")
-    if not app_webhook_url and not dingtalk_webhook_url and not feishu_webhook_url:
+    if not app_push_url and not dingtalk_webhook_url and not feishu_webhook_url:
         return {
             "enabled": False,
             "status": "skipped",
@@ -452,14 +513,12 @@ def _notify_workorder_created(
 
     context = _build_notification_context(payload, response_payload)
     channels: list[dict[str, Any]] = []
-    if app_webhook_url:
+    if app_push_url:
         channels.append(
-            _send_json_webhook(
+            _send_app_push(
                 channel_name="app",
-                webhook_url=app_webhook_url,
+                push_url=app_push_url,
                 payload=_build_app_notify_payload(context),
-                success_predicate=lambda data: bool(data.get("ok"))
-                or str(data.get("code") or "") == "200",
             )
         )
     if dingtalk_webhook_url:

@@ -95,7 +95,7 @@ Portal 落地时，需要体现以下链路：
 4. RCA 完成后：
    - 自动创建处置工单
    - 工单中写明 AI 创建标识与处置建议
-   - 根据 webhook 配置自动推送通知到应用（可配置为量子密信）、钉钉、飞书
+   - 根据通知配置自动推送通知到应用（可配置为量子密信）、钉钉、飞书
 5. AI 可闭环时：
    - 执行处置
    - 检测是否恢复正常
@@ -258,7 +258,7 @@ INOE_API_BASE_URL=http://192.168.130.51:30080
 INOE_API_TOKEN=your_jwt_token_here
 ALARM_ANALYST_METRIC_TIMEOUT_SECONDS=120
 ALARM_ANALYST_METRIC_PAGE_SIZE=20
-ORDER_CREATE_NOTIFY_WEBHOOK_URL=
+ORDER_CREATE_NOTIFY_PUSH_URL=
 ORDER_CREATE_NOTIFY_DINGTALK_WEBHOOK_URL=
 ORDER_CREATE_NOTIFY_DINGTALK_SECRET=
 ORDER_CREATE_NOTIFY_DINGTALK_KEYWORD=
@@ -272,13 +272,13 @@ ORDER_CREATE_NOTIFY_MENTION_ALL=true
 
 - `.env` 中至少要有 `INOE_API_BASE_URL` 和 `INOE_API_TOKEN`
 - `INOE_API_TOKEN` 沿用实时告警系统同类接口的 JWT 鉴权方式
-- 如果要在建单后自动推送通知，可继续配置 `ORDER_CREATE_NOTIFY_*` 这一组 webhook 变量
-- `ORDER_CREATE_NOTIFY_WEBHOOK_URL` 是通用应用 webhook，可对接量子密信
+- 如果要在建单后自动推送通知，可继续配置 `ORDER_CREATE_NOTIFY_*` 这一组通知变量
+- `ORDER_CREATE_NOTIFY_PUSH_URL` 是应用推送接口地址，可对接量子密信 `/api/push/{token}`
 - `ORDER_CREATE_NOTIFY_DINGTALK_SECRET` / `ORDER_CREATE_NOTIFY_FEISHU_SECRET` 用于机器人签名校验
-- 当前 webhook 推送展示约定：
+- 当前通知推送展示约定：
   - 飞书：优先发送 `interactive` 卡片，不再依赖把 Markdown 原文塞进纯文本消息
   - 钉钉：发送 `markdown` 消息；避免依赖移动端不稳定的表格展示
-  - 通用应用 webhook（如量子密信）：保持通用 text 协议，正文使用纯文本列表，不发送 `**`、`>` 等 Markdown 控制符
+  - 应用推送接口（如量子密信）：使用 `POST /api/push/{token}`，请求体为 `{title, content, type}`，正文使用纯文本列表，不发送 `**`、`>` 等 Markdown 控制符
 - 当需要调用 `zgops-cmdb` 查询拓扑时，直接遵循当前工作区本地 `zgops-cmdb` skill 自己的配置与访问规则，不在当前 skill 内重复声明
 - 具体 API 路径、请求体和调用时机写在本 `SKILL.md` 中
 - 如果后续更换指标服务地址，优先只改 `.env`，不要在多个脚本或提示词里硬编码

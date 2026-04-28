@@ -172,7 +172,7 @@ INOE_API_BASE_URL=http://192.168.130.51:30080
 INOE_API_TOKEN=your_jwt_token_here
 INSPECTION_METRIC_TIMEOUT_SECONDS=120
 INSPECTION_METRIC_PAGE_SIZE=100
-INSPECTION_NOTIFY_WEBHOOK_URL=
+INSPECTION_NOTIFY_PUSH_URL=
 INSPECTION_NOTIFY_DINGTALK_WEBHOOK_URL=
 INSPECTION_NOTIFY_DINGTALK_SECRET=
 INSPECTION_NOTIFY_DINGTALK_KEYWORD=
@@ -187,12 +187,12 @@ INSPECTION_NOTIFY_MENTION_ALL=true
 - 必须使用 `INOE_API_BASE_URL` 与 `INOE_API_TOKEN`
 - `getMetricDefinitions` 与 `getMetricData` 共用同一个 base URL
 - 缺少 token 时，必须明确报错，不能假装查询成功
-- `INSPECTION_NOTIFY_WEBHOOK_URL` 是通用应用 webhook，可对接量子密信
+- `INSPECTION_NOTIFY_PUSH_URL` 是应用推送接口地址，可对接量子密信 `/api/push/{token}`
 - 支持按配置同时推送到：应用（可配置为量子密信）、钉钉、飞书
-- 当前 webhook 推送展示约定：
+- 当前通知推送展示约定：
   - 飞书：优先发送 `interactive` 卡片，并明确展示整体状态、全量指标表格、巡检结论
   - 钉钉：发送 `markdown` 消息；由于自定义机器人移动端不支持 Markdown 表格，指标值使用逐条列表展示，不依赖表格
-  - 通用应用 webhook（如量子密信）：保持通用 text 协议，正文使用纯文本列表，不发送 `**`、`>` 等 Markdown 控制符；至少要体现状态、全量指标值、巡检结论
+  - 应用推送接口（如量子密信）：使用 `POST /api/push/{token}`，请求体为 `{title, content, type}`，正文使用纯文本列表，不发送 `**`、`>` 等 Markdown 控制符；至少要体现状态、全量指标值、巡检结论
 - 如果未配置任何 webhook，必须明确体现“通知未配置”
 
 ---
@@ -205,7 +205,7 @@ INSPECTION_NOTIFY_MENTION_ALL=true
 2. 提取全部指标编码
 3. 调用 `/resource/pm/getMetricData`
 4. 使用 `resId + queryKeys=[全部指标编码]` 一次性查询指标数据
-5. 在 webhook 已配置时，自动把巡检结果推送到应用（可配置为量子密信）、钉钉、飞书
+5. 在通知地址已配置时，自动把巡检结果推送到应用（可配置为量子密信）、钉钉、飞书
 6. 输出 Markdown / JSON 结果
 
 常用方式：
@@ -263,7 +263,7 @@ python scripts/inspect_resource_metrics.py \
 
 1. 通知由 `scripts/inspect_resource_metrics.py` 内部自动完成
 2. 可按 `.env` 配置同时推送到：
-   - 应用 webhook（可配置为量子密信）
+   - 应用推送接口（可配置为量子密信）
    - 钉钉
    - 飞书
 3. 推送内容必须体现这是 **AI 巡检结果**
@@ -277,5 +277,5 @@ python scripts/inspect_resource_metrics.py \
     - 巡检时间
     - 巡检结论
     - 全量指标值（飞书 interactive 用表格；其它渠道按各自能力展示）
-5. 如果未配置任何 webhook，必须明确写出“通知未配置”
+5. 如果未配置任何通知地址，必须明确写出“通知未配置”
 6. 如果部分渠道推送失败，必须明确写出“部分通知发送失败”

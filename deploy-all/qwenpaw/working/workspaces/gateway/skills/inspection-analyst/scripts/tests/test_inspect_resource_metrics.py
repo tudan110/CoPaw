@@ -251,7 +251,7 @@ def test_inspect_resource_metrics_can_skip_notification():
 @patch.dict(
     "os.environ",
     {
-        "INSPECTION_NOTIFY_WEBHOOK_URL": "http://notify.example.com/webhook",
+        "INSPECTION_NOTIFY_PUSH_URL": "http://notify.example.com/push",
         "INSPECTION_NOTIFY_MENTION_ALL": "true",
     },
     clear=False,
@@ -283,16 +283,15 @@ def test_app_notification_payload_uses_plain_text_content():
     )
 
     assert payload["type"] == "text"
-    assert payload["textMsg"]["isMentioned"] is True
-    assert payload["textMsg"]["mentionType"] == 1
-    assert "AI巡检结果" in payload["textMsg"]["content"]
-    assert "- 巡检对象：核心数据库" in payload["textMsg"]["content"]
-    assert "- 整体状态：正常" in payload["textMsg"]["content"]
-    assert "活跃线程数（mysql_active_threads）：12" in payload["textMsg"]["content"]
-    assert "活跃线程数（mysql_active_threads）：12%" not in payload["textMsg"]["content"]
-    assert "巡检结论" in payload["textMsg"]["content"]
-    assert "**" not in payload["textMsg"]["content"]
-    assert ">" not in payload["textMsg"]["content"]
+    assert payload["title"] == "AI巡检结果"
+    assert "AI巡检结果" in payload["content"]
+    assert "- 巡检对象：核心数据库" in payload["content"]
+    assert "- 整体状态：正常" in payload["content"]
+    assert "活跃线程数（mysql_active_threads）：12" in payload["content"]
+    assert "活跃线程数（mysql_active_threads）：12%" not in payload["content"]
+    assert "巡检结论" in payload["content"]
+    assert "**" not in payload["content"]
+    assert ">" not in payload["content"]
 
 
 @patch.dict(
