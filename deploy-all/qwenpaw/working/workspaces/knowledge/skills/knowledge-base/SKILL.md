@@ -15,48 +15,59 @@ description: 运维知识库能力。用于知识资料上传入库、手动沉�
 
 ## 数据与配置
 
-- 这是内嵌到 QwenPaw extension / skill 的知识库引擎，不需要单独部署原项目服务，也不通过反向代理嫁接。
+- 内嵌到 QwenPaw skill 的知识库引擎，不需要单独部署原项目服务，也不通过反向代理嫁接。
 - 数据默认存放在本 skill 的 `data/` 目录；容器部署可设置 `KNOWLEDGE_BASE_DATA_DIR` 或 `QWENPAW_KNOWLEDGE_BASE_DATA_DIR` 到 PVC 路径。
-- `DEEPSEEK_API_KEY` 保留用于插件自带 RAG 合成和兜底。
-- `DASHSCOPE_API_KEY` 保留用于向量检索；可通过管理接口开关 embedding。
-- 知识专员对话中，优先使用当前 QwenPaw 模型基于检索证据组织最终回答。
+- `DASHSCOPE_API_KEY` 用于 embedding（DashScope `text-embedding-v4`），同一个 key 未来可复用 reranker。
+- `DEEPSEEK_API_KEY` 用于 HyDE 查询改写和 RAG 答案合成；缺失时自动降级。
+- `KNOWLEDGE_BASE_RERANKER` 可选 `none` / `heuristic`(默认) / `llm` / `cross_encoder`(占位)。
+- `KNOWLEDGE_BASE_HYDE_ENABLED` 默认 `true`，设 `false` 关闭。
 
-## 常用命令
+## 架构（v1, 2026-04 重写）
 
-先进入本 skill 目录：
+```
+core/db.py             SQLite + sqlite-vec + FTS5 模式
+core/chunking.py       token-aware 递归切块 + Markdown 层级
+core/ingestion.py      抽取 → 切块 → 嵌入 → 持久化
+core/retrieval.py      三阶段检索编排器 + query_log
+retrieval/             召回(BM25 / vec0) + RRF 融合 + 重排
+providers/             DashScope embedding / DeepSeek LLM 客户端
+domain/                同义词字典 + HyDE
+api/serializers.py     输出形状对齐 portal 前端契约
+server.py              HTTP 路由薄壳（18 个端点）
+```
+
+## 启动
 
 ```bash
 cd skills/knowledge-base
+pip install -r requirements.txt
+python3 server.py        # 默认 127.0.0.1:8765
 ```
 
-健康检查：
+环境变量覆盖：`KNOWLEDGE_BASE_HOST`、`KNOWLEDGE_BASE_PORT`。
+
+## 常用调试
 
 ```bash
-python3 scripts/knowledge_base_cli.py health
-```
+# 健康
+curl http://127.0.0.1:8765/knowledge-base/health
 
-检索：
+# 检索
+curl -X POST http://127.0.0.1:8765/knowledge-base/query \
+  -H 'Content-Type: application/json' \
+  -d '{"query":"数据库慢查询怎么处置"}'
 
-```bash
-python3 scripts/knowledge_base_cli.py query "数据库慢查询怎么处置"
-```
+# 手动沉淀
+curl -X POST http://127.0.0.1:8765/knowledge-base/manual-entry \
+  -H 'Content-Type: application/json' \
+  -d '{"title":"慢查询处置原则","content":"…","tags":["db"]}'
 
-手动沉淀：
+# 上传文件
+curl -X POST http://127.0.0.1:8765/knowledge-base/ingest \
+  -F 'file=@/path/to/file.md'
 
-```bash
-python3 scripts/knowledge_base_cli.py manual-entry --title "慢查询处置原则" --content "..."
-```
-
-上传文件：
-
-```bash
-python3 scripts/knowledge_base_cli.py ingest /path/to/file.md
-```
-
-资料列表：
-
-```bash
-python3 scripts/knowledge_base_cli.py sources
+# 资料列表
+curl 'http://127.0.0.1:8765/knowledge-base/sources?limit=20'
 ```
 
 ## 回答要求
