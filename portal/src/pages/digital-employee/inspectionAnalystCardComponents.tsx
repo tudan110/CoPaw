@@ -10,12 +10,10 @@ import {
 
 function InspectionReportTable(props: ComponentPropsWithoutRef<"table">) {
   const { className, ...rest } = props;
+
   return (
-    <div className="inspection-analyst-raw-report-table-shell">
-      <table
-        {...rest}
-        className={["inspection-analyst-raw-report-table", className].filter(Boolean).join(" ")}
-      />
+    <div className="inspection-analyst-raw-report-table-scroll">
+      <table {...rest} className={className} />
     </div>
   );
 }
@@ -63,7 +61,7 @@ export const InspectionAnalystCardPanel = memo(function InspectionAnalystCardPan
           <span>查看完整巡检报告</span>
           <small>展开当前完整回复</small>
         </summary>
-        <div className="message-bubble markdown-bubble inspection-analyst-raw-report-body">
+        <div className="inspection-analyst-raw-report-body">
           <InspectionMarkdown content={content} />
         </div>
       </details>
