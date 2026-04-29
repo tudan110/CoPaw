@@ -1,4 +1,4 @@
-import { memo, useMemo } from "react";
+import { memo, useMemo, type ComponentPropsWithoutRef } from "react";
 
 import { DeferredEChartsBlock } from "../../components/DeferredVisualizationBlocks";
 import { PortalQwenPawMarkdown } from "../../components/PortalQwenPawMarkdown";
@@ -7,6 +7,18 @@ import {
   normalizeMarkdownDisplayContent,
   unwrapPortalInspectionCardContent,
 } from "./helpers";
+
+function InspectionReportTable(props: ComponentPropsWithoutRef<"table">) {
+  const { className, ...rest } = props;
+  return (
+    <div className="inspection-analyst-raw-report-table-shell">
+      <table
+        {...rest}
+        className={["inspection-analyst-raw-report-table", className].filter(Boolean).join(" ")}
+      />
+    </div>
+  );
+}
 
 function InspectionMarkdown({ content }: { content: string }) {
   const isDarkTheme =
@@ -22,6 +34,7 @@ function InspectionMarkdown({ content }: { content: string }) {
       className={`portal-x-markdown ${markdownThemeClass}`}
       content={normalizedContent}
       isStreaming={false}
+      components={{ table: InspectionReportTable }}
     />
   );
 }

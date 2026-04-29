@@ -69,7 +69,22 @@ Portal 现在采用的是一个**保守且稳定**的策略：
 - `created`
 - `in_progress`
 
-只要 response 进入非生成态，就必须回到默认卡片。
+优先看 `response.status`，但**不要只看 `response.status`**。
+
+在当前 `@agentscope-ai/chat` 版本与 portal 实际链路里，流式阶段可能出现：
+
+- `response.status` 已经不是生成态
+- 但 `output` 里的 `message.status` 或 `content.status` 仍然处于 `created / in_progress`
+
+如果只盯 `response.status`，portal 会过早回退到默认 Markdown 卡片，结果又重新对半截 Markdown 做实时解析。
+
+因此生成态判断必须按下面优先级兜底：
+
+1. `response.status` 是 `created / in_progress`
+2. 或 `output[].status` 里仍有 `created / in_progress`
+3. 或 `output[].content[].status` 里仍有 `created / in_progress`
+
+只有当 response / message / content 三层都不再处于生成态时，才回到默认卡片。
 
 ### 原则 B：不要改后端协议来“修渲染”
 
@@ -86,11 +101,16 @@ Portal 现在采用的是一个**保守且稳定**的策略：
 
 生成态接管时，只对最容易出问题的文本部分做保守渲染：
 
-- `text` -> `Markdown raw`
-- `refusal` -> `Markdown raw`
+- `text` -> `@agentscope-ai/chat` 的 `Markdown raw`，外层再套 `pre-wrap` 容器保留换行
+- `refusal` -> `@agentscope-ai/chat` 的 `Markdown raw`，外层再套 `pre-wrap` 容器保留换行
 - `data` -> `<pre>`
 - `image/audio/video/file` -> 继续走现有媒体卡片
 - `tool/reasoning/error/actions` -> 尽量复用 upstream 组件
+
+补充说明：`@agentscope-ai/chat` 新版本里的 `Markdown raw` 底层只是普通 `div`，
+默认不会额外保留换行和空白；如果直接裸用它显示流式中的表格 / 列表 / 代码块，
+视觉上仍然会“挤坏”。因此 portal 生成态仍然可以继续使用 `Markdown raw`，
+但必须在外层补一层 `white-space: pre-wrap` 的容器来保留原文换行。
 
 ### 原则 D：完成态必须回退到默认卡片
 
@@ -102,6 +122,30 @@ Portal 现在采用的是一个**保守且稳定**的策略：
 - reasoning 样式分叉
 - error/actions 丢失
 - 升级 `@agentscope-ai/chat` 后 portal 与 upstream 能力脱节
+
+### 原则 E：业务卡片不要在流式阶段提前结构化
+
+除了聊天 response card 之外，portal 还有一些业务卡片会根据回复内容做二次识别和结构化渲染，例如：
+
+- 巡检卡片（`# PORTAL INSPECTION CARD MODE`）
+- 其他基于 marker / 标题 / 固定章节名判断的业务卡片
+
+这类卡片**只能在非流式完成态渲染**。原因是：
+
+1. 流式阶段拿到的是半截业务 Markdown
+2. marker、章节、表格、拓扑区块可能刚输出到一半
+3. 一旦提前进入结构化卡片组件，就会把半截表格、半截章节错误地解释成“已完成数据”
+
+表现上就会出现：
+
+- 标题已经被提取成卡片标题
+- 但表格正文还没完整，显示成一整行管道文本
+- 拓扑/指标/结论区域反复跳变
+
+因此巡检卡片这类业务卡片的正确策略是：
+
+- **流式阶段**：继续走普通 `MessageMarkdown` / 原文稳定展示
+- **完成阶段**：再切换到 `InspectionAnalystCardPanel` 这类结构化卡片
 
 ---
 

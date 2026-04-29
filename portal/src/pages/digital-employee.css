@@ -5917,6 +5917,21 @@
 
 .portal-digital-employee .inspection-analyst-raw-report-body {
   border-top: 1px solid rgba(148, 163, 184, 0.12);
+  overflow-x: auto;
+  scrollbar-gutter: stable;
+  -webkit-overflow-scrolling: touch;
+}
+
+.portal-digital-employee .inspection-analyst-raw-report-body .portal-qwenpaw-markdown-host {
+  display: block;
+  min-width: 0;
+}
+
+.portal-digital-employee .inspection-analyst-raw-report-body .portal-x-markdown table {
+  width: max-content;
+  min-width: 100%;
+  max-width: none;
+  overflow-x: auto;
 }
 
 .portal-digital-employee.theme-dark .inspection-analyst-card {
@@ -6766,6 +6781,28 @@
 
 .portal-digital-employee .markdown-bubble .portal-x-markdown table {
   width: 100%;
+}
+
+.portal-digital-employee .markdown-bubble.inspection-analyst-raw-report-body .portal-qwenpaw-markdown-host {
+  display: block;
+  min-width: 0;
+}
+
+.portal-digital-employee .markdown-bubble.inspection-analyst-raw-report-body .inspection-analyst-raw-report-table-shell {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  margin-bottom: 0;
+}
+
+.portal-digital-employee .markdown-bubble.inspection-analyst-raw-report-body .inspection-analyst-raw-report-table {
+  display: block;
+  width: max-content;
+  min-width: 100%;
+  max-width: none;
+  margin-bottom: 0;
 }
 
 .portal-digital-employee .markdown-bubble .portal-x-markdown pre {

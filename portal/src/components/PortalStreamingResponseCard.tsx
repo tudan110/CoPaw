@@ -1,4 +1,4 @@
-import { memo, useCallback, useMemo, type ComponentProps, type ReactNode } from "react";
+import { memo, useCallback, useMemo, type ComponentProps, type CSSProperties, type ReactNode } from "react";
 import { Bubble, Markdown } from "@agentscope-ai/chat";
 import { Avatar, Flex } from "antd";
 import DefaultResponseCard from "@agentscope-ai/chat/lib/AgentScopeRuntimeWebUI/core/AgentScopeRuntime/Response/Card";
@@ -16,19 +16,29 @@ import {
   AgentScopeRuntimeContentType,
   AgentScopeRuntimeMessageType,
   AgentScopeRuntimeRunStatus,
+  type IAgentScopeRuntimeContent,
   type IAgentScopeRuntimeMessage,
+  type IAgentScopeRuntimeResponse,
 } from "@agentscope-ai/chat/lib/AgentScopeRuntimeWebUI/core/AgentScopeRuntime/types";
 
 type ResponseCardProps = ComponentProps<typeof DefaultResponseCard>;
 
-const RAW_BLOCK_STYLE = {
+const RAW_TEXT_STYLE: CSSProperties = {
+  margin: "8px 0",
+  whiteSpace: "pre-wrap",
+  wordBreak: "break-word",
+  overflowWrap: "anywhere",
+};
+
+const RAW_BLOCK_STYLE: CSSProperties = {
   margin: "8px 0",
   padding: "12px 14px",
   borderRadius: 12,
   background: "rgba(15, 23, 42, 0.04)",
-  overflowX: "auto" as const,
-  whiteSpace: "pre-wrap" as const,
-  wordBreak: "break-word" as const,
+  overflowX: "auto",
+  whiteSpace: "pre-wrap",
+  wordBreak: "break-word",
+  overflowWrap: "anywhere",
 };
 
 function isGeneratingStatus(status?: string): boolean {
@@ -36,6 +46,25 @@ function isGeneratingStatus(status?: string): boolean {
     status === AgentScopeRuntimeRunStatus.Created ||
     status === AgentScopeRuntimeRunStatus.InProgress
   );
+}
+
+function hasGeneratingContent(content?: IAgentScopeRuntimeContent[] | null): boolean {
+  return Array.isArray(content)
+    ? content.some((item) => isGeneratingStatus(item?.status))
+    : false;
+}
+
+function hasGeneratingMessages(messages?: IAgentScopeRuntimeMessage[] | null): boolean {
+  return Array.isArray(messages)
+    ? messages.some(
+        (item) =>
+          isGeneratingStatus(item?.status) || hasGeneratingContent(item?.content),
+      )
+    : false;
+}
+
+function isGeneratingResponse(data: IAgentScopeRuntimeResponse): boolean {
+  return isGeneratingStatus(data.status) || hasGeneratingMessages(data.output);
 }
 
 const StreamingMessage = memo(function StreamingMessage({
@@ -59,9 +88,17 @@ const StreamingMessage = memo(function StreamingMessage({
       {data.content.map((item, index) => {
         switch (item.type) {
           case AgentScopeRuntimeContentType.TEXT:
-            return <Markdown raw key={index} content={item.text} />;
+            return (
+              <div key={index} style={RAW_TEXT_STYLE}>
+                <Markdown raw content={item.text || ""} />
+              </div>
+            );
           case AgentScopeRuntimeContentType.REFUSAL:
-            return <Markdown raw key={index} content={item.refusal} />;
+            return (
+              <div key={index} style={RAW_TEXT_STYLE}>
+                <Markdown raw content={item.refusal || ""} />
+              </div>
+            );
           case AgentScopeRuntimeContentType.IMAGE:
             return <Images key={index} data={[{ url: formatMediaURL(item.image_url) }]} />;
           case AgentScopeRuntimeContentType.VIDEO:
@@ -117,7 +154,7 @@ const StreamingMessage = memo(function StreamingMessage({
 export default function PortalStreamingResponseCard(
   props: ResponseCardProps,
 ): ReactNode {
-  const isGenerating = isGeneratingStatus(props.data.status);
+  const isGenerating = isGeneratingResponse(props.data);
   const avatar = useChatAnywhereOptions((value) => value.welcome.avatar);
   const nick = useChatAnywhereOptions((value) => value.welcome.nick);
   const messages = useMemo(

@@ -967,7 +967,7 @@ export const ChatMessageItem = memo(function ChatMessageItem({
               <AlarmAnalystCardPanel card={alarmAnalystCard} />
             </Suspense>
           </div>
-        ) : isInspectionAnalystCardCandidate ? (
+        ) : isInspectionAnalystCardCandidate && !isStreamingMessage ? (
           <div className="message-bubble markdown-bubble inspection-analyst-card-bubble">
             <Suspense fallback={deferredMessageCardFallback}>
               <InspectionAnalystCardPanel content={renderedMessageContent} />
