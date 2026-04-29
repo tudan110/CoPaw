@@ -302,7 +302,6 @@ function buildInspectionReportModel(content: string): InspectionDisplayModel {
       resourceName || inspectionObject,
       status ? `当前状态 ${status}` : "",
       metricsCount ? `已完成 ${metricsCount} 项指标采集` : "",
-      dataSource ? `数据来源 ${dataSource}` : "",
     ].filter(Boolean).join("，"),
     badges: [resourceType, status, dataSource].filter(Boolean),
     targetText: [inspectionObject, resourceName, manageIp].filter(Boolean).join(" · "),
