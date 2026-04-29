@@ -1,21 +1,37 @@
+"""Bridge between QwenPaw's portal_backend and the knowledge-base skill engine.
+
+Adds the skill root to sys.path, bootstraps the schema, and exposes a stable
+public surface that ``portal_backend.py`` relies on. All internal queries hit
+the new schema (``document`` / ``parent_chunk`` / ``child_chunk``); response
+shapes go through ``api/serializers.py`` so the portal frontend gets exactly
+what it expects.
+"""
+
 from __future__ import annotations
 
-import importlib.util
 import asyncio
 import json
+import logging
 import os
 import sys
 import threading
 import uuid
+from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 
-_ENGINE_LOCK = threading.Lock()
-_ENGINE: Any | None = None
-_ENGINE_READY = False
-_INGEST_THREADS: dict[str, threading.Thread] = {}
+logger = logging.getLogger(__name__)
 
+
+_ENGINE_LOCK = threading.Lock()
+_ENGINE_READY = False
+_INGEST_POOL: ThreadPoolExecutor | None = None
+_EMBEDDING_RUNTIME_ENABLED = True
+
+
+# ---------- Path resolution ----------
 
 def _repo_root() -> Path:
     return Path(__file__).resolve().parents[4]
@@ -30,34 +46,20 @@ def skill_root() -> Path:
     if working_dir:
         candidate = (
             Path(working_dir).expanduser()
-            / "workspaces"
-            / "knowledge"
-            / "skills"
-            / "knowledge-base"
+            / "workspaces" / "knowledge" / "skills" / "knowledge-base"
         ).resolve()
         if candidate.exists():
             return candidate
 
     runtime_candidate = (
-        Path.home()
-        / ".qwenpaw"
-        / "workspaces"
-        / "knowledge"
-        / "skills"
-        / "knowledge-base"
+        Path.home() / ".qwenpaw" / "workspaces" / "knowledge" / "skills" / "knowledge-base"
     ).resolve()
     if runtime_candidate.exists():
         return runtime_candidate
 
     return (
-        _repo_root()
-        / "deploy-all"
-        / "qwenpaw"
-        / "working"
-        / "workspaces"
-        / "knowledge"
-        / "skills"
-        / "knowledge-base"
+        _repo_root() / "deploy-all" / "qwenpaw" / "working"
+        / "workspaces" / "knowledge" / "skills" / "knowledge-base"
     )
 
 
@@ -72,62 +74,100 @@ def data_dir() -> Path:
     return (skill_root() / "data").resolve()
 
 
-def _load_engine():
-    global _ENGINE, _ENGINE_READY
+# ---------- Engine bootstrap ----------
+
+def _ensure_engine() -> None:
+    """Idempotent: make sure the skill modules are importable and the schema
+    is bootstrapped. Every public function calls this first."""
+    global _ENGINE_READY, _INGEST_POOL
+    if _ENGINE_READY:
+        return
     with _ENGINE_LOCK:
-        if _ENGINE is not None:
-            return _ENGINE
+        if _ENGINE_READY:
+            return
 
         root = skill_root()
-        server_path = root / "server.py"
-        if not server_path.exists():
-            raise FileNotFoundError(f"knowledge-base engine not found: {server_path}")
+        if not root.exists():
+            raise FileNotFoundError(f"knowledge-base skill not found: {root}")
 
         os.environ.setdefault("KNOWLEDGE_BASE_DATA_DIR", str(data_dir()))
         if str(root) not in sys.path:
             sys.path.insert(0, str(root))
 
-        spec = importlib.util.spec_from_file_location(
-            "qwenpaw_portal_knowledge_base_engine",
-            server_path,
-        )
-        if spec is None or spec.loader is None:
-            raise RuntimeError(f"could not load knowledge-base engine: {server_path}")
-        module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(module)
-        module.init_db()
-        module.reap_orphan_jobs()
-        module.import_enabled_builtin_packs(force=False)
-        _ENGINE = module
-        _ENGINE_READY = True
-        return module
+        # First-time imports load jieba, sqlite-vec, tiktoken — let any
+        # ImportError surface clearly so the operator sees what's missing.
+        from core import db as _db  # noqa: WPS433
+        _db.init_db()
 
+        if _INGEST_POOL is None:
+            _INGEST_POOL = ThreadPoolExecutor(
+                max_workers=2, thread_name_prefix="kb-ingest"
+            )
+
+        _ENGINE_READY = True
+
+
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+
+
+def _is_embedding_enabled() -> bool:
+    if os.environ.get("KNOWLEDGE_BASE_EMBEDDING_ENABLED", "").lower() == "false":
+        return False
+    from providers import embedding as _embedding
+    if not _embedding.is_available():
+        return False
+    return _EMBEDDING_RUNTIME_ENABLED
+
+
+# ---------- /health ----------
 
 def health() -> dict[str, Any]:
-    engine = _load_engine()
+    _ensure_engine()
+    from core import db as _db
+    from providers import llm as _llm
+
+    h = _db.health_check()
+    env_forced_off = (
+        os.environ.get("KNOWLEDGE_BASE_EMBEDDING_ENABLED", "").lower() == "false"
+    )
     return {
         "status": "ok" if _ENGINE_READY else "initializing",
         "storage": {
             "skillRoot": str(skill_root()),
             "dataDir": str(data_dir()),
-            "dbPath": str(engine.DB_PATH),
+            "dbPath": h["db_path"],
         },
         "llm": {
-            "enabled": bool(engine.LLM_ENABLED),
-            "provider": engine.LLM_DEFAULT_PROVIDER,
+            "enabled": _llm.is_available("deepseek"),
+            "provider": "deepseek",
         },
-        "embedding": engine.embedding_status(),
+        "embedding": {
+            "enabled": _is_embedding_enabled(),
+            "key_configured": bool(os.environ.get("DASHSCOPE_API_KEY")),
+            "env_forced_off": env_forced_off,
+            "provider": "dashscope",
+        },
     }
 
 
+# ---------- /query ----------
+
 def query_knowledge(payload: dict[str, Any] | None) -> dict[str, Any]:
-    engine = _load_engine()
+    _ensure_engine()
     body = payload or {}
     query = str(body.get("query") or "").strip()
     if not query:
         raise ValueError("missing query")
-    return engine.build_query_response(query, body.get("filters"))
 
+    from core import retrieval as _retrieval
+    from api import serializers as _serializers
+
+    resp = _retrieval.query(query, filters=body.get("filters") or {})
+    return _serializers.serialize_query_response(resp)
+
+
+# ---------- /rag-synthesize ----------
 
 def _extract_model_text(payload: Any) -> str:
     if payload is None:
@@ -146,7 +186,7 @@ def _extract_model_text(payload: Any) -> str:
                     fragments.append(str(text))
             elif getattr(item, "text", None):
                 fragments.append(str(getattr(item, "text")))
-        return "\n".join(fragment.strip() for fragment in fragments if fragment).strip()
+        return "\n".join(f.strip() for f in fragments if f).strip()
     text = getattr(payload, "text", None)
     if isinstance(text, str):
         return text.strip()
@@ -166,13 +206,6 @@ async def _consume_model_text(response: Any) -> str:
                 accumulated += text
         return accumulated.strip()
     return _extract_model_text(response)
-
-
-def _resolve_knowledge_model_agent_id(agent_id: str | None) -> str | None:
-    normalized = str(agent_id or "").strip()
-    if normalized:
-        return normalized
-    return "knowledge"
 
 
 def _resolve_active_model_metadata(agent_id: str | None = None) -> dict[str, str]:
@@ -218,23 +251,22 @@ def _resolve_active_model_metadata(agent_id: str | None = None) -> dict[str, str
         except Exception:
             pass
 
-        model_label = " / ".join(
-            part for part in [provider_name, model_name] if part
-        )
         return {
             "provider": provider_id,
             "provider_name": provider_name,
             "model": model_id,
             "model_name": model_name,
-            "model_label": model_label,
+            "model_label": " / ".join(p for p in [provider_name, model_name] if p),
             "model_source": source,
         }
     except Exception:
         return {}
 
 
-async def synthesize_answer(payload: dict[str, Any] | None, *, agent_id: str | None = None) -> dict[str, Any]:
-    engine = _load_engine()
+async def synthesize_answer(
+    payload: dict[str, Any] | None, *, agent_id: str | None = None
+) -> dict[str, Any]:
+    _ensure_engine()
     body = payload or {}
     query = str(body.get("query") or "").strip()
     evidence_ids = body.get("evidence_ids") or body.get("evidenceIds") or []
@@ -243,28 +275,42 @@ async def synthesize_answer(payload: dict[str, Any] | None, *, agent_id: str | N
     if not isinstance(evidence_ids, list):
         evidence_ids = []
 
-    rows = []
-    if evidence_ids:
-        conn = engine.get_conn()
+    int_ids: list[int] = []
+    for x in evidence_ids:
         try:
-            placeholders = ",".join(["?"] * len(evidence_ids))
+            int_ids.append(int(x))
+        except (TypeError, ValueError):
+            continue
+
+    from core import db as _db
+
+    rows = []
+    if int_ids:
+        placeholders = ",".join("?" * len(int_ids))
+        with _db.connect() as conn:
             rows = conn.execute(
-                f"SELECT ku.id, ku.title, ku.content, ku.locator, sr.filename "
-                f"FROM knowledge_unit ku JOIN source_record sr ON sr.id=ku.source_record_id "
-                f"WHERE ku.id IN ({placeholders})",
-                list(evidence_ids),
+                f"""SELECT cc.id,
+                          pc.section_path AS title,
+                          pc.content AS context,
+                          pc.locator,
+                          d.filename
+                   FROM child_chunk cc
+                   JOIN parent_chunk pc ON pc.id = cc.parent_id
+                   JOIN document d ON d.id = cc.document_id
+                   WHERE cc.id IN ({placeholders})
+                     AND cc.archived_at IS NULL""",
+                int_ids,
             ).fetchall()
-        finally:
-            conn.close()
 
     blocks: list[str] = []
     ordered_ids: list[str] = []
     for idx, row in enumerate(rows, start=1):
-        ordered_ids.append(row["id"])
+        ordered_ids.append(str(row["id"]))
         locator = (row["locator"] or "").strip()
         source = f"{row['filename']}{(' · ' + locator) if locator else ''}"
+        title = row["title"] or row["filename"]
         blocks.append(
-            f"[{idx}] {row['title']}\n来源: {source}\n内容:\n{row['content']}"
+            f"[{idx}] {title}\n来源: {source}\n内容:\n{row['context']}"
         )
 
     system_prompt = (
@@ -282,7 +328,7 @@ async def synthesize_answer(payload: dict[str, Any] | None, *, agent_id: str | N
 
     from qwenpaw.agents.model_factory import create_model_and_formatter
 
-    model_agent_id = _resolve_knowledge_model_agent_id(agent_id)
+    model_agent_id = str(agent_id or "").strip() or "knowledge"
     model_metadata = _resolve_active_model_metadata(model_agent_id)
     model, _ = create_model_and_formatter(agent_id=model_agent_id)
     response = await model(
@@ -296,9 +342,11 @@ async def synthesize_answer(payload: dict[str, Any] | None, *, agent_id: str | N
         "answer": answer,
         **model_metadata,
         "evidence_ids": ordered_ids,
-        "created_at": engine.now_iso(),
+        "created_at": _now_iso(),
     }
 
+
+# ---------- /sources ----------
 
 def list_sources(
     *,
@@ -307,25 +355,98 @@ def list_sources(
     include_archived: bool = False,
     filters: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    engine = _load_engine()
-    return engine.list_source_records(
-        limit=limit,
-        offset=offset,
-        filters=filters or {},
-        include_archived=include_archived,
-    )
+    _ensure_engine()
+    from core import db as _db
+    from api import serializers as _serializers
+
+    f = filters or {}
+    clauses: list[str] = []
+    params: list = []
+    if not include_archived:
+        clauses.append("d.archived_at IS NULL")
+    if f.get("filename"):
+        clauses.append("d.filename LIKE ?")
+        params.append(f"%{f['filename']}%")
+    if f.get("source_scope"):
+        clauses.append("d.source_scope = ?")
+        params.append(f["source_scope"])
+    if f.get("source_type"):
+        clauses.append("d.source_type = ?")
+        params.append(f["source_type"])
+    where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
+
+    with _db.connect() as conn:
+        total = conn.execute(
+            f"SELECT COUNT(*) AS n FROM document d {where}", params
+        ).fetchone()["n"]
+        rows = conn.execute(
+            f"""SELECT d.*,
+                       (SELECT COUNT(*) FROM child_chunk cc
+                        WHERE cc.document_id = d.id AND cc.archived_at IS NULL)
+                       AS unit_count
+                FROM document d
+                {where}
+                ORDER BY d.uploaded_at DESC
+                LIMIT ? OFFSET ?""",
+            [*params, int(limit), int(offset)],
+        ).fetchall()
+
+    return {
+        "items": [
+            _serializers.serialize_source_record(r, unit_count=r["unit_count"])
+            for r in rows
+        ],
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+    }
 
 
-def source_detail(source_record_id: int, *, include_archived: bool = False) -> dict[str, Any]:
-    engine = _load_engine()
-    item = engine.get_source_record_detail(source_record_id, include_archived=include_archived)
-    if not item:
-        raise LookupError("source record not found")
-    return item
+def source_detail(
+    source_record_id: int, *, include_archived: bool = False
+) -> dict[str, Any]:
+    _ensure_engine()
+    from core import db as _db
+    from api import serializers as _serializers
 
+    sid = int(source_record_id)
+    with _db.connect() as conn:
+        doc = conn.execute(
+            "SELECT * FROM document WHERE id = ?", (sid,)
+        ).fetchone()
+        if doc is None:
+            raise LookupError("source record not found")
+        if doc["archived_at"] and not include_archived:
+            raise LookupError("source record is archived")
+
+        unit_clause = "" if include_archived else "AND cc.archived_at IS NULL"
+        units = conn.execute(
+            f"""SELECT cc.id, cc.content, cc.created_at,
+                       pc.section_path, pc.locator,
+                       d.filename, d.source_type, d.source_scope, d.uploaded_at
+                FROM child_chunk cc
+                JOIN parent_chunk pc ON pc.id = cc.parent_id
+                JOIN document d ON d.id = cc.document_id
+                WHERE cc.document_id = ? {unit_clause}
+                ORDER BY cc.id ASC""",
+            (sid,),
+        ).fetchall()
+
+        unit_count = conn.execute(
+            "SELECT COUNT(*) AS n FROM child_chunk WHERE document_id=? AND archived_at IS NULL",
+            (sid,),
+        ).fetchone()["n"]
+
+    payload = _serializers.serialize_source_record(doc, unit_count=unit_count)
+    payload["storage_path"] = doc["storage_path"]
+    payload["units"] = [_serializers.serialize_unit_row(u) for u in units]
+    return payload
+
+
+# ---------- /manual-entry ----------
 
 def manual_entry(payload: dict[str, Any] | None) -> dict[str, Any]:
-    engine = _load_engine()
+    _ensure_engine()
     body = payload or {}
     title = str(body.get("title") or "").strip()
     content = str(body.get("content") or "").strip()
@@ -333,144 +454,316 @@ def manual_entry(payload: dict[str, Any] | None) -> dict[str, Any]:
         raise ValueError("title and content are required")
     if len(title) > 120:
         raise ValueError("title must be 120 characters or less")
-    if len(content.encode("utf-8")) > engine.MAX_MANUAL_ENTRY_BYTES:
-        raise ValueError(f"content is too large; max {engine.MAX_MANUAL_ENTRY_BYTES} bytes")
 
     tags = body.get("tags") or []
     if isinstance(tags, str):
         tags = [t.strip() for t in tags.split(",") if t.strip()]
+    if not isinstance(tags, list):
+        tags = []
+
     meta = {
         "manually_entered": True,
-        "source_query": str(body.get("source_query") or body.get("sourceQuery") or "").strip() or None,
-        "tags": list(tags) if isinstance(tags, list) else [],
+        "tags": tags,
         "scope_label": "运行时沉淀",
+        "display_title": title,
     }
-    record = engine.insert_curated_knowledge(
-        title=engine.clean_display_text(title),
-        content=engine.clean_display_text(content),
-        meta=meta,
-        source_scope="runtime_curated",
-        source_type="document",
-        note="手动录入",
-    )
-    return {**record, "meta": meta}
+    src_query = str(
+        body.get("source_query") or body.get("sourceQuery") or ""
+    ).strip()
+    if src_query:
+        meta["source_query"] = src_query
 
+    from core import ingestion as _ingestion
+
+    try:
+        result = _ingestion.ingest_manual(
+            title=title,
+            content=content,
+            source_scope="runtime_curated",
+            meta=meta,
+        )
+    except _ingestion.IngestionError as exc:
+        raise ValueError(str(exc))
+
+    return {
+        "id": result.document_id,
+        "filename": title,
+        "source_type": "document",
+        "source_scope": "runtime_curated",
+        "uploaded_at": _now_iso(),
+        "unit_count": result.child_count,
+        "meta": meta,
+    }
+
+
+# ---------- /sources/update | archive | unarchive ----------
 
 def update_source(payload: dict[str, Any] | None) -> dict[str, Any]:
-    engine = _load_engine()
+    _ensure_engine()
     body = payload or {}
-    source_record_id = body.get("source_record_id") or body.get("sourceRecordId")
-    if not source_record_id:
+    src_id = body.get("source_record_id") or body.get("sourceRecordId")
+    if src_id is None or src_id == "":
         raise ValueError("missing source_record_id")
-    return engine.update_source_record_metadata(
-        int(source_record_id),
-        display_title=body.get("display_title") or body.get("displayTitle"),
-        tags=body.get("tags"),
-        note=body.get("note"),
-        source_scope=body.get("source_scope") or body.get("sourceScope"),
-    )
+    src_id = int(src_id)
+
+    display_title = str(
+        body.get("display_title") or body.get("displayTitle") or ""
+    ).strip()
+    tags = body.get("tags")
+    note = str(body.get("note") or "").strip()
+    scope = str(body.get("source_scope") or body.get("sourceScope") or "").strip()
+
+    from core import db as _db
+    with _db.connect() as conn:
+        row = conn.execute(
+            "SELECT meta_json, source_scope FROM document WHERE id = ?", (src_id,)
+        ).fetchone()
+        if row is None:
+            raise LookupError(f"document {src_id} not found")
+        try:
+            meta = json.loads(row["meta_json"] or "{}")
+        except Exception:
+            meta = {}
+        if display_title:
+            meta["display_title"] = display_title
+        if tags is not None:
+            meta["tags"] = list(tags)
+        if note:
+            meta["note"] = note
+        new_scope = scope or row["source_scope"]
+        conn.execute(
+            "UPDATE document SET meta_json = ?, source_scope = ? WHERE id = ?",
+            (json.dumps(meta, ensure_ascii=False), new_scope, src_id),
+        )
+    return {"updated": True, "source_record_id": src_id}
 
 
 def archive_sources(payload: dict[str, Any] | None) -> dict[str, Any]:
-    engine = _load_engine()
+    _ensure_engine()
     body = payload or {}
     ids = body.get("source_record_ids") or body.get("sourceRecordIds") or []
     reason = str(body.get("reason") or "portal archive").strip()
-    return engine.archive_source_records(ids, reason)
+    return _archive_helper(ids, reason, archived=True)
 
 
 def unarchive_sources(payload: dict[str, Any] | None) -> dict[str, Any]:
-    engine = _load_engine()
+    _ensure_engine()
     body = payload or {}
     ids = body.get("source_record_ids") or body.get("sourceRecordIds") or []
-    return engine.unarchive_source_records(ids)
+    return _archive_helper(ids, None, archived=False)
 
+
+def _archive_helper(ids, reason, *, archived: bool) -> dict[str, Any]:
+    int_ids: list[int] = []
+    for x in ids:
+        try:
+            int_ids.append(int(x))
+        except (TypeError, ValueError):
+            continue
+    if not int_ids:
+        return {"archived" if archived else "unarchived": 0, "ids": []}
+
+    placeholders = ",".join("?" * len(int_ids))
+    from core import db as _db
+
+    if archived:
+        now = _now_iso()
+        with _db.connect() as conn:
+            conn.execute(
+                f"""UPDATE document SET archived_at=?, archive_reason=?
+                   WHERE id IN ({placeholders}) AND archived_at IS NULL""",
+                [now, reason, *int_ids],
+            )
+            conn.execute(
+                f"""UPDATE parent_chunk SET archived_at=?
+                   WHERE document_id IN ({placeholders}) AND archived_at IS NULL""",
+                [now, *int_ids],
+            )
+            conn.execute(
+                f"""UPDATE child_chunk SET archived_at=?
+                   WHERE document_id IN ({placeholders}) AND archived_at IS NULL""",
+                [now, *int_ids],
+            )
+        return {"archived": len(int_ids), "ids": int_ids}
+
+    with _db.connect() as conn:
+        conn.execute(
+            f"""UPDATE document SET archived_at=NULL, archive_reason=NULL
+               WHERE id IN ({placeholders})""",
+            int_ids,
+        )
+        conn.execute(
+            f"""UPDATE parent_chunk SET archived_at=NULL
+               WHERE document_id IN ({placeholders})""",
+            int_ids,
+        )
+        conn.execute(
+            f"""UPDATE child_chunk SET archived_at=NULL
+               WHERE document_id IN ({placeholders})""",
+            int_ids,
+        )
+    return {"unarchived": len(int_ids), "ids": int_ids}
+
+
+# ---------- /embedding/toggle | embeddings/reindex ----------
 
 def set_embedding_enabled(payload: dict[str, Any] | None) -> dict[str, Any]:
-    engine = _load_engine()
-    enabled = bool((payload or {}).get("enabled"))
-    ok, reason = engine.toggle_embedding(enabled)
+    _ensure_engine()
+    global _EMBEDDING_RUNTIME_ENABLED
+    requested = bool((payload or {}).get("enabled"))
+
+    from providers import embedding as _embedding
+
+    env_forced_off = (
+        os.environ.get("KNOWLEDGE_BASE_EMBEDDING_ENABLED", "").lower() == "false"
+    )
+    reject_reason: str | None = None
+    if requested and not _embedding.is_available():
+        reject_reason = "DASHSCOPE_API_KEY not configured"
+    elif requested and env_forced_off:
+        reject_reason = "embedding is forced off via env"
+
+    changed = False
+    if reject_reason is None:
+        if _EMBEDDING_RUNTIME_ENABLED != requested:
+            _EMBEDDING_RUNTIME_ENABLED = requested
+            changed = True
+
     return {
-        **engine.embedding_status(),
-        "changed": ok,
-        "reject_reason": None if ok else reason,
+        "enabled": _is_embedding_enabled(),
+        "key_configured": bool(os.environ.get("DASHSCOPE_API_KEY")),
+        "env_forced_off": env_forced_off,
+        "provider": "dashscope",
+        "changed": changed,
+        "reject_reason": reject_reason,
     }
 
 
 def reindex_embeddings(*, force: bool = False) -> dict[str, Any]:
-    engine = _load_engine()
-    if not engine.EMBEDDING_ENABLED:
+    _ensure_engine()
+    if not _is_embedding_enabled():
         raise RuntimeError("embedding disabled")
 
-    conn = engine.get_conn()
+    from core import db as _db
+    from providers import embedding as _embedding
+    from retrieval.recall_dense import normalize as _normalize
+    import sqlite_vec  # type: ignore
+
+    with _db.connect() as conn:
+        if force:
+            rows = conn.execute(
+                "SELECT id, content FROM child_chunk WHERE archived_at IS NULL"
+            ).fetchall()
+            conn.execute("DELETE FROM child_vec")
+        else:
+            rows = conn.execute(
+                """SELECT id, content FROM child_chunk
+                   WHERE archived_at IS NULL
+                     AND id NOT IN (SELECT chunk_id FROM child_vec)"""
+            ).fetchall()
+
+    if not rows:
+        return {"requested": 0, "embedded": 0, "force": force}
+
+    chunk_ids = [r["id"] for r in rows]
+    texts = [r["content"] for r in rows]
     try:
-        where = "" if force else "AND ku.embedding IS NULL"
-        rows = conn.execute(
-            "SELECT ku.id FROM knowledge_unit ku JOIN source_record sr ON sr.id=ku.source_record_id "
-            "WHERE sr.archived_at IS NULL AND (ku.archived_at IS NULL OR ku.archived_at='') "
-            f"{where}"
-        ).fetchall()
-    finally:
-        conn.close()
+        vectors = _embedding.embed_batched(texts, batch_id="reindex")
+    except _embedding.EmbeddingError as exc:
+        raise RuntimeError(f"embedding failed: {exc}")
 
-    ids = [row["id"] for row in rows]
-    return {
-        "requested": len(ids),
-        "embedded": engine.compute_unit_embeddings(ids),
-        "force": force,
-    }
+    with _db.connect() as conn:
+        conn.executemany(
+            "INSERT OR REPLACE INTO child_vec(chunk_id, embedding) VALUES (?, ?)",
+            [
+                (cid, sqlite_vec.serialize_float32(_normalize(vec)))
+                for cid, vec in zip(chunk_ids, vectors)
+            ],
+        )
+
+    return {"requested": len(rows), "embedded": len(rows), "force": force}
 
 
-def create_ingest_job(filename: str, raw: bytes, mime_type: str | None = None) -> dict[str, Any]:
-    engine = _load_engine()
+# ---------- /ingest + /ingestion-jobs ----------
+
+def create_ingest_job(
+    filename: str, raw: bytes, mime_type: str | None = None
+) -> dict[str, Any]:
+    _ensure_engine()
     if not filename:
         raise ValueError("missing filename")
     if not raw:
         raise ValueError("empty file")
-    if len(raw) > engine.MAX_UPLOAD_BYTES:
-        raise ValueError(f"file too large; max {engine.MAX_UPLOAD_BYTES} bytes")
+
+    from core import db as _db
+    from core import ingestion as _ingestion
 
     safe_filename = Path(filename).name
-    source_type = engine.detect_source_type(safe_filename, mime_type)
+    source_type = _detect_source_type(safe_filename, mime_type)
     job_id = f"job_{uuid.uuid4().hex[:10]}"
-    created_at = engine.now_iso()
-    target = engine.UPLOAD_DIR / f"{uuid.uuid4().hex}{Path(safe_filename).suffix}"
+    created_at = _now_iso()
+
+    upload_dir = data_dir() / "uploads"
+    upload_dir.mkdir(parents=True, exist_ok=True)
+    target = upload_dir / f"{uuid.uuid4().hex}{Path(safe_filename).suffix}"
     target.write_bytes(raw)
 
-    conn = engine.get_conn()
-    try:
+    with _db.connect() as conn:
         conn.execute(
-            """
-            INSERT INTO ingestion_job (
-                id, filename, source_type, status, created_at, updated_at,
-                progress_pct, current_stage, unit_count, note
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                job_id,
-                safe_filename,
-                source_type,
-                "queued",
-                created_at,
-                created_at,
-                engine.INGEST_STAGE_PCT["queued"],
-                "queued",
-                0,
-                "已接收，排队中",
-            ),
+            """INSERT INTO ingestion_job
+               (id, filename, source_type, status, current_stage, progress_pct,
+                created_at, updated_at)
+               VALUES (?, ?, ?, 'queued', 'queued', 0, ?, ?)""",
+            (job_id, safe_filename, source_type, created_at, created_at),
         )
-        conn.commit()
-    finally:
-        conn.close()
 
-    worker = threading.Thread(
-        target=engine._run_ingest_worker,
-        args=(job_id, str(target), safe_filename, source_type, mime_type),
-        daemon=True,
-        name=f"knowledge-ingest-{job_id}",
-    )
-    worker.start()
-    _INGEST_THREADS[job_id] = worker
+    def _progress(stage: str, pct: float) -> None:
+        try:
+            with _db.connect() as conn:
+                conn.execute(
+                    """UPDATE ingestion_job
+                       SET status='running', current_stage=?,
+                           progress_pct=?, updated_at=?
+                       WHERE id=?""",
+                    (stage, pct * 100, _now_iso(), job_id),
+                )
+        except Exception:
+            logger.exception("progress update failed for job %s", job_id)
+
+    def _runner() -> None:
+        try:
+            result = _ingestion.ingest_file(
+                safe_filename, raw,
+                source_type=source_type,
+                source_scope="tenant_private",
+                storage_path=str(target),
+                progress_callback=_progress,
+            )
+            with _db.connect() as conn:
+                conn.execute(
+                    """UPDATE ingestion_job
+                       SET status='success', current_stage='success',
+                           progress_pct=100, parent_count=?, child_count=?,
+                           document_id=?, finished_at=?, updated_at=?
+                       WHERE id=?""",
+                    (
+                        result.parent_count, result.child_count,
+                        result.document_id, _now_iso(), _now_iso(), job_id,
+                    ),
+                )
+        except Exception as exc:
+            logger.exception("ingestion job %s failed", job_id)
+            with _db.connect() as conn:
+                conn.execute(
+                    """UPDATE ingestion_job
+                       SET status='failed', current_stage='failed',
+                           error_message=?, finished_at=?, updated_at=?
+                       WHERE id=?""",
+                    (str(exc), _now_iso(), _now_iso(), job_id),
+                )
+
+    assert _INGEST_POOL is not None
+    _INGEST_POOL.submit(_runner)
 
     return {
         "job_id": job_id,
@@ -485,40 +778,53 @@ def create_ingest_job(filename: str, raw: bytes, mime_type: str | None = None) -
 
 
 def ingestion_jobs(limit: int = 20) -> dict[str, Any]:
-    engine = _load_engine()
-    conn = engine.get_conn()
-    try:
+    _ensure_engine()
+    from core import db as _db
+    from api import serializers as _serializers
+
+    with _db.connect() as conn:
         rows = conn.execute(
             "SELECT * FROM ingestion_job ORDER BY created_at DESC LIMIT ?",
-            (limit,),
+            (int(limit),),
         ).fetchall()
-        return {"items": [dict(row) for row in rows]}
-    finally:
-        conn.close()
+    return {"items": [_serializers.serialize_ingest_job(r) for r in rows]}
 
 
 def ingestion_progress(job_id: str) -> dict[str, Any]:
-    engine = _load_engine()
-    conn = engine.get_conn()
-    try:
+    _ensure_engine()
+    from core import db as _db
+    from api import serializers as _serializers
+
+    with _db.connect() as conn:
         row = conn.execute(
-            """
-            SELECT id, filename, source_type, status, created_at, updated_at, finished_at,
-                   progress_pct, current_stage, unit_count, note
-            FROM ingestion_job WHERE id=?
-            """,
-            (job_id,),
+            "SELECT * FROM ingestion_job WHERE id=?", (job_id,)
         ).fetchone()
-    finally:
-        conn.close()
     if not row:
         raise LookupError("job not found")
-    return dict(row)
+    return _serializers.serialize_ingest_job(row)
 
+
+# ---------- /source-summary | /units ----------
 
 def source_summary() -> dict[str, Any]:
-    engine = _load_engine()
-    return {"items": engine.list_source_summary()}
+    _ensure_engine()
+    from core import db as _db
+    from api import serializers as _serializers
+
+    with _db.connect() as conn:
+        rows = conn.execute(
+            """SELECT d.source_scope, d.source_type,
+                      COUNT(DISTINCT d.id) AS source_count,
+                      COUNT(cc.id) AS unit_count,
+                      MAX(d.uploaded_at) AS latest_created_at
+               FROM document d
+               LEFT JOIN child_chunk cc
+                 ON cc.document_id = d.id AND cc.archived_at IS NULL
+               WHERE d.archived_at IS NULL
+               GROUP BY d.source_scope, d.source_type
+               ORDER BY d.source_scope, d.source_type"""
+        ).fetchall()
+    return {"items": [_serializers.serialize_summary_row(r) for r in rows]}
 
 
 def units(
@@ -527,63 +833,74 @@ def units(
     include_archived: bool = False,
     filters: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    engine = _load_engine()
-    normalized = engine.normalize_filters(filters or {})
-    where: list[str] = []
-    params: list[object] = []
-    if not include_archived:
-        where.append("sr.archived_at IS NULL")
-        where.append("(ku.archived_at IS NULL OR ku.archived_at = '')")
-    if normalized.get("source_scope"):
-        where.append("sr.source_scope = ?")
-        params.append(normalized["source_scope"])
-    if normalized.get("source_type"):
-        where.append("ku.source_type = ?")
-        params.append(normalized["source_type"])
-    if normalized.get("builtin_pack_id"):
-        where.append("sr.builtin_pack_id = ?")
-        params.append(normalized["builtin_pack_id"])
-    if normalized.get("filename"):
-        where.append("sr.filename LIKE ?")
-        params.append(f"%{normalized['filename']}%")
-    where_clause = f"WHERE {' AND '.join(where)}" if where else ""
+    _ensure_engine()
+    from core import db as _db
+    from api import serializers as _serializers
 
-    conn = engine.get_conn()
-    try:
+    f = filters or {}
+    clauses: list[str] = []
+    params: list = []
+    if not include_archived:
+        clauses.append("cc.archived_at IS NULL")
+        clauses.append("d.archived_at IS NULL")
+    if f.get("filename"):
+        clauses.append("d.filename LIKE ?")
+        params.append(f"%{f['filename']}%")
+    if f.get("source_scope"):
+        clauses.append("d.source_scope = ?")
+        params.append(f["source_scope"])
+    if f.get("source_type"):
+        clauses.append("d.source_type = ?")
+        params.append(f["source_type"])
+    where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
+
+    with _db.connect() as conn:
         rows = conn.execute(
-            f"""
-            SELECT ku.id, ku.source_type, ku.source_scope, ku.title, ku.content, ku.locator, ku.created_at,
-                   sr.filename, sr.uploaded_at, sr.builtin_pack_id, sr.builtin_pack_version, sr.meta_json
-            FROM knowledge_unit ku
-            JOIN source_record sr ON sr.id = ku.source_record_id
-            {where_clause}
-            ORDER BY ku.created_at DESC, ku.chunk_index ASC
-            LIMIT ?
-            """,
+            f"""SELECT cc.id, cc.content, cc.created_at,
+                       pc.section_path, pc.locator,
+                       d.filename, d.source_type, d.source_scope, d.uploaded_at
+                FROM child_chunk cc
+                JOIN parent_chunk pc ON pc.id = cc.parent_id
+                JOIN document d ON d.id = cc.document_id
+                {where}
+                ORDER BY cc.id DESC
+                LIMIT ?""",
             [*params, int(limit)],
         ).fetchall()
-        items: list[dict[str, Any]] = []
-        for row in rows:
-            item = dict(row)
-            item["meta"] = json.loads(item.pop("meta_json") or "{}")
-            items.append(item)
-        return {"items": items}
-    finally:
-        conn.close()
+    return {"items": [_serializers.serialize_unit_row(r) for r in rows]}
 
+
+# ---------- /builtin-packs (no-op stubs) ----------
 
 def builtin_packs() -> dict[str, Any]:
-    engine = _load_engine()
-    return {"items": engine.list_builtin_pack_status()}
+    _ensure_engine()
+    return {"items": []}
 
 
 def reload_builtin_pack(payload: dict[str, Any] | None) -> dict[str, Any]:
-    engine = _load_engine()
-    body = payload or {}
-    return engine.import_enabled_builtin_packs(
-        force=bool(body.get("force", True)),
-        pack_id=body.get("pack_id") or body.get("packId"),
-    )
+    _ensure_engine()
+    return {"reloaded": 0, "note": "builtin packs not supported in the new pipeline"}
+
+
+# ---------- helpers ----------
+
+def _detect_source_type(filename: str, mime_type: str | None) -> str:
+    lowered = (filename or "").lower()
+    if lowered.endswith(".pdf") or mime_type == "application/pdf":
+        return "pdf"
+    if lowered.endswith(".docx"):
+        return "docx"
+    if lowered.endswith((".md", ".markdown")):
+        return "markdown"
+    if lowered.endswith(".txt"):
+        return "plain"
+    if mime_type and mime_type.startswith("image/"):
+        return "image"
+    if lowered.endswith((".png", ".jpg", ".jpeg", ".bmp", ".tiff", ".tif", ".webp")):
+        return "image"
+    if lowered.endswith(".eml"):
+        return "email"
+    return "document"
 
 
 def dump_for_cli(payload: Any) -> str:

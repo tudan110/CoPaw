@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -32,7 +33,7 @@ logger = logging.getLogger(__name__)
 SPARSE_TOP_K = int(os.environ.get("KNOWLEDGE_BASE_SPARSE_TOP_K", "100"))
 DENSE_TOP_K = int(os.environ.get("KNOWLEDGE_BASE_DENSE_TOP_K", "100"))
 FUSION_TOP_K = int(os.environ.get("KNOWLEDGE_BASE_FUSION_TOP_K", "50"))
-DEFAULT_TOP_K = int(os.environ.get("KNOWLEDGE_BASE_TOP_K", "5"))
+DEFAULT_TOP_K = int(os.environ.get("KNOWLEDGE_BASE_TOP_K", "3"))
 
 HYDE_ENABLED = os.environ.get("KNOWLEDGE_BASE_HYDE_ENABLED", "true").lower() == "true"
 QUERY_EMBED_TIMEOUT = float(os.environ.get("KNOWLEDGE_BASE_QUERY_EMBED_TIMEOUT", "5.0"))
@@ -160,17 +161,39 @@ def query(
         )
 
     # ----- Stage 3: rerank -----
+    # Rerank the full fused candidate set so the parent-dedup step below has
+    # a real choice — truncating to top_k *before* dedup would just throw
+    # away the alternative parents we want to surface.
     reranker = rerank_module.get_reranker()
-    reranked = reranker.rerank(query_text, rerank_inputs, top_k=top_k)
+    reranked = reranker.rerank(
+        query_text, rerank_inputs, top_k=len(rerank_inputs)
+    )
 
-    # ----- Build evidence list -----
+    # ----- Stage 4: parent-level + content-level dedup -----
+    # Two flavours of duplicate to suppress:
+    #  (a) same parent_chunk, multiple children from sliding-window overlap;
+    #  (b) different documents whose parent content is essentially identical
+    #      — this happens when the same PDF was uploaded several times during
+    #      testing. Both collapse to one card.
     rerank_input_by_id = {ri.chunk_id: ri for ri in rerank_inputs}
+    seen_parents: set[int] = set()
+    seen_content: set[str] = set()
     evidence: list[Evidence] = []
     for r in reranked:
         ri = rerank_input_by_id.get(r.chunk_id)
         if ri is None:
             continue
+        if ri.parent_id in seen_parents:
+            continue
+        content_key = _content_dedup_key(ri.parent_content)
+        if content_key and content_key in seen_content:
+            continue
+        seen_parents.add(ri.parent_id)
+        if content_key:
+            seen_content.add(content_key)
         evidence.append(_build_evidence(r, ri))
+        if len(evidence) >= top_k:
+            break
 
     top_score = reranked[0].score if reranked else 0.0
     insufficient = (not evidence) or rerank_module.is_insufficient(top_score)
@@ -228,6 +251,7 @@ def _hydrate(fused: list) -> list:
     sql = f"""
         SELECT cc.id AS chunk_id,
                cc.content AS child_content,
+               pc.id AS parent_id,
                pc.content AS parent_content,
                pc.section_path AS section_path,
                pc.locator AS locator,
@@ -254,21 +278,75 @@ def _hydrate(fused: list) -> list:
         row = by_id.get(cand.chunk_id)
         if row is None:
             continue  # archived between recall and hydrate
+        parent_content = row["parent_content"] or ""
         inputs.append(rerank_module.RerankInput(
             chunk_id=cand.chunk_id,
+            parent_id=row["parent_id"],
             rrf_score=cand.rrf_score,
             sparse_score=cand.sparse_score,
             dense_score=cand.dense_score,
             sources=cand.sources,
             child_content=row["child_content"] or "",
-            parent_content=row["parent_content"] or "",
+            parent_content=parent_content,
             section_path=row["section_path"] or "",
             locator=row["locator"] or "",
             filename=row["filename"] or "",
             source_scope=row["source_scope"] or "tenant_private",
+            is_toc=_looks_like_toc(parent_content),
         ))
 
     return inputs
+
+
+_WHITESPACE_RUN = re.compile(r"\s+")
+
+
+def _content_dedup_key(content: str) -> str:
+    """Normalized prefix used to spot near-identical parent content across
+    documents. We collapse whitespace and take the first 160 characters so
+    duplicate PDF uploads (different document_id, same body) get suppressed.
+    """
+    if not content:
+        return ""
+    normalized = _WHITESPACE_RUN.sub(" ", content).strip()
+    return normalized[:160]
+
+
+_TOC_DOT_RUN = re.compile(r"[\.·•…]{3,}")
+_TOC_LEADER_LINE = re.compile(
+    r"\S[^\n]*?[\.·•…\s]{3,}[0-9IVXLCDM]+\s*$",
+    re.MULTILINE,
+)
+
+
+def _looks_like_toc(content: str) -> bool:
+    """Detect table-of-contents pages by structural signals.
+
+    Three independent checks; any one is enough:
+      1. The Chinese "目录" / "目 录" marker appears in the first 60 chars.
+      2. Three or more runs of dotted-leader characters (regular dots, the
+         middle-dot ·, the bullet •, or the Unicode ellipsis …).
+      3. Three or more lines that end with a roman/arabic page number after
+         dotted-or-spacey leader (catches the case where the PDF extractor
+         drops the dots but preserves the layout).
+    """
+    if not content:
+        return False
+
+    head = content[:60]
+    if "目录" in head or "目 录" in head:
+        return True
+    lower_head = head.lower()
+    if "contents" in lower_head or "table of contents" in lower_head:
+        return True
+
+    if len(_TOC_DOT_RUN.findall(content)) >= 3:
+        return True
+
+    if len(_TOC_LEADER_LINE.findall(content)) >= 3:
+        return True
+
+    return False
 
 
 # ---------- Evidence + response shaping ----------

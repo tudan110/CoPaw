@@ -45,9 +45,29 @@ class LLMInvalidResponse(LLMError):
 
 
 def is_available(provider: str = "deepseek") -> bool:
+    """Check whether a provider is callable in the current process.
+
+    For "qwenpaw_active" we only need the host package importable — the actual
+    model credentials live inside QwenPaw's provider config and are checked
+    lazily at call time.
+    """
     if provider == "deepseek":
         return bool(os.environ.get("DEEPSEEK_API_KEY"))
+    if provider in ("qwenpaw", "qwenpaw_active"):
+        try:
+            import qwenpaw.agents.model_factory  # noqa: F401
+            return True
+        except ImportError:
+            return False
     return False
+
+
+def first_available(*providers: str) -> str | None:
+    """Return the first provider name from *providers that is_available()."""
+    for p in providers:
+        if is_available(p):
+            return p
+    return None
 
 
 def call_llm(
@@ -65,7 +85,107 @@ def call_llm(
             messages, model=model, timeout_s=timeout_s,
             request_id=request_id, api_key=api_key,
         )
+    if provider in ("qwenpaw", "qwenpaw_active"):
+        return _call_qwenpaw_active(
+            messages, timeout_s=timeout_s, request_id=request_id,
+        )
     raise LLMProviderError(f"unknown provider: {provider}")
+
+
+def _call_qwenpaw_active(
+    messages: list[dict],
+    *,
+    timeout_s: float = 30.0,
+    request_id: str | None = None,
+    agent_id: str = "knowledge",
+) -> dict:
+    """Bridge into QwenPaw's currently-active LLM (set in the portal UI).
+
+    The active model is async — we run it via asyncio.run from this sync entry
+    point. Safe inside FastAPI's threadpool (no parent loop) but would deadlock
+    if called from inside a running event loop.
+    """
+    import asyncio
+
+    from qwenpaw.agents.model_factory import create_model_and_formatter
+
+    started = time.monotonic()
+    query_hash = _user_message_hash(messages)
+    model, _ = create_model_and_formatter(agent_id=agent_id)
+
+    async def _run() -> str:
+        response = await model(messages)
+        return await _drain_response(response)
+
+    try:
+        answer = asyncio.run(asyncio.wait_for(_run(), timeout=timeout_s))
+    except asyncio.TimeoutError as exc:
+        latency = _ms(started)
+        _log("qwenpaw", "active", query_hash, latency, "timeout",
+             request_id, error=str(exc))
+        raise LLMTimeout(f"qwenpaw active model timeout: {exc}") from exc
+    except Exception as exc:
+        latency = _ms(started)
+        _log("qwenpaw", "active", query_hash, latency, "server_error",
+             request_id, error=f"{type(exc).__name__}: {exc}")
+        raise LLMProviderError(f"qwenpaw active model error: {exc}") from exc
+
+    latency = _ms(started)
+    if not answer or not answer.strip():
+        raise LLMInvalidResponse("empty answer from qwenpaw active model")
+
+    _log("qwenpaw", "active", query_hash, latency, "success", request_id)
+    return {
+        "answer": answer,
+        "provider": "qwenpaw_active",
+        "model": "active",
+        "latency_ms": latency,
+        "tokens_in": 0,
+        "tokens_out": 0,
+        "request_id": request_id,
+        "created_at": _now_iso(),
+    }
+
+
+async def _drain_response(response) -> str:
+    """Reduce an AgentScope-style streaming response to a single string. Mirrors
+    the helper in extensions/integrations/knowledge_base.py."""
+    if hasattr(response, "__aiter__"):
+        accumulated = ""
+        async for chunk in response:
+            text = _extract_text(chunk)
+            if not text:
+                continue
+            if text.startswith(accumulated):
+                accumulated = text
+            else:
+                accumulated += text
+        return accumulated.strip()
+    return _extract_text(response)
+
+
+def _extract_text(payload) -> str:
+    if payload is None:
+        return ""
+    if isinstance(payload, str):
+        return payload.strip()
+    content = getattr(payload, "content", None)
+    if isinstance(content, str):
+        return content.strip()
+    if isinstance(content, list):
+        fragments: list[str] = []
+        for item in content:
+            if isinstance(item, dict):
+                text = item.get("text") or item.get("content")
+                if text:
+                    fragments.append(str(text))
+            elif getattr(item, "text", None):
+                fragments.append(str(getattr(item, "text")))
+        return "\n".join(f.strip() for f in fragments if f).strip()
+    text = getattr(payload, "text", None)
+    if isinstance(text, str):
+        return text.strip()
+    return str(payload).strip()
 
 
 def _call_deepseek(
