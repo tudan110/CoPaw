@@ -5830,6 +5830,19 @@
   line-height: 1.7;
 }
 
+.portal-digital-employee .inspection-analyst-metric-group-header h4 {
+  font-size: 16px;
+  line-height: 1.6;
+  color: var(--text-primary);
+}
+
+.portal-digital-employee .inspection-analyst-metric-group-summary,
+.portal-digital-employee .inspection-analyst-metric-group-empty {
+  margin-top: 12px !important;
+  color: var(--text-secondary);
+  line-height: 1.7;
+}
+
 .portal-digital-employee .inspection-analyst-stat-card.good strong,
 .portal-digital-employee .inspection-analyst-metric-card.good strong,
 .portal-digital-employee .inspection-analyst-finding-card.good h4 {
