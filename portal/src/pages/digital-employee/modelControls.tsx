@@ -175,6 +175,7 @@ export function AdvancedModelEntry({
   activeModelLabel,
   activeProviderName,
   isActive,
+  isSettingsActive,
   isCronJobsActive,
   isTokenUsageActive,
   isOpsExpertActive,
@@ -184,6 +185,7 @@ export function AdvancedModelEntry({
   isInspirationActive,
   isCliActive,
   onOpenConfig,
+  onOpenSettings,
   onOpenCronJobs,
   onOpenTokenUsage,
   onOpenOpsExpert,
@@ -196,6 +198,7 @@ export function AdvancedModelEntry({
   activeModelLabel: string;
   activeProviderName: string;
   isActive?: boolean;
+  isSettingsActive?: boolean;
   isCronJobsActive?: boolean;
   isTokenUsageActive?: boolean;
   isOpsExpertActive?: boolean;
@@ -205,6 +208,7 @@ export function AdvancedModelEntry({
   isInspirationActive?: boolean;
   isCliActive?: boolean;
   onOpenConfig: () => void;
+  onOpenSettings: () => void;
   onOpenCronJobs: () => void;
   onOpenTokenUsage: () => void;
   onOpenOpsExpert: () => void;
@@ -346,6 +350,19 @@ export function AdvancedModelEntry({
           <div className="sidebar-advanced-item-name">CLI终端</div>
           <div className="sidebar-advanced-item-desc">命令行交互界面</div>
           <div className="sidebar-advanced-item-meta">help / use / ask / run</div>
+        </button>
+        <button
+          className={isSettingsActive ? "sidebar-advanced-item active" : "sidebar-advanced-item"}
+          onClick={onOpenSettings}
+        >
+          <div className="sidebar-advanced-item-icon">
+            <span role="img" aria-label="settings">
+              ⚙️
+            </span>
+          </div>
+          <div className="sidebar-advanced-item-name">设置</div>
+          <div className="sidebar-advanced-item-desc">对话与界面偏好</div>
+          <div className="sidebar-advanced-item-meta">过程记录 / 默认展开</div>
         </button>
       </div>
     </div>

@@ -119,6 +119,10 @@ const ResourceImportPanel = lazyNamed(
   () => import("./digital-employee/resourceImportPanel"),
   "ResourceImportPanel",
 );
+const SettingsPanel = lazyNamed(
+  () => import("./digital-employee/settingsPanel"),
+  "SettingsPanel",
+);
 const SkillPoolPanel = lazyNamed(
   () => import("./digital-employee/skillPoolPanel"),
   "SkillPoolPanel",
@@ -187,6 +191,7 @@ export default function DigitalEmployeePage({
     routeSection ?? routeSearchParams.get("panel"),
   );
   const isModelConfigMode = activeAdvancedPanel === "model-config";
+  const isSettingsMode = activeAdvancedPanel === "settings";
   const isTokenUsageMode = activeAdvancedPanel === "token-usage";
   const isOpsExpertMode = activeAdvancedPanel === "ops-expert";
   const isMcpMode = activeAdvancedPanel === "mcp";
@@ -1233,6 +1238,7 @@ export default function DigitalEmployeePage({
             activeModelLabel={activeModelLabel}
             activeProviderName={activeProviderName}
             isActive={isModelConfigMode}
+            isSettingsActive={isSettingsMode}
             isCronJobsActive={currentView === "tasks"}
             isTokenUsageActive={isTokenUsageMode}
             isOpsExpertActive={isOpsExpertMode}
@@ -1242,6 +1248,11 @@ export default function DigitalEmployeePage({
             isInspirationActive={isInspirationMode}
             isCliActive={isCliMode}
             onOpenConfig={openModelConfig}
+            onOpenSettings={() =>
+              updateCurrentEmployeeRoute({
+                panel: "settings",
+              })
+            }
             onOpenCronJobs={() =>
               updateCurrentEmployeeRoute({
                 view: "tasks",
@@ -1272,7 +1283,7 @@ export default function DigitalEmployeePage({
 
         <div
           className={
-            isModelConfigMode || isTokenUsageMode || isOpsExpertMode || isMcpMode || isSkillPoolMode || isKnowledgeBaseMode || isInspirationMode || isCliMode || isResourceImportMode
+            isModelConfigMode || isSettingsMode || isTokenUsageMode || isOpsExpertMode || isMcpMode || isSkillPoolMode || isKnowledgeBaseMode || isInspirationMode || isCliMode || isResourceImportMode
               ? `main-content advanced-page-mode${isKnowledgeBaseMode ? " knowledge-base-page-mode" : ""}`
               : currentView === "chat"
                 ? "main-content"
@@ -1318,6 +1329,8 @@ export default function DigitalEmployeePage({
                 onProbeMultimodal={handleProbeMultimodal}
                 onDiscoverModels={handleDiscoverModels}
               />
+          ) : isSettingsMode ? (
+            renderDeferredPanel(<SettingsPanel />)
           ) : isTokenUsageMode ? (
             renderDeferredPanel(
               <TokenUsagePanel

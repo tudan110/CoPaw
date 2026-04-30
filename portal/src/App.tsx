@@ -68,6 +68,10 @@ export default function App() {
         element={renderDeferredPage(<DigitalEmployeePage forcedSection="model-config" />)}
       />
       <Route
+        path="/settings"
+        element={renderDeferredPage(<DigitalEmployeePage forcedSection="settings" />)}
+      />
+      <Route
         path="/token-usage"
         element={renderDeferredPage(<DigitalEmployeePage forcedSection="token-usage" />)}
       />

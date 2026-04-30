@@ -2466,6 +2466,11 @@
   color: #94a3b8;
 }
 
+.portal-digital-employee.theme-dark .trace-status-indicator {
+  background: rgba(79, 110, 247, 0.18);
+  color: #bfdbfe;
+}
+
 .portal-digital-employee.theme-dark .trace-body {
   border-top-color: #223049;
   color: #dbe7f5;
@@ -2623,6 +2628,22 @@
 .portal-digital-employee.theme-dark .portal-provider-model-chip {
   background: #1a2235;
   color: #cbd5e1;
+}
+
+.portal-digital-employee.theme-dark .settings-tab {
+  background: #111b2d;
+  border-color: #223049;
+  color: #dbe7f5;
+}
+
+.portal-digital-employee.theme-dark .settings-tab:hover,
+.portal-digital-employee.theme-dark .settings-tab.active {
+  background: rgba(79, 110, 247, 0.12);
+  border-color: rgba(79, 110, 247, 0.34);
+}
+
+.portal-digital-employee.theme-dark .settings-tab-copy small {
+  color: #94a3b8;
 }
 
 .portal-digital-employee.theme-dark .portal-provider-model-chip.active,
@@ -7420,6 +7441,32 @@
   color: var(--text-muted);
 }
 
+.portal-digital-employee .trace-summary-meta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-left: auto;
+}
+
+.portal-digital-employee .trace-status-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(79, 110, 247, 0.1);
+  color: var(--primary);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.portal-digital-employee .trace-status-indicator i {
+  font-size: 10px;
+}
+
 .portal-digital-employee .trace-block.thinking .trace-label i {
   color: #8b5cf6;
 }
@@ -8537,6 +8584,10 @@
   .portal-digital-employee .token-usage-detail-grid {
     grid-template-columns: 1fr;
   }
+
+  .portal-digital-employee .settings-layout {
+    grid-template-columns: 1fr;
+  }
 }
 
 @container (max-width: 720px) {
@@ -8562,6 +8613,10 @@
 
   .portal-digital-employee .token-usage-stats-row {
     grid-template-columns: 1fr;
+  }
+
+  .portal-digital-employee .settings-choice-grid {
+    flex-direction: column;
   }
 }
 
@@ -8665,6 +8720,101 @@
   flex-direction: column;
   gap: 24px;
   padding-bottom: 4px;
+}
+
+.portal-digital-employee .settings-layout {
+  display: grid;
+  grid-template-columns: 240px minmax(0, 1fr);
+  gap: 18px;
+}
+
+.portal-digital-employee .settings-tab-panel,
+.portal-digital-employee .settings-content-panel {
+  min-width: 0;
+}
+
+.portal-digital-employee .settings-tab-panel-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.portal-digital-employee .settings-tab-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.portal-digital-employee .settings-tab {
+  width: 100%;
+  border: 1px solid rgba(79, 110, 247, 0.14);
+  border-radius: 12px;
+  background: #fff;
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px;
+  text-align: left;
+  cursor: pointer;
+  transition: 0.2s ease;
+}
+
+.portal-digital-employee .settings-tab:hover {
+  border-color: rgba(79, 110, 247, 0.24);
+  background: rgba(79, 110, 247, 0.04);
+}
+
+.portal-digital-employee .settings-tab.active {
+  border-color: rgba(79, 110, 247, 0.3);
+  background: rgba(79, 110, 247, 0.08);
+  box-shadow: inset 0 0 0 1px rgba(79, 110, 247, 0.08);
+}
+
+.portal-digital-employee .settings-tab-icon {
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  background: rgba(79, 110, 247, 0.1);
+  color: var(--primary);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 34px;
+}
+
+.portal-digital-employee .settings-tab-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.portal-digital-employee .settings-tab-copy strong {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.portal-digital-employee .settings-tab-copy small {
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+.portal-digital-employee .settings-section {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.portal-digital-employee .settings-choice-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.portal-digital-employee .settings-inline-hint {
+  margin-top: -4px;
 }
 
 .portal-digital-employee .portal-model-block-head {

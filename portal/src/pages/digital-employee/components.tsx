@@ -19,6 +19,10 @@ import {
   PORTAL_INSPECTION_CARD_MARKER,
   unwrapPortalInspectionCardContent,
 } from "./helpers";
+import {
+  CONVERSATION_PROCESS_RECORD_DISPLAY_MODE_CHANGED_EVENT,
+  readConversationProcessRecordDisplayMode,
+} from "./conversationSettings";
 import { FaultScenarioResultCard } from "./faultScenarioComponents";
 
 const ResourceImportConversationCard = lazyNamed(
@@ -848,28 +852,44 @@ export const ChatMessageItem = memo(function ChatMessageItem({
     renderedMessageContent || alarmAnalystCard?.rawReportMarkdown || "",
   ).trim();
   const traceBundleSubtitle = buildTraceBundleSubtitle(auxiliaryTraceBlocks);
-  const [isTraceBundleOpen, setIsTraceBundleOpen] = useState(false);
-  const wasStreamingTraceBundleRef = useRef(false);
+  const showTraceBundleStreamingIndicator = isStreamingMessage && auxiliaryTraceBlocks.length > 0;
+  const [traceBundleDisplayMode, setTraceBundleDisplayMode] = useState(() =>
+    readConversationProcessRecordDisplayMode(),
+  );
+  const traceBundleDefaultOpen = traceBundleDisplayMode === "expanded";
+  const [isTraceBundleOpen, setIsTraceBundleOpen] = useState(() => traceBundleDefaultOpen);
+  const hasManualTraceBundleToggleRef = useRef(false);
+  const pendingManualTraceBundleToggleRef = useRef(false);
+
+  useEffect(() => {
+    const handleProcessRecordDisplayModeChanged = () => {
+      setTraceBundleDisplayMode(readConversationProcessRecordDisplayMode());
+    };
+
+    window.addEventListener(
+      CONVERSATION_PROCESS_RECORD_DISPLAY_MODE_CHANGED_EVENT,
+      handleProcessRecordDisplayModeChanged,
+    );
+    return () => {
+      window.removeEventListener(
+        CONVERSATION_PROCESS_RECORD_DISPLAY_MODE_CHANGED_EVENT,
+        handleProcessRecordDisplayModeChanged,
+      );
+    };
+  }, []);
 
   useEffect(() => {
     if (!auxiliaryTraceBlocks.length) {
-      wasStreamingTraceBundleRef.current = false;
+      hasManualTraceBundleToggleRef.current = false;
+      pendingManualTraceBundleToggleRef.current = false;
       setIsTraceBundleOpen(false);
       return;
     }
 
-    if (isStreamingMessage) {
-      wasStreamingTraceBundleRef.current = true;
-      setIsTraceBundleOpen(true);
-      return;
+    if (!hasManualTraceBundleToggleRef.current) {
+      setIsTraceBundleOpen(traceBundleDefaultOpen);
     }
-
-    if (wasStreamingTraceBundleRef.current) {
-      setIsTraceBundleOpen(false);
-      wasStreamingTraceBundleRef.current = false;
-    }
-  }, [auxiliaryTraceBlocks.length, isStreamingMessage]);
-
+  }, [auxiliaryTraceBlocks.length, traceBundleDefaultOpen]);
   return (
     <div
       id={`message-${message.id}`}
@@ -887,16 +907,40 @@ export const ChatMessageItem = memo(function ChatMessageItem({
             className="trace-block trace-bundle"
             open={isTraceBundleOpen}
             onToggle={(event) => {
+              if (pendingManualTraceBundleToggleRef.current) {
+                hasManualTraceBundleToggleRef.current = true;
+                pendingManualTraceBundleToggleRef.current = false;
+              }
               setIsTraceBundleOpen(event.currentTarget.open);
             }}
           >
-            <summary className="trace-summary">
+            <summary
+              className="trace-summary"
+              onClick={() => {
+                pendingManualTraceBundleToggleRef.current = true;
+              }}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  pendingManualTraceBundleToggleRef.current = true;
+                }
+              }}
+            >
               <span className="trace-label">
                 <i className="fas fa-layer-group" />
                 过程记录
               </span>
-              {traceBundleSubtitle ? (
-                <span className="trace-subtitle">{traceBundleSubtitle}</span>
+              {showTraceBundleStreamingIndicator || traceBundleSubtitle ? (
+                <span className="trace-summary-meta">
+                  {showTraceBundleStreamingIndicator ? (
+                    <span className="trace-status-indicator" aria-label="过程记录生成中">
+                      <i className="fas fa-spinner fa-spin" aria-hidden="true" />
+                      <span>生成中</span>
+                    </span>
+                  ) : null}
+                  {traceBundleSubtitle ? (
+                    <span className="trace-subtitle">{traceBundleSubtitle}</span>
+                  ) : null}
+                </span>
               ) : null}
             </summary>
             <div className="trace-body trace-bundle-body">
@@ -904,6 +948,7 @@ export const ChatMessageItem = memo(function ChatMessageItem({
                 <TraceEntry
                   key={block.id || `${block.kind}-${index}`}
                   block={block}
+                  defaultOpen={traceBundleDefaultOpen}
                   isStreaming={isStreamingMessage}
                 />
               ))}
@@ -1209,7 +1254,6 @@ function buildPollingSummaryBlock(toolBlocks: any[], waitingResponses: any[]) {
     inputContent: "",
     outputContent: summaryLines.join("\n"),
     content: summaryLines.join("\n"),
-    defaultOpen: false,
   };
 }
 
@@ -1232,9 +1276,11 @@ function buildTraceBundleSubtitle(blocks: any[] = []) {
 
 function TraceEntry({
   block,
+  defaultOpen = false,
   isStreaming = false,
 }: {
   block: any;
+  defaultOpen?: boolean;
   isStreaming?: boolean;
 }) {
   if (block?.kind === "response") {
@@ -1255,7 +1301,7 @@ function TraceEntry({
   return (
     <details
       className={`trace-block trace-entry ${block?.kind || "misc"}`}
-      open={block?.defaultOpen}
+      open={block?.defaultOpen ?? defaultOpen}
     >
       <summary className="trace-summary">
         <span className="trace-label">
