@@ -71,6 +71,13 @@ qwenpaw:
     QWENPAW_PORT: "8088"
     QWENPAW_DISABLED_CHANNELS: "imessage"
 
+    # 知识库检索（与 dev start-qwenpaw.sh 保持一致）
+    # KNOWLEDGE_BASE_RERANKER: llm（QwenPaw active model）/ heuristic / none
+    KNOWLEDGE_BASE_RERANKER: "llm"
+    KNOWLEDGE_BASE_HYDE_ENABLED: "true"
+    KNOWLEDGE_BASE_TOP_K: "3"
+    KNOWLEDGE_BASE_LLM_RERANK_INPUT_K: "15"
+
   # 资源限制
   resources:
     requests:
