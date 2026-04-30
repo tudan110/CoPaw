@@ -4,6 +4,10 @@ import {
   writeConversationProcessRecordDisplayMode,
   type ConversationProcessRecordDisplayMode,
 } from "./conversationSettings";
+import {
+  readFaultAnalysisConfidenceVisible,
+  writeFaultAnalysisConfidenceVisible,
+} from "./faultAnalysisSettings";
 
 const SETTINGS_TABS = [
   {
@@ -11,6 +15,12 @@ const SETTINGS_TABS = [
     label: "对话",
     iconClass: "fa-comments",
     description: "过程记录、回复体验等对话偏好设置",
+  },
+  {
+    id: "diagnosis",
+    label: "诊断",
+    iconClass: "fa-stethoscope",
+    description: "根因分析、诊断卡片等结果展示偏好",
   },
 ] as const;
 
@@ -22,9 +32,14 @@ export function SettingsPanel() {
     useState<ConversationProcessRecordDisplayMode>(() =>
       readConversationProcessRecordDisplayMode(),
     );
+  const [showFaultAnalysisConfidence, setShowFaultAnalysisConfidence] =
+    useState(() => readFaultAnalysisConfidenceVisible());
 
   const handleProcessRecordModeChange = (mode: ConversationProcessRecordDisplayMode) => {
     setProcessRecordDisplayMode(writeConversationProcessRecordDisplayMode(mode));
+  };
+  const handleFaultAnalysisConfidenceVisibilityChange = (visible: boolean) => {
+    setShowFaultAnalysisConfidence(writeFaultAnalysisConfidenceVisible(visible));
   };
 
   return (
@@ -40,7 +55,7 @@ export function SettingsPanel() {
           <div className="portal-model-scope-bar settings-scope-bar">
             <span>配置范围：当前浏览器</span>
             <span>切换类型：使用顶部 Tab 分类管理</span>
-            <span>已支持：过程记录默认展开方式</span>
+            <span>已支持：过程记录默认展开方式、根因分析置信度显示</span>
           </div>
 
           <div className="settings-layout">
@@ -109,6 +124,48 @@ export function SettingsPanel() {
 
                     <div className="portal-managed-config-hint settings-inline-hint">
                       当前默认：{processRecordDisplayMode === "expanded" ? "展开过程记录" : "折叠过程记录"}
+                    </div>
+                  </section>
+                </div>
+              ) : null}
+
+              {activeTab === "diagnosis" ? (
+                <div className="portal-model-shell">
+                  <section className="settings-section">
+                    <div className="portal-model-block-head">
+                      <div>
+                        <h4>根因分析卡片是否展示置信度</h4>
+                        <p>
+                          控制故障根因分析 skill 的卡片里是否展示置信度，包括右上角徽标和“定位置信度”等字段，避免影响用户判断。
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="settings-choice-grid">
+                      <button
+                        type="button"
+                        className={showFaultAnalysisConfidence
+                          ? "portal-managed-config-toggle active"
+                          : "portal-managed-config-toggle"}
+                        onClick={() => handleFaultAnalysisConfidenceVisibilityChange(true)}
+                      >
+                        <i className="fas fa-eye" />
+                        展示置信度
+                      </button>
+                      <button
+                        type="button"
+                        className={!showFaultAnalysisConfidence
+                          ? "portal-managed-config-toggle active"
+                          : "portal-managed-config-toggle"}
+                        onClick={() => handleFaultAnalysisConfidenceVisibilityChange(false)}
+                      >
+                        <i className="fas fa-eye-slash" />
+                        隐藏置信度
+                      </button>
+                    </div>
+
+                    <div className="portal-managed-config-hint settings-inline-hint">
+                      当前默认：{showFaultAnalysisConfidence ? "展示根因分析置信度" : "隐藏根因分析置信度"}
                     </div>
                   </section>
                 </div>

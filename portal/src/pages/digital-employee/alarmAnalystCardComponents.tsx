@@ -1,4 +1,4 @@
-import { memo, useMemo } from "react";
+import { memo, useEffect, useMemo, useState } from "react";
 
 import { PortalQwenPawMarkdown } from "../../components/PortalQwenPawMarkdown";
 import { DeferredEChartsBlock } from "../../components/DeferredVisualizationBlocks";
@@ -7,6 +7,10 @@ import {
   normalizeMarkdownDisplayContent,
   unwrapPortalAlarmAnalystCardContent,
 } from "./helpers";
+import {
+  FAULT_ANALYSIS_CONFIDENCE_VISIBILITY_CHANGED_EVENT,
+  readFaultAnalysisConfidenceVisible,
+} from "./faultAnalysisSettings";
 
 type AlarmAnalystSummaryRowTone = "accent" | "success" | "warning" | "neutral";
 
@@ -557,10 +561,11 @@ function buildFallbackRows(card: AlarmAnalystCardV1): AlarmAnalystSummaryRow[] {
   return rows;
 }
 
-function buildDisplayModel(card: AlarmAnalystCardV1) {
+function buildDisplayModel(card: AlarmAnalystCardV1, showConfidence: boolean) {
   const reportText = unwrapPortalAlarmAnalystCardContent(card.rawReportMarkdown);
   const reportSummaryRows = buildSummaryRowsFromReport(card);
-  const summaryRows = reportSummaryRows.length ? reportSummaryRows : buildFallbackRows(card);
+  const summaryRows = (reportSummaryRows.length ? reportSummaryRows : buildFallbackRows(card))
+    .filter((row) => showConfidence || row.label !== "置信度");
   const rowsByLabel = new Map(summaryRows.map((row) => [row.label, row]));
 
   const lead = (
@@ -569,7 +574,9 @@ function buildDisplayModel(card: AlarmAnalystCardV1) {
     stripMarkdownInline(card.summary.conclusion || "")
   );
 
-  const confidenceLabel = rowsByLabel.get("置信度")?.value || mapConfidenceLabel(card.summary.confidence || "");
+  const confidenceLabel = showConfidence
+    ? (rowsByLabel.get("置信度")?.value || mapConfidenceLabel(card.summary.confidence || ""))
+    : "";
   const badges = [
     confidenceLabel ? `置信度 ${confidenceLabel}` : "",
     !reportSummaryRows.length ? mapStatusLabel(card.summary.status || "") : "",
@@ -691,8 +698,27 @@ export const AlarmAnalystCardPanel = memo(function AlarmAnalystCardPanel({
 }: {
   card: AlarmAnalystCardV1;
 }) {
+  const [showConfidence, setShowConfidence] = useState(() => readFaultAnalysisConfidenceVisible());
+
+  useEffect(() => {
+    const handleFaultAnalysisConfidenceVisibilityChanged = () => {
+      setShowConfidence(readFaultAnalysisConfidenceVisible());
+    };
+
+    window.addEventListener(
+      FAULT_ANALYSIS_CONFIDENCE_VISIBILITY_CHANGED_EVENT,
+      handleFaultAnalysisConfidenceVisibilityChanged,
+    );
+    return () => {
+      window.removeEventListener(
+        FAULT_ANALYSIS_CONFIDENCE_VISIBILITY_CHANGED_EVENT,
+        handleFaultAnalysisConfidenceVisibilityChanged,
+      );
+    };
+  }, []);
+
   const topologyChart = useMemo(() => buildTopologyChart(card), [card]);
-  const display = useMemo(() => buildDisplayModel(card), [card]);
+  const display = useMemo(() => buildDisplayModel(card, showConfidence), [card, showConfidence]);
 
   return (
     <div className="alarm-analyst-card-stack">
