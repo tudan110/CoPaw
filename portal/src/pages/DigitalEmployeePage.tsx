@@ -1480,6 +1480,7 @@ export default function DigitalEmployeePage({
                   onComposerKeyDown={handleHomeComposerKeyDown}
                   onApplyMentionSuggestion={applyMentionSuggestion}
                   onOpenResourceImport={() => openResourceImport()}
+                  onOpenHistory={() => void handleOpenHistory()}
                   onSendPreset={handleQuickCommand}
                   onPrimaryAction={() => {
                     if (isKnowledgeBaseRunning) {

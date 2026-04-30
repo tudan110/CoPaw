@@ -334,6 +334,7 @@ export function PortalHomeHero({
   onComposerKeyDown,
   onApplyMentionSuggestion,
   onOpenResourceImport,
+  onOpenHistory,
   onSendPreset,
   onPrimaryAction,
 }: {
@@ -362,6 +363,7 @@ export function PortalHomeHero({
   onComposerKeyDown: (event: KeyboardEvent<HTMLTextAreaElement>) => void;
   onApplyMentionSuggestion: (employeeName: string) => void;
   onOpenResourceImport: () => void;
+  onOpenHistory: () => void;
   onSendPreset: (command: string) => void;
   onPrimaryAction: () => void;
 }) {
@@ -476,24 +478,35 @@ export function PortalHomeHero({
               </button>
             ))}
           </div>
-          <button
-            className={
-              isConversationRunning
-                ? "send-btn stop-mode"
-                : isCreatingChat
-                  ? "send-btn disabled"
-                  : "send-btn"
-            }
-            onClick={onPrimaryAction}
-            disabled={isCreatingChat && !isConversationRunning}
-            aria-label={isConversationRunning ? "停止聊天" : "发送消息"}
-          >
-            {isConversationRunning ? (
-              <span className="send-btn-stop-icon" aria-hidden="true" />
-            ) : (
-              <i className="fas fa-paper-plane" />
-            )}
-          </button>
+          <div className="portal-home-composer-actions">
+            <button
+              type="button"
+              className="history-btn portal-home-history-btn"
+              onClick={onOpenHistory}
+              aria-label="已处理任务"
+              title="已处理任务"
+            >
+              <i className="fas fa-history" />
+            </button>
+            <button
+              className={
+                isConversationRunning
+                  ? "send-btn stop-mode"
+                  : isCreatingChat
+                    ? "send-btn disabled"
+                    : "send-btn"
+              }
+              onClick={onPrimaryAction}
+              disabled={isCreatingChat && !isConversationRunning}
+              aria-label={isConversationRunning ? "停止聊天" : "发送消息"}
+            >
+              {isConversationRunning ? (
+                <span className="send-btn-stop-icon" aria-hidden="true" />
+              ) : (
+                <i className="fas fa-paper-plane" />
+              )}
+            </button>
+          </div>
         </div>
       </div>
     </div>
