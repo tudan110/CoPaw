@@ -116,6 +116,7 @@ src/.hypothesis/
 
 # pnpm lockfiles (only ignore in subpackages, not root)
 console/pnpm-lock.yaml
+portal/package-lock.json
 
 # 智能体本地初始化数据
 deploy-all/qwenpaw/data/
