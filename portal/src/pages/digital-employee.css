@@ -6799,6 +6799,26 @@
 
 .portal-digital-employee .markdown-bubble .portal-x-markdown table {
   width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.portal-digital-employee .markdown-bubble .portal-x-markdown thead,
+.portal-digital-employee .markdown-bubble .portal-x-markdown th {
+  background: rgba(59, 130, 246, 0.08);
+}
+
+.portal-digital-employee .markdown-bubble .portal-x-markdown th {
+  color: #1e293b;
+  font-weight: 700;
+}
+
+.portal-digital-employee .markdown-bubble .portal-x-markdown thead th:first-child {
+  border-top-left-radius: 12px;
+}
+
+.portal-digital-employee .markdown-bubble .portal-x-markdown thead th:last-child {
+  border-top-right-radius: 12px;
 }
 
 .portal-digital-employee .inspection-analyst-raw-report-body .portal-qwenpaw-markdown-host {
@@ -7186,7 +7206,7 @@
 }
 
 .portal-digital-employee .knowledge-answer-bubble .portal-x-markdown thead {
-  background: #f8fafc;
+  background: rgba(59, 130, 246, 0.08);
 }
 
 .portal-digital-employee .knowledge-answer-bubble .portal-x-markdown th,
@@ -7198,10 +7218,19 @@
 }
 
 .portal-digital-employee .knowledge-answer-bubble .portal-x-markdown th {
-  color: #64748b;
+  background: rgba(59, 130, 246, 0.08);
+  color: #1e293b;
   font-size: 11px;
   font-weight: 800;
   white-space: nowrap;
+}
+
+.portal-digital-employee .knowledge-answer-bubble .portal-x-markdown thead th:first-child {
+  border-top-left-radius: 8px;
+}
+
+.portal-digital-employee .knowledge-answer-bubble .portal-x-markdown thead th:last-child {
+  border-top-right-radius: 8px;
 }
 
 .portal-digital-employee .knowledge-answer-bubble .portal-x-markdown td {
@@ -7240,6 +7269,15 @@
 .portal-digital-employee.theme-dark .knowledge-answer-bubble .portal-x-markdown thead,
 .portal-digital-employee.theme-dark .knowledge-answer-bubble .portal-x-markdown blockquote {
   background: rgba(30, 41, 59, 0.82);
+}
+
+.portal-digital-employee.theme-dark .markdown-bubble .portal-x-markdown thead,
+.portal-digital-employee.theme-dark .markdown-bubble .portal-x-markdown th {
+  background: rgba(59, 130, 246, 0.16);
+}
+
+.portal-digital-employee.theme-dark .markdown-bubble .portal-x-markdown th {
+  color: #f8fafc;
 }
 
 .portal-digital-employee.theme-dark .knowledge-answer-report,

@@ -79,8 +79,10 @@
 }
 
 .portal-qwenpaw-markdown table th {
-  background: rgba(148, 163, 184, 0.12);
+  background: rgba(59, 130, 246, 0.08);
   text-align: left;
+  color: #1e293b;
+  font-weight: 700;
 }
 
 .portal-qwenpaw-markdown table td,
@@ -180,7 +182,8 @@
 }
 
 .portal-digital-employee.theme-dark .portal-qwenpaw-markdown table th {
-  background: rgba(148, 163, 184, 0.12);
+  background: rgba(59, 130, 246, 0.16);
+  color: #f8fafc;
 }
 
 .portal-digital-employee.theme-dark .portal-qwenpaw-markdown table td,
