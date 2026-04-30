@@ -1,15 +1,23 @@
-#!/bin/bash
+#!/bin/sh
 # QwenPaw 项目启动脚本 (使用 uv)
-
-# 兼容 sh 调用：若非 bash 则自动切换到 bash 执行
-if [ -z "$BASH_VERSION" ]; then
-    exec bash "$0" "$@"
-fi
 
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$SCRIPT_DIR"
+
+TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/qwenpaw-start.XXXXXX")"
+cleanup() {
+    if [ -n "${TMP_DIR:-}" ] && [ -d "$TMP_DIR" ]; then
+        rm -rf "$TMP_DIR"
+    fi
+}
+trap cleanup EXIT HUP INT TERM
+
+APP_ARGS_FILE="$TMP_DIR/app-args.txt"
+SKILL_REQS_FILE="$TMP_DIR/skill-reqs.txt"
+: > "$APP_ARGS_FILE"
+: > "$SKILL_REQS_FILE"
 
 resolve_working_dir() {
     if [ -n "${QWENPAW_WORKING_DIR:-}" ]; then
@@ -31,13 +39,13 @@ UV_LOCAL_BIN="$HOME/.local/bin/uv"
 DEPS_STAMP_FILE="$SCRIPT_DIR/$VENV_DIR/.qwenpaw-deps-stamp"
 
 REBUILD_FRONTEND=false
-ARGS=()
-for arg in "$@"; do
-    if [ "$arg" = "--rebuild" ]; then
+while [ "$#" -gt 0 ]; do
+    if [ "$1" = "--rebuild" ]; then
         REBUILD_FRONTEND=true
     else
-        ARGS+=("$arg")
+        printf '%s\n' "$1" >> "$APP_ARGS_FILE"
     fi
+    shift
 done
 
 echo "=========================================="
@@ -48,7 +56,7 @@ echo "=========================================="
 export PATH="$HOME/.local/bin:$PATH"
 
 # 检查并安装 uv
-if command -v uv &> /dev/null; then
+if command -v uv > /dev/null 2>&1; then
     UV_BIN="$(command -v uv)"
     echo "[1/5] uv 已安装"
 elif [ -x "$UV_LOCAL_BIN" ]; then
@@ -73,32 +81,33 @@ else
 fi
 
 # 发现所有 skill 自带的 requirements.txt（未来新加 skill 带 deps 也会自动生效）
-SKILL_REQS=()
 SKILL_WORKSPACES_DIR="$SCRIPT_DIR/deploy-all/qwenpaw/working/workspaces"
 if [ -d "$SKILL_WORKSPACES_DIR" ]; then
-    while IFS= read -r req; do
-        SKILL_REQS+=("$req")
-    done < <(find "$SKILL_WORKSPACES_DIR" -path '*/skills/*/requirements.txt' 2>/dev/null | sort)
+    find "$SKILL_WORKSPACES_DIR" -path '*/skills/*/requirements.txt' 2>/dev/null | sort > "$SKILL_REQS_FILE"
 fi
 
 compute_deps_stamp() {
-    local files=()
-    local file
+    deps_input_file="$TMP_DIR/deps-files.txt"
+    : > "$deps_input_file"
+
     for file in pyproject.toml setup.py uv.lock; do
         if [ -f "$SCRIPT_DIR/$file" ]; then
-            files+=("$SCRIPT_DIR/$file")
+            printf '%s\n' "$SCRIPT_DIR/$file" >> "$deps_input_file"
         fi
     done
-    for file in "${SKILL_REQS[@]}"; do
-        files+=("$file")
-    done
+    if [ -s "$SKILL_REQS_FILE" ]; then
+        cat "$SKILL_REQS_FILE" >> "$deps_input_file"
+    fi
 
-    if [ "${#files[@]}" -eq 0 ]; then
+    if [ ! -s "$deps_input_file" ]; then
         printf 'no-deps-files\n'
         return
     fi
 
-    shasum "${files[@]}" | shasum | awk '{print $1}'
+    while IFS= read -r file; do
+        [ -n "$file" ] || continue
+        shasum "$file"
+    done < "$deps_input_file" | shasum | awk '{print $1}'
 }
 
 # 安装依赖（不包含 mlx，仅支持 Apple Silicon arm64）
@@ -111,10 +120,13 @@ fi
 if [ "$CURRENT_DEPS_STAMP" != "$INSTALLED_DEPS_STAMP" ]; then
     echo "[3/5] 安装依赖..."
     UV_HTTP_TIMEOUT=300 "$UV_BIN" pip install --python "$PYTHON_BIN" -e ".[dev]"
-    for req in "${SKILL_REQS[@]}"; do
-        echo "      → skill deps: ${req#$SCRIPT_DIR/}"
-        UV_HTTP_TIMEOUT=300 "$UV_BIN" pip install --python "$PYTHON_BIN" -r "$req"
-    done
+    if [ -s "$SKILL_REQS_FILE" ]; then
+        while IFS= read -r req; do
+            [ -n "$req" ] || continue
+            echo "      → skill deps: ${req#$SCRIPT_DIR/}"
+            UV_HTTP_TIMEOUT=300 "$UV_BIN" pip install --python "$PYTHON_BIN" -r "$req"
+        done < "$SKILL_REQS_FILE"
+    fi
     printf '%s\n' "$CURRENT_DEPS_STAMP" > "$DEPS_STAMP_FILE"
 else
     echo "[3/5] 依赖未变化，跳过安装"
@@ -158,13 +170,13 @@ else
 fi
 
 if [ "$NEED_BUILD" = true ]; then
-    if command -v pnpm &> /dev/null; then
+    if command -v pnpm > /dev/null 2>&1; then
         echo "      使用 pnpm 加速构建..."
         cd "$SCRIPT_DIR/console"
         pnpm install --frozen-lockfile=false
         pnpm run build
         cd "$SCRIPT_DIR"
-    elif command -v npm &> /dev/null; then
+    elif command -v npm > /dev/null 2>&1; then
         cd "$SCRIPT_DIR/console"
         npm ci --quiet
         npm run build
@@ -213,15 +225,25 @@ PY
 
 # 启动应用（默认绑定 0.0.0.0 以便局域网访问；如已显式传入 --host 则不覆盖）
 HOST_OVERRIDDEN=false
-for arg in "${ARGS[@]}"; do
-    if [ "$arg" = "--host" ] || [[ "$arg" == --host=* ]]; then
-        HOST_OVERRIDDEN=true
-        break
-    fi
-done
-
-if [ "$HOST_OVERRIDDEN" = true ]; then
-    "$PYTHON_BIN" -m qwenpaw app "${ARGS[@]}"
-else
-    "$PYTHON_BIN" -m qwenpaw app --host 0.0.0.0 "${ARGS[@]}"
+if [ -s "$APP_ARGS_FILE" ]; then
+    while IFS= read -r arg; do
+        case "$arg" in
+            --host|--host=*)
+                HOST_OVERRIDDEN=true
+                break
+                ;;
+        esac
+    done < "$APP_ARGS_FILE"
 fi
+
+set --
+if [ "$HOST_OVERRIDDEN" != true ]; then
+    set -- --host 0.0.0.0
+fi
+if [ -s "$APP_ARGS_FILE" ]; then
+    while IFS= read -r arg; do
+        set -- "$@" "$arg"
+    done < "$APP_ARGS_FILE"
+fi
+
+"$PYTHON_BIN" -m qwenpaw app "$@"
