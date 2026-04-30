@@ -165,6 +165,22 @@ export function getAlarmAnalystReportMarkdown(message: any) {
   return String(message?.content || "").trim();
 }
 
+export function shouldAttemptAlarmAnalystCardByContent(value: unknown) {
+  const normalizedText = String(value || "").trim();
+  if (!normalizedText) {
+    return false;
+  }
+
+  return (
+    normalizedText.includes(PORTAL_ALARM_ANALYST_CARD_MARKER)
+    || (
+      normalizedText.includes("告警分析报告")
+      && normalizedText.includes("影响范围")
+      && normalizedText.includes("处置建议")
+    )
+  );
+}
+
 export function buildAlarmAnalystCardRequest({
   chatId,
   sessionId,

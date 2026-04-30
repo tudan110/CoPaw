@@ -5,6 +5,7 @@ import {
   buildAlarmAnalystCardRequest,
   getAlarmAnalystReportMarkdown,
   mergeAlarmAnalystCards,
+  shouldAttemptAlarmAnalystCardByContent,
   shouldEnableAlarmAnalystCards,
 } from "./shared.ts";
 
@@ -248,6 +249,25 @@ test("only enables alarm analyst cards for fault workorder sessions", () => {
       employeeId: "query",
       session: { meta: { source: "portal-fault-workorder" } },
     }),
+    false,
+  );
+});
+
+test("attempts alarm analyst cards by report content even outside tagged sessions", () => {
+  assert.equal(
+    shouldAttemptAlarmAnalystCardByContent(
+      "## 告警分析报告：数据库锁异常\n## 影响范围\n- CMDB\n## 处置建议\n- 终止异常慢 SQL 会话",
+    ),
+    true,
+  );
+  assert.equal(
+    shouldAttemptAlarmAnalystCardByContent(
+      "# PORTAL ALARM ANALYST CARD MODE\n\n---\n## 根因判断\n- 锁等待放大",
+    ),
+    true,
+  );
+  assert.equal(
+    shouldAttemptAlarmAnalystCardByContent("普通回复，不包含结构化告警分析报告"),
     false,
   );
 });

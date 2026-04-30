@@ -16,7 +16,9 @@ import {
 import { getFaultDisposalHistory } from "../../api/faultDisposalBridge";
 import {
   buildAlarmAnalystCardRequest,
+  getAlarmAnalystReportMarkdown,
   mergeAlarmAnalystCards,
+  shouldAttemptAlarmAnalystCardByContent,
   shouldEnableAlarmAnalystCards,
 } from "../../alarm-analyst/shared";
 import {
@@ -436,13 +438,7 @@ export function useRemoteChatSession({
     finalText: string;
   }) => {
     const normalizedFinalText = String(finalText || "").trim();
-    const shouldAttemptByContent =
-      normalizedFinalText.includes("# PORTAL ALARM ANALYST CARD MODE")
-      || (
-        normalizedFinalText.includes("告警分析报告")
-        && normalizedFinalText.includes("影响范围")
-        && normalizedFinalText.includes("处置建议")
-      );
+    const shouldAttemptByContent = shouldAttemptAlarmAnalystCardByContent(normalizedFinalText);
     if (
       (
         !shouldEnableAlarmAnalystCards({
@@ -463,14 +459,14 @@ export function useRemoteChatSession({
       chatId: currentChatIdRef.current,
       sessionId: currentSessionIdRef.current,
       employeeId: currentEmployeeRef.current.id,
-        message: {
-          id: frontendMessageId,
-          content: normalizedFinalText,
-          processBlocks: streamProcessBlocksRef.current.get(frontendMessageId) || [],
-          backendMessageId,
-          enhancementSourceMessageId: backendMessageId,
-        },
-      });
+      message: {
+        id: frontendMessageId,
+        content: normalizedFinalText,
+        processBlocks: streamProcessBlocksRef.current.get(frontendMessageId) || [],
+        backendMessageId,
+        enhancementSourceMessageId: backendMessageId,
+      },
+    });
     if (!payload) {
       return;
     }
@@ -516,30 +512,29 @@ export function useRemoteChatSession({
     employeeId: string;
     agentId?: string;
   }) => {
-    if (
-      !shouldEnableAlarmAnalystCards({
-        employeeId,
-        session,
-      }) ||
-      !chatId ||
-      !sessionId
-    ) {
+    const shouldEnableBySession = shouldEnableAlarmAnalystCards({
+      employeeId,
+      session,
+    });
+    if (!chatId || !sessionId) {
       return messages;
     }
 
     let nextMessages = messages;
 
-    try {
-      const cardResponse = await listAlarmAnalystCards(chatId, {
-        sessionId,
-        agentId,
-      });
-      nextMessages = mergeAlarmAnalystCards(
-        nextMessages || [],
-        (cardResponse.cards || []) as any,
-      );
-    } catch (error) {
-      console.warn("Failed to hydrate alarm analyst cards:", error);
+    if (shouldEnableBySession) {
+      try {
+        const cardResponse = await listAlarmAnalystCards(chatId, {
+          sessionId,
+          agentId,
+        });
+        nextMessages = mergeAlarmAnalystCards(
+          nextMessages || [],
+          (cardResponse.cards || []) as any,
+        );
+      } catch (error) {
+        console.warn("Failed to hydrate alarm analyst cards:", error);
+      }
     }
 
     const payloadsByMessageId = new Map<
@@ -548,6 +543,10 @@ export function useRemoteChatSession({
     >();
     for (const message of nextMessages || []) {
       if (message?.type !== "agent" || message?.alarmAnalystCard) {
+        continue;
+      }
+      const reportMarkdown = getAlarmAnalystReportMarkdown(message);
+      if (!shouldEnableBySession && !shouldAttemptAlarmAnalystCardByContent(reportMarkdown)) {
         continue;
       }
       const payload = buildAlarmAnalystCardRequest({
