@@ -35,6 +35,7 @@ ENV NODE_ENV=production
 ENV WORKSPACE_DIR=/app
 ENV QWENPAW_WORKING_DIR=/app/working
 ENV QWENPAW_SECRET_DIR=/app/working.secret
+ENV QWENPAW_BACKUP_DIR=/app/working.backups
 
 # Channel filtering: use QWENPAW_DISABLED_CHANNELS (exclusion, recommended)
 # or QWENPAW_ENABLED_CHANNELS (whitelist). Override at runtime with -e.
@@ -121,17 +122,15 @@ WORKDIR ${WORKSPACE_DIR}
 RUN python3 -m venv venv
 ENV PATH="/app/venv/bin:$PATH"
 
-# Pip mirror for faster download (use --build-arg PIP_INDEX_URL=xxx to override)
-RUN pip config set global.index-url "${PIP_INDEX_URL}" \
-  && pip config set global.trusted-host "${PIP_TRUSTED_HOST}" \
-  && pip install --no-cache-dir uv
-
 COPY pyproject.toml setup.py README.md ./
 COPY src ./src
 # Inject console dist from build stage (repo does not commit dist).
 COPY --from=console-builder /app/console/dist/ ./src/qwenpaw/console/
+# Speed up Python package installation with uv.
+COPY --from=agentscope-registry.ap-southeast-1.cr.aliyuncs.com/agentscope/uv:latest /uv /bin/uv
 
-RUN pip install --no-cache-dir --timeout 600 --retries 5 .[ollama]
+RUN uv pip install --python /app/venv/bin/python --no-cache-dir ".[ollama]" \
+  && rm -rf ./build
 
 # Init working dir with default config.json and HEARTBEAT.md (build time).
 RUN qwenpaw init --defaults --accept-security
