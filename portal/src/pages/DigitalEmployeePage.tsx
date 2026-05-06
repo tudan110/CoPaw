@@ -64,6 +64,7 @@ import { usePortalSessionHistory } from "./digital-employee/usePortalSessionHist
 import { useRemoteChatSession } from "./digital-employee/useRemoteChatSession";
 import { portalAppTitle } from "../config/portalBranding";
 import portalLogo from "../assets/images/portal-logo.png";
+import PortalTraditionalViewButton from "../components/PortalTraditionalViewButton";
 import "./digital-employee.css";
 
 import {
@@ -466,7 +467,6 @@ export default function DigitalEmployeePage({
     navigateToEmployeePage,
     navigateToPortalHome,
     updateCurrentEmployeeRoute,
-    handleSwitchTraditionalView,
     openSkillPool,
     openKnowledgeBase,
     openInspiration,
@@ -1311,6 +1311,7 @@ export default function DigitalEmployeePage({
               >
                 {themeToggleIcon}
               </button>
+              <PortalTraditionalViewButton />
             </div>
           ) : null}
           {isModelConfigMode ? (
@@ -1493,7 +1494,6 @@ export default function DigitalEmployeePage({
                   isCreatingChat={isCreatingChat}
                   homeComposerRef={homeComposerRef}
                   onToggleTheme={() => setPageTheme((value) => (value === "light" ? "dark" : "light"))}
-                  onSwitchTraditionalView={handleSwitchTraditionalView}
                   onComposerBlur={handleComposerBlur}
                   onInputSelection={handleInputSelection}
                   onComposerChange={handleHomeComposerChange}

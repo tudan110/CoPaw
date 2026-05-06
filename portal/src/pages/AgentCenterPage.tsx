@@ -1,6 +1,7 @@
 import { useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import DigitalEmployeeAvatar from "../components/DigitalEmployeeAvatar";
+import PortalTraditionalViewButton from "../components/PortalTraditionalViewButton";
 import {
   agentTypeNames,
   getEmployeeById,
@@ -72,6 +73,7 @@ export default function AgentCenterPage() {
               <i className="fa-solid fa-rotate-right" />
               刷新
             </button>
+            <PortalTraditionalViewButton />
           </div>
         </div>
 

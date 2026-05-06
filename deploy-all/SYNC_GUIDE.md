@@ -29,6 +29,7 @@
 > | `http://192.168.130.51:30081` | `http://10.141.245.15:30081` | `http://172.28.75.4:30081` |
 > | `http://192.168.130.51:31089` | `http://10.141.245.15:31089` | `http://172.28.75.4:31089` |
 > | `http://192.168.130.51:30001` | `http://10.141.245.15:30001` | `http://172.28.75.4:30001` |
+> | `http://192.168.130.51:3101` | `http://10.141.245.15:3101` | `http://172.28.75.4:3101` |
 
 ### 1. 清理旧版目录和文件
 
@@ -144,6 +145,7 @@ find deploy-all/qwenpaw/data/qwenpaw -type f \
     sed -i '' "s|http://192.168.130.51:30081|http://$TARGET_HOST:30081|g" "$file"
     sed -i '' "s|http://192.168.130.51:31089|http://$TARGET_HOST:31089|g" "$file"
     sed -i '' "s|http://192.168.130.51:30001|http://$TARGET_HOST:30001|g" "$file"
+    sed -i '' "s|http://192.168.130.51:3101|http://$TARGET_HOST:3101|g" "$file"
   done
 
 echo "已按 $TARGET_ENV_NAME 环境完成 data 目录地址替换"
@@ -320,6 +322,7 @@ replace_service_urls() {
       sed -i '' "s|http://192.168.130.51:30081|http://$TARGET_HOST:30081|g" "$file"
       sed -i '' "s|http://192.168.130.51:31089|http://$TARGET_HOST:31089|g" "$file"
       sed -i '' "s|http://192.168.130.51:30001|http://$TARGET_HOST:30001|g" "$file"
+      sed -i '' "s|http://192.168.130.51:3101|http://$TARGET_HOST:3101|g" "$file"
     done
 }
 

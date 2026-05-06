@@ -7,10 +7,7 @@ import {
   type PortalAdvancedPanel,
   type PortalView,
 } from "./helpers";
-import {
-  PORTAL_CLOSE_DRAWER_MESSAGE,
-  sidebarEmployeePriority,
-} from "./pageHelpers";
+import { sidebarEmployeePriority } from "./pageHelpers";
 import type { PortalLocationState } from "./pageHelpers";
 
 export function usePortalNavigationSidebar({
@@ -113,12 +110,6 @@ export function usePortalNavigationSidebar({
     navigateToPortalHome,
     selectedEmployee,
   ]);
-
-  const handleSwitchTraditionalView = useCallback(() => {
-    if (window.parent !== window) {
-      window.parent.postMessage(PORTAL_CLOSE_DRAWER_MESSAGE, "*");
-    }
-  }, []);
 
   const openSkillPool = useCallback(() => {
     navigate(buildPortalSectionPath("skill-pool"));
@@ -229,7 +220,6 @@ export function usePortalNavigationSidebar({
     navigateToEmployeePage,
     navigateToPortalHome,
     updateCurrentEmployeeRoute,
-    handleSwitchTraditionalView,
     openSkillPool,
     openKnowledgeBase,
     openInspiration,

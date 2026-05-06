@@ -14,7 +14,7 @@
   --text-muted: #94a3b8;
   --border: #e2e8f0;
   --border-light: #f1f5f9;
-  --portal-quick-actions-space: 112px;
+  --portal-quick-actions-space: clamp(160px, 28vw, 320px);
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
   --shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
   --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
@@ -1537,6 +1537,13 @@
 }
 
 .portal-digital-employee.theme-dark .ops-board-theme-toggle {
+  background: #1a2235;
+  border-color: rgba(79, 110, 247, 0.22);
+  color: #cbd5e1;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.3);
+}
+
+.portal-digital-employee.theme-dark .portal-traditional-view-button {
   background: #1a2235;
   border-color: rgba(79, 110, 247, 0.22);
   color: #cbd5e1;
@@ -11833,6 +11840,12 @@
   }
 
   .portal-digital-employee .portal-home-traditional-toggle {
+    padding: 0 10px;
+    font-size: 12px;
+  }
+
+  .portal-digital-employee .portal-global-quick-actions .portal-traditional-view-button,
+  .portal-digital-employee .kanban-header-actions .portal-traditional-view-button {
     padding: 0 10px;
     font-size: 12px;
   }

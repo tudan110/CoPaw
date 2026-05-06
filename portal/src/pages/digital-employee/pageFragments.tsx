@@ -10,6 +10,7 @@ import { Component } from "react";
 import type { DigitalEmployee } from "../../types/portal";
 import { getEmployeeById } from "../../data/portalData";
 import DigitalEmployeeAvatar from "../../components/DigitalEmployeeAvatar";
+import PortalTraditionalViewButton from "../../components/PortalTraditionalViewButton";
 import { ChatMessageItem } from "./components";
 import type {
   ChatSidebarActivityItem,
@@ -327,7 +328,6 @@ export function PortalHomeHero({
   isCreatingChat,
   homeComposerRef,
   onToggleTheme,
-  onSwitchTraditionalView,
   onComposerBlur,
   onInputSelection,
   onComposerChange,
@@ -351,7 +351,6 @@ export function PortalHomeHero({
   isCreatingChat: boolean;
   homeComposerRef: MutableRefObject<HTMLTextAreaElement | null>;
   onToggleTheme: () => void;
-  onSwitchTraditionalView: () => void;
   onComposerBlur: () => void;
   onInputSelection: (
     event:
@@ -380,32 +379,7 @@ export function PortalHomeHero({
         >
           {themeToggleIcon}
         </button>
-        <button
-          type="button"
-          className="ops-board-theme-toggle portal-home-traditional-toggle"
-          onClick={onSwitchTraditionalView}
-          aria-label="切换传统视图"
-          title="切换传统视图"
-        >
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            width="16"
-            height="16"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            aria-hidden="true"
-          >
-            <rect x="3" y="3" width="7" height="7" />
-            <rect x="14" y="3" width="7" height="7" />
-            <rect x="3" y="14" width="7" height="7" />
-            <rect x="14" y="14" width="7" height="7" />
-          </svg>
-          <span>切换传统视图</span>
-        </button>
+        <PortalTraditionalViewButton className="portal-home-traditional-toggle" />
       </div>
       <div className="portal-home-hero">
         <div className="portal-home-orbit">
@@ -614,6 +588,7 @@ export function DashboardPanel({
           >
             {themeToggleIcon}
           </button>
+          <PortalTraditionalViewButton />
         </div>
       </div>
 

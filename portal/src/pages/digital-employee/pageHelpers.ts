@@ -48,6 +48,12 @@ export const PORTAL_CLOSE_DRAWER_MESSAGE = {
   type: "portal:close-drawer",
   reason: "switch-traditional-view",
 } as const;
+
+export function postPortalCloseDrawerMessage() {
+  if (window.parent !== window) {
+    window.parent.postMessage(PORTAL_CLOSE_DRAWER_MESSAGE, "*");
+  }
+}
 export const RESOURCE_IMPORT_OWNER_ID = "resource";
 export const KNOWLEDGE_BASE_OWNER_ID = "knowledge";
 export const ORDER_OWNER_ID = "order";
