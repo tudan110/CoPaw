@@ -142,7 +142,7 @@ async function requestCopaw<T = any>(
       });
     } catch (error: any) {
       if (error?.name === "AbortError" && timedOut) {
-        throw new Error("CoPAW 请求超时，请稍后重试");
+        throw new Error("请求超时，请稍后重试");
       }
       throw error;
     } finally {
@@ -161,13 +161,13 @@ async function requestCopaw<T = any>(
     lastErrorText = await response.text().catch(() => "");
     if (!isMissingAgentResponse(response.status, lastErrorText)) {
       throw new Error(
-        extractErrorMessage(lastErrorText) || `CoPAW 请求失败：${response.status}`,
+        extractErrorMessage(lastErrorText) || `请求失败：${response.status}`,
       );
     }
   }
 
   throw new Error(
-    extractErrorMessage(lastErrorText) || `CoPAW 请求失败：${lastStatus}`,
+    extractErrorMessage(lastErrorText) || `请求失败：${lastStatus}`,
   );
 }
 
@@ -258,7 +258,7 @@ export async function streamChat(
       keepAbortBound = candidateResponse.ok;
     } catch (error: any) {
       if (error?.name === "AbortError" && connectTimedOut) {
-        throw new Error("CoPAW 流式连接超时，请稍后重试");
+        throw new Error("流式连接超时，请稍后重试");
       }
       throw error;
     } finally {
@@ -279,19 +279,19 @@ export async function streamChat(
     if (!isMissingAgentResponse(candidateResponse.status, lastErrorText)) {
       throw new Error(
         extractErrorMessage(lastErrorText) ||
-          `CoPAW 流式请求失败：${candidateResponse.status}`,
+          `流式请求失败：${candidateResponse.status}`,
       );
     }
   }
 
   if (!response) {
     throw new Error(
-      extractErrorMessage(lastErrorText) || `CoPAW 流式请求失败：${lastStatus}`,
+      extractErrorMessage(lastErrorText) || `流式请求失败：${lastStatus}`,
     );
   }
 
   if (!response.body) {
-    throw new Error("CoPAW 未返回可读取的流式数据");
+    throw new Error("未返回可读取的流式数据");
   }
 
   const reader = response.body.getReader();
@@ -316,7 +316,7 @@ export async function streamChat(
         }
         if (event.error) {
           throw new Error(
-            extractErrorMessage(event.error) || "CoPAW 流式请求失败",
+            extractErrorMessage(event.error) || "流式请求失败",
           );
         }
         onEvent?.(event);
@@ -327,7 +327,7 @@ export async function streamChat(
     if (finalEvent) {
       if (finalEvent.error) {
         throw new Error(
-          extractErrorMessage(finalEvent.error) || "CoPAW 流式请求失败",
+          extractErrorMessage(finalEvent.error) || "流式请求失败",
         );
       }
       onEvent?.(finalEvent);

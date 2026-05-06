@@ -1417,7 +1417,7 @@ export default function DigitalEmployeePage({
                       : currentView === "dashboard"
                         ? "查看实时任务概览和泳道看板"
                         : currentView === "tasks"
-                        ? "查看和管理 CoPaw 定时任务"
+                        ? "查看和管理定时任务"
                         : isAlarmWorkbenchMode
                           ? "告警触发后自动生成的待处置工单视图"
                           : visibleEmployee.desc}

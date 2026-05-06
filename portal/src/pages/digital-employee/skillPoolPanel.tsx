@@ -583,7 +583,7 @@ export function SkillPoolPanel() {
           <div className="skill-pool-empty">
             <i className="fas fa-bolt" />
             <strong>还没有匹配的技能</strong>
-            <span>可以直接新建自定义技能，统一沉淀到 CoPaw 全局技能池。</span>
+            <span>可以直接新建自定义技能，统一沉淀到全局技能池。</span>
           </div>
         )}
 
@@ -720,7 +720,7 @@ export function SkillPoolPanel() {
                       : "编辑技能"}
                 </h3>
                 <p>
-                  当前采用 CoPaw 原生 SKILL.md 格式，技能池为全局共享能力中心。
+                  当前采用原生 SKILL.md 格式，技能池为全局共享能力中心。
                 </p>
               </div>
               <button type="button" className="skill-pool-modal-close" onClick={closeModal}>

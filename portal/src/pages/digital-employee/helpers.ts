@@ -354,7 +354,7 @@ export function buildFaultWorkbenchContextPayload(
 export function buildFaultWorkbenchDiagnosePrompt(workorder: any, workorders: any[]) {
   return [
     PORTAL_FAULT_WORKORDER_MARKER,
-    "请按 CoPAW 标准故障处置流程继续当前工单分析，优先调用 fault-disposal skill。",
+    "请按标准故障处置流程继续当前工单分析，优先调用 fault-disposal skill。",
     "要求：保持在当前聊天会话中完成，不要创建子会话；先完成根因分析与处置建议，暂时不要直接执行动作；输出精炼 markdown，并保留 portal-action 代码块。",
     "强约束：如果结论是存在可执行的下一步动作，最终回复末尾必须追加唯一一个 ```portal-action 代码块；不要只写“请回复执行建议动作”这类文字而不附 action。",
     "portal-action 必须是合法 JSON，至少包含：id、type、title、summary、status、riskLevel、sessionId、sqlId、sourceWorkorderNo、rootCauseWorkorderNo、deviceName、manageIp、locateName。",
@@ -374,7 +374,7 @@ export function buildFaultWorkbenchDiagnosePrompt(workorder: any, workorders: an
 export function buildFaultWorkbenchExecutePrompt(workorder: any, workorders: any[], action: any) {
   return [
     PORTAL_FAULT_WORKORDER_MARKER,
-    "请按 CoPAW 标准故障处置流程继续当前工单，并执行已经确认的建议动作，优先调用 fault-disposal skill。",
+    "请按标准故障处置流程继续当前工单，并执行已经确认的建议动作，优先调用 fault-disposal skill。",
     "要求：保持在当前聊天会话中执行，不要创建子会话；完成动作后返回恢复验证结论，正文保持精炼 markdown。",
     "执行约束：不要把脚本命令原样回复给用户；不要重复查询无关告警列表；基于下方建议动作和工单上下文完成执行与验证。",
     "",

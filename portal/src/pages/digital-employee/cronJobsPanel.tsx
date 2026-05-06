@@ -1261,7 +1261,7 @@ export function CronJobsPanel() {
               <div className="cron-jobs-section-card">
                 <div className="cron-jobs-section-head">
                   <h5>投递目标</h5>
-                  <span>与 CoPaw dispatch 字段保持一致</span>
+                  <span>与 dispatch 字段保持一致</span>
                 </div>
 
                 <div className="cron-jobs-form-grid two-columns">
