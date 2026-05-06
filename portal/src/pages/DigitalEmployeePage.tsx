@@ -1166,13 +1166,7 @@ export default function DigitalEmployeePage({
           <button
             type="button"
             className={isPortalHomeChat ? "logo active" : "logo"}
-            onClick={() =>
-              navigateToPortalHome({
-                entry: null,
-                view: "chat",
-                panel: null,
-              })
-            }
+            onClick={handleStartNewConversation}
           >
             <div className="logo-icon">
               <img src={portalLogo} alt={portalAppTitle} className="logo-icon-image" />
