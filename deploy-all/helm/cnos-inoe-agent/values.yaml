@@ -42,7 +42,7 @@ digital-workforce-portal:
     type: NodePort
     port: 80
     targetPort: 80
-    nodePort: 30083
+    nodePort: 30073
 
 # ----- qwenpaw 配置 -----
 qwenpaw:
