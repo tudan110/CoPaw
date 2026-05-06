@@ -18,6 +18,18 @@
 
 ## 同步步骤
 
+> **执行前必须先确认环境**：同步 `data` 目录前，先询问“这次同步的是什么环境？4A 还是大装置？”
+>
+> data 目录中的服务地址按环境替换规则如下：
+>
+> | 原地址 | 4A 环境 | 大装置环境 |
+> |--------|---------|------------|
+> | `http://172.28.75.4:30080` | `http://10.141.245.15:30080` | `http://172.28.75.4:30080` |
+> | `http://192.168.130.51:30080` | `http://10.141.245.15:30080` | `http://172.28.75.4:30080` |
+> | `http://192.168.130.51:30081` | `http://10.141.245.15:30081` | `http://172.28.75.4:30081` |
+> | `http://192.168.130.51:31089` | `http://10.141.245.15:31089` | `http://172.28.75.4:31089` |
+> | `http://192.168.130.51:30001` | `http://10.141.245.15:30001` | `http://172.28.75.4:30001` |
+
 ### 1. 清理旧版目录和文件
 
 ```bash
@@ -99,6 +111,42 @@ if [ -f deploy-all/qwenpaw/data/qwenpaw/skill_pool/skill.json ]; then
   sed -i '' 's|~/.qwenpaw|/app/working|g' deploy-all/qwenpaw/data/qwenpaw/skill_pool/skill.json
   sed -i '' 's|~/.copaw|/app/working|g' deploy-all/qwenpaw/data/qwenpaw/skill_pool/skill.json
 fi
+```
+
+#### 按环境替换 `data` 目录中的服务地址
+
+```bash
+echo "这次同步的是什么环境？"
+echo "1) 4A"
+echo "2) 大装置"
+read -r TARGET_ENV
+
+case "$TARGET_ENV" in
+  1|4A|4a)
+    TARGET_HOST="10.141.245.15"
+    TARGET_ENV_NAME="4A"
+    ;;
+  2|大装置)
+    TARGET_HOST="172.28.75.4"
+    TARGET_ENV_NAME="大装置"
+    ;;
+  *)
+    echo "未知环境: $TARGET_ENV"
+    exit 1
+    ;;
+esac
+
+find deploy-all/qwenpaw/data/qwenpaw -type f \
+  \( -name "*.json" -o -name "*.md" -o -name "*.txt" -o -name "*.yaml" -o -name "*.yml" -o -name "*.env" -o -name "*.sh" \) \
+  -print0 | while IFS= read -r -d '' file; do
+    sed -i '' "s|http://172.28.75.4:30080|http://$TARGET_HOST:30080|g" "$file"
+    sed -i '' "s|http://192.168.130.51:30080|http://$TARGET_HOST:30080|g" "$file"
+    sed -i '' "s|http://192.168.130.51:30081|http://$TARGET_HOST:30081|g" "$file"
+    sed -i '' "s|http://192.168.130.51:31089|http://$TARGET_HOST:31089|g" "$file"
+    sed -i '' "s|http://192.168.130.51:30001|http://$TARGET_HOST:30001|g" "$file"
+  done
+
+echo "已按 $TARGET_ENV_NAME 环境完成 data 目录地址替换"
 ```
 
 ### 5. 同步工作区其他文件
@@ -242,6 +290,39 @@ SECRET_DIR="$DEPLOY_ROOT/qwenpaw.secret"
 LOCAL_DIR="$HOME/.qwenpaw"
 LOCAL_SECRET_DIR="$HOME/.qwenpaw.secret"
 
+echo "这次同步的是什么环境？"
+echo "1) 4A"
+echo "2) 大装置"
+read -r TARGET_ENV
+
+case "$TARGET_ENV" in
+  1|4A|4a)
+    TARGET_HOST="10.141.245.15"
+    TARGET_ENV_NAME="4A"
+    ;;
+  2|大装置)
+    TARGET_HOST="172.28.75.4"
+    TARGET_ENV_NAME="大装置"
+    ;;
+  *)
+    echo "未知环境: $TARGET_ENV" >&2
+    exit 1
+    ;;
+esac
+
+replace_service_urls() {
+  local target_dir="$1"
+  find "$target_dir" -type f \
+    \( -name "*.json" -o -name "*.md" -o -name "*.txt" -o -name "*.yaml" -o -name "*.yml" -o -name "*.env" -o -name "*.sh" \) \
+    -print0 | while IFS= read -r -d '' file; do
+      sed -i '' "s|http://172.28.75.4:30080|http://$TARGET_HOST:30080|g" "$file"
+      sed -i '' "s|http://192.168.130.51:30080|http://$TARGET_HOST:30080|g" "$file"
+      sed -i '' "s|http://192.168.130.51:30081|http://$TARGET_HOST:30081|g" "$file"
+      sed -i '' "s|http://192.168.130.51:31089|http://$TARGET_HOST:31089|g" "$file"
+      sed -i '' "s|http://192.168.130.51:30001|http://$TARGET_HOST:30001|g" "$file"
+    done
+}
+
 mkdir -p "$DEPLOY_DIR" "$SECRET_DIR" "$DEPLOY_DIR/workspaces"
 
 echo "=== Step 1: Clean old directories ==="
@@ -293,6 +374,9 @@ for ws in $(ls "$LOCAL_DIR/workspaces/"); do
   done
 done
 
+echo "=== Step 5.1: Replace service URLs by environment ($TARGET_ENV_NAME) ==="
+replace_service_urls "$DEPLOY_DIR"
+
 echo "=== Step 6: Sync qwenpaw.secret (model providers) ==="
 rm -rf "$SECRET_DIR" 2>/dev/null || true
 mkdir -p "$SECRET_DIR"
@@ -343,6 +427,12 @@ grep "/app/working" deploy-all/qwenpaw/data/qwenpaw/config.json | head -5
 
 # 检查是否有残留的本地路径（递归检查所有 JSON）
 grep -r "~/.qwenpaw\|~/.copaw\|/Users/.*/\.\(qwenpaw\|copaw\)" deploy-all/qwenpaw/data/qwenpaw || echo "No local paths found"
+
+# 检查旧环境地址是否已清理
+grep -r "192\.168\.130\.51" deploy-all/qwenpaw/data/qwenpaw && echo "仍有旧地址，请继续检查" || echo "192.168.130.51 已清理"
+
+# 如果本次是 4A 环境，再额外确认 172.28.75.4:30080 已替换
+grep -r "172\.28\.75\.4:30080" deploy-all/qwenpaw/data/qwenpaw && echo "若目标是 4A，请继续检查剩余 30080 地址" || echo "30080 地址已按需替换"
 ```
 
 ## 版本升级检查
