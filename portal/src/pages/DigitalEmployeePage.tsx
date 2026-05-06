@@ -64,7 +64,6 @@ import { usePortalSessionHistory } from "./digital-employee/usePortalSessionHist
 import { useRemoteChatSession } from "./digital-employee/useRemoteChatSession";
 import { portalAppTitle } from "../config/portalBranding";
 import portalLogo from "../assets/images/portal-logo.png";
-import PortalTraditionalViewButton from "../components/PortalTraditionalViewButton";
 import "./digital-employee.css";
 
 import {
@@ -467,6 +466,7 @@ export default function DigitalEmployeePage({
     navigateToEmployeePage,
     navigateToPortalHome,
     updateCurrentEmployeeRoute,
+    handleSwitchTraditionalView,
     openSkillPool,
     openKnowledgeBase,
     openInspiration,
@@ -983,19 +983,6 @@ export default function DigitalEmployeePage({
     navigate,
   });
 
-  const handlePortalLogoClick = useCallback(() => {
-    if (isPortalHomeChat) {
-      handleStartNewConversation();
-      return;
-    }
-
-    navigateToPortalHome({
-      entry: null,
-      view: "chat",
-      panel: null,
-    });
-  }, [handleStartNewConversation, isPortalHomeChat, navigateToPortalHome]);
-
   useEffect(() => {
     const openHistoryForEmployeeId = locationState?.openHistoryForEmployeeId;
     if (!openHistoryForEmployeeId || !currentEmployee) {
@@ -1179,7 +1166,7 @@ export default function DigitalEmployeePage({
           <button
             type="button"
             className={isPortalHomeChat ? "logo active" : "logo"}
-            onClick={handlePortalLogoClick}
+            onClick={handleStartNewConversation}
           >
             <div className="logo-icon">
               <img src={portalLogo} alt={portalAppTitle} className="logo-icon-image" />
@@ -1311,7 +1298,6 @@ export default function DigitalEmployeePage({
               >
                 {themeToggleIcon}
               </button>
-              <PortalTraditionalViewButton />
             </div>
           ) : null}
           {isModelConfigMode ? (
@@ -1494,6 +1480,7 @@ export default function DigitalEmployeePage({
                   isCreatingChat={isCreatingChat}
                   homeComposerRef={homeComposerRef}
                   onToggleTheme={() => setPageTheme((value) => (value === "light" ? "dark" : "light"))}
+                  onSwitchTraditionalView={handleSwitchTraditionalView}
                   onComposerBlur={handleComposerBlur}
                   onInputSelection={handleInputSelection}
                   onComposerChange={handleHomeComposerChange}
