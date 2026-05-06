@@ -40,6 +40,9 @@ providers.json
 envs.json
 !.env.example
 !.env.template
+# 共享 secrets 目录：忽略真实凭证文件，保留 *.example 模板
+deploy-all/qwenpaw/working/secrets/*.env
+!deploy-all/qwenpaw/working/secrets/*.env.example
 __pycache__/
 *.db
 *.rdb
