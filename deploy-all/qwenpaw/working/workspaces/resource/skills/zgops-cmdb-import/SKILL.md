@@ -5,8 +5,12 @@ description: 用于处理CMDB 测试环境中的资源清单智能导入、资�
 
 # CMDB 资源导入技能
 
-仅面向当前 skill 目录下 `.env` 中配置的这套测试环境。
-这个 skill 独立运行，不复用其他 skill 的环境文件。
+凭证默认从共享路径 `working/secrets/zgops-cmdb.env` 读取，
+该位置由所有 zgops-cmdb 系列 skill 共用，与本 skill 目录名解耦。
+若需要为本 skill 单独覆盖，仍可在当前目录放 `.env`（优先级更高）。
+
+解析顺序：
+`$VEOPS_ENV_FILE` → `<skill_dir>/.env` → `$QWENPAW_WORKING_DIR/secrets/zgops-cmdb.env` → `~/.qwenpaw/secrets/zgops-cmdb.env` → `<repo>/deploy-all/qwenpaw/working/secrets/zgops-cmdb.env`
 
 ## 默认行为
 

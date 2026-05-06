@@ -889,16 +889,88 @@ def _semantic_field_candidates(header: str) -> list[dict[str, str]]:
     )
 
 
+def _candidate_env_files() -> list[Path]:
+    """Return ordered candidate paths for the CMDB env file.
+
+    Resolution order (first non-empty file wins):
+      1. ``$VEOPS_ENV_FILE`` if set.
+      2. ``<cwd>/.env`` — bridge runs cwd'd into the skill dir, so this
+         is the per-skill override slot.
+      3. ``$QWENPAW_WORKING_DIR/secrets/zgops-cmdb.env`` (or COPAW
+         fallback) — stable shared location all CMDB skills can read.
+      4. ``~/.qwenpaw/secrets/zgops-cmdb.env`` — default working dir.
+      5. ``<repo>/deploy-all/qwenpaw/working/secrets/zgops-cmdb.env`` —
+         dev fallback when running directly out of a checkout.
+    """
+
+    candidates: list[Path] = []
+
+    explicit = os.environ.get("VEOPS_ENV_FILE")
+    if explicit:
+        candidates.append(Path(explicit).expanduser())
+
+    candidates.append(_default_env_file())
+
+    working_dir = (
+        os.environ.get("QWENPAW_WORKING_DIR")
+        or os.environ.get("COPAW_WORKING_DIR")
+    )
+    if working_dir:
+        candidates.append(
+            Path(working_dir).expanduser() / "secrets" / "zgops-cmdb.env"
+        )
+
+    candidates.append(
+        Path("~/.qwenpaw").expanduser() / "secrets" / "zgops-cmdb.env"
+    )
+
+    try:
+        repo_secrets = (
+            _repo_root()
+            / "deploy-all"
+            / "qwenpaw"
+            / "working"
+            / "secrets"
+            / "zgops-cmdb.env"
+        )
+        candidates.append(repo_secrets)
+    except Exception:
+        pass
+
+    seen: set[str] = set()
+    unique: list[Path] = []
+    for path in candidates:
+        key = str(path)
+        if key in seen:
+            continue
+        seen.add(key)
+        unique.append(path)
+    return unique
+
+
 def _parse_env() -> dict[str, str]:
-    selected_path = Path(os.environ.get("VEOPS_ENV_FILE", str(_default_env_file())))
-    values = {
-        key: str(value)
-        for key, value in dotenv_values(selected_path).items()
-        if value is not None
-    }
-    if not values:
-        raise RuntimeError(f"未找到可用的 CMDB 环境文件：{selected_path}")
-    return values
+    candidates = _candidate_env_files()
+    for path in candidates:
+        try:
+            if not path.is_file():
+                continue
+        except OSError:
+            continue
+        values = {
+            key: str(value)
+            for key, value in dotenv_values(path).items()
+            if value is not None
+        }
+        if values:
+            return values
+
+    listing = "\n".join(f"  - {p}" for p in candidates)
+    raise RuntimeError(
+        "未找到可用的 CMDB 环境文件，已按以下顺序尝试：\n"
+        f"{listing}\n"
+        "请在任一位置创建 .env（参考同级 .env.example），"
+        "推荐填写到共享路径 secrets/zgops-cmdb.env。"
+    )
 
 
 def _safe_json(response: httpx.Response) -> Any:
