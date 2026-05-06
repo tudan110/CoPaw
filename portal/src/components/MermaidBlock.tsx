@@ -14,10 +14,50 @@ function ensureMermaidInitialized() {
   mermaid.initialize({
     startOnLoad: false,
     theme: "default",
-    securityLevel: "loose",
+    // strict — escapes HTML in node labels via mermaid's bundled DOMPurify.
+    // Never relax to "loose" without a full sanitizer in front of dangerouslySetInnerHTML.
+    securityLevel: "strict",
     fontFamily: "Inter, Noto Sans SC, sans-serif",
   });
   mermaidInitialized = true;
+}
+
+const DISALLOWED_TAGS = new Set(["SCRIPT", "FOREIGNOBJECT", "IFRAME", "OBJECT", "EMBED"]);
+const SAFE_URI_RE = /^(?:#|\/|\.{1,2}\/|https?:|mailto:|tel:|data:image\/(?:png|jpeg|gif|svg\+xml|webp);)/i;
+
+function sanitizeSvgString(raw: string): string {
+  if (!raw) return "";
+  if (typeof window === "undefined" || typeof DOMParser === "undefined") {
+    return raw;
+  }
+  const doc = new DOMParser().parseFromString(raw, "image/svg+xml");
+  if (doc.getElementsByTagName("parsererror").length > 0) {
+    return "";
+  }
+  const walk = (node: Element) => {
+    for (const child of Array.from(node.children)) {
+      if (DISALLOWED_TAGS.has(child.tagName.toUpperCase())) {
+        child.remove();
+        continue;
+      }
+      for (const attr of Array.from(child.attributes)) {
+        const name = attr.name.toLowerCase();
+        if (name.startsWith("on")) {
+          child.removeAttribute(attr.name);
+          continue;
+        }
+        if (name === "href" || name === "xlink:href" || name === "src") {
+          const value = attr.value.trim();
+          if (value && !SAFE_URI_RE.test(value)) {
+            child.removeAttribute(attr.name);
+          }
+        }
+      }
+      walk(child);
+    }
+  };
+  if (doc.documentElement) walk(doc.documentElement);
+  return new XMLSerializer().serializeToString(doc.documentElement);
 }
 
 export function MermaidBlock({ chart }: MermaidBlockProps) {
@@ -35,23 +75,22 @@ export function MermaidBlock({ chart }: MermaidBlockProps) {
 
     let cancelled = false;
     ensureMermaidInitialized();
-    mermaid
-      .render(`mermaid-${id}`, source)
-      .then((result) => {
-        if (cancelled) {
-          return;
-        }
-        setSvg(result.svg);
+
+    const run = async () => {
+      try {
+        await mermaid.parse(source);
+        const result = await mermaid.render(`mermaid-${id}`, source);
+        if (cancelled) return;
+        setSvg(sanitizeSvgString(result.svg));
         setError("");
-      })
-      .catch((err: unknown) => {
-        if (cancelled) {
-          return;
-        }
+      } catch (err) {
+        if (cancelled) return;
         console.error("Failed to render Mermaid chart:", err);
         setSvg("");
         setError("拓扑图配置解析失败");
-      });
+      }
+    };
+    run();
 
     return () => {
       cancelled = true;
