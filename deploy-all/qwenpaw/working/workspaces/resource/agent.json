@@ -336,7 +336,11 @@
       "model": ""
     }
   },
-  "language": "en",
+  "active_model": {
+    "provider_id": "ctyun",
+    "model": "GLM-5.1"
+  },
+  "language": "zh",
   "system_prompt_files": [
     "AGENTS.md",
     "SOUL.md",
