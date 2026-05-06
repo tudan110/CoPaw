@@ -80,6 +80,12 @@ case "$GIT_AUTHOR_NAME" in
         export GIT_COMMITTER_NAME="朱文勇"
         export GIT_COMMITTER_EMAIL="zhuwy09@chinatelecom.cn"
         ;;
+    "mak073")
+        export GIT_AUTHOR_NAME="mak073"
+        export GIT_AUTHOR_EMAIL="mak073@chinatelecom.cn"
+        export GIT_COMMITTER_NAME="mak073"
+        export GIT_COMMITTER_EMAIL="mak073@chinatelecom.cn"
+        ;;
     "tudan110")
         export GIT_AUTHOR_NAME="王坦"
         export GIT_AUTHOR_EMAIL="wangt091@chinatelecom.cn"
