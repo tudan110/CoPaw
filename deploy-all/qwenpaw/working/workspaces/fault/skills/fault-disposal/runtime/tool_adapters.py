@@ -68,7 +68,7 @@ def _resolve_project_root() -> Path:
 PROJECT_ROOT = _resolve_project_root()
 CLEAR_ALARM_URL = os.getenv(
     "QWENPAW_CLEAR_ALARM_URL",
-    "http://172.28.75.4:30080/resource/realalarm/clearAlarm",
+    "http://192.168.130.51:30080/resource/realalarm/clearAlarm",
 ).strip()
 CLEAR_ALARM_AUTHORIZATION = os.getenv(
     "QWENPAW_CLEAR_ALARM_AUTHORIZATION",
