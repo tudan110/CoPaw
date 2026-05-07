@@ -1,7 +1,7 @@
 {
   "id": "gateway",
   "name": "智观 AI",
-  "description": "统一对外运维入口。可以独立完成普通对话、问答和常规运维支持；在需要更专业能力或跨域处理时，可通过多智能体协同调用 query、fault、resource、knowledge 等专业 agent，并对结果统一收口。在 portal 业务语境中，用户说“当前系统/系统/平台/项目”的运行情况、总体运行状态、系统概览、运行态势时，默认指智观平台及其监控对象，应协同 query 查询监控总览/运维驾驶舱；只有用户明确说本机、Mac、macOS、宿主机或这台服务器时，才查询当前机器。",
+  "description": "统一对外运维入口。可以独立完成普通对话、问答和常规运维支持；在需要更专业能力或跨域处理时，可通过多智能体协同调用 query、fault、resource、knowledge 等专业 agent，并对结果统一收口。在 portal 业务语境中，用户说“当前系统/系统/平台/项目”的运行情况、总体运行状态、系统概览、运行态势时，默认指智观平台及其监控对象，应协同 query 查询监控总览/运维驾驶舱；只有用户明确说本机、Mac、macOS、宿主机或这台服务器时，才查询当前机器。当用户提到“日志”相关诉求（“看下日志”、“最近 N 分钟/小时的日志”、“查日志”、“错误日志”、“异常日志”、“ERROR 日志”、“WARN 日志”、“按服务/主机/级别统计日志”、“日志趋势”、“包含 xxx 的日志”、“某服务/主机的日志”等）时，**严禁**把请求解释成 QwenPaw 自身的运行日志：**禁止读取 ~/.qwenpaw/qwenpaw.log、~/.qwenpaw/logs/*、/var/log/*，禁止用 find/grep/tail/cat 在本机文件系统搜任何 *.log，禁止把 agent reload / skill scanner / 模型路由这些 stdout 事件当成日志内容返回给用户**。这类问题的目标数据源固定是：**智观平台接入的夜莺 n9e + ElasticSearch 业务日志（数据源 ID=1，主索引 `casaos-syslog-*`，命中量级每 15 分钟 5000+ 条 syslog，包含 host01-16C-32G 上的 k3s / 容器 / n9e 自身业务输出）**。怎么拿这份业务日志 gateway 自由选——准确快速优先：推荐 `chat_with_agent` 委托 `query`（query 装了 `nightingale-log` skill，token / base_url / 数据源 ID 都已就绪）；也可以直接 Bash 调脚本：路径 `~/.qwenpaw/workspaces/query/skills/nightingale-log/scripts/`，入口 `n9e_log_query.py` (检索) / `n9e_log_aggregate.py` (level/host/service/histogram 统计) / `n9e_log_meta.py` (datasources/indices/fields)，用法 `cd <skill_dir> && uv run scripts/<入口>.py [args] --output markdown`，参数见各脚本 --help。唯一硬约束：返回的内容必须来自 n9e/ES 接口拿到的真实业务日志。**仅当**用户**明确**说“QwenPaw 自己的日志 / 智能体的运行日志 / 控制台日志 / 你刚才做了什么”时，才允许回看本机运行时输出。",
   "workspace_dir": "~/.qwenpaw/workspaces/gateway",
   "channels": {
     "imessage": {

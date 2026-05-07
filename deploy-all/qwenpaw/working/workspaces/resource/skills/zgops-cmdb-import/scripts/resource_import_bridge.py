@@ -11,25 +11,45 @@ from pathlib import Path
 from typing import Any
 
 
-def _repo_root() -> Path:
+def _ensure_qwenpaw_importable() -> None:
+    """Make ``qwenpaw`` importable across deploy modes.
+
+    1. Already installed (wheel / ``pip install -e .``) → no-op.
+    2. Running from a repo checkout (``deploy-all/...`` path) → walk up to
+       the checkout root (has ``pyproject.toml`` + ``src/qwenpaw/``) and add
+       ``src/`` to ``sys.path``.
+    3. Synced into ``~/.qwenpaw/`` with no install → fail loudly with a
+       fixable message instead of crashing on a stale ``_repo_root`` walk.
+    """
+    try:
+        import qwenpaw  # noqa: F401
+        return
+    except ImportError:
+        pass
     current = Path(__file__).resolve()
     for parent in current.parents:
-        if (parent / "pyproject.toml").exists() and (parent / "src").exists():
-            return parent
-    raise RuntimeError(f"无法定位仓库根目录: {current}")
+        if (
+            (parent / "pyproject.toml").exists()
+            and (parent / "src" / "qwenpaw").is_dir()
+        ):
+            sys.path.insert(0, str(parent / "src"))
+            return
+    raise RuntimeError(
+        "无法导入 qwenpaw 包：脚本运行环境里没有安装 qwenpaw，"
+        "也找不到源码 checkout。请在仓库根执行 "
+        "`pip install -e .` 或确保部署 wheel 已安装。\n"
+        f"当前脚本路径：{current}"
+    )
 
 
-REPO_ROOT = _repo_root()
-SRC_ROOT = REPO_ROOT / "src"
-if str(SRC_ROOT) not in sys.path:
-    sys.path.insert(0, str(SRC_ROOT))
+_ensure_qwenpaw_importable()
 
 SKILL_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_ENV_FILE = SKILL_ROOT / ".env"
 if "VEOPS_ENV_FILE" not in os.environ:
     os.environ["VEOPS_ENV_FILE"] = str(DEFAULT_ENV_FILE)
 
-from qwenpaw.extensions.integrations.veops_cmdb.resource_import import (  # noqa: E402
+from qwenpaw.extensions.integrations.zgops_cmdb.resource_import import (  # noqa: E402
     import_preview_to_cmdb,
     load_resource_import_metadata,
     parse_uploaded_file,

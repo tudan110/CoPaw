@@ -1,8 +1,12 @@
-import { lazy, Suspense } from "react";
+import { Suspense } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
+import ChunkErrorBoundary from "./components/ChunkErrorBoundary";
+import { lazyWithRetry } from "./utils/lazyWithRetry";
 
-const AgentCenterPage = lazy(() => import("./pages/AgentCenterPage"));
-const DigitalEmployeePage = lazy(() => import("./pages/DigitalEmployeePage"));
+const AgentCenterPage = lazyWithRetry(() => import("./pages/AgentCenterPage"));
+const DigitalEmployeePage = lazyWithRetry(
+  () => import("./pages/DigitalEmployeePage"),
+);
 
 const routeFallback = (
   <div
@@ -25,8 +29,9 @@ function renderDeferredPage(node: React.ReactNode) {
 
 export default function App() {
   return (
-    <Routes>
-      <Route path="/" element={renderDeferredPage(<DigitalEmployeePage />)} />
+    <ChunkErrorBoundary>
+      <Routes>
+        <Route path="/" element={renderDeferredPage(<DigitalEmployeePage />)} />
       <Route path="/agent-center" element={renderDeferredPage(<AgentCenterPage />)} />
       <Route
         path="/ops-expert"
@@ -77,6 +82,7 @@ export default function App() {
       />
       <Route path="/employee/:employeeId" element={renderDeferredPage(<DigitalEmployeePage />)} />
       <Route path="*" element={<Navigate to="/" replace />} />
-    </Routes>
+      </Routes>
+    </ChunkErrorBoundary>
   );
 }

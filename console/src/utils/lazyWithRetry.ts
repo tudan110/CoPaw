@@ -35,10 +35,16 @@ function retryImport<T extends ComponentType<unknown>>(
   });
 }
 
-// All page modules, keyed relative to this file (src/utils/).
+// All page entry-point modules, keyed relative to this file (src/utils/).
 // e.g. "../pages/Settings/Debug/index.tsx"
+// Restricted to top-level page index files. Sub-components inside a page dir
+// are statically imported by their page and must not be globbed here, or Vite
+// will warn that the file is both dynamically and statically imported.
 const PAGE_MODULES = import.meta.glob<ComponentType<unknown>>(
-  ["../pages/**/*.{ts,tsx}", "!../pages/**/*.test.{ts,tsx}"],
+  [
+    "../pages/*/index.{ts,tsx}",
+    "../pages/*/*/index.{ts,tsx}",
+  ],
   { import: "default" },
 );
 

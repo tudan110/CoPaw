@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from qwenpaw.extensions.integrations.veops_cmdb import resource_import
+from qwenpaw.extensions.integrations.zgops_cmdb import resource_import
 
 
 def test_match_field_with_metadata_uses_real_attribute_aliases() -> None:

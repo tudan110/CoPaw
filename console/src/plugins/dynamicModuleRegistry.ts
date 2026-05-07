@@ -20,17 +20,16 @@ import { moduleRegistry } from "./moduleRegistry";
  * Note: This uses separate glob calls to properly exclude test files at build time
  */
 export async function registerHostModulesDynamic(): Promise<void> {
-  // Use positive and negative patterns to exclude test files at build time
+  // Match only top-level page entries: pages/<Page>/index.{ts,tsx} and
+  // pages/<Section>/<Page>/index.{ts,tsx}. Sub-components are statically
+  // imported by their page and must not be globbed (Rollup warns when a file
+  // is both dynamically and statically imported).
   const modules = import.meta.glob<Record<string, unknown>>(
     [
-      "../pages/**/*.ts",
-      "../pages/**/*.tsx",
-      "!../pages/**/*.test.ts",
-      "!../pages/**/*.test.tsx",
-      "!../pages/**/*.spec.ts",
-      "!../pages/**/*.spec.tsx",
-      "!../pages/**/*.d.ts",
-      "!../pages/**/__tests__/**",
+      "../pages/*/index.ts",
+      "../pages/*/index.tsx",
+      "../pages/*/*/index.ts",
+      "../pages/*/*/index.tsx",
     ],
     {
       eager: false,
@@ -77,18 +76,15 @@ export async function registerHostModulesDynamic(): Promise<void> {
  * Excludes test files using negative glob patterns at build time
  */
 export function registerHostModulesEager(): void {
-  // Eager loading - all modules loaded at build time
-  // Use negative patterns to exclude test files at glob level
+  // Eager loading - all top-level page modules loaded at build time.
+  // Restricted to entry points (pages/**/index.{ts,tsx}) so sub-components
+  // do not end up dynamically + statically imported simultaneously.
   const modules = import.meta.glob<Record<string, unknown>>(
     [
-      "../pages/**/*.ts",
-      "../pages/**/*.tsx",
-      "!../pages/**/*.test.ts",
-      "!../pages/**/*.test.tsx",
-      "!../pages/**/*.spec.ts",
-      "!../pages/**/*.spec.tsx",
-      "!../pages/**/*.d.ts",
-      "!../pages/**/__tests__/**",
+      "../pages/*/index.ts",
+      "../pages/*/index.tsx",
+      "../pages/*/*/index.ts",
+      "../pages/*/*/index.tsx",
     ],
     {
       eager: true,

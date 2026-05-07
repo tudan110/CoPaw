@@ -41,7 +41,6 @@ import {
   ensureSessionRecords,
   extractMentionQuery,
   extractMentionTarget,
-  isOrderIntent,
   isKnowledgeBaseCardIntent,
   isKnowledgeBaseIntent,
   isResourceImportIntent,
@@ -739,12 +738,6 @@ export function usePortalChatOrchestration({
       return;
     }
 
-    if (currentEmployee.id !== ORDER_OWNER_ID && orderEmployee && isOrderIntent(rawContent)) {
-      if (await dispatchOrderCollaboration(rawContent, rawContent)) {
-        return;
-      }
-    }
-
     await dispatchActiveMessage(rawContent);
   }, [
     currentEmployee,
@@ -754,7 +747,6 @@ export function usePortalChatOrchestration({
     navigateToEmployeePage,
     openKnowledgeBaseConversation,
     openResourceImport,
-    orderEmployee,
     queueMentionDispatch,
     remoteAgentId,
     selectedEmployee,

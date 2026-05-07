@@ -10,8 +10,11 @@ const DEFAULT_PORTAL_API_BASE_URL = "/portal-api";
 const DEFAULT_REQUEST_TIMEOUT_MS = 30000;
 const DEFAULT_FALLBACK_AGENT_ID = "default";
 const RESOURCE_IMPORT_UPLOAD_TIMEOUT_MS: number | null = null;
-const RESOURCE_IMPORT_POLL_TIMEOUT_MS = 60000;
-const RESOURCE_IMPORT_POLL_RETRY_LIMIT = 6;
+// Per-poll fetch timeout. The polling endpoint reads in-memory job state
+// plus a progress JSONL file; long progress files can push read time up.
+// 120s is generous enough that a transient slow read no longer surfaces as
+// a misleading "请求超时" while the LLM preview job is still progressing.
+const RESOURCE_IMPORT_POLL_TIMEOUT_MS = 120000;
 
 const PORTAL_API_BASE_URL = (
   import.meta.env.VITE_PORTAL_API_BASE_URL || DEFAULT_PORTAL_API_BASE_URL
@@ -118,13 +121,17 @@ export async function previewResourceImport(
   },
 ) {
   const pollIntervalMs = options?.pollIntervalMs ?? 1500;
-  const maxWaitMs = options?.maxWaitMs ?? 15 * 60 * 1000;
+  // Generous backstop only — the backend's bridge subprocess has its own
+  // hard timeout (RESOURCE_IMPORT_SCRIPT_TIMEOUT_SECONDS) and will mark the
+  // job as `failed` if the underlying skill takes too long. We keep this
+  // as a last-resort guard against the backend going completely silent;
+  // routine slow LLM preview should never hit it.
+  const maxWaitMs = options?.maxWaitMs ?? 60 * 60 * 1000;
   const startedAt = Date.now();
   const initialJob = await startResourceImportPreview(files, agentId);
   options?.onProgress?.(initialJob);
 
   let currentJob = initialJob;
-  let consecutivePollFailures = 0;
   while (Date.now() - startedAt <= maxWaitMs) {
     if (currentJob.status === "completed" && currentJob.preview) {
       return currentJob.preview;
@@ -135,13 +142,15 @@ export async function previewResourceImport(
     await new Promise((resolve) => window.setTimeout(resolve, pollIntervalMs));
     try {
       currentJob = await getResourceImportPreviewJob(initialJob.jobId, agentId);
-      consecutivePollFailures = 0;
       options?.onProgress?.(currentJob);
     } catch (error: any) {
-      consecutivePollFailures += 1;
-      if (consecutivePollFailures >= RESOURCE_IMPORT_POLL_RETRY_LIMIT) {
-        throw error;
-      }
+      // Polling-side failures (network blip, 60s+ slow read of the
+      // growing progress file) are NOT user-visible. The job's authoritative
+      // status lives on the backend; we only surface an error when the
+      // backend itself reports `status === "failed"`. This avoids the
+      // misleading "请求超时" toast that used to appear while the LLM
+      // preview was still legitimately working.
+      console.warn("[resource-import] preview poll failed, will retry", error);
     }
   }
 
