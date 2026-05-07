@@ -31,13 +31,66 @@ echo "[start] Installing dependencies with pnpm install..."
 cd "$PORTAL_DIR"
 pnpm install
 
-if [[ "$CLEAN_START" == "1" ]]; then
-  echo "[start] CLEAN_START=1, clearing Vite cache..."
+# ---------------------------------------------------------------------------
+# Auto-detect dependency drift to invalidate Vite's optimizeDeps cache.
+#
+# When package.json or pnpm-lock.yaml change, the pre-bundled deps under
+# node_modules/.vite/deps/ keep their old hash query strings, but the new
+# dev server emits a fresh hash. Long-lived browser tabs then request URLs
+# that no longer exist (".../deps/react.js?v=OLDHASH") and white-screen on
+# "Failed to fetch dynamically imported module".
+#
+# We hash both manifests, store the digest at .vite/.deps-stamp, and force
+# a clean re-optimization whenever the digest moves. CLEAN_START=1 still
+# wins as an explicit override.
+# ---------------------------------------------------------------------------
+
+DEPS_FINGERPRINT_FILE="$PORTAL_DIR/node_modules/.vite/.deps-stamp"
+AUTO_CLEAN=0
+
+compute_deps_fingerprint() {
+  local hasher
+  if command -v sha256sum >/dev/null 2>&1; then
+    hasher="sha256sum"
+  elif command -v shasum >/dev/null 2>&1; then
+    hasher="shasum -a 256"
+  else
+    echo ""
+    return
+  fi
+  cat "$PORTAL_DIR/package.json" "$PORTAL_DIR/pnpm-lock.yaml" 2>/dev/null \
+    | $hasher | awk '{print $1}'
+}
+
+CURRENT_FINGERPRINT="$(compute_deps_fingerprint || true)"
+if [[ -n "$CURRENT_FINGERPRINT" ]]; then
+  PREVIOUS_FINGERPRINT=""
+  if [[ -f "$DEPS_FINGERPRINT_FILE" ]]; then
+    PREVIOUS_FINGERPRINT="$(cat "$DEPS_FINGERPRINT_FILE" 2>/dev/null || true)"
+  fi
+  if [[ "$CURRENT_FINGERPRINT" != "$PREVIOUS_FINGERPRINT" ]]; then
+    AUTO_CLEAN=1
+    echo "[start] Dependency fingerprint changed — Vite cache will be cleared."
+  fi
+fi
+
+if [[ "$CLEAN_START" == "1" || "$AUTO_CLEAN" == "1" ]]; then
+  if [[ "$CLEAN_START" == "1" ]]; then
+    echo "[start] CLEAN_START=1, clearing Vite cache..."
+  fi
   rm -rf "$PORTAL_DIR/node_modules/.vite" "$PORTAL_DIR/dist"
+  if [[ -n "$CURRENT_FINGERPRINT" ]]; then
+    mkdir -p "$PORTAL_DIR/node_modules/.vite"
+    printf '%s' "$CURRENT_FINGERPRINT" > "$DEPS_FINGERPRINT_FILE"
+  fi
   echo "[start] Starting portal on :$PORT with forced dependency re-optimization..."
   echo "[start] strictPort enabled; if :$PORT is occupied, startup will fail instead of switching ports."
   pnpm dev --force --host 0.0.0.0 --strictPort --port "$PORT"
 else
+  if [[ -n "$CURRENT_FINGERPRINT" ]]; then
+    mkdir -p "$PORTAL_DIR/node_modules/.vite"
+    printf '%s' "$CURRENT_FINGERPRINT" > "$DEPS_FINGERPRINT_FILE"
+  fi
   echo "[start] Starting portal on :$PORT ..."
   echo "[start] strictPort enabled; if :$PORT is occupied, startup will fail instead of switching ports."
   echo "[start] Using normal Vite startup to avoid mixed optimized-deps hashes on first load."

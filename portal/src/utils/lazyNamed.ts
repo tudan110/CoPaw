@@ -1,11 +1,12 @@
 import { lazy, type ComponentType } from "react";
+import { retryImport } from "./lazyWithRetry";
 
 export function lazyNamed<TModule extends Record<string, unknown>>(
   loader: () => Promise<TModule>,
   exportName: keyof TModule,
 ) {
   return lazy(async () => {
-    const module = await loader();
+    const module = await retryImport(loader);
     const component = module[exportName];
 
     if (!component) {
