@@ -8,8 +8,11 @@ import json
 import logging
 import os
 import re
+import threading
+import time
 import zipfile
 import base64
+from concurrent.futures import ThreadPoolExecutor
 from difflib import SequenceMatcher
 from collections import Counter, defaultdict
 from dataclasses import dataclass
@@ -4394,6 +4397,27 @@ def _first_non_empty_value(*values: Any) -> str:
     return ""
 
 
+def _first_non_empty_preserving_list(*values: Any) -> Any:
+    """Like ``_first_non_empty_value`` but keeps list-typed sources as lists.
+
+    Multi-valued CMDB attributes (e.g. ``private_ip`` / ``manage_ip``) are
+    stored as lists. Passing them through ``_first_non_empty_value`` collapses
+    the list into ``str(list)`` (e.g. ``"['10.0.0.1']"``), which then gets
+    written back as a literal stringified list. Use this helper whenever the
+    fallback chain may include list-typed CMDB values.
+    """
+    for value in values:
+        if isinstance(value, list):
+            cleaned_list = [item for item in value if _clean_text(item)]
+            if cleaned_list:
+                return cleaned_list
+            continue
+        cleaned = _clean_text(value)
+        if cleaned:
+            return cleaned
+    return ""
+
+
 def _autofill_deterministic_cmdb_attributes(
     *,
     canonical_attributes: dict[str, Any],
@@ -4408,7 +4432,7 @@ def _autofill_deterministic_cmdb_attributes(
     private_ip_key = _resolve_cmdb_attribute_name(type_template, "private_ip")
 
     if manage_ip_key and not _clean_text(next_attributes.get(manage_ip_key)):
-        manage_ip_value = _first_non_empty_value(
+        manage_ip_value = _first_non_empty_preserving_list(
             next_attributes.get(private_ip_key),
             canonical_attributes.get("manage_ip"),
             canonical_attributes.get("private_ip"),
@@ -4418,7 +4442,7 @@ def _autofill_deterministic_cmdb_attributes(
             next_attributes[manage_ip_key] = manage_ip_value
 
     if private_ip_key and not _clean_text(next_attributes.get(private_ip_key)):
-        private_ip_value = _first_non_empty_value(
+        private_ip_value = _first_non_empty_preserving_list(
             next_attributes.get(manage_ip_key),
             canonical_attributes.get("private_ip"),
             canonical_attributes.get("manage_ip"),
@@ -4478,6 +4502,46 @@ def _autofill_deterministic_cmdb_attributes(
         if unresolved_choice or not normalized_value:
             continue
         next_attributes[attr_name] = normalized_value
+
+    # Fall back to the canonical "name" for required name-like attributes
+    # (e.g. ``vserver_name`` / ``host_name`` / ``db_instance_name``). Many CMDB
+    # models declare both a generic ``name`` and a model-specific ``*_name``
+    # field as required, but source spreadsheets typically supply only one
+    # name column. Without this fallback, preflight rejects the record with
+    # "缺少必填字段：虚拟机名" even though the value is right there in ``name``.
+    canonical_name = _first_non_empty_value(
+        next_attributes.get("name"),
+        canonical_attributes.get("name"),
+        canonical_attributes.get("dev_name"),
+        canonical_attributes.get("hostname"),
+        canonical_attributes.get("host_name"),
+        canonical_attributes.get("db_instance"),
+        canonical_attributes.get("middleware_name"),
+        canonical_attributes.get("instance_name"),
+    )
+    if canonical_name:
+        for definition in _attribute_definitions(type_template):
+            attr_name = _clean_text(definition.get("name"))
+            if not attr_name or attr_name == "name":
+                continue
+            if not bool(definition.get("required") or definition.get("is_required")):
+                continue
+            if _clean_text(next_attributes.get(attr_name)):
+                continue
+            if definition.get("is_choice"):
+                continue
+            # Heuristic: the technical name ends in ``_name`` OR the alias
+            # contains "名" / "name" (case-insensitive). Catches vserver_name,
+            # host_name, db_instance_name, instance_name, etc.
+            alias_text = _clean_text(definition.get("alias")).lower()
+            if not (
+                attr_name.endswith("_name")
+                or attr_name == "instance_name"
+                or "名" in alias_text
+                or "name" in alias_text
+            ):
+                continue
+            next_attributes[attr_name] = canonical_name
 
     return next_attributes
 
@@ -5705,12 +5769,99 @@ def _resolve_payload_ci_type(
     return ci_type
 
 
+def _parallel_prefetch_existing_cis(
+    client: VeopsCmdbClient | None,
+    *,
+    type_templates: dict[str, dict[str, Any]],
+    ordered_records: list[dict[str, Any]],
+    structure_selected_model_map: dict[str, str] | None,
+    pending_choice_values: dict[tuple[str, str], list[dict[str, str]]] | None,
+) -> dict[str, dict[str, Any]]:
+    """Pre-fetch existing CMDB entries for every record in parallel.
+
+    Returns a map keyed by ``previewKey``. Records whose ci_type/template
+    can't be resolved are simply absent from the returned map; callers should
+    treat a missing key as "not yet found in CMDB" and either re-query or
+    fall back to the per-record ``existingCi`` snapshot from the preview.
+
+    Both preflight and the main import loop call ``_find_existing_ci`` for
+    the same set of records — running these in parallel up-front instead of
+    serially per phase saves ~10s + ~10s on a ~45-record import.
+    """
+    if client is None or not ordered_records:
+        return {}
+
+    tasks: list[tuple[str, str, dict[str, Any], str, str]] = []
+    for record in ordered_records:
+        preview_key = str(record.get("previewKey") or "")
+        if not preview_key:
+            continue
+        ci_type = _resolve_payload_ci_type(
+            record.get("ciType"),
+            type_templates=type_templates,
+            structure_selected_model_map=structure_selected_model_map or {},
+        )
+        if not ci_type or ci_type == "unknown":
+            continue
+        type_template = type_templates.get(ci_type) or {}
+        if not type_template:
+            continue
+        attributes = {
+            key: value
+            for key, value in _merged_resource_attributes(record).items()
+            if _clean_text(value)
+        }
+        display_name = _clean_text(record.get("name")) or _resolve_record_display_name(
+            attributes, type_template
+        )
+        if display_name and not _resolve_record_display_name(attributes, type_template):
+            fallback_field = _resolve_cmdb_attribute_name(type_template, "name")
+            if fallback_field and _find_attribute_definition(type_template, fallback_field):
+                attributes[fallback_field] = display_name
+        cmdb_attributes = _build_cmdb_attributes(
+            ci_type=ci_type,
+            canonical_attributes=attributes,
+            type_template=type_template,
+            pending_choice_values=pending_choice_values,
+        )
+        unique_key = _get_import_required_unique_key(type_template)
+        tasks.append((preview_key, ci_type, cmdb_attributes, display_name, unique_key))
+
+    if not tasks:
+        return {}
+
+    def _fetch(args: tuple[str, str, dict[str, Any], str, str]):
+        preview_key, ci_type, cmdb_attrs, display_name, unique_key = args
+        try:
+            return preview_key, _find_existing_ci(
+                client,
+                ci_type,
+                cmdb_attrs,
+                fallback_name=display_name,
+                unique_key=unique_key,
+            ) or {}
+        except Exception:
+            return preview_key, {}
+
+    # Always record every queried preview_key — even when the lookup returns
+    # {} ("queried, not present in CMDB"). Callers distinguish "queried"
+    # from "not queried" via key presence so the queried-but-empty case
+    # avoids a redundant live re-fetch on the consumer side.
+    result: dict[str, dict[str, Any]] = {}
+    worker_count = min(_METADATA_FETCH_CONCURRENCY, max(1, len(tasks)))
+    with ThreadPoolExecutor(max_workers=worker_count) as executor:
+        for preview_key, existing in executor.map(_fetch, tasks):
+            result[preview_key] = existing
+    return result
+
+
 def _preflight_import_resources(
     client: VeopsCmdbClient,
     *,
     type_templates: dict[str, dict[str, Any]],
     ordered_records: list[dict[str, Any]],
     structure_selected_model_map: dict[str, str] | None = None,
+    existing_ci_map: dict[str, dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
     results: list[dict[str, Any]] = []
     pending_choice_values = _merge_pending_choice_values(
@@ -5856,13 +6007,19 @@ def _preflight_import_resources(
             results.append({"previewKey": preview_key, "status": "failed", "message": "；".join(required_attribute_issues)})
             continue
 
-        existing_ci = _find_existing_ci(
-            client,
-            ci_type,
-            cmdb_attributes,
-            fallback_name=display_name,
-            unique_key=unique_key,
-        ) or (record.get("existingCi") or {})
+        preview_key_str = str(record.get("previewKey") or "")
+        if existing_ci_map is not None and preview_key_str in existing_ci_map:
+            existing_ci = existing_ci_map[preview_key_str] or (
+                record.get("existingCi") or {}
+            )
+        else:
+            existing_ci = _find_existing_ci(
+                client,
+                ci_type,
+                cmdb_attributes,
+                fallback_name=display_name,
+                unique_key=unique_key,
+            ) or (record.get("existingCi") or {})
 
         if existing_ci and import_action == "create":
             LOGGER.warning(
@@ -6412,24 +6569,39 @@ def _build_allowed_relation_rules(
     if client is None or not involved_types:
         return set()
 
-    relation_rules: set[tuple[str, str, str]] = set()
-    fetched_type_ids: set[str] = set()
+    type_ids: list[str] = []
+    seen_ids: set[str] = set()
     for ci_type in involved_types:
         template = type_templates.get(ci_type) or {}
         type_id = str(template.get("id") or "").strip()
-        if not type_id or type_id in fetched_type_ids:
-            continue
-        fetched_type_ids.add(type_id)
+        if type_id and type_id not in seen_ids:
+            seen_ids.add(type_id)
+            type_ids.append(type_id)
+    if not type_ids:
+        return set()
+
+    def _fetch(type_id: str) -> list[dict[str, Any]]:
         try:
-            relations = client.get_ci_type_relations(type_id)
+            return client.get_ci_type_relations(type_id)
         except Exception:
-            continue
-        for item in relations:
-            parent_name = _clean_text((item.get("parent") or {}).get("name"))
-            child_name = _clean_text((item.get("child") or {}).get("name"))
-            relation_name = _clean_text(((item.get("relation_type") or {}).get("name")) or item.get("relation_type_name"))
-            if parent_name and child_name and relation_name:
-                relation_rules.add((parent_name, relation_name, child_name))
+            return []
+
+    # Reuses the same concurrency knob as metadata loading. CMDB returns each
+    # ci_type's relations as a separate REST call (typically ~700ms), so for
+    # 9 distinct types this collapses ~6s of serial wait into ~1s.
+    worker_count = min(_METADATA_FETCH_CONCURRENCY, max(1, len(type_ids)))
+    relation_rules: set[tuple[str, str, str]] = set()
+    with ThreadPoolExecutor(max_workers=worker_count) as executor:
+        for relations in executor.map(_fetch, type_ids):
+            for item in relations:
+                parent_name = _clean_text((item.get("parent") or {}).get("name"))
+                child_name = _clean_text((item.get("child") or {}).get("name"))
+                relation_name = _clean_text(
+                    ((item.get("relation_type") or {}).get("name"))
+                    or item.get("relation_type_name")
+                )
+                if parent_name and child_name and relation_name:
+                    relation_rules.add((parent_name, relation_name, child_name))
     return relation_rules
 
 
@@ -7251,6 +7423,14 @@ async def preview_resource_import(
                 for item in model_templates
                 if item.get("name")
             },
+            # Snapshot the allowed-relation rules so import_preview_to_cmdb can
+            # skip the second per-type get_ci_type_relations fan-out (~10s
+            # serial HTTP for ~9 distinct ci_types). The set is serialized as
+            # a list of [parent, relationType, child] triples and rebuilt on
+            # the import side.
+            "allowedRelationRules": sorted(
+                [list(rule) for rule in allowed_relation_rules]
+            ),
             "structureAnalysis": structure_analysis,
             "analysisStatus": analysis_status,
             "analysisIssues": analysis_issues,
@@ -7777,7 +7957,153 @@ def _enrich_resource_import_metadata(metadata: dict[str, Any]) -> dict[str, Any]
     return enriched
 
 
+_METADATA_CACHE_LOCK = threading.Lock()
+# CMDB schema (CI types / attributes / parent relations) changes only when an
+# admin edits models in the CMDB UI — typically rare in production. A long
+# default TTL kills the ~25s cold-load cost across daily user sessions; users
+# can force-refresh via invalidate_resource_import_metadata_cache() or by
+# clearing the cache file. Override with RESOURCE_IMPORT_METADATA_CACHE_TTL.
+_METADATA_CACHE_TTL_SECONDS = max(
+    0.0,
+    float(os.environ.get("RESOURCE_IMPORT_METADATA_CACHE_TTL", "86400")),
+)
+_METADATA_FETCH_CONCURRENCY = max(
+    1,
+    int(os.environ.get("RESOURCE_IMPORT_METADATA_CONCURRENCY", "8")),
+)
+
+
+def _resource_import_metadata_cache_path() -> Path:
+    working_dir = (
+        os.environ.get("QWENPAW_WORKING_DIR")
+        or os.environ.get("COPAW_WORKING_DIR")
+        or "~/.qwenpaw"
+    )
+    return Path(working_dir).expanduser() / ".cache" / "resource_import_metadata.json"
+
+
+def _resource_import_metadata_env_signature() -> str:
+    try:
+        env = _parse_env()
+    except Exception:
+        return ""
+    return f"{env.get('VEOPS_BASE_URL') or ''}|{env.get('VEOPS_USERNAME') or ''}"
+
+
+def _read_resource_import_metadata_cache(env_signature: str) -> dict[str, Any] | None:
+    if not env_signature or _METADATA_CACHE_TTL_SECONDS <= 0:
+        return None
+    path = _resource_import_metadata_cache_path()
+    try:
+        stat_result = path.stat()
+    except OSError:
+        return None
+    if (time.time() - stat_result.st_mtime) > _METADATA_CACHE_TTL_SECONDS:
+        return None
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    if not isinstance(payload, dict):
+        return None
+    if payload.get("envSignature") != env_signature:
+        return None
+    cached = payload.get("metadata")
+    return cached if isinstance(cached, dict) else None
+
+
+def _write_resource_import_metadata_cache(env_signature: str, metadata: dict[str, Any]) -> None:
+    if not env_signature or _METADATA_CACHE_TTL_SECONDS <= 0:
+        return
+    path = _resource_import_metadata_cache_path()
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp_path = path.with_suffix(".tmp")
+        tmp_path.write_text(
+            json.dumps(
+                {"envSignature": env_signature, "metadata": metadata},
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+        tmp_path.replace(path)
+    except OSError:
+        pass
+
+
+def invalidate_resource_import_metadata_cache() -> None:
+    with _METADATA_CACHE_LOCK:
+        path = _resource_import_metadata_cache_path()
+        try:
+            path.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+
+def _fetch_ci_type_details(
+    client: VeopsCmdbClient,
+    item: dict[str, Any],
+) -> tuple[str, list[str], list[dict[str, Any]], list[dict[str, Any]]] | None:
+    """Fetch attributes, preference attributes and parent relations for one CI type.
+
+    Each call hits the CMDB so we run these per-type fan-outs in parallel.
+    """
+
+    type_id = item.get("id")
+    name = str(item.get("name") or "")
+    if not type_id or not name:
+        return None
+    try:
+        attributes = client.get_ci_type_attributes(type_id)
+        preference_attributes = client.get_ci_type_preference_attributes(type_id)
+        merged = _merge_attribute_definitions(attributes, preference_attributes)
+        attribute_names = [
+            str(attr.get("name")) for attr in merged if attr.get("name")
+        ]
+        child_attr_names_by_id = _attribute_names_from_ids(
+            attributes, [attr.get("id") for attr in attributes]
+        )
+        parent_relations = client.get_ci_type_parent_relations(type_id)
+        parent_types = [
+            {
+                "name": _clean_text(parent.get("name")),
+                "alias": _clean_text(parent.get("alias"))
+                or _clean_text(parent.get("name")),
+                "relationType": _clean_text(parent.get("relation_type")),
+                "showKey": _clean_text(parent.get("show_key")) or "name",
+                "parentAttrNames": _attribute_names_from_ids(
+                    parent.get("attributes") or [],
+                    parent.get("parent_attr_ids") or [],
+                ),
+                "childAttrNames": [
+                    child_name
+                    for child_name in _attribute_names_from_ids(
+                        attributes,
+                        parent.get("child_attr_ids") or [],
+                    )
+                    if child_name in child_attr_names_by_id
+                ],
+            }
+            for parent in parent_relations
+            if _clean_text(parent.get("name"))
+        ]
+        return name, attribute_names, merged, parent_types
+    except Exception:
+        return name, DEFAULT_ATTRIBUTE_FIELDS.get(name, ["name"]), [], []
+
+
 def load_resource_import_metadata() -> dict[str, Any]:
+    env_signature = _resource_import_metadata_env_signature()
+    with _METADATA_CACHE_LOCK:
+        cached = _read_resource_import_metadata_cache(env_signature)
+    if cached is not None:
+        # Cache stores the enriched payload (semanticModelCatalog +
+        # semanticFieldCatalog already materialized) so warm reads skip
+        # the ~4s _build_metadata_field_catalog pass entirely.
+        if "semanticModelCatalog" in cached and "semanticFieldCatalog" in cached:
+            return cached
+        return _enrich_resource_import_metadata(cached)
+
     metadata = {
         "supportedFormats": DEFAULT_SUPPORTED_FORMATS,
         "ciTypes": DEFAULT_MODEL_TEMPLATES,
@@ -7798,43 +8124,21 @@ def load_resource_import_metadata() -> dict[str, Any]:
         attributes_map: dict[str, list[str]] = {}
         attribute_definitions_map: dict[str, list[dict[str, Any]]] = {}
         parent_type_map: dict[str, list[dict[str, Any]]] = {}
-        for item in ci_types:
-            type_id = item.get("id")
-            name = str(item.get("name") or "")
-            if not type_id or not name:
+
+        worker_count = min(_METADATA_FETCH_CONCURRENCY, max(1, len(ci_types)))
+        with ThreadPoolExecutor(max_workers=worker_count) as executor:
+            results = list(
+                executor.map(lambda item: _fetch_ci_type_details(client, item), ci_types)
+            )
+
+        for result in results:
+            if result is None:
                 continue
-            try:
-                attributes = client.get_ci_type_attributes(type_id)
-                preference_attributes = client.get_ci_type_preference_attributes(type_id)
-                attribute_definitions_map[name] = _merge_attribute_definitions(attributes, preference_attributes)
-                attributes_map[name] = [str(attr.get("name")) for attr in attribute_definitions_map[name] if attr.get("name")]
-                child_attr_names_by_id = _attribute_names_from_ids(attributes, [item.get("id") for item in attributes])
-                parent_type_map[name] = [
-                    {
-                        "name": _clean_text(parent.get("name")),
-                        "alias": _clean_text(parent.get("alias")) or _clean_text(parent.get("name")),
-                        "relationType": _clean_text(parent.get("relation_type")),
-                        "showKey": _clean_text(parent.get("show_key")) or "name",
-                        "parentAttrNames": _attribute_names_from_ids(
-                            parent.get("attributes") or [],
-                            parent.get("parent_attr_ids") or [],
-                        ),
-                        "childAttrNames": [
-                            child_name
-                            for child_name in _attribute_names_from_ids(
-                                attributes,
-                                parent.get("child_attr_ids") or [],
-                            )
-                            if child_name in child_attr_names_by_id
-                        ],
-                    }
-                    for parent in client.get_ci_type_parent_relations(type_id)
-                    if _clean_text(parent.get("name"))
-                ]
-            except Exception:
-                attribute_definitions_map[name] = []
-                attributes_map[name] = DEFAULT_ATTRIBUTE_FIELDS.get(name, ["name"])
-                parent_type_map[name] = []
+            name, attr_names, attr_defs, parent_types = result
+            attributes_map[name] = attr_names
+            attribute_definitions_map[name] = attr_defs
+            parent_type_map[name] = parent_types
+
         metadata.update(
             {
                 "ciTypes": [
@@ -7882,7 +8186,14 @@ def load_resource_import_metadata() -> dict[str, Any]:
     finally:
         if client:
             client.close()
-    return _enrich_resource_import_metadata(metadata)
+
+    enriched = _enrich_resource_import_metadata(metadata)
+
+    if metadata.get("connected"):
+        with _METADATA_CACHE_LOCK:
+            _write_resource_import_metadata_cache(env_signature, enriched)
+
+    return enriched
 
 
 def _ci_types_from_preview_snapshot(preview: dict[str, Any] | None) -> list[dict[str, Any]]:
@@ -7979,11 +8290,24 @@ def import_preview_to_cmdb(payload: dict[str, Any]) -> dict[str, Any]:
             for record in (group.get("records") or [])
             if record.get("previewKey")
         }
-        allowed_relation_rules = _build_allowed_relation_rules(
-            client,
-            type_templates,
-            {ci_type for ci_type in resource_type_map.values() if ci_type},
-        )
+        # Reuse the allowed-relation snapshot baked into the preview payload
+        # (see preview_resource_import return) — this saves a serial fan-out
+        # of get_ci_type_relations, which costs ~10s for a ~10-ci_type import.
+        # Falls back to a live fetch when the snapshot is missing, e.g. for
+        # legacy preview payloads or direct CLI flows.
+        snapshot_rules = (payload.get("preview") or {}).get("allowedRelationRules")
+        if isinstance(snapshot_rules, list) and snapshot_rules:
+            allowed_relation_rules = {
+                tuple(rule)
+                for rule in snapshot_rules
+                if isinstance(rule, (list, tuple)) and len(rule) == 3
+            }
+        else:
+            allowed_relation_rules = _build_allowed_relation_rules(
+                client,
+                type_templates,
+                {ci_type for ci_type in resource_type_map.values() if ci_type},
+            )
         allowed_relation_rules, relation_structure_results = _ensure_selected_model_relations(
             client,
             payload,
@@ -8009,11 +8333,23 @@ def import_preview_to_cmdb(payload: dict[str, Any]) -> dict[str, Any]:
                 ordered_records=ordered_records,
             ),
         )
+        # Parallel pre-fetch existing-CI lookups for every record. Both
+        # preflight and the main import loop need this same data; running
+        # the fetches in parallel up-front collapses ~20s of serial HTTP
+        # (preflight: 44 calls × ~0.2s, main loop: ~44 more) into ~2s.
+        existing_ci_map = _parallel_prefetch_existing_cis(
+            client,
+            type_templates=type_templates,
+            ordered_records=ordered_records,
+            structure_selected_model_map=structure_selected_model_map,
+            pending_choice_values=pending_choice_values,
+        )
         preflight_results = _preflight_import_resources(
             client,
             type_templates=type_templates,
             ordered_records=ordered_records,
             structure_selected_model_map=structure_selected_model_map,
+            existing_ci_map=existing_ci_map,
         )
         if preflight_results:
             report["failed"] += len(preflight_results)
@@ -8076,13 +8412,21 @@ def import_preview_to_cmdb(payload: dict[str, Any]) -> dict[str, Any]:
                     if _clean_text(key) in allowed_attribute_names and value not in (None, "", [])
                 }
             unique_key = _get_import_required_unique_key(type_template)
-            current_existing_ci = _find_existing_ci(
-                client,
-                ci_type,
-                cmdb_attributes,
-                fallback_name=display_name,
-                unique_key=unique_key,
-            ) or existing_ci
+            # Reuse the parallel-prefetched map; an entry of {} means the
+            # parallel pass already queried CMDB and confirmed nothing
+            # matched, so we must NOT re-fetch. Only records that weren't
+            # queried at prefetch time fall back to a live lookup.
+            preview_key = str(record.get("previewKey") or "")
+            if existing_ci_map is not None and preview_key in existing_ci_map:
+                current_existing_ci = existing_ci_map[preview_key] or existing_ci
+            else:
+                current_existing_ci = _find_existing_ci(
+                    client,
+                    ci_type,
+                    cmdb_attributes,
+                    fallback_name=display_name,
+                    unique_key=unique_key,
+                ) or existing_ci
 
             if current_existing_ci and import_action == "skip":
                 ci_id_map[str(record.get("previewKey"))] = current_existing_ci.get("ciId")
