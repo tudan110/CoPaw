@@ -144,7 +144,7 @@ def _fault_disposal_bridge_script() -> Path:
     return _fault_disposal_skill_root() / "scripts" / "chat_skill_bridge.py"
 
 
-def _veops_cmdb_query_skill_root() -> Path:
+def _zgops_cmdb_query_skill_root() -> Path:
     return (
         Path(__file__).resolve().parents[4]
         / "deploy-all"
@@ -157,7 +157,7 @@ def _veops_cmdb_query_skill_root() -> Path:
     )
 
 
-def _veops_cmdb_import_skill_root() -> Path:
+def _zgops_cmdb_import_skill_root() -> Path:
     return (
         Path(__file__).resolve().parents[4]
         / "deploy-all"
@@ -171,7 +171,7 @@ def _veops_cmdb_import_skill_root() -> Path:
 
 
 def _resource_import_bridge_script() -> Path:
-    return _veops_cmdb_import_skill_root() / "scripts" / "resource_import_bridge.py"
+    return _zgops_cmdb_import_skill_root() / "scripts" / "resource_import_bridge.py"
 
 
 def _alarm_analyst_skill_root() -> Path:
@@ -1157,7 +1157,7 @@ def _run_resource_import_skill(command: str, payload: dict | None = None) -> dic
     try:
         completed = subprocess.run(
             command_args,
-            cwd=str(_veops_cmdb_import_skill_root()),
+            cwd=str(_zgops_cmdb_import_skill_root()),
             capture_output=True,
             text=True,
             encoding="utf-8",
