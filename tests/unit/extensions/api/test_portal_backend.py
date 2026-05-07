@@ -117,7 +117,7 @@ async def test_collect_portal_employee_statuses_uses_runtime_and_alerts(
     assert by_id["query"]["latestSessionTitle"] == "CPU 使用率分析"
 
     assert by_id["fault"]["available"] is True
-    assert by_id["fault"]["employeeName"] == "故障处置员"
+    assert by_id["fault"]["employeeName"] == "故障分析员"
     assert by_id["fault"]["status"] == "idle"
     assert by_id["fault"]["urgent"] is True
     assert by_id["fault"]["alertCount"] == 2

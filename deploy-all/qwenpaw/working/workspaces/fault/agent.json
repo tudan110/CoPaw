@@ -1,7 +1,7 @@
 {
   "id": "fault",
-  "name": "故障处置员",
-  "description": "故障处置员。负责基于具体告警或工单的故障快速定位、应急止损、根因分析、恢复验证、清除告警、更新工单及复盘建议。不承接普通告警列表、告警统计或告警详情查询；这类查询应交给 query 的 real-alarm skill。",
+  "name": "故障分析员",
+  "description": "故障分析员。负责基于具体告警或工单的故障快速定位、应急止损、根因分析、恢复验证、清除告警、更新工单及复盘建议。不承接普通告警列表、告警统计或告警详情查询；这类查询应交给 query 的 real-alarm skill。",
   "workspace_dir": "~/.qwenpaw/workspaces/fault",
   "channels": {
     "imessage": {

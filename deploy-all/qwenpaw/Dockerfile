@@ -23,7 +23,7 @@ RUN set -eux; \
     npm config set fetch-timeout "${NPM_FETCH_TIMEOUT}"; \
     sed -i "s#https://registry.npmjs.org/#${NPM_REGISTRY%/}/#g" package-lock.json; \
     npm ci --include=dev --legacy-peer-deps --no-audit --no-fund --registry="${NPM_REGISTRY}"; \
-    npm run build
+    export NODE_OPTIONS="--max-old-space-size=4096" && npm run build
 
 # -----------------------------------------------------------------------------
 # Stage 2: runtime image with Python, Chromium, and app.

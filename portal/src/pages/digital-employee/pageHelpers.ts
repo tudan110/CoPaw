@@ -670,7 +670,7 @@ export function buildDashboardEmployeeSnapshots(
       updatedAt: "2分钟前",
     },
     fault: {
-      currentJob: `${getEmployeeById("fault")?.name || "故障处置员"}端口 down 根因定位中`,
+      currentJob: `${getEmployeeById("fault")?.name || "故障分析员"}端口 down 根因定位中`,
       progress: 84,
       workStatus: "根因定位中",
       updatedAt: "刚刚",
@@ -1245,7 +1245,7 @@ export function buildPortalAssistantReply(content: string) {
   const suggestions = [
     { employee: "工单调度员", keywords: ["工单", "待办", "已办", "审批", "流程", "派单", "转派"] },
     { employee: "数据分析员", keywords: ["设备", "指标", "报表", "趋势", "性能", "查询", "可用性", "告警", "报警"] },
-    { employee: "故障处置员", keywords: ["故障", "异常", "超时", "中断", "恢复", "慢", "处置", "根因"] },
+    { employee: "故障分析员", keywords: ["故障", "异常", "超时", "中断", "恢复", "慢", "处置", "根因"] },
     { employee: "资产管理员", keywords: ["资产", "纳管", "扫描", "发现", "拓扑", "资源"] },
     { employee: "巡检专员", keywords: ["巡检", "健康", "检查", "日报", "周报"] },
     { employee: "知识专员", keywords: ["怎么", "最佳实践", "方案", "知识", "原理"] },

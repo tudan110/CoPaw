@@ -91,7 +91,7 @@ export function AlarmWorkorderBoard({
       <div className="alarm-workorder-toolbar">
         <div className="alarm-workorder-toolbar-text">
           <h3>以下是需要处置的告警工单</h3>
-          <p>告警已触发故障处置员，当前先展示待处置工单，后续可在此接入不同类型故障的处置流程。</p>
+          <p>告警已触发故障分析员，当前先展示待处置工单，后续可在此接入不同类型故障的处置流程。</p>
         </div>
         <button className="alarm-workorder-refresh" onClick={onRefresh} disabled={loading}>
           <i className={`fas ${loading ? "fa-spinner fa-spin" : "fa-rotate-right"}`} />
@@ -142,7 +142,7 @@ function AlarmWorkorderCard({ workorder, onAction }: any) {
           <span className={`alarm-workorder-severity-dot ${severityClass}`} />
           <div>
             <h4>{`${workorder.severity} | ${workorder.title}`}</h4>
-            <p>故障处置员（告警驱动工单）</p>
+            <p>故障分析员（告警驱动工单）</p>
           </div>
         </div>
         <span className="alarm-workorder-status">{workorder.status}</span>
