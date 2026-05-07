@@ -27,8 +27,14 @@ usage() {
   将 deploy-all/qwenpaw/working/ 下的文件同步到本地工作目录。
   默认目标目录为 ~/.qwenpaw/，也可通过 QWENPAW_WORKING_DIR 环境变量覆盖。
 
+同步规则:
+  - 源里有、目标里没有的文件: 直接拷贝过去
+  - 两边都有的文件: 以源为准，按内容（checksum）比较后覆盖更新
+  - 目标里有、源里没有的文件: 默认保留，加 --delete 才会清理
+
 参数:
   --delete     删除目标目录中源目录不存在的文件，执行严格镜像
+  --quiet, -q  只打印汇总，不输出每个被改动文件的明细
   -h, --help   显示帮助
 
 示例:
@@ -51,12 +57,17 @@ resolve_target_dir() {
 }
 
 DELETE_MODE=false
+QUIET_MODE=false
 TARGET_ARG=""
 
 while [ $# -gt 0 ]; do
     case "$1" in
         --delete)
             DELETE_MODE=true
+            shift
+            ;;
+        --quiet|-q)
+            QUIET_MODE=true
             shift
             ;;
         -h|--help)
@@ -94,17 +105,25 @@ fi
 
 mkdir -p "$TARGET_DIR"
 
-RSYNC_ARGS=(-a)
+# -a：保留属性 / 递归 / 软链
+# -c：按内容 checksum 比较，避免 mtime 错位时漏掉已被修改的文件
+# 不带 -u：源端永远赢，目标端如果被手工改过也会被覆盖（这是有意的）
+RSYNC_ARGS=(-a -c)
+if [ "$QUIET_MODE" != true ]; then
+    # 列出每个被新增 / 更新 / 删除的文件，便于排查"为什么没更新"
+    RSYNC_ARGS+=(-i)
+fi
 if [ "$DELETE_MODE" = true ]; then
     RSYNC_ARGS+=(--delete)
 fi
 
 info "源目录: $SOURCE_DIR/"
 info "目标目录: $TARGET_DIR/"
+info "比较方式: checksum（内容比对，与 mtime 无关）"
 if [ "$DELETE_MODE" = true ]; then
     info "同步模式: 严格镜像（会删除目标目录中的多余文件）"
 else
-    info "同步模式: 覆盖同名文件，保留目标目录中的额外文件"
+    info "同步模式: 以源为准覆盖更新，目标目录中源没有的文件保留"
 fi
 
 rsync "${RSYNC_ARGS[@]}" "$SOURCE_DIR/" "$TARGET_DIR/"

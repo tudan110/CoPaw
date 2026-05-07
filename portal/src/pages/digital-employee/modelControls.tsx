@@ -221,7 +221,7 @@ export function AdvancedModelEntry({
   const [collapsed, setCollapsed] = useState(true);
 
   return (
-    <div className="sidebar-advanced">
+    <div className={collapsed ? "sidebar-advanced collapsed" : "sidebar-advanced expanded"}>
       <button
         className={collapsed ? "sidebar-advanced-header collapsed" : "sidebar-advanced-header"}
         onClick={() => setCollapsed((prev) => !prev)}

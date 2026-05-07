@@ -357,6 +357,14 @@
 
 .portal-digital-employee .sidebar-advanced {
   margin-top: 16px;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+/* 展开时让本区域吃掉 sidebar 剩余高度，配合内部 grid 的 overflow-y 实现"放不下就内部滚" */
+.portal-digital-employee .sidebar-advanced.expanded {
+  flex: 1 1 auto;
 }
 
 .portal-digital-employee .sidebar-advanced-header {
@@ -369,6 +377,7 @@
   background: transparent;
   width: 100%;
   text-align: left;
+  flex-shrink: 0;
 }
 
 .portal-digital-employee .sidebar-advanced-header:hover {
@@ -391,6 +400,30 @@
   grid-template-columns: 1fr 1fr;
   gap: 6px;
   margin-top: 8px;
+  /* 视口不够高时在本网格内部滚动，而不是被 sidebar 的 overflow:hidden 裁掉 */
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding-right: 2px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(79, 110, 247, 0.35) transparent;
+}
+
+.portal-digital-employee .sidebar-advanced-grid::-webkit-scrollbar {
+  width: 6px;
+}
+
+.portal-digital-employee .sidebar-advanced-grid::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.portal-digital-employee .sidebar-advanced-grid::-webkit-scrollbar-thumb {
+  background-color: rgba(79, 110, 247, 0.3);
+  border-radius: 3px;
+}
+
+.portal-digital-employee .sidebar-advanced-grid::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(79, 110, 247, 0.55);
 }
 
 .portal-digital-employee .sidebar-advanced-grid.collapsed {
