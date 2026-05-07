@@ -67,8 +67,6 @@ export const KNOWLEDGE_BASE_INTENT_PATTERN =
   /(知识库检索|检索知识库|上传知识文档|导入知识文档|文档入库|资料入库|知识沉淀|手动沉淀知识|查看知识资料)/;
 export const KNOWLEDGE_BASE_CARD_INTENT_PATTERN =
   /(上传知识|上传文档|上传资料|上传文件|上传附件|导入知识|导入文档|导入资料|导入文件|文档入库|资料入库|知识入库|知识沉淀|手动沉淀|手动录入|新增知识|保存经验|录入知识)/;
-export const ORDER_INTENT_PATTERN =
-  /(工单|待办工单|已办工单|待处理工单|已处理工单|工单详情|查看详情|创建工单|处置工单|流转记录|流程跟踪|审批记录)/;
 export const CHAT_SCROLL_BOTTOM_THRESHOLD_PX = 48;
 
 export function createResourceImportFlowId() {
@@ -92,11 +90,6 @@ export function isKnowledgeBaseIntent(value: string) {
 export function isKnowledgeBaseCardIntent(value: string) {
   const normalized = String(value || "").replace(/\s+/g, "");
   return KNOWLEDGE_BASE_CARD_INTENT_PATTERN.test(normalized);
-}
-
-export function isOrderIntent(value: string) {
-  const normalized = String(value || "").replace(/\s+/g, "");
-  return ORDER_INTENT_PATTERN.test(normalized);
 }
 
 export function isPortalResourceImportSession(session: SessionRecord | null | undefined) {
@@ -1125,7 +1118,7 @@ export function buildMentionCollaborationPrompt({
       : [];
   const executionHints = preferBackground
     ? [
-        "这次协同可能耗时较长，但如果工具列表中存在 chat_with_agent，仍应先使用 chat_with_agent 做一次前台协同，timeout 建议 60 秒。",
+        "这次协同可能耗时较长，但如果改用 chat_with_agent 协同，仍应先做一次前台调用，timeout 建议 60 秒。",
         "只有 chat_with_agent 明确超时、用户要求后台执行，或任务确实需要长时间批处理时，才改用 submit_to_agent / check_agent_task 后台路径。",
         "不要为了普通查询、告警查询、CMDB 查询或拓扑查询默认使用 qwenpaw agents chat --background 轮询。",
       ]
@@ -1135,8 +1128,8 @@ export function buildMentionCollaborationPrompt({
     `你当前是数字员工「${currentEmployee?.name || currentAgentId}」。`,
     `用户在当前会话中 @ 了另一位数字员工「${targetEmployee?.name || targetAgentId}」。`,
     "请不要要求用户切换页面，也不要把本次请求交回前端路由处理。",
-    "请优先使用你已启用的内置工具 chat_with_agent 发起前台智能体协同并整合结果后回复用户；只有工具不可用时，才退回 Multi-Agent Collaboration（multi_agent_collaboration）技能。",
-    "查询类协同请使用 chat_with_agent，参数示例：to_agent 为目标智能体 ID，text 为任务正文，timeout 建议 60。",
+    "处理顺序：① 先看你当前工作区已启用的本地 skill / 工具能否直接完成本次请求，可以就直接执行并回复；② 本地能力缺失、配置不全或执行失败时，使用内置工具 chat_with_agent 发起前台智能体协同并整合结果；③ chat_with_agent 不可用时，再退回 Multi-Agent Collaboration（multi_agent_collaboration）技能。",
+    "需要协同时使用 chat_with_agent，参数示例：to_agent 为目标智能体 ID，text 为任务正文，timeout 建议 60。",
     "给目标智能体的协同请求正文请直接概括任务本身，不要重复写 [Agent ... requesting]，也不要以 User explicitly asked... 这类泛化说明开头。",
     ...executionHints,
     ...extraCollaborationHints,
