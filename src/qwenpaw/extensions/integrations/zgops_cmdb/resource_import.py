@@ -593,7 +593,12 @@ RESOURCE_IMPORT_LLM_RETRY_BACKOFF_SECONDS = max(
 )
 RESOURCE_IMPORT_LLM_SHEET_PARALLELISM = max(
     1,
-    int(os.environ.get("RESOURCE_IMPORT_LLM_SHEET_PARALLELISM", "2")),
+    # Per-sheet LLM round-trips dominate preview latency. Bumping default
+    # from 2 to 4 roughly halves wall time for ~9-sheet imports (the
+    # observed common case) while staying well under typical per-account
+    # concurrent-request limits. Tune via env if you hit provider rate
+    # limits or want more parallelism for big imports.
+    int(os.environ.get("RESOURCE_IMPORT_LLM_SHEET_PARALLELISM", "4")),
 )
 RESOURCE_IMPORT_LLM_BLOCKING_RECOVERY_RETRY_COUNT = max(
     1,
