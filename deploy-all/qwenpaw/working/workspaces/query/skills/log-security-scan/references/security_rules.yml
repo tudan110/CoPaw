@@ -1,0 +1,205 @@
+# log-security-scan default rule set.
+#
+# 设计原则：宁少不滥（false positive 是这套规则的头号大敌）。
+# 默认 severity:
+#   critical → 一定是密钥 / 私钥 / AK·SK 这种"看到了就要拉警报"的
+#   high     → 高度可疑（密码 KV / token / 身份证 / 银行卡 + Luhn）
+#   medium   → 容易误报但仍值得展示（手机号 / generic api_key）
+#
+# 规则修改后不需要重启 portal；下一次 scan 即生效。
+# 单条 pattern 编译失败 → 该条 skip + warn，其它规则照常工作。
+#
+# 字段说明：
+#   id          唯一 ID
+#   name        UI 显示名
+#   severity    critical | high | medium
+#   category    secret | pii | injection | crypto | other
+#   pattern     Python 正则；默认 IGNORECASE
+#   flags       可选：[IGNORECASE, MULTILINE, DOTALL, ...]
+#   description 给 LLM / 用户看的一句话说明
+#   redact      full（默认） | tail | hash
+#   post_filter 可选：luhn / no_digits_only
+#   examples.hit / examples.miss  自检样本
+
+version: 1
+
+defaults:
+  context_chars: 24
+  redact_keep: 2
+
+rules:
+  # ---------- secrets ----------
+
+  - id: secret-aws-ak
+    name: "AWS Access Key"
+    severity: critical
+    category: secret
+    pattern: '\bAKIA[0-9A-Z]{16}\b'
+    description: "AWS Access Key ID（AKIA 前缀 + 16 位大写字母数字）"
+    redact: tail
+    examples:
+      hit:
+        - "config: aws_access_key_id=AKIAIOSFODNN7EXAMPLE other"
+        - "AKIA1234567890ABCDEF"
+      miss:
+        - "AKIAIOSF"
+        - "akiaiosfodnn7examp"
+
+  - id: secret-aliyun-ak
+    name: "阿里云 Access Key"
+    severity: critical
+    category: secret
+    pattern: '\b(LTAI|LTAK)[0-9A-Za-z]{12,30}\b'
+    description: "阿里云 Access Key（LTAI / LTAK 前缀）"
+    redact: tail
+    examples:
+      hit:
+        - "ak=LTAI4FrandomAccessKeyId01"
+      miss:
+        - "ltai too short"
+
+  - id: secret-private-key
+    name: "PEM 私钥"
+    severity: critical
+    category: crypto
+    pattern: '-----BEGIN (?:RSA |EC |DSA |OPENSSH )?PRIVATE KEY-----'
+    description: "各种 PEM 私钥头部直接出现在日志里"
+    redact: full
+    flags: [IGNORECASE, MULTILINE]
+    examples:
+      hit:
+        - "key: -----BEGIN RSA PRIVATE KEY-----"
+        - "-----BEGIN OPENSSH PRIVATE KEY-----"
+      miss:
+        - "BEGIN PUBLIC KEY"
+        - "PRIVATE KEY (no dashes)"
+
+  - id: secret-aws-sk
+    name: "AWS Secret Key（含上下文）"
+    severity: critical
+    category: secret
+    pattern: '(?i)aws.{0,30}(?:secret|sk).{0,8}[=:][\s"''`]*[A-Za-z0-9/+=]{40}'
+    description: "必须有 aws + secret/sk 上下文锚点的 40 位 base64-ish 字符串"
+    redact: tail
+    examples:
+      hit:
+        - "aws_secret_access_key=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
+      miss:
+        - "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
+
+  - id: secret-bearer-token
+    name: "HTTP Bearer Token"
+    severity: high
+    category: secret
+    pattern: '(?i)\b(?:bearer|authorization)[\s:=]+[A-Za-z0-9._\-]{20,}'
+    description: "HTTP Authorization Bearer 或 bearer=... 形式的 token"
+    redact: tail
+    examples:
+      hit:
+        - "Authorization: Bearer abcdefghijklmnopqrst1234"
+        - "bearer=ZGVmYXVsdC10ZXN0LXRva2Vu0123"
+      miss:
+        - "bearer short"
+
+  - id: secret-jwt
+    name: "JWT Token（三段式）"
+    severity: high
+    category: secret
+    pattern: '\beyJ[A-Za-z0-9_\-]{8,}\.eyJ[A-Za-z0-9_\-]{8,}\.[A-Za-z0-9_\-]{8,}\b'
+    description: "标准 JWT（header.payload.signature 三段 base64）"
+    redact: tail
+    examples:
+      hit:
+        - "token: eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0In0.signature_part_here"
+      miss:
+        - "eyJ only one segment"
+
+  - id: secret-password-kv
+    name: "明文密码 KV"
+    severity: high
+    category: secret
+    pattern: '(?i)\b(?:password|passwd|pwd)[\s]*[=:][\s]*["'']?([^\s"''&,;<>]{6,})["'']?'
+    description: "password=xxx / pwd: xxx / passwd 等明文密码 KV 形式"
+    redact: full
+    examples:
+      hit:
+        - "config: password=Sup3rSecret!"
+        - "PWD: 'admin12345'"
+      miss:
+        - "password mismatch"
+        - "pwd: short"
+
+  - id: secret-generic-apikey
+    name: "通用 API Key KV"
+    severity: medium
+    category: secret
+    pattern: '(?i)\b(?:api[_\-]?key|apikey|access[_\-]?token)[\s]*[=:][\s]*["'']?([A-Za-z0-9_\-]{16,})["'']?'
+    description: "通用 api_key / apikey / access-token KV 形式"
+    redact: tail
+    examples:
+      hit:
+        - "headers: api_key=abcdefghijklmnopqrstuv01"
+        - "apikey: 'XYZ1234567890abcdef0123'"
+      miss:
+        - "api-key short"
+
+  # ---------- PII ----------
+
+  - id: pii-id-cn
+    name: "中国大陆身份证号"
+    severity: high
+    category: pii
+    pattern: '\b[1-9]\d{5}(?:19|20)\d{2}(?:0[1-9]|1[0-2])(?:0[1-9]|[12]\d|3[01])\d{3}[\dXx]\b'
+    description: "18 位中国大陆身份证号（含弱日期校验）"
+    redact: tail
+    examples:
+      hit:
+        - "user 110101199003075078 logged in"
+      miss:
+        - "11010119900307507"
+        - "11010119901307507X"
+
+  - id: pii-mobile-cn
+    name: "中国大陆手机号"
+    severity: medium
+    category: pii
+    pattern: '(?<![\d])(?:1[3-9]\d{9})(?![\d])'
+    description: "中国大陆 11 位手机号（含边界判定，但仍有容器/订单 ID 误判风险）"
+    redact: tail
+    examples:
+      hit:
+        - "phone=13812345678 sent"
+      miss:
+        - "id=12345678901"
+        - "request 138123456789"
+
+  - id: pii-bankcard
+    name: "银行卡号（Luhn）"
+    severity: high
+    category: pii
+    pattern: '(?<![\d])(?:\d[ \-]?){15,18}\d(?![\d])'
+    description: "16 到 19 位卡号 加 Luhn 校验，过滤纯时间戳和订单串"
+    redact: tail
+    post_filter: luhn
+    examples:
+      hit:
+        - "card 4539 1488 0343 6467 paid"
+      miss:
+        - "1234567890123456"
+
+  # ---------- injection ----------
+
+  - id: injection-sql-union
+    name: "SQL 注入征兆"
+    severity: high
+    category: injection
+    pattern: '(?i)(?:\bunion\s+select\b|\bor\s+1\s*=\s*1\b|\bsleep\s*\(\s*\d+\s*\)|;\s*drop\s+table\b|--\s*$)'
+    description: "UNION SELECT / OR 1 等于 1 / SLEEP / DROP TABLE / 行尾 SQL 注释"
+    redact: full
+    flags: [IGNORECASE, MULTILINE]
+    examples:
+      hit:
+        - "?id=1 UNION SELECT username,password FROM users"
+        - "where x='a' OR 1=1 --"
+      miss:
+        - "we have a union of teams"

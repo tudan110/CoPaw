@@ -1,0 +1,14 @@
+[project]
+name = "log-security-scan-scripts"
+version = "0.1.0"
+description = "Nightingale log sensitive-info & attack-signal scan"
+requires-python = ">=3.8"
+dependencies = [
+    "requests>=2.31.0",
+    "python-dotenv>=1.0.0",
+    "pyyaml>=6.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
