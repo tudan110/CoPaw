@@ -20,7 +20,7 @@ description: 用于查询当前 `.env` 配置所指向的 CMDB 环境。当用�
 - 涉及统计分布、目标数量对比类图表时，优先使用 `scripts/zgops-cmdb.sh analyze ...`。
 - 涉及资源数量、资源状态、制造商/厂商分布、`/cmdb/v0.1/ci/count...` 这类 INOE 网关 CMDB 统计接口时，使用 `scripts/zgops-cmdb.sh inoe-stat ...`，不要改用 `resource-insight-query`。
 - 执行 `inoe-stat` 时，资源 `type` 默认从当前环境的 `/cmdb/v0.1/ci_types/groups` 动态解析；内置 `database=5 / middleware=6 ...` 只作为元数据接口不可用时的兜底。
-- 涉及具体应用的关系拓扑，先运行 `scripts/zgops-cmdb.sh find-project <应用名>` 解析目标应用；唯一命中后直接使用 `scripts/zgops-cmdb.sh app-topology <应用名>` 输出标准 ECharts `series` 结构，不要手写拓扑 option。
+- 涉及具体应用的关系拓扑，先运行 `scripts/zgops-cmdb.sh find-project <应用名>` 解析目标应用；唯一命中后直接使用 `scripts/zgops-cmdb.sh app-topology <应用名>` 输出标准 ECharts `series` 结构，不要手写拓扑 option。`app-topology` 内部会同时查 `ci_relations` 和应用 CI 详情中的内嵌字段（`Kafka` / `mysql` / `redis` / `operatingsystem` 等），两者合并去重后再渲染——不要因为 `ci_relations` 接口返回为空就回复"该应用没有拓扑"。
 - 如果用户只是说“简易拓扑 / 系统拓扑 / 全局拓扑 / 监控拓扑 / 总览拓扑”，且没有明确给出某个应用名或项目名，不要使用本 skill 追问应用；这类请求应交给 `monitoring-overview-query` 的 `topology`。
 - 如果用户没有明确指定应用名，且当前系统里存在多个应用，**不要默认任选一个**。必须先列出候选应用名并请用户明确指定。
 - 当用户要求展示某个应用的关系拓扑图时，默认使用 ECharts `series.type = 'tree'`，并设置为从左到右展开；根节点使用 CMDB 中实际应用名。
@@ -106,7 +106,11 @@ scripts/zgops-cmdb.sh inoe-stat types --output markdown
 
 ## 备注
 
-- 这套环境中，`project` 对应“应用”模型。
+- 这套环境中，`project` 对应”应用”模型。
+- 应用拓扑在 VEOPS 里有两种组织方式，必须都查：
+  1. `ci_relations` 关系表（`/api/v0.1/ci_relations/s?root_id=<id>`），是显式的 CI 间关系；
+  2. 应用 CI 详情中的内嵌属性字段，字段名直接是 CI 类型（`Kafka` / `mysql` / `redis` / `operatingsystem` 等），值是相关 CI 的名称或 IP。
+  `app-topology` 已经合并这两条路径；如果排查问题需要手工复现，可分别 `fetch /api/v0.1/ci_relations/s?root_id=<id>...` 和 `fetch /api/v0.1/ci/<id>` 对比。
 - 凭据必须保留在 `.env` 中。
 - 如果 `.env` 中配置了用户名密码但登录失败，允许继续尝试匿名访问只读接口；不要因为登录失败就阻断整个查询链路。
 - 如需图表规范，读取 `references/chart-guide.md` 或 `references/echarts-examples.md`。
