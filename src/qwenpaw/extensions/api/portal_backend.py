@@ -13,6 +13,7 @@ import traceback
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 from fastapi import APIRouter, Body, FastAPI, File, HTTPException, Query, Request, UploadFile
@@ -41,6 +42,10 @@ from qwenpaw.extensions.api.fault_manual_workorder_service import (
     merge_manual_workorder_notification,
 )
 from qwenpaw.extensions.api.alarm_analyst_service import run_alarm_analyst_diagnose
+from qwenpaw.extensions.portal_real_alarm_registry import (
+    filter_visible_alarms,
+    update_alarm_record,
+)
 from qwenpaw.extensions.integrations.alarm_workorders.query_alarm_workorders import (
     query_alarm_workorders,
 )
@@ -52,6 +57,26 @@ from qwenpaw.app.channels.base import ContentType, TextContent
 router = APIRouter(prefix="/api/portal", tags=["portal"])
 app = FastAPI(title="Portal Backend")
 FAULT_DISPOSAL_SCRIPT_TIMEOUT_SECONDS = 45
+PORTAL_REAL_ALARM_ROUTE_DEFAULT_LIMIT = 20
+PORTAL_REAL_ALARM_ROUTE_FETCH_MULTIPLIER = 3
+PORTAL_REAL_ALARM_AUTO_TAKEOVER_ENABLED = (
+    os.getenv("QWENPAW_PORTAL_REAL_ALARM_AUTO_TAKEOVER_ENABLED", "true")
+    .strip()
+    .lower()
+    not in {"0", "false", "off", "no"}
+)
+PORTAL_REAL_ALARM_AUTO_TAKEOVER_MIN_INTERVAL_SECONDS = 60.0
+PORTAL_REAL_ALARM_AUTO_TAKEOVER_INTERVAL_SECONDS = float(
+    os.getenv("QWENPAW_PORTAL_REAL_ALARM_AUTO_TAKEOVER_INTERVAL", "60").strip() or "60"
+)
+PORTAL_REAL_ALARM_AUTO_TAKEOVER_LIMIT = int(
+    os.getenv("QWENPAW_PORTAL_REAL_ALARM_AUTO_TAKEOVER_LIMIT", "20").strip() or "20"
+)
+PORTAL_REAL_ALARM_MAX_ACTIVE_ANALYSES = max(
+    1,
+    int(os.getenv("QWENPAW_PORTAL_REAL_ALARM_MAX_ACTIVE_ANALYSES", "1").strip() or "1"),
+)
+PORTAL_REAL_ALARM_AUTO_TAKEOVER_TASK: asyncio.Task | None = None
 PORTAL_EMPLOYEE_STATUS_IDS = (
     "query",
     "fault",
@@ -448,6 +473,8 @@ async def _ensure_portal_inspection_session(
 async def _ensure_portal_real_alarm_sessions(
     request: Request,
     alarms_payload: dict[str, Any],
+    *,
+    takeover_source: str = "manual-trigger",
 ) -> dict[str, Any]:
     items = alarms_payload.get("items") or []
     result = {
@@ -478,6 +505,14 @@ async def _ensure_portal_real_alarm_sessions(
             for chat in chats
             if str(chat.session_id or "").startswith(PORTAL_REAL_ALARM_SESSION_PREFIX)
         }
+        active_alarm_analyses = 0
+        for chat in chats_by_session.values():
+            if await workspace.task_tracker.get_status(chat.id) == "running":
+                active_alarm_analyses += 1
+        start_budget = max(
+            0,
+            PORTAL_REAL_ALARM_MAX_ACTIVE_ANALYSES - active_alarm_analyses,
+        )
 
         for alarm in items:
             if not isinstance(alarm, dict):
@@ -493,8 +528,27 @@ async def _ensure_portal_real_alarm_sessions(
             session_id = _build_portal_real_alarm_session_id(alarm)
             result["sessions"].append(session_id)
             chat = chats_by_session.get(session_id)
-            is_new_chat = False
-            if chat is None:
+            is_new_chat = chat is None
+            should_start = is_new_chat
+            current_status = ""
+            has_history = False
+            if chat is not None:
+                current_status = await workspace.task_tracker.get_status(chat.id)
+                if current_status == "idle":
+                    state = await workspace.runner.session.get_session_state_dict(
+                        chat.session_id,
+                        chat.user_id,
+                    )
+                    has_history = _portal_real_alarm_has_history(state)
+                    should_start = not has_history
+                else:
+                    should_start = False
+
+            if should_start and start_budget <= 0:
+                result["skipped"] += 1
+                continue
+
+            if should_start and chat is None:
                 chat = await workspace.chat_manager.get_or_create_chat(
                     session_id,
                     PORTAL_REAL_ALARM_USER_ID,
@@ -502,20 +556,21 @@ async def _ensure_portal_real_alarm_sessions(
                     name=_build_portal_real_alarm_chat_name(alarm),
                 )
                 chats_by_session[session_id] = chat
-                is_new_chat = True
                 result["created"] += 1
 
-            should_start = is_new_chat
             if not should_start:
-                status = await workspace.task_tracker.get_status(chat.id)
-                if status == "idle":
-                    state = await workspace.runner.session.get_session_state_dict(
-                        chat.session_id,
-                        chat.user_id,
+                registry_status = (
+                    "analyzing" if current_status == "running" else "taken_over"
+                )
+                if not is_new_chat or has_history or current_status == "running":
+                    _update_portal_real_alarm_registry_safe(
+                        alarm=alarm,
+                        status=registry_status,
+                        session_id=session_id,
+                        chat_id=chat.id if chat is not None else "",
+                        res_id=str(alarm.get("resId") or "").strip(),
+                        source=takeover_source,
                     )
-                    should_start = not _portal_real_alarm_has_history(state)
-
-            if not should_start:
                 result["skipped"] += 1
                 continue
 
@@ -525,6 +580,15 @@ async def _ensure_portal_real_alarm_sessions(
                 console_channel.stream_one,
             )
             if started:
+                _update_portal_real_alarm_registry_safe(
+                    alarm=alarm,
+                    status="analyzing",
+                    session_id=session_id,
+                    chat_id=chat.id,
+                    res_id=str(alarm.get("resId") or "").strip(),
+                    source=takeover_source,
+                )
+                start_budget -= 1
                 result["started"] += 1
                 asyncio.create_task(
                     _drain_portal_real_alarm_stream(
@@ -534,6 +598,14 @@ async def _ensure_portal_real_alarm_sessions(
                     )
                 )
             else:
+                _update_portal_real_alarm_registry_safe(
+                    alarm=alarm,
+                    status="taken_over",
+                    session_id=session_id,
+                    chat_id=chat.id,
+                    res_id=str(alarm.get("resId") or "").strip(),
+                    source=takeover_source,
+                )
                 result["skipped"] += 1
 
     return result
@@ -546,14 +618,126 @@ def _build_portal_real_alarm_trigger_payload(
     body = trigger_body or {}
     alarms = body.get("alarms")
     if alarms is None:
-        return query_portal_real_alarms(limit)
+        return _query_visible_portal_real_alarms(limit)
     if not isinstance(alarms, list):
         raise HTTPException(status_code=400, detail="'alarms' must be a list")
+    return filter_visible_alarms(
+        {
+            "total": len(alarms),
+            "items": alarms,
+            "source": "request",
+        }
+    )
+
+
+def _get_portal_auto_takeover_runtime_app() -> FastAPI | None:
+    candidates: list[FastAPI] = []
+    if isinstance(app, FastAPI):
+        candidates.append(app)
+    try:
+        from qwenpaw.app._app import app as main_app
+    except Exception:
+        main_app = None
+    if isinstance(main_app, FastAPI):
+        candidates.append(main_app)
+
+    seen_ids: set[int] = set()
+    for candidate in candidates:
+        if id(candidate) in seen_ids:
+            continue
+        seen_ids.add(id(candidate))
+        if hasattr(candidate.state, "multi_agent_manager"):
+            return candidate
+    return None
+
+
+async def _run_portal_real_alarm_auto_takeover_once() -> dict[str, Any]:
+    runtime_app = _get_portal_auto_takeover_runtime_app()
+    if runtime_app is None:
+        return {
+            "ok": False,
+            "reason": "runtime-unavailable",
+            "alarmTotal": 0,
+            "eligible": 0,
+            "created": 0,
+            "started": 0,
+            "skipped": 0,
+            "sessions": [],
+        }
+
+    alarms_payload = _build_portal_real_alarm_trigger_payload(
+        PORTAL_REAL_ALARM_AUTO_TAKEOVER_LIMIT,
+        None,
+    )
+    summary = await _ensure_portal_real_alarm_sessions(
+        SimpleNamespace(app=runtime_app),
+        alarms_payload,
+        takeover_source="auto-poll",
+    )
     return {
-        "total": len(alarms),
-        "items": alarms,
-        "source": "request",
+        "ok": True,
+        "alarmSource": alarms_payload.get("source") or "unknown",
+        "alarmTotal": int(alarms_payload.get("total") or len(alarms_payload.get("items") or [])),
+        **summary,
     }
+
+
+async def _portal_real_alarm_auto_takeover_loop() -> None:
+    while True:
+        try:
+            summary = await _run_portal_real_alarm_auto_takeover_once()
+            if summary.get("started") or summary.get("created"):
+                print(
+                    "[INFO] portal real alarm auto takeover: "
+                    f"created={summary.get('created', 0)} "
+                    f"started={summary.get('started', 0)} "
+                    f"skipped={summary.get('skipped', 0)}"
+                )
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            print(
+                "[WARN] portal real alarm auto takeover failed: "
+                f"{type(exc).__name__}: {exc}"
+            )
+            traceback.print_exc()
+        await asyncio.sleep(
+            max(
+                PORTAL_REAL_ALARM_AUTO_TAKEOVER_MIN_INTERVAL_SECONDS,
+                PORTAL_REAL_ALARM_AUTO_TAKEOVER_INTERVAL_SECONDS,
+            )
+        )
+
+
+@router.on_event("startup")
+async def start_portal_real_alarm_auto_takeover() -> None:
+    global PORTAL_REAL_ALARM_AUTO_TAKEOVER_TASK
+
+    if not PORTAL_REAL_ALARM_AUTO_TAKEOVER_ENABLED:
+        return
+    if (
+        PORTAL_REAL_ALARM_AUTO_TAKEOVER_TASK is not None
+        and not PORTAL_REAL_ALARM_AUTO_TAKEOVER_TASK.done()
+    ):
+        return
+    PORTAL_REAL_ALARM_AUTO_TAKEOVER_TASK = asyncio.create_task(
+        _portal_real_alarm_auto_takeover_loop()
+    )
+
+
+@router.on_event("shutdown")
+async def stop_portal_real_alarm_auto_takeover() -> None:
+    global PORTAL_REAL_ALARM_AUTO_TAKEOVER_TASK
+
+    task = PORTAL_REAL_ALARM_AUTO_TAKEOVER_TASK
+    PORTAL_REAL_ALARM_AUTO_TAKEOVER_TASK = None
+    if task is None or task.done():
+        return
+    task.cancel()
+    try:
+        await task
+    except asyncio.CancelledError:
+        pass
 
 
 def _read_preview_progress(progress_file: Path) -> list[dict[str, Any]]:
@@ -802,6 +986,74 @@ def _ensure_fault_alert_count_refresh() -> asyncio.Task:
     task = asyncio.create_task(_refresh_fault_alert_count_cache())
     PORTAL_STATUS_ALERT_COUNT_REFRESH_TASK = task
     return task
+
+
+def _normalize_portal_real_alarm_limit(limit: int) -> int:
+    try:
+        return max(1, int(limit or PORTAL_REAL_ALARM_ROUTE_DEFAULT_LIMIT))
+    except (TypeError, ValueError):
+        return PORTAL_REAL_ALARM_ROUTE_DEFAULT_LIMIT
+
+
+def _query_visible_portal_real_alarms(limit: int) -> dict[str, Any]:
+    normalized_limit = _normalize_portal_real_alarm_limit(limit)
+    raw_payload = query_portal_real_alarms(
+        normalized_limit * PORTAL_REAL_ALARM_ROUTE_FETCH_MULTIPLIER
+    )
+    visible_payload = filter_visible_alarms(raw_payload)
+    visible_items = list(visible_payload.get("items") or [])[:normalized_limit]
+    return {
+        **visible_payload,
+        "items": visible_items,
+        "total": len(visible_items),
+    }
+
+
+def _build_portal_registry_status_from_verification(verification: dict[str, Any]) -> str:
+    status = str(verification.get("status") or "").strip().lower()
+    if status == "recovered":
+        return "manual_recovered"
+    if status == "unrecovered":
+        return "manual_unrecovered"
+    return "manual_unknown"
+
+
+def _update_portal_real_alarm_registry_safe(
+    *,
+    alarm: dict[str, Any] | None = None,
+    alarm_id: str = "",
+    status: str = "",
+    session_id: str = "",
+    chat_id: str = "",
+    res_id: str = "",
+    source: str = "",
+    verification_status: str = "",
+    last_error: str | None = None,
+) -> dict[str, Any] | None:
+    try:
+        return update_alarm_record(
+            alarm=alarm,
+            alarm_id=alarm_id,
+            status=status,
+            session_id=session_id,
+            chat_id=chat_id,
+            res_id=res_id,
+            source=source,
+            verification_status=verification_status,
+            last_error=last_error,
+        )
+    except ValueError as exc:
+        print(
+            "[WARN] portal real alarm registry skipped update: "
+            f"{type(exc).__name__}: {exc}"
+        )
+    except Exception as exc:
+        print(
+            "[WARN] portal real alarm registry update failed: "
+            f"{type(exc).__name__}: {exc}"
+        )
+        traceback.print_exc()
+    return None
 
 
 async def _get_employee_alert_count(employee_id: str, *, include_alert_count: bool = True) -> int:
@@ -1349,10 +1601,10 @@ async def get_alarm_workorders(limit: int = 5):
 
 @router.get("/real-alarms")
 async def get_real_alarms(
-    limit: int = 20,
+    limit: int = PORTAL_REAL_ALARM_ROUTE_DEFAULT_LIMIT,
 ):
     try:
-        return query_portal_real_alarms(limit)
+        return _query_visible_portal_real_alarms(limit)
     except Exception as exc:
         error_detail = f"{type(exc).__name__}: {str(exc)}"
         print(f"[ERROR] get_real_alarms failed: {error_detail}")
@@ -1364,7 +1616,7 @@ async def get_real_alarms(
 async def trigger_real_alarm_sessions(
     request: Request,
     payload: dict[str, Any] | None = Body(default=None),
-    limit: int = Query(20),
+    limit: int = Query(PORTAL_REAL_ALARM_ROUTE_DEFAULT_LIMIT),
 ):
     try:
         if not hasattr(request.app.state, "multi_agent_manager"):
@@ -1374,7 +1626,11 @@ async def trigger_real_alarm_sessions(
             )
 
         alarms_payload = _build_portal_real_alarm_trigger_payload(limit, payload)
-        summary = await _ensure_portal_real_alarm_sessions(request, alarms_payload)
+        summary = await _ensure_portal_real_alarm_sessions(
+            request,
+            alarms_payload,
+            takeover_source="manual-trigger",
+        )
         return {
             "ok": True,
             "alarmSource": alarms_payload.get("source") or "unknown",
@@ -1599,6 +1855,13 @@ async def dispatch_fault_manual_workorder(
             session_id=parsed.chat_id,
             records=records,
         )
+        _update_portal_real_alarm_registry_safe(
+            alarm=parsed.alarm.model_dump(mode="json"),
+            status="manual_pending",
+            chat_id=parsed.chat_id,
+            res_id=str(parsed.res_id),
+            source="manual-dispatch",
+        )
 
         history = await _load_portal_fault_history(request, session_id=parsed.chat_id)
         history.append(
@@ -1664,6 +1927,13 @@ async def notify_fault_manual_workorder_closed(
             request,
             session_id=parsed.chat_id,
             records=records,
+        )
+        _update_portal_real_alarm_registry_safe(
+            status=_build_portal_registry_status_from_verification(verification),
+            chat_id=parsed.chat_id,
+            res_id=str(parsed.res_id),
+            source="manual-close",
+            verification_status=str(verification.get("status") or "").strip(),
         )
 
         history = await _load_portal_fault_history(request, session_id=parsed.chat_id)

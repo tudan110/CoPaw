@@ -447,11 +447,12 @@ def test_real_alarms_route_returns_backend_payload(monkeypatch) -> None:
             "source": "mock",
         },
     )
+    monkeypatch.setattr(portal_backend, "filter_visible_alarms", lambda payload: payload)
 
     response = client.get("/api/portal/real-alarms?limit=8")
 
     assert response.status_code == 200
-    assert received["limit"] == 8
+    assert received["limit"] == 24
     assert response.json()["source"] == "mock"
     assert response.json()["items"][0]["employeeId"] == "fault"
     assert response.json()["items"][0]["resId"] == "3094"
@@ -484,7 +485,7 @@ def test_real_alarms_route_does_not_auto_create_sessions(
     }
     called: dict[str, object] = {}
 
-    monkeypatch.setattr(portal_backend, "query_portal_real_alarms", lambda limit: payload)
+    monkeypatch.setattr(portal_backend, "_query_visible_portal_real_alarms", lambda limit: payload)
 
     async def fake_ensure(request, alarms_payload):
         called["request"] = request
@@ -527,11 +528,12 @@ def test_real_alarms_trigger_sessions_route_starts_sessions_when_runtime_availab
     }
     called: dict[str, object] = {}
 
-    monkeypatch.setattr(portal_backend, "query_portal_real_alarms", lambda limit: payload)
+    monkeypatch.setattr(portal_backend, "_query_visible_portal_real_alarms", lambda limit: payload)
 
-    async def fake_ensure(request, alarms_payload):
+    async def fake_ensure(request, alarms_payload, *, takeover_source: str = "manual-trigger"):
         called["request"] = request
         called["payload"] = alarms_payload
+        called["takeover_source"] = takeover_source
         return {
             "total": 1,
             "eligible": 1,
@@ -547,6 +549,7 @@ def test_real_alarms_trigger_sessions_route_starts_sessions_when_runtime_availab
 
     assert response.status_code == 200
     assert called["payload"] == payload
+    assert called["takeover_source"] == "manual-trigger"
     assert response.json()["started"] == 1
     assert response.json()["alarmSource"] == "live"
 
@@ -619,7 +622,7 @@ def test_real_alarms_route_returns_500_when_backend_query_fails(monkeypatch) -> 
     def _raise(limit: int) -> dict:
         raise RuntimeError("unexpected backend failure")
 
-    monkeypatch.setattr(portal_backend, "query_portal_real_alarms", _raise)
+    monkeypatch.setattr(portal_backend, "_query_visible_portal_real_alarms", _raise)
 
     response = client.get("/api/portal/real-alarms?limit=8")
 
@@ -639,7 +642,7 @@ def test_real_alarms_route_keeps_alarm_workorders_route_unchanged(
     )
     monkeypatch.setattr(
         portal_backend,
-        "query_portal_real_alarms",
+        "_query_visible_portal_real_alarms",
         lambda limit: {"total": 1, "items": [{"id": "alarm-1"}], "source": "mock"},
     )
 
@@ -650,6 +653,69 @@ def test_real_alarms_route_keeps_alarm_workorders_route_unchanged(
     assert real_alarms_response.status_code == 200
     assert workorders_response.json()["total"] == 2
     assert real_alarms_response.json()["total"] == 1
+
+
+@pytest.mark.asyncio
+async def test_auto_takeover_once_uses_auto_poll_source(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runtime_app = SimpleNamespace(state=SimpleNamespace(multi_agent_manager=object()))
+    payload = {
+        "total": 1,
+        "items": [
+            {
+                "id": "alarm-1",
+                "alarmId": "alarm-1",
+                "resId": "3094",
+                "title": "数据库锁异常",
+                "level": "critical",
+                "status": "active",
+                "eventTime": "2026-04-15 19:20:00",
+                "timeLabel": "2026-04-15 19:20:00",
+                "deviceName": "MySQL",
+                "manageIp": "10.43.150.186",
+                "employeeId": "fault",
+                "dispatchContent": "mysql/死锁 + cmdb/新增/插入",
+                "visibleContent": "数据库锁异常（MySQL 10.43.150.186）",
+            }
+        ],
+        "source": "live",
+    }
+    called: dict[str, object] = {}
+
+    monkeypatch.setattr(
+        portal_backend,
+        "_get_portal_auto_takeover_runtime_app",
+        lambda: runtime_app,
+    )
+    monkeypatch.setattr(
+        portal_backend,
+        "_build_portal_real_alarm_trigger_payload",
+        lambda limit, trigger_body: payload,
+    )
+
+    async def fake_ensure(request, alarms_payload, *, takeover_source: str = "manual-trigger"):
+        called["request_app"] = request.app
+        called["payload"] = alarms_payload
+        called["takeover_source"] = takeover_source
+        return {
+            "total": 1,
+            "eligible": 1,
+            "created": 1,
+            "started": 1,
+            "skipped": 0,
+            "sessions": ["portal-fault-alarm-alarm-1"],
+        }
+
+    monkeypatch.setattr(portal_backend, "_ensure_portal_real_alarm_sessions", fake_ensure)
+
+    summary = await portal_backend._run_portal_real_alarm_auto_takeover_once()  # pylint: disable=protected-access
+
+    assert called["request_app"] is runtime_app
+    assert called["payload"] == payload
+    assert called["takeover_source"] == "auto-poll"
+    assert summary["started"] == 1
+    assert summary["alarmSource"] == "live"
 
 
 def test_fault_disposal_history_normalizes_fault_scenario_result(
@@ -715,6 +781,7 @@ def test_manual_workorder_dispatch_route_persists_record_and_history(
     client = TestClient(portal_backend.app)
     history_store: dict[str, list[dict]] = {"chat-1": []}
     workorder_store: dict[str, dict[str, dict]] = {"chat-1": {}}
+    registry_updates: list[dict[str, object]] = []
 
     async def fake_load_history(_request, *, session_id: str, user_id: str = "default") -> list[dict]:
         return list(history_store.get(session_id, []))
@@ -744,6 +811,11 @@ def test_manual_workorder_dispatch_route_persists_record_and_history(
     monkeypatch.setattr(portal_backend, "_save_portal_fault_history", fake_save_history)
     monkeypatch.setattr(portal_backend, "_load_portal_manual_workorders", fake_load_workorders)
     monkeypatch.setattr(portal_backend, "_save_portal_manual_workorders", fake_save_workorders)
+    monkeypatch.setattr(
+        portal_backend,
+        "_update_portal_real_alarm_registry_safe",
+        lambda **kwargs: registry_updates.append(dict(kwargs)),
+    )
 
     response = client.post(
         "/api/portal/fault-disposal/manual-workorders/dispatch",
@@ -773,6 +845,9 @@ def test_manual_workorder_dispatch_route_persists_record_and_history(
     )
     assert workorder_store["chat-1"]["3094"]["status"] == "pending_manual"
     assert history_store["chat-1"][-1]["manualWorkorder"]["resId"] == "3094"
+    assert registry_updates[-1]["status"] == "manual_pending"
+    assert registry_updates[-1]["chat_id"] == "chat-1"
+    assert registry_updates[-1]["res_id"] == "3094"
 
 
 def test_manual_workorder_close_notification_updates_history_and_verification(
@@ -791,6 +866,7 @@ def test_manual_workorder_close_notification_updates_history_and_verification(
             }
         }
     }
+    registry_updates: list[dict[str, object]] = []
 
     async def fake_load_history(_request, *, session_id: str, user_id: str = "default") -> list[dict]:
         return list(history_store.get(session_id, []))
@@ -820,6 +896,11 @@ def test_manual_workorder_close_notification_updates_history_and_verification(
     monkeypatch.setattr(portal_backend, "_save_portal_fault_history", fake_save_history)
     monkeypatch.setattr(portal_backend, "_load_portal_manual_workorders", fake_load_workorders)
     monkeypatch.setattr(portal_backend, "_save_portal_manual_workorders", fake_save_workorders)
+    monkeypatch.setattr(
+        portal_backend,
+        "_update_portal_real_alarm_registry_safe",
+        lambda **kwargs: registry_updates.append(dict(kwargs)),
+    )
     monkeypatch.setattr(
         portal_backend,
         "_run_alarm_metric_verification",
@@ -862,6 +943,8 @@ def test_manual_workorder_close_notification_updates_history_and_verification(
     assert payload["manualWorkorder"]["status"] == "manual_recovered"
     assert payload["verification"]["summary"] == "最新关键指标未见锁等待/慢 SQL 类异常，可初步判定已恢复"
     assert history_store["chat-1"][-1]["recoveryVerification"]["status"] == "recovered"
+    assert registry_updates[-1]["status"] == "manual_recovered"
+    assert registry_updates[-1]["verification_status"] == "recovered"
 
 
 def test_manual_workorder_close_notification_returns_404_when_record_missing(
