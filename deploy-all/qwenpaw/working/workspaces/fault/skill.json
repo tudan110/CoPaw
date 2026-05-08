@@ -1,0 +1,131 @@
+{
+  "schema_version": "workspace-skill-manifest.v1",
+  "version": 1778223075940,
+  "skills": {
+    "alarm-analyst": {
+      "enabled": true,
+      "channels": [
+        "all"
+      ],
+      "source": "customized",
+      "metadata": {
+        "name": "alarm-analyst",
+        "description": "面向单条活动告警或单个应用故障现象驱动的故障分析与闭环处置技能。适用于 Portal 中用户点击右上角铃铛告警后，或直接描述“某应用新增数据失败 / CMDB 插入数据失败”等现象后，由故障分析员数字员工接管，并向用户展示从智观活动告警、CMDB 资源确认、应用拓扑拆解、指标分析、影响范围判断、处置建议、恢复验证到清除告警/更新工单状态的完整过程。若当前工作区已具备 shell、跨智能体和指标接口能力，应优先执行真实查询，不要只复述流程模板。",
+        "version_text": "",
+        "commit_text": "",
+        "source": "customized",
+        "protected": false,
+        "requirements": {
+          "require_bins": [],
+          "require_envs": []
+        },
+        "updated_at": "2026-05-08T00:31:10.719329Z"
+      },
+      "requirements": {
+        "require_bins": [],
+        "require_envs": []
+      },
+      "updated_at": "2026-05-08T00:31:10.719329Z"
+    },
+    "fault-disposal": {
+      "enabled": true,
+      "channels": [
+        "all"
+      ],
+      "source": "customized",
+      "metadata": {
+        "name": "fault-disposal",
+        "description": "面向工单驱动故障处置的技能。适用于 Portal 或上游系统已经整理好工单上下文，并希望在当前 CoPAW 聊天会话中完成根因分析、处置建议、动作执行和恢复验证的场景。仅当用户意图是“基于工单上下文推进故障处置闭环”时使用；如果用户只是查询实时告警列表、告警统计、告警分布或告警详情，应交给 query 数字员工的 real-alarm，而不是本技能。",
+        "version_text": "",
+        "commit_text": "",
+        "source": "customized",
+        "protected": false,
+        "requirements": {
+          "require_bins": [],
+          "require_envs": []
+        },
+        "updated_at": "2026-04-23T08:05:49.533411Z"
+      },
+      "requirements": {
+        "require_bins": [],
+        "require_envs": []
+      },
+      "updated_at": "2026-04-23T08:05:49.533411Z"
+    },
+    "mysql-deadlock-inspector": {
+      "enabled": true,
+      "channels": [
+        "all"
+      ],
+      "source": "customized",
+      "metadata": {
+        "name": "mysql-deadlock-inspector",
+        "description": "面向 MySQL 死锁、锁等待和阻塞事务证据采集的只读 skill。当前阶段保留 JSON 脚手架，供后续 RCA 链路接线。",
+        "version_text": "",
+        "commit_text": "",
+        "source": "customized",
+        "protected": false,
+        "requirements": {
+          "require_bins": [],
+          "require_envs": []
+        },
+        "updated_at": "2026-04-22T00:50:27.076465Z"
+      },
+      "requirements": {
+        "require_bins": [],
+        "require_envs": []
+      },
+      "updated_at": "2026-04-22T00:50:27.076465Z"
+    },
+    "real-alarm": {
+      "enabled": true,
+      "channels": [
+        "all"
+      ],
+      "source": "customized",
+      "metadata": {
+        "name": "real-alarm",
+        "description": "实时告警管理系统查询和统计分析。支持获取告警列表、统计告警信息、查询告警状态、按级别/设备/类型筛选告警、生成可视化图表。当用户询问告警、告警统计、告警分析、告警报告、告警列表、严重告警、活跃告警、告警级别、设备告警、告警分布、告警趋势、异常事件、系统故障、网络问题、设备状态、端口DOWN、链路中断、CPU过高、内存不足、告警总数、告警数量、告警详情、告警查询时使用。本技能专用于查询和分析告警系统中的实时告警数据，不用于一般编程问题、技术教程、API文档查询或其他非告警相关的任务。",
+        "version_text": "",
+        "commit_text": "",
+        "source": "customized",
+        "protected": false,
+        "requirements": {
+          "require_bins": [],
+          "require_envs": []
+        },
+        "updated_at": "2026-04-28T07:47:08.753982Z"
+      },
+      "requirements": {
+        "require_bins": [],
+        "require_envs": []
+      },
+      "updated_at": "2026-04-28T07:47:08.753982Z"
+    },
+    "zgops-cmdb": {
+      "enabled": true,
+      "channels": [
+        "all"
+      ],
+      "source": "customized",
+      "metadata": {
+        "name": "zgops-cmdb",
+        "description": "用于查询当前 `.env` 配置所指向的 CMDB 环境。当用户询问模型、关系、层级、IPAM、DCIM、应用拓扑、资源拓扑、资源数量统计、资源状态统计、制造商/厂商分布、CMDB count/group 类接口时使用。",
+        "version_text": "",
+        "commit_text": "",
+        "source": "customized",
+        "protected": false,
+        "requirements": {
+          "require_bins": [],
+          "require_envs": []
+        },
+        "updated_at": "2026-04-28T07:46:42.849526Z"
+      },
+      "requirements": {
+        "require_bins": [],
+        "require_envs": []
+      },
+      "updated_at": "2026-04-28T07:46:42.849526Z"
+    }
+  }
+}

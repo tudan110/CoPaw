@@ -1,6 +1,6 @@
 {
   "schema_version": "workspace-skill-manifest.v1",
-  "version": 1776048019059,
+  "version": 1778223078136,
   "skills": {
     "QA_source_index": {
       "enabled": true,
@@ -518,6 +518,31 @@
         "require_envs": []
       },
       "updated_at": "2026-04-13T00:58:45.941304Z"
+    },
+    "zgops-cmdb-import": {
+      "enabled": true,
+      "channels": [
+        "all"
+      ],
+      "source": "customized",
+      "metadata": {
+        "name": "zgops-cmdb-import",
+        "description": "用于处理CMDB 测试环境中的资源清单智能导入、资源纳管、批量导入预检查和入库确认。当用户明确表达导入资源清单、上传台账导入、资源纳管、批量导入 CMDB 时使用。",
+        "version_text": "",
+        "commit_text": "",
+        "source": "customized",
+        "protected": false,
+        "requirements": {
+          "require_bins": [],
+          "require_envs": []
+        },
+        "updated_at": "2026-05-06T10:45:28.921241Z"
+      },
+      "requirements": {
+        "require_bins": [],
+        "require_envs": []
+      },
+      "updated_at": "2026-05-06T10:45:28.921241Z"
     }
   }
 }

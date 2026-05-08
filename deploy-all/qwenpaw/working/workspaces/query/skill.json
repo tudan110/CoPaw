@@ -1,0 +1,206 @@
+{
+  "schema_version": "workspace-skill-manifest.v1",
+  "version": 1778223077378,
+  "skills": {
+    "device-list": {
+      "enabled": true,
+      "channels": [
+        "all"
+      ],
+      "source": "customized",
+      "metadata": {
+        "name": "device-list",
+        "description": "设备管理系统查询。支持获取设备列表、统计设备信息、查询设备状态、按型号/厂商/类型筛选设备。当用户询问设备列表、设备型号、设备状态、设备统计、设备信息时使用。",
+        "version_text": "",
+        "commit_text": "",
+        "source": "customized",
+        "protected": false,
+        "requirements": {
+          "require_bins": [],
+          "require_envs": []
+        },
+        "updated_at": "2026-05-06T07:31:06.960552Z"
+      },
+      "requirements": {
+        "require_bins": [],
+        "require_envs": []
+      },
+      "updated_at": "2026-05-06T07:31:06.960552Z"
+    },
+    "log-hazard-detection": {
+      "enabled": true,
+      "channels": [
+        "all"
+      ],
+      "source": "customized",
+      "metadata": {
+        "name": "log-hazard-detection",
+        "description": "基于 Drain3 在线模板挖掘的日志隐患识别。把当前窗口的夜莺业务日志压成 N 个稳定模板，对比 24h / 7d 前的基线模板分布，找出突增模板、新增模板、消失模板、稀有模板与错误密集模板，输出 Markdown 报告 + ECharts 图。当用户提到“日志隐患/日志聚类/日志模板/突增日志/异常模板/罕见日志/错误集中爆发/与昨天相比日志变化/最近多出哪些报错模式”等诉求时**必须使用本技能**。本技能不是关键字检索（那是 nightingale-log）、不做敏感信息扫描（那是 log-security-scan）、不做单告警根因（那是 fault），只回答“这段时间日志里冒出哪些值得关注的模式”。",
+        "version_text": "",
+        "commit_text": "",
+        "source": "customized",
+        "protected": false,
+        "requirements": {
+          "require_bins": [],
+          "require_envs": []
+        },
+        "updated_at": "2026-05-08T03:55:27.838682Z"
+      },
+      "requirements": {
+        "require_bins": [],
+        "require_envs": []
+      },
+      "updated_at": "2026-05-08T03:55:27.838682Z"
+    },
+    "log-security-scan": {
+      "enabled": true,
+      "channels": [
+        "all"
+      ],
+      "source": "customized",
+      "metadata": {
+        "name": "log-security-scan",
+        "description": "基于规则库的日志敏感信息与攻击征兆扫描。覆盖密码 / token / API key / AK·SK / 身份证 / 手机号 / 银行卡 / SQL 注入征兆等核心类目，对夜莺业务日志做正则匹配，每条命中按规则分类聚合（命中数、典型样例脱敏后展示、涉及主机/服务/索引），并按 severity（critical/high/medium）打分排序。当用户提到“日志里有没有敏感信息/密码/token/身份证/手机号/AK SK 泄露 / SQL 注入痕迹/合规扫描/数据泄露”等诉求时**必须使用本技能**。规则集默认保守（宁少不滥），用户可在 `references/security_rules.yml` 增删；本技能不做模板挖掘（那是 log-hazard-detection），也不做关键字检索（那是 nightingale-log）。",
+        "version_text": "",
+        "commit_text": "",
+        "source": "customized",
+        "protected": false,
+        "requirements": {
+          "require_bins": [],
+          "require_envs": []
+        },
+        "updated_at": "2026-05-08T03:55:27.842769Z"
+      },
+      "requirements": {
+        "require_bins": [],
+        "require_envs": []
+      },
+      "updated_at": "2026-05-08T03:55:27.842769Z"
+    },
+    "monitoring-overview-query": {
+      "enabled": true,
+      "channels": [
+        "all"
+      ],
+      "source": "customized",
+      "metadata": {
+        "name": "monitoring-overview-query",
+        "description": "查询监控总览/运维驾驶舱页面数据。适用于用户询问当前系统概览、智观系统运行状态、整体运行态势、监控概况、资产总览、应用健康概览、告警对象 Top5、全局/系统/监控/简易拓扑时使用。监控页中的实时告警时间范围查询继续使用 real-alarm；具体某个应用的 CMDB 关系拓扑继续使用 zgops-cmdb。",
+        "version_text": "",
+        "commit_text": "",
+        "source": "customized",
+        "protected": false,
+        "requirements": {
+          "require_bins": [],
+          "require_envs": []
+        },
+        "updated_at": "2026-04-28T06:21:01.449950Z"
+      },
+      "requirements": {
+        "require_bins": [],
+        "require_envs": []
+      },
+      "updated_at": "2026-04-28T06:21:01.449950Z"
+    },
+    "nightingale-log": {
+      "enabled": true,
+      "channels": [
+        "all"
+      ],
+      "source": "customized",
+      "metadata": {
+        "name": "nightingale-log",
+        "description": "夜莺监控（Nightingale / n9e）日志即时查询，对接 ES / casaos-syslog 等业务日志数据源。支持 KQL / Lucene 语法的日志检索、级别分布、主机/服务分布、时间序列直方图与关键字搜索。当用户提到“查日志、看下日志、最近 N 分钟/小时的日志、错误日志、异常日志、报错日志、日志统计、日志分布、日志趋势、按服务/主机统计日志、包含 xxx 的日志、某主机/服务的日志、夜莺/n9e/ES/syslog 日志检索”等任意日志查询诉求时**必须使用本技能**。本技能查询的是夜莺接入的**业务/应用/系统日志**（生产线上日志），不是 QwenPaw 智能体自身的运行日志、控制台输出或会话历史。本技能只用于日志数据查询与统计可视化，不用于告警查询（real-alarm）、CMDB 查询（zgops-cmdb）或一般技术问答。",
+        "version_text": "",
+        "commit_text": "",
+        "source": "customized",
+        "protected": false,
+        "requirements": {
+          "require_bins": [],
+          "require_envs": []
+        },
+        "updated_at": "2026-05-08T03:55:27.845296Z"
+      },
+      "requirements": {
+        "require_bins": [],
+        "require_envs": []
+      },
+      "updated_at": "2026-05-08T03:55:27.845296Z"
+    },
+    "real-alarm": {
+      "enabled": true,
+      "channels": [
+        "all"
+      ],
+      "source": "customized",
+      "metadata": {
+        "name": "real-alarm",
+        "description": "实时告警管理系统查询和统计分析。支持获取告警列表、统计告警信息、查询告警状态、按级别/设备/类型筛选告警、生成可视化图表。当用户询问告警、告警统计、告警分析、告警报告、告警列表、严重告警、活跃告警、告警级别、设备告警、告警分布、告警趋势、异常事件、系统故障、网络问题、设备状态、端口DOWN、链路中断、CPU过高、内存不足、告警总数、告警数量、告警详情、告警查询时使用。本技能专用于查询和分析告警系统中的实时告警数据，不用于一般编程问题、技术教程、API文档查询或其他非告警相关的任务。",
+        "version_text": "",
+        "commit_text": "",
+        "source": "customized",
+        "protected": false,
+        "requirements": {
+          "require_bins": [],
+          "require_envs": []
+        },
+        "updated_at": "2026-05-06T08:35:04.377884Z"
+      },
+      "requirements": {
+        "require_bins": [],
+        "require_envs": []
+      },
+      "updated_at": "2026-05-06T08:35:04.377884Z"
+    },
+    "resource-insight-query": {
+      "enabled": true,
+      "channels": [
+        "all"
+      ],
+      "source": "customized",
+      "metadata": {
+        "name": "resource-insight-query",
+        "description": "查询 INOE 资源状态与性能数据。适用于用户询问设备状态统计、数据库状态总览、资源性能 Top、CPU/内存/磁盘/响应时间等性能排行、数据库性能指标清单时使用。告警列表和告警统计继续使用 real-alarm；CMDB 模型/关系/ci count 查询继续使用 zgops-cmdb。",
+        "version_text": "",
+        "commit_text": "",
+        "source": "customized",
+        "protected": false,
+        "requirements": {
+          "require_bins": [],
+          "require_envs": []
+        },
+        "updated_at": "2026-04-28T06:21:01.450758Z"
+      },
+      "requirements": {
+        "require_bins": [],
+        "require_envs": []
+      },
+      "updated_at": "2026-04-28T06:21:01.450758Z"
+    },
+    "zgops-cmdb": {
+      "enabled": true,
+      "channels": [
+        "all"
+      ],
+      "source": "customized",
+      "metadata": {
+        "name": "zgops-cmdb",
+        "description": "用于查询当前 `.env` 配置所指向的 CMDB 环境。当用户询问模型、关系、层级、IPAM、DCIM、应用拓扑、资源拓扑、资源数量统计、资源状态统计、制造商/厂商分布、CMDB count/group 类接口时使用。",
+        "version_text": "",
+        "commit_text": "",
+        "source": "customized",
+        "protected": false,
+        "requirements": {
+          "require_bins": [],
+          "require_envs": []
+        },
+        "updated_at": "2026-05-08T00:31:10.722025Z"
+      },
+      "requirements": {
+        "require_bins": [],
+        "require_envs": []
+      },
+      "updated_at": "2026-05-08T00:31:10.722025Z"
+    }
+  }
+}

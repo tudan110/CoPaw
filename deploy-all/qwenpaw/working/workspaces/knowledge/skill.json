@@ -1,6 +1,6 @@
 {
   "schema_version": "workspace-skill-manifest.v1",
-  "version": 1776168213704,
+  "version": 1778223078091,
   "skills": {
     "QA_source_index": {
       "enabled": true,
@@ -437,6 +437,31 @@
         "require_envs": []
       },
       "updated_at": "2026-04-13T00:58:45.941304Z"
+    },
+    "knowledge-base": {
+      "enabled": true,
+      "channels": [
+        "all"
+      ],
+      "source": "customized",
+      "metadata": {
+        "name": "knowledge-base",
+        "description": "运维知识库能力。用于知识资料上传入库、手动沉淀、资料管理、关键词/向量混合检索、基于检索证据回答知识问题。用户询问知识库、SOP、历史案例、最佳实践、故障经验、资料检索、文档上传或知识沉淀时使用。",
+        "version_text": "",
+        "commit_text": "",
+        "source": "customized",
+        "protected": false,
+        "requirements": {
+          "require_bins": [],
+          "require_envs": []
+        },
+        "updated_at": "2026-04-30T00:23:18.722127Z"
+      },
+      "requirements": {
+        "require_bins": [],
+        "require_envs": []
+      },
+      "updated_at": "2026-04-30T00:23:18.722127Z"
     }
   }
 }

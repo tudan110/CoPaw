@@ -1,0 +1,56 @@
+{
+  "schema_version": "workspace-skill-manifest.v1",
+  "version": 1778223077761,
+  "skills": {
+    "inspection-analyst": {
+      "enabled": true,
+      "channels": [
+        "all"
+      ],
+      "source": "customized",
+      "metadata": {
+        "name": "inspection-analyst",
+        "description": "面向 inspection 智能体的资源巡检技能。优先使用 inspection 工作区本地的 zgops-cmdb 明确巡检对象的拓扑、resId/CI ID 与 ciType；若本地 skill 不可用，再协作 query 智能体。随后查询该资源类型的全部指标定义与指标值，最后向用户展示包含 CMDB 拓扑关系的巡检结果。",
+        "version_text": "",
+        "commit_text": "",
+        "source": "customized",
+        "protected": false,
+        "requirements": {
+          "require_bins": [],
+          "require_envs": []
+        },
+        "updated_at": "2026-05-06T08:41:32.096666Z"
+      },
+      "requirements": {
+        "require_bins": [],
+        "require_envs": []
+      },
+      "updated_at": "2026-05-06T08:41:32.096666Z"
+    },
+    "zgops-cmdb": {
+      "enabled": true,
+      "channels": [
+        "all"
+      ],
+      "source": "customized",
+      "metadata": {
+        "name": "zgops-cmdb",
+        "description": "用于查询当前 `.env` 配置所指向的 CMDB 环境。当用户询问模型、关系、层级、IPAM、DCIM、应用拓扑、资源拓扑、资源数量统计、资源状态统计、制造商/厂商分布、CMDB count/group 类接口时使用。",
+        "version_text": "",
+        "commit_text": "",
+        "source": "customized",
+        "protected": false,
+        "requirements": {
+          "require_bins": [],
+          "require_envs": []
+        },
+        "updated_at": "2026-04-28T08:02:55.530516Z"
+      },
+      "requirements": {
+        "require_bins": [],
+        "require_envs": []
+      },
+      "updated_at": "2026-04-28T08:02:55.530516Z"
+    }
+  }
+}
