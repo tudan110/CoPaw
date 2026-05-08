@@ -192,15 +192,23 @@ class LLMReranker:
         "不要添加任何解释或前后缀。"
     )
 
-    MAX_PREVIEW_CHARS = 400
-    TIMEOUT_S = 30.0
+    MAX_PREVIEW_CHARS = int(
+        os.environ.get("KNOWLEDGE_BASE_LLM_RERANK_PREVIEW_CHARS", "250")
+    )
+    TIMEOUT_S = float(
+        os.environ.get("KNOWLEDGE_BASE_LLM_RERANK_TIMEOUT", "60.0")
+    )
 
     # Cap how many fused candidates we send to the LLM. The fusion stage hands
-    # us up to ~50; passing them all blows the prompt budget (50 * 400 chars =
-    # ~20k tokens) and slows the call to 5+ seconds. The lower-RRF candidates
-    # almost never overtake the top after reranking, so trim aggressively.
+    # us up to ~50; passing them all blows the prompt budget and slows the
+    # call. The lower-RRF candidates almost never overtake the top after
+    # reranking, so trim aggressively.
+    #
+    # Lower numbers also help with content-audit triggers on providers like
+    # Ctyun: "query + many densely-related candidate snippets" can flip
+    # aggregate-signal moderation. Smaller batch = smaller surface.
     MAX_INPUT_CANDIDATES = int(
-        os.environ.get("KNOWLEDGE_BASE_LLM_RERANK_INPUT_K", "15")
+        os.environ.get("KNOWLEDGE_BASE_LLM_RERANK_INPUT_K", "8")
     )
 
     def rerank(self, query, candidates, *, top_k):
