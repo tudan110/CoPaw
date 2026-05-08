@@ -1,0 +1,151 @@
+{
+  "pageTitle": "专线业务监控",
+  "sourceUrl": "http://192.168.130.51:30081/circuit/zhunneng-private-line-monitor.html",
+  "dataNature": "static-demo",
+  "baseTimeDisplay": "2026-05-08 18:00",
+  "statusMap": {
+    "normal": {
+      "label": "正常",
+      "className": "status-normal"
+    },
+    "warning": {
+      "label": "预警",
+      "className": "status-warning"
+    },
+    "alarm": {
+      "label": "告警",
+      "className": "status-alarm"
+    },
+    "cutover": {
+      "label": "割接中",
+      "className": "status-cutover"
+    }
+  },
+  "circuits": [
+    {
+      "code": "ZN-OTN-202311-0016",
+      "type": "OTN精品专线",
+      "status": "warning",
+      "customer": "国能准能集团有限责任公司",
+      "bandwidth": {
+        "up": 1000,
+        "down": 1000
+      },
+      "aName": "准能集团调度指挥中心",
+      "zName": "呼和浩特云网核心节点",
+      "aAddress": "内蒙古自治区鄂尔多斯市准格尔旗薛家湾镇准能集团调度指挥中心 3楼通信机房 ODF-A03",
+      "zAddress": "内蒙古自治区呼和浩特市新城区成吉思汗大街联通云网核心机房 OTN-PE-01",
+      "latency": "7.8 ms",
+      "availability": "99.982%",
+      "upUtil": 0.42,
+      "downUtil": 0.57
+    },
+    {
+      "code": "ZN-IPRAN-202405-0038",
+      "type": "IPRAN专线",
+      "status": "normal",
+      "customer": "国能准能集团有限责任公司设备管理中心",
+      "bandwidth": {
+        "up": 200,
+        "down": 200
+      },
+      "aName": "哈尔乌素露天煤矿无人驾驶调度站",
+      "zName": "薛家湾政企接入机房",
+      "aAddress": "内蒙古自治区鄂尔多斯市准格尔旗哈尔乌素露天煤矿无人驾驶调度站 1楼弱电间",
+      "zAddress": "内蒙古自治区鄂尔多斯市准格尔旗薛家湾镇联通政企接入机房 IPRAN-PE-02",
+      "latency": "3.6 ms",
+      "availability": "99.991%",
+      "upUtil": 0.33,
+      "downUtil": 0.46
+    },
+    {
+      "code": "ZN-MSTP-202209-0007",
+      "type": "数字电路（MSTP/SDH）",
+      "status": "cutover",
+      "customer": "国能准能集团大准铁路公司",
+      "bandwidth": {
+        "up": 155,
+        "down": 155
+      },
+      "aName": "大准铁路调度通信楼",
+      "zName": "鄂尔多斯传输汇聚站",
+      "aAddress": "内蒙古自治区鄂尔多斯市准格尔旗大准铁路调度通信楼 2层传输设备间 DDF-07",
+      "zAddress": "内蒙古自治区鄂尔多斯市康巴什区联通传输汇聚站 SDH-ADM-03",
+      "latency": "5.1 ms",
+      "availability": "99.964%",
+      "upUtil": 0.62,
+      "downUtil": 0.58,
+      "noticeCode": "NMG-ORDOS-20260509-MSTP-017"
+    },
+    {
+      "code": "ZN-CLOUD-202401-0022",
+      "type": "云专网",
+      "status": "normal",
+      "customer": "国能准能集团信息中心",
+      "bandwidth": {
+        "up": 500,
+        "down": 1000
+      },
+      "aName": "准能集团数据中心",
+      "zName": "呼和浩特政企云资源池",
+      "aAddress": "内蒙古自治区鄂尔多斯市准格尔旗薛家湾镇准能集团数据中心 B栋云网出口区",
+      "zAddress": "内蒙古自治区呼和浩特市和林格尔新区联通政企云资源池 VPC接入区",
+      "latency": "9.4 ms",
+      "availability": "99.989%",
+      "upUtil": 0.38,
+      "downUtil": 0.51
+    },
+    {
+      "code": "ZN-INET-202307-0118",
+      "type": "互联网专线",
+      "status": "alarm",
+      "customer": "国能准能集团综合办公区",
+      "bandwidth": {
+        "up": 300,
+        "down": 1000
+      },
+      "aName": "准能集团综合办公楼",
+      "zName": "鄂尔多斯互联网出口节点",
+      "aAddress": "内蒙古自治区鄂尔多斯市准格尔旗薛家湾镇准能集团综合办公楼 1层信息机房",
+      "zAddress": "内蒙古自治区鄂尔多斯市东胜区联通互联网城域网出口 BRAS-01",
+      "latency": "12.6 ms",
+      "availability": "99.921%",
+      "upUtil": 0.71,
+      "downUtil": 0.83
+    },
+    {
+      "code": "ZN-VPN-202312-0065",
+      "type": "IP虚拟专网",
+      "status": "normal",
+      "customer": "国能准能集团物资供应中心",
+      "bandwidth": {
+        "up": 100,
+        "down": 200
+      },
+      "aName": "物资供应中心仓储园区",
+      "zName": "集团总部MPLS VPN",
+      "aAddress": "内蒙古自治区鄂尔多斯市准格尔旗薛家湾镇物资供应中心仓储园区弱电机房",
+      "zAddress": "内蒙古自治区鄂尔多斯市东胜区联通MPLS VPN PE-03 业务端口 GE0/1/7",
+      "latency": "6.9 ms",
+      "availability": "99.987%",
+      "upUtil": 0.29,
+      "downUtil": 0.34
+    }
+  ],
+  "notices": {
+    "NMG-ORDOS-20260509-MSTP-017": {
+      "title": "鄂尔多斯准格尔旗传输环路由优化割接",
+      "type": "传输光缆 / MSTP承载网",
+      "name": "薛家湾综合楼—康巴什核心局省内传输环",
+      "system": "鄂尔多斯政企专线承载网",
+      "section": "薛家湾综合楼 至 康巴什核心局",
+      "startTime": "2026-05-09 00:30",
+      "endTime": "2026-05-09 04:30",
+      "reason": "配合薛家湾城区电力管廊迁改，调整业务光缆入局路由并验证保护倒换。",
+      "affectedCodes": [
+        "ZN-MSTP-202209-0007",
+        "ZN-OTN-202311-0016"
+      ]
+    }
+  }
+}
