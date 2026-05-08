@@ -28,10 +28,6 @@ import {
   type KnowledgeSourceSummaryItem,
   type KnowledgeUnit,
 } from "../../api/knowledgeBase";
-import {
-  readKnowledgeAiThresholdPercent,
-  writeKnowledgeAiThresholdPercent,
-} from "./knowledgeBaseSettings";
 import "./knowledge-base.css";
 
 type AnswerMode = "evidence" | "plugin";
@@ -128,8 +124,6 @@ export function KnowledgeBasePanel() {
   const [queryResult, setQueryResult] = useState<KnowledgeQueryResponse | null>(null);
   const [ragAnswer, setRagAnswer] = useState("");
   const [answerMode, setAnswerMode] = useState<AnswerMode>("evidence");
-  const [aiThresholdInput, setAiThresholdInput] = useState(() => String(readKnowledgeAiThresholdPercent()));
-  const [aiThresholdPercent, setAiThresholdPercent] = useState(() => readKnowledgeAiThresholdPercent());
   const [manualTitle, setManualTitle] = useState("");
   const [manualContent, setManualContent] = useState("");
   const [manualTags, setManualTags] = useState("");
@@ -230,14 +224,6 @@ export function KnowledgeBasePanel() {
     } finally {
       setLoading(false);
     }
-  }
-
-  function handleSaveAiThreshold() {
-    const normalized = writeKnowledgeAiThresholdPercent(aiThresholdInput);
-    setAiThresholdInput(String(normalized));
-    setAiThresholdPercent(normalized);
-    setNotice(`知识专员 AI 总结阈值已更新为 ${normalized}%`);
-    setError("");
   }
 
   async function handleUpload(file?: File | null) {
@@ -532,27 +518,6 @@ export function KnowledgeBasePanel() {
           </div>
 
           <div className="kb-maintenance">
-            <div className="kb-threshold-setting">
-              <div>
-                <strong>AI 总结触发阈值</strong>
-                <small>命中证据低于该置信度时，才调用 active 模型生成总结。</small>
-              </div>
-              <div className="kb-threshold-control">
-                <input
-                  type="number"
-                  min="0"
-                  max="100"
-                  step="1"
-                  value={aiThresholdInput}
-                  onChange={(event) => setAiThresholdInput(event.target.value)}
-                />
-                <span>%</span>
-                <button type="button" className="portal-model-btn secondary" onClick={handleSaveAiThreshold}>
-                  确认
-                </button>
-              </div>
-              <small>当前生效：{aiThresholdPercent}%</small>
-            </div>
             <button type="button" className="portal-model-btn secondary" disabled={loading} onClick={() => void handleEmbeddingToggle()}>
               {health?.embedding?.enabled ? "关闭向量检索" : "开启向量检索"}
             </button>

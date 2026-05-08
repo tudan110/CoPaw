@@ -842,6 +842,7 @@ export function EmployeeChatMainPanel({
   onTicketAction,
   onTicketRefresh,
   ticketActionNotice,
+  activeModelLabel,
   safeCapabilities,
   safeQuickCommands,
   resourceImportCommand,
@@ -895,6 +896,7 @@ export function EmployeeChatMainPanel({
   onTicketAction: AnyFn;
   onTicketRefresh: () => void;
   ticketActionNotice: string;
+  activeModelLabel?: string;
   safeCapabilities: string[];
   safeQuickCommands: string[];
   resourceImportCommand: string;
@@ -973,6 +975,7 @@ export function EmployeeChatMainPanel({
             onTicketAction={onTicketAction}
             onTicketRefresh={onTicketRefresh}
             ticketActionNotice={ticketActionNotice}
+            activeModelLabel={activeModelLabel}
           />
         ))}
         <div ref={messagesEndRef} />

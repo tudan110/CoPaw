@@ -169,17 +169,37 @@ def query(
         query_text, rerank_inputs, top_k=len(rerank_inputs)
     )
 
+    # The configured strategy may have silently fallen back (e.g. LLM call
+    # failed audit / timed out → HeuristicReranker). Each RerankOutput's
+    # per-item diagnostic carries the actual strategy that produced its score;
+    # promote that to the top-level diagnostic so observability reflects what
+    # really ran, not just what was requested.
+    if reranked:
+        actual_strategy = reranked[0].diagnostic.get("strategy")
+        configured = diagnostic.get("rerank_strategy")
+        if actual_strategy and actual_strategy != configured:
+            diagnostic["rerank_strategy_actual"] = (
+                f"{configured}_fallback_{actual_strategy}"
+            )
+
     # ----- Stage 4: parent-level + content-level dedup -----
     # Two flavours of duplicate to suppress:
     #  (a) same parent_chunk, multiple children from sliding-window overlap;
     #  (b) different documents whose parent content is essentially identical
     #      — this happens when the same PDF was uploaded several times during
     #      testing. Both collapse to one card.
+    # Per-item floor: drop candidates whose final reranker score falls below
+    # INSUFFICIENT_EVIDENCE. The top-level `top_score` gate decides if the
+    # query as a whole has any signal; this gate decides which individual
+    # cards are worth showing. Without it, LLM rerank's score=0 default for
+    # un-scored candidates leaks into top-k and surfaces useless cards.
     rerank_input_by_id = {ri.chunk_id: ri for ri in rerank_inputs}
     seen_parents: set[int] = set()
     seen_content: set[str] = set()
     evidence: list[Evidence] = []
     for r in reranked:
+        if r.score < rerank_module.INSUFFICIENT_EVIDENCE:
+            continue
         ri = rerank_input_by_id.get(r.chunk_id)
         if ri is None:
             continue

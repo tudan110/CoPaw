@@ -236,48 +236,6 @@
   padding-top: 12px;
 }
 
-.kb-threshold-setting {
-  display: grid;
-  gap: 10px;
-  border: 1px solid rgba(99, 102, 241, 0.16);
-  border-radius: 8px;
-  background: rgba(238, 242, 255, 0.5);
-  padding: 12px;
-}
-
-.kb-threshold-setting strong {
-  display: block;
-  color: #0f172a;
-  font-size: 13px;
-}
-
-.kb-threshold-setting small {
-  display: block;
-  margin-top: 3px;
-}
-
-.kb-threshold-control {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
-  gap: 8px;
-  align-items: center;
-}
-
-.kb-threshold-control input {
-  min-width: 0;
-  border: 1px solid rgba(148, 163, 184, 0.32);
-  border-radius: 8px;
-  background: #fff;
-  padding: 8px 10px;
-  color: #0f172a;
-  font-size: 13px;
-}
-
-.kb-threshold-control span {
-  color: #64748b;
-  font-size: 12px;
-}
-
 .kb-source-tools {
   display: flex;
   align-items: center;
