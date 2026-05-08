@@ -117,6 +117,7 @@ export function usePortalAlerts({
             targetEmployeeId: employee.id,
             content: normalizedVisibleContent,
             visibleContent: normalizedVisibleContent,
+            forceNewChat: true,
           },
         } satisfies PortalLocationState,
       });

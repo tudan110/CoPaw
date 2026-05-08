@@ -843,6 +843,7 @@ export type PendingPortalDispatch = {
   targetEmployeeId: string;
   content: string;
   visibleContent: string;
+  forceNewChat?: boolean;
 };
 
 export type PortalLocationState = {

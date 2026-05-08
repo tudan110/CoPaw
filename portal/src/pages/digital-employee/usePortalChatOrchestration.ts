@@ -108,6 +108,7 @@ export function usePortalChatOrchestration({
   navigate,
   navigateToEmployeePage,
   handleRemoteSendMessage,
+  resetRemoteState,
   homeComposerRef,
   chatInputRef,
   locationState,
@@ -137,8 +138,9 @@ export function usePortalChatOrchestration({
   navigateToEmployeePage: NavigateToEmployeePage;
   handleRemoteSendMessage: (
     content: string,
-    options?: { visibleContent?: string },
+    options?: { visibleContent?: string; forceNewChat?: boolean },
   ) => Promise<boolean> | boolean;
+  resetRemoteState: (options?: { initialMessages?: any[]; clearHistoryError?: boolean }) => void;
   homeComposerRef: MutableRefObject<HTMLTextAreaElement | null>;
   chatInputRef: MutableRefObject<HTMLInputElement | null>;
   locationState: PortalLocationState | null;
@@ -266,12 +268,14 @@ export function usePortalChatOrchestration({
     employee: any,
     content: string,
     visibleContent: string,
+    forceNewChat = false,
   ) => {
-    let nextSessionId = currentSessionId;
+    const baseMessages = forceNewChat ? createInitialMessages(employee) : messages;
+    let nextSessionId = forceNewChat ? "" : currentSessionId;
     if (!nextSessionId) {
       nextSessionId = createAndActivateLocalSession(
         employee,
-        messages.length ? messages : createInitialMessages(employee),
+        baseMessages.length ? baseMessages : createInitialMessages(employee),
       );
     }
 
@@ -292,7 +296,7 @@ export function usePortalChatOrchestration({
       result: null,
     };
 
-    const initialQueue = [...messages, userMessage, agentMessage];
+    const initialQueue = [...baseMessages, userMessage, agentMessage];
     updateMessagesAndStore(initialQueue, {
       employee,
       nextSessionId,
@@ -356,9 +360,11 @@ export function usePortalChatOrchestration({
     {
       visibleContent = content,
       targetEmployee = currentEmployee,
+      forceNewChat = false,
     }: {
       visibleContent?: string;
       targetEmployee?: any;
+      forceNewChat?: boolean;
     } = {},
   ) => {
     if (!content || !targetEmployee) {
@@ -371,10 +377,11 @@ export function usePortalChatOrchestration({
       }
       return handleRemoteSendMessage(content, {
         visibleContent,
+        forceNewChat,
       });
     }
 
-    runLocalEmployeeFlow(targetEmployee, content, visibleContent);
+    runLocalEmployeeFlow(targetEmployee, content, visibleContent, forceNewChat);
     return true;
   }, [
     currentEmployee,
@@ -460,6 +467,15 @@ export function usePortalChatOrchestration({
 
     handledPendingDispatchRef.current = pendingDispatch.token;
 
+    if (pendingDispatch.forceNewChat) {
+      if (isRemoteEmployee) {
+        resetRemoteState({
+          initialMessages: isPortalHomeChat ? [] : createInitialMessages(currentEmployee),
+        });
+      }
+      setPortalHomeChatMode(false);
+    }
+
     navigate(`${locationPathname}${locationSearch}`, {
       replace: true,
       state: {
@@ -470,15 +486,20 @@ export function usePortalChatOrchestration({
     window.setTimeout(() => {
       void dispatchActiveMessage(pendingDispatch.content, {
         visibleContent: pendingDispatch.visibleContent,
+        forceNewChat: pendingDispatch.forceNewChat,
       });
     }, 0);
   }, [
     currentEmployee,
     dispatchActiveMessage,
+    isPortalHomeChat,
+    isRemoteEmployee,
     locationPathname,
     locationSearch,
     locationState,
     navigate,
+    resetRemoteState,
+    setPortalHomeChatMode,
   ]);
 
   useEffect(() => {

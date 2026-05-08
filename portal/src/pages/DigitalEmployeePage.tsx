@@ -590,6 +590,7 @@ export default function DigitalEmployeePage({
     navigate,
     navigateToEmployeePage,
     handleRemoteSendMessage,
+    resetRemoteState,
     homeComposerRef,
     chatInputRef,
     locationState,
