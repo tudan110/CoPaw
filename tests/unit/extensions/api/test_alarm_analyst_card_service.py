@@ -233,3 +233,49 @@ def test_alarm_analyst_card_protocol_ignores_trailing_supplement_after_report() 
 
     assert card.summary.title == "数据库锁异常"
     assert card.root_cause.ci_id == "3094"
+
+
+def test_alarm_analyst_card_protocol_keeps_all_report_sections_across_separators() -> None:
+    report_markdown = (
+        "工单已创建成功！现在组织完整的 Portal 告警分析报告：\n\n"
+        f"{PORTAL_ALARM_ANALYST_CARD_MARKER}\n\n"
+        "---\n\n"
+        "## 告警分析报告：数据库锁异常\n\n"
+        "---\n\n"
+        "## 告警基础信息\n\n"
+        "| 字段 | 值 |\n"
+        "|---|---|\n"
+        "| 资源 ID（CI ID） | 3094 |\n"
+        "| 资源名称 | db_mysql_001 |\n\n"
+        "---\n\n"
+        "## 根因判断\n\n"
+        "- MySQL 锁等待放大，导致写入链路受阻。\n\n"
+        "---\n\n"
+        "## 影响范围\n\n"
+        "- 受影响应用：CMDB\n"
+        "- 受影响资源：3094\n\n"
+        "---\n\n"
+        "## 处置建议\n\n"
+        "- P0：终止异常慢 SQL 会话。\n\n"
+        "---\n\n"
+        "## 📊 总结\n\n"
+        "- 置信度：86%\n"
+    )
+
+    assert is_alarm_analyst_card_candidate(
+        employee_id="fault",
+        report_markdown=report_markdown,
+        process_blocks=[],
+    ) is True
+
+    card = build_alarm_analyst_card(
+        chat_id="chat-6",
+        message_id="assistant-6",
+        employee_id="fault",
+        report_markdown=report_markdown,
+        process_blocks=[],
+    )
+
+    assert "锁等待放大" in card.summary.conclusion
+    assert card.impact.affected_applications[0].name == "CMDB"
+    assert card.recommendations[0].priority == "p0"

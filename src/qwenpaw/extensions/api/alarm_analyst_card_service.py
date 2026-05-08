@@ -202,14 +202,23 @@ def _unwrap_portal_alarm_analyst_card_content(report_markdown: str) -> str:
         )
         if marker_index != -1:
             fallback = ""
+            collected: list[str] = []
             for segment in segments[marker_index + 1 :]:
                 candidate = segment.strip()
                 if not candidate:
                     continue
                 if not fallback:
                     fallback = candidate
-                if re.search(r"^##+\s*.*?告警分析报告", candidate, flags=re.MULTILINE):
-                    return candidate
+                starts_with_heading = bool(re.match(r"^##+\s+", candidate))
+                if not collected:
+                    if re.search(r"^##+\s*.*?告警分析报告", candidate, flags=re.MULTILINE):
+                        collected.append(candidate)
+                    continue
+                if not starts_with_heading:
+                    break
+                collected.append(candidate)
+            if collected:
+                return "\n\n---\n\n".join(collected)
             if fallback:
                 return fallback
     return normalized.strip()
