@@ -331,5 +331,5 @@ def main() -> None:
 if __name__ == "__main__":
     main()
 REAL_ALARM_TIMEOUT_SECONDS = float(
-    os.getenv("QWENPAW_PORTAL_REAL_ALARM_TIMEOUT", "8").strip() or "8"
+    os.getenv("INOE_API_TIMEOUT", "8").strip() or "8"
 )

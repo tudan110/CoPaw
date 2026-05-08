@@ -312,6 +312,8 @@ def test_query_portal_real_alarms_sends_last_7_days_active_alarm_request(monkeyp
 
 def test_query_portal_real_alarms_posts_gateway_json_payload(monkeypatch) -> None:
     captured = {}
+    monkeypatch.delenv("INOE_API_BASE_URL", raising=False)
+    monkeypatch.delenv("INOE_API_TOKEN", raising=False)
 
     def _handler(request: httpx.Request) -> httpx.Response:
         captured["method"] = request.method
@@ -357,10 +359,42 @@ def test_query_portal_real_alarms_posts_gateway_json_payload(monkeypatch) -> Non
     assert payload["source"] == "live"
     assert payload["total"] == 1
     assert captured["method"] == "POST"
-    assert captured["url"] == "http://gateway:30080/resource/realalarm/list"
+    assert captured["url"] == (
+        f"{portal_real_alarms.DEFAULT_INOE_API_BASE_URL}{portal_real_alarms.REAL_ALARM_LIST_ENDPOINT}"
+    )
     assert captured["content_type"].startswith("application/json")
     assert captured["json"]["alarmstatus"] == "1"
     assert captured["json"]["params"] == {
         "beginEventtime": "2026-04-10 01:00:00",
         "endEventtime": "2026-04-17 01:00:00",
     }
+
+
+def test_query_portal_real_alarms_posts_bearer_header_from_config(monkeypatch) -> None:
+    captured = {}
+
+    def _handler(request: httpx.Request) -> httpx.Response:
+        captured["url"] = str(request.url)
+        captured["authorization"] = request.headers.get("authorization")
+        return httpx.Response(200, json={"code": 200, "rows": [], "total": 0})
+
+    transport = httpx.MockTransport(_handler)
+    original_client = httpx.Client
+
+    def _client_factory(*args, **kwargs) -> httpx.Client:
+        kwargs["transport"] = transport
+        return original_client(*args, **kwargs)
+
+    monkeypatch.setenv("INOE_API_BASE_URL", "http://example.test")
+    monkeypatch.setenv("INOE_API_TOKEN", "demo-token")
+    monkeypatch.setattr("qwenpaw.extensions.integrations.portal_real_alarms.httpx.Client", _client_factory)
+    monkeypatch.setattr(
+        "qwenpaw.extensions.integrations.portal_real_alarms._load_mock_alarm_rows",
+        lambda: [],
+    )
+
+    payload = query_portal_real_alarms(limit=3)
+
+    assert payload == {"total": 0, "items": [], "source": "mock"}
+    assert captured["url"] == "http://example.test/resource/realalarm/list"
+    assert captured["authorization"] == "Bearer demo-token"

@@ -4,10 +4,14 @@ import json
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
+from urllib.parse import urljoin
 
 import httpx
 
-GATEWAY_REAL_ALARM_URL = "http://gateway:30080/resource/realalarm/list"
+from qwenpaw.constant import EnvVarLoader
+
+DEFAULT_INOE_API_BASE_URL = "http://gateway:30080"
+REAL_ALARM_LIST_ENDPOINT = "/resource/realalarm/list"
 REAL_ALARM_TIMEOUT_SECONDS = 8.0
 DEFAULT_REAL_ALARM_LIMIT = 10
 MAX_REAL_ALARM_LIMIT = 50
@@ -28,6 +32,41 @@ SEVERITY_TO_LEVEL = {
     "2": "urgent",
     "3": "warning",
 }
+
+
+def _get_gateway_real_alarm_url() -> str:
+    configured = EnvVarLoader.get_str(
+        "INOE_API_BASE_URL",
+        DEFAULT_INOE_API_BASE_URL,
+    ).strip()
+    base_url = configured or DEFAULT_INOE_API_BASE_URL
+    return urljoin(f"{base_url.rstrip('/')}/", REAL_ALARM_LIST_ENDPOINT.lstrip("/"))
+
+
+def _get_real_alarm_timeout_seconds() -> float:
+    return EnvVarLoader.get_float(
+        "INOE_API_TIMEOUT",
+        REAL_ALARM_TIMEOUT_SECONDS,
+        min_value=0.1,
+    )
+
+
+def _build_real_alarm_headers() -> dict[str, str]:
+    headers = {
+        "Accept": "application/json, text/plain, */*",
+        "Content-Type": "application/json;charset=UTF-8",
+    }
+    bearer_token = EnvVarLoader.get_str(
+        "INOE_API_TOKEN",
+        "",
+    ).strip()
+    if bearer_token:
+        headers["Authorization"] = (
+            bearer_token
+            if bearer_token.lower().startswith("bearer ")
+            else f"Bearer {bearer_token}"
+        )
+    return headers
 
 
 def _format_dt(value: datetime) -> str:
@@ -67,8 +106,12 @@ def _post_real_alarm_list(*, limit: int, begin_time: str, end_time: str) -> dict
             "endEventtime": end_time,
         },
     }
-    with httpx.Client(timeout=REAL_ALARM_TIMEOUT_SECONDS) as client:
-        response = client.post(GATEWAY_REAL_ALARM_URL, json=body)
+    with httpx.Client(timeout=_get_real_alarm_timeout_seconds()) as client:
+        response = client.post(
+            _get_gateway_real_alarm_url(),
+            json=body,
+            headers=_build_real_alarm_headers(),
+        )
         response.raise_for_status()
         return response.json()
 
