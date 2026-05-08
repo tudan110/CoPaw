@@ -1,12 +1,10 @@
 import { Suspense } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
 import ChunkErrorBoundary from "./components/ChunkErrorBoundary";
+import DigitalEmployeePage from "./pages/DigitalEmployeePage";
 import { lazyWithRetry } from "./utils/lazyWithRetry";
 
 const AgentCenterPage = lazyWithRetry(() => import("./pages/AgentCenterPage"));
-const DigitalEmployeePage = lazyWithRetry(
-  () => import("./pages/DigitalEmployeePage"),
-);
 
 const routeFallback = (
   <div

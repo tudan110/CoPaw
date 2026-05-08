@@ -254,4 +254,7 @@ uv run scripts/n9e_log_meta.py --mode fields  --index logstash-*    # 列出可�
 - 时间范围越大，ES 压力越大；统计 / 分布场景优先用聚合接口而非全量拉取
 - 字段名以实际索引 mapping 为准；常见 ECS 字段：`@timestamp`、`message`、`log.level`、`host.name`、`service.name`、`container.name`、`kubernetes.pod.name`
 - 不同环境的级别字段名可能不同：`level` / `log.level` / `severity`，本技能聚合时会自动尝试常见字段
-- 这是“查询”能力，不做修复 / 配置 / 写入；后续“隐患识别”“日志安全”能力会作为高价值场景独立扩展，不在本技能范围内
+- 这是“查询”能力，不做修复 / 配置 / 写入
+- 与本技能并列的扩展技能（在同一 query 工作区下，按需衔接转交）：
+  - `log-hazard-detection`：日志聚类 / 模板挖掘 / 24h-7d 基线漂移 / 错误密集 / 稀有模板（隐患识别）
+  - `log-security-scan`：基于规则库的敏感信息与攻击征兆扫描，命中样例脱敏展示
