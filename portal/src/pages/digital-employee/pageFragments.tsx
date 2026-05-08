@@ -11,6 +11,7 @@ import type { DigitalEmployee } from "../../types/portal";
 import { getEmployeeById } from "../../data/portalData";
 import DigitalEmployeeAvatar from "../../components/DigitalEmployeeAvatar";
 import PortalTraditionalViewButton from "../../components/PortalTraditionalViewButton";
+import { portalAppTitle } from "../../config/portalBranding";
 import { ChatMessageItem } from "./components";
 import type {
   ChatSidebarActivityItem,
@@ -386,10 +387,10 @@ export function PortalHomeHero({
           <span className="portal-home-orbit-ring outer" />
           <span className="portal-home-orbit-ring inner" />
           <span className="portal-home-orbit-core">
-            <img src={portalLogo} alt="智观 AI" className="portal-home-orbit-image" />
+            <img src={portalLogo} alt={portalAppTitle} className="portal-home-orbit-image" />
           </span>
         </div>
-        <h2>智观 AI</h2>
+        <h2>{portalAppTitle}</h2>
         <p>以对话方式发起运维协同</p>
       </div>
 

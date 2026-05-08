@@ -9,7 +9,7 @@ import type { DigitalEmployee } from "../../types/portal";
 import {
   type PortalEmployeeRuntimeStatus,
 } from "../../api/portalEmployeeStatus";
-import { portalGatewayAgentId } from "../../config/portalBranding";
+import { portalAppTitle, portalGatewayAgentId } from "../../config/portalBranding";
 export const sidebarEmployeePriority = [
   "query",
   "fault",
@@ -814,7 +814,7 @@ export function getChatSidebarActivities(employeeId: string): ChatSidebarActivit
 
 export const PORTAL_HOME_EMPLOYEE: DigitalEmployee = {
   id: PORTAL_HOME_ID,
-  name: "智观 AI",
+  name: portalAppTitle,
   desc: "portal 对外统一入口",
   icon: "fa-comments",
   tasks: 0,
@@ -835,7 +835,7 @@ export const PORTAL_HOME_EMPLOYEE: DigitalEmployee = {
     "查看待办工单",
   ],
   welcome:
-    "您好！我是智观 AI，是当前 portal 对外的统一入口。<br><br>您可以直接和我对话，先从普通问题开始即可。",
+    `您好！我是 ${portalAppTitle}，是当前 portal 对外的统一入口。<br><br>您可以直接和我对话，先从普通问题开始即可。`,
 };
 
 export type PendingPortalDispatch = {
