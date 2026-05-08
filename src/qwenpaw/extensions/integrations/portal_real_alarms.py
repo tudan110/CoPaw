@@ -13,7 +13,7 @@ from qwenpaw.constant import EnvVarLoader
 DEFAULT_INOE_API_BASE_URL = "http://gateway:30080"
 REAL_ALARM_LIST_ENDPOINT = "/resource/realalarm/list"
 REAL_ALARM_TIMEOUT_SECONDS = 8.0
-DEFAULT_REAL_ALARM_LIMIT = 10
+DEFAULT_REAL_ALARM_LIMIT = 20
 MAX_REAL_ALARM_LIMIT = 50
 MOCK_DATA_PATH = (
     Path(__file__).resolve().parents[4]

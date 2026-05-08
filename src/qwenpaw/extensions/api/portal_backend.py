@@ -1349,7 +1349,7 @@ async def get_alarm_workorders(limit: int = 5):
 
 @router.get("/real-alarms")
 async def get_real_alarms(
-    limit: int = 10,
+    limit: int = 20,
 ):
     try:
         return query_portal_real_alarms(limit)
@@ -1364,7 +1364,7 @@ async def get_real_alarms(
 async def trigger_real_alarm_sessions(
     request: Request,
     payload: dict[str, Any] | None = Body(default=None),
-    limit: int = Query(10),
+    limit: int = Query(20),
 ):
     try:
         if not hasattr(request.app.state, "multi_agent_manager"):

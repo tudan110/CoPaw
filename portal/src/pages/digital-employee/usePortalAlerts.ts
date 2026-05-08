@@ -60,7 +60,7 @@ export function usePortalAlerts({
 
   const loadOpsAlerts = useCallback(async () => {
     try {
-      const response = await listPortalRealAlarms({ limit: 10 });
+      const response = await listPortalRealAlarms({ limit: 20 });
       setOpsAlerts(normalizePortalBellAlerts(response));
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
