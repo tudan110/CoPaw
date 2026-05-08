@@ -331,7 +331,7 @@ def _render_markdown(data: Dict[str, Any], echarts_only: bool) -> str:
 
     cur = data.get("current_window") or {}
     md = [
-        "# 夜莺日志隐患识别（Hazard Report）",
+        "# 智观日志隐患识别（Hazard Report）",
         "",
         f"- 数据源 ID：`{data.get('datasource_id')}`，索引：`{data.get('index')}`",
         f"- 查询：`{data.get('query') or '(空)'}`",
@@ -388,7 +388,7 @@ def _render_markdown(data: Dict[str, Any], echarts_only: bool) -> str:
 def _render(envelope: Dict[str, Any], output: str) -> str:
     if nc.is_error(envelope):
         return (
-            "# 夜莺日志隐患识别失败\n\n"
+            "# 智观日志隐患识别失败\n\n"
             f"- 错误码：`{envelope.get('code')}`\n"
             f"- 错误信息：{envelope.get('msg')}\n"
         )

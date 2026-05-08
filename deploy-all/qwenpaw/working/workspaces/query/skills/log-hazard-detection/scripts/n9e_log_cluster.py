@@ -262,7 +262,7 @@ def _render_markdown(data: Dict[str, Any], echarts_only: bool) -> str:
         return ((pie + "\n" + bar) if pie or bar else "") + "\n"
 
     md = [
-        "# 夜莺日志模板挖掘（Drain3）",
+        "# 智观日志模板挖掘（Drain3）",
         "",
         f"- 数据源 ID：`{data.get('datasource_id')}`",
         f"- 索引：`{data.get('index')}`",
@@ -309,7 +309,7 @@ def _render_markdown(data: Dict[str, Any], echarts_only: bool) -> str:
 def _render(envelope: Dict[str, Any], output: str) -> str:
     if nc.is_error(envelope):
         return (
-            "# 夜莺日志聚类失败\n\n"
+            "# 智观日志聚类失败\n\n"
             f"- 错误码：`{envelope.get('code')}`\n"
             f"- 错误信息：{envelope.get('msg')}\n"
         )

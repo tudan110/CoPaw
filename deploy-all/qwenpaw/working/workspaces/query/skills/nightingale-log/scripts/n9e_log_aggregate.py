@@ -311,7 +311,7 @@ def _render_count(data: Dict[str, Any], output: str) -> str:
     if output == "markdown-echarts-only":
         return ""  # nothing graphical for a scalar
     return (
-        "# 夜莺日志计数\n\n"
+        "# 智观日志计数\n\n"
         f"- 数据源 ID：`{data.get('datasource_id')}`\n"
         f"- 索引：`{data.get('index')}`\n"
         f"- 时间范围：`{nc.format_ms(data.get('from_ms') or 0)}`"
@@ -324,12 +324,12 @@ def _render_count(data: Dict[str, Any], output: str) -> str:
 def _render_terms(data: Dict[str, Any], mode: str, output: str) -> str:
     buckets = data.get("buckets") or []
     title_map = {
-        "level": "夜莺日志按级别统计",
-        "host": "夜莺日志按主机统计",
-        "service": "夜莺日志按服务统计",
-        "terms": f"夜莺日志按 `{data.get('field') or 'field'}` 统计",
+        "level": "智观日志按级别统计",
+        "host": "智观日志按主机统计",
+        "service": "智观日志按服务统计",
+        "terms": f"智观日志按 `{data.get('field') or 'field'}` 统计",
     }
-    title = title_map.get(mode, "夜莺日志聚合统计")
+    title = title_map.get(mode, "智观日志聚合统计")
     chart_type = "pie" if mode in {"level", "service"} else "bar"
     chart = _build_terms_echarts(title, buckets, chart_type)
 
@@ -367,7 +367,7 @@ def _render_histogram(data: Dict[str, Any], output: str) -> str:
         return chart + "\n"
 
     md = [
-        "# 夜莺日志时间分布",
+        "# 智观日志时间分布",
         "",
         f"- 数据源 ID：`{data.get('datasource_id')}`",
         f"- 索引：`{data.get('index')}`",
@@ -450,7 +450,7 @@ def _build_histogram_echarts(buckets: List[Dict[str, Any]], interval: str) -> st
 
 def _render_error(envelope: Dict[str, Any]) -> str:
     return (
-        "# 夜莺日志聚合失败\n\n"
+        "# 智观日志聚合失败\n\n"
         f"- 错误码：`{envelope.get('code')}`\n"
         f"- 错误信息：{envelope.get('msg')}\n"
     )

@@ -1,14 +1,14 @@
 ---
 name: log-security-scan
 category: log
-tags: [log, security, sensitive-info, secrets, pii, sql-injection, n9e, elasticsearch, compliance]
-triggers: [日志安全扫描, 日志敏感信息, 日志泄露, 日志中密码, 日志中token, 日志中身份证, 日志中手机号, 日志中AK, 日志中SK, 日志中API key, 日志合规扫描, 敏感信息识别, 敏感词扫描, 数据泄露扫描, SQL注入征兆, SQL注入扫描, 隐私扫描, PII扫描, secret leak, log security, 合规检查, 安全审计日志]
-description: 基于规则库的日志敏感信息与攻击征兆扫描。覆盖密码 / token / API key / AK·SK / 身份证 / 手机号 / 银行卡 / SQL 注入征兆等核心类目，对夜莺业务日志做正则匹配，每条命中按规则分类聚合（命中数、典型样例脱敏后展示、涉及主机/服务/索引），并按 severity（critical/high/medium）打分排序。当用户提到“日志里有没有敏感信息/密码/token/身份证/手机号/AK SK 泄露 / SQL 注入痕迹/合规扫描/数据泄露”等诉求时**必须使用本技能**。规则集默认保守（宁少不滥），用户可在 `references/security_rules.yml` 增删；本技能不做模板挖掘（那是 log-hazard-detection），也不做关键字检索（那是 nightingale-log）。
+tags: [log, security, sensitive-info, secrets, pii, sql-injection, elasticsearch, compliance]
+triggers: [日志安全扫描, 日志敏感信息, 日志泄露, 日志中密码, 日志中token, 日志中身份证, 日志中手机号, 日志中AK, 日志中SK, 日志中API key, 日志合规扫描, 敏感信息识别, 敏感词扫描, 数据泄露扫描, SQL注入征兆, SQL注入扫描, 隐私扫描, PII扫描, secret leak, log security, 合规检查, 安全审计日志, 智观日志安全, 智观日志合规]
+description: 基于规则库的日志敏感信息与攻击征兆扫描。覆盖密码 / token / API key / AK·SK / 身份证 / 手机号 / 银行卡 / SQL 注入征兆等核心类目，对智观日志服务里的业务日志做正则匹配，每条命中按规则分类聚合（命中数、典型样例脱敏后展示、涉及主机/服务/索引），并按 severity（critical/high/medium）打分排序。当用户提到“日志里有没有敏感信息/密码/token/身份证/手机号/AK SK 泄露 / SQL 注入痕迹/合规扫描/数据泄露”等诉求时**必须使用本技能**。规则集默认保守（宁少不滥），用户可在 `references/security_rules.yml` 增删；本技能不做模板挖掘（那是 log-hazard-detection），也不做关键字检索（那是 nightingale-log）。
 ---
 
 # Log Security Scan（日志敏感信息与攻击征兆扫描）
 
-为夜莺监控（n9e）业务日志做规则化扫描，回答 “最近的业务日志里有没有泄露敏感信息 / 注入征兆 / 合规风险”。
+为智观日志服务的业务日志做规则化扫描，回答 “最近的业务日志里有没有泄露敏感信息 / 注入征兆 / 合规风险”。
 
 底层是一组在 `references/security_rules.yml` 里手写、可热更新的正则规则；每条规则带 severity（critical / high / medium）、category（secret / pii / injection / crypto）、redact 模式（full / tail / hash）和可选的 post_filter（如 Luhn 校验过滤银行卡误报）。
 
@@ -44,7 +44,7 @@ N9E_LOG_TIMEOUT=60
 
 **关键澄清**：
 
-- 本技能查询的是夜莺接入的**业务/应用/系统日志**（生产线上日志），不是 QwenPaw 智能体自身运行日志、控制台 stdout
+- 本技能查询的是平台接入的**业务/应用/系统日志**（生产线上日志），不是 QwenPaw 智能体自身运行日志、控制台 stdout
 - 本技能不做关键字检索（“查日志/看日志”请用 `nightingale-log`）
 - 本技能不做模板挖掘 / 漂移分析（“日志聚类/隐患识别”请用 `log-hazard-detection`）
 - 本技能不做单条告警根因（“这条告警怎么处置”请走 `fault`）

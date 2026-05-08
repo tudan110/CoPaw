@@ -186,7 +186,7 @@ def _render_markdown(result: Dict[str, Any], show_raw: bool) -> str:
     index = data.get("index")
 
     md = [
-        "# 夜莺日志检索结果",
+        "# 智观日志检索结果",
         "",
         f"- 数据源 ID：`{ds_id}`",
         f"- 索引：`{index}`",
@@ -232,7 +232,7 @@ def _md_escape(text: str) -> str:
 
 def _render_error(envelope: Dict[str, Any]) -> str:
     return (
-        "# 夜莺日志检索失败\n\n"
+        "# 智观日志检索失败\n\n"
         f"- 错误码：`{envelope.get('code')}`\n"
         f"- 错误信息：{envelope.get('msg')}\n"
     )

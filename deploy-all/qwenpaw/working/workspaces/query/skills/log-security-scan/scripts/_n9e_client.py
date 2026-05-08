@@ -206,7 +206,7 @@ def require_config() -> Optional[Dict[str, Any]]:
         return make_error(
             400,
             (
-                "夜莺日志查询配置缺失: " + ", ".join(missing)
+                "智观日志查询配置缺失: " + ", ".join(missing)
                 + "。请在本技能目录的 .env 中补齐后重试，"
                 "示例见 .env.example。"
             ),
@@ -358,7 +358,7 @@ def _http_error_msg(status: int, body_text: str) -> str:
         403: "权限不足，无法访问该数据源 / 索引",
         404: "接口或数据源不存在，请检查 N9E_API_BASE_URL / 数据源 ID / 索引名",
         408: "请求超时",
-        500: "夜莺后端错误",
+        500: "日志服务后端错误",
         502: "网关错误",
         503: "服务暂不可用",
     }.get(status, f"HTTP {status}")

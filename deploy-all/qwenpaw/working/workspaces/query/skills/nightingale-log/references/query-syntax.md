@@ -1,6 +1,6 @@
-# 夜莺日志查询语法（Lucene query_string）
+# 智观日志查询语法（Lucene query_string）
 
-夜莺日志页面同时支持 KQL 和 Lucene 两种语法，本技能默认走 Lucene
+智观日志服务的日志页面同时支持 KQL 和 Lucene 两种语法，本技能默认走 Lucene
 （`query_string`），原因是它能直接传给 ES 而无需做语法转译。
 
 ## 基本结构
@@ -62,7 +62,7 @@ ES 的 terms 聚合通常需要 keyword 子字段（例如 `service.name.keyword
 
 ## KQL（备用）
 
-夜莺前端原生支持 KQL（Kibana Query Language），写法接近自然语言：
+智观日志服务原生支持 KQL（Kibana Query Language），写法接近自然语言：
 `level: ERROR and service: "nginx"`。如果用户给的是 KQL 表达式，也可以直接写到
 `--query` 里——大部分 KQL 表达式恰好也是合法的 Lucene。差异点：
 

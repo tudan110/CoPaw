@@ -388,7 +388,7 @@ def _render_markdown(data: Dict[str, Any], echarts_only: bool) -> str:
         return ((pie + "\n" + bar) if pie or bar else "") + "\n"
 
     md = [
-        "# 夜莺日志安全扫描报告",
+        "# 智观日志安全扫描报告",
         "",
         f"- 数据源 ID：`{data.get('datasource_id')}`，索引：`{data.get('index')}`",
         f"- 时间范围：`{nc.format_ms(data.get('from_ms') or 0)}` ~ "
@@ -473,7 +473,7 @@ def _render_markdown(data: Dict[str, Any], echarts_only: bool) -> str:
 def _render(envelope: Dict[str, Any], output: str) -> str:
     if nc.is_error(envelope):
         return (
-            "# 夜莺日志安全扫描失败\n\n"
+            "# 智观日志安全扫描失败\n\n"
             f"- 错误码：`{envelope.get('code')}`\n"
             f"- 错误信息：{envelope.get('msg')}\n"
         )
