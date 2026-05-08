@@ -37,6 +37,30 @@ STATUS_ALIASES = {
 ABNORMAL_STATUSES = ("warning", "alarm", "cutover")
 CODE_PATTERN = re.compile(r"ZN-[A-Z]+-\d{6}-\d{4}", re.IGNORECASE)
 
+UNSUPPORTED_REASON_KEYWORDS = ("为什么", "原因", "根因", "怎么回事")
+UNSUPPORTED_REALTIME_KEYWORDS = (
+    "实时",
+    "最新",
+    "现在",
+    "当前流量",
+    "实时流量",
+    "当前带宽",
+    "实时带宽",
+    "是否恢复",
+    "恢复了吗",
+    "已恢复",
+    "恢复情况",
+)
+CUTOVER_NOTICE_DETAIL_KEYWORDS = (
+    "通知",
+    "通知单",
+    "开始时间",
+    "结束时间",
+    "影响",
+    "影响范围",
+    "割接原因",
+)
+
 
 def load_data() -> dict[str, Any]:
     return json.loads(DATA_PATH.read_text(encoding="utf-8"))
@@ -213,9 +237,6 @@ def format_summary_markdown(payload: dict[str, Any]) -> str:
     metrics = make_table(
         ["指标", "数值"],
         [
-            ["数据性质", "静态演示数据"],
-            ["来源页面", payload["sourceUrl"]],
-            ["页面基准时间", payload["baseTimeDisplay"]],
             ["专线总数", payload["total"]],
             ["正常", payload["statusCounts"]["normal"]],
             ["预警", payload["statusCounts"]["warning"]],
@@ -246,8 +267,6 @@ def format_summary_markdown(payload: dict[str, Any]) -> str:
     )
     parts = [
         "# 专线业务监控概览",
-        "",
-        "> 当前结果来自“专线业务监控”页面内置的静态演示数据，不代表实时监控。",
         "",
         metrics,
         "",
@@ -291,11 +310,7 @@ def list_payload(
 def format_list_markdown(payload: dict[str, Any]) -> str:
     circuits = payload["circuits"]
     if not circuits:
-        return (
-            "# 专线查询结果\n\n"
-            "> 当前结果来自静态演示数据。\n\n"
-            "未找到符合条件的专线。"
-        )
+        return "# 专线查询结果\n\n未找到符合条件的专线。"
     table = make_table(
         ["电路编码", "状态", "类型", "客户", "A端 -> Z端", "时延", "可用率"],
         [
@@ -323,7 +338,6 @@ def format_list_markdown(payload: dict[str, Any]) -> str:
     filter_line = "；".join(filter_bits) if filter_bits else "无筛选条件"
     return (
         "# 专线查询结果\n\n"
-        "> 当前结果来自静态演示数据。\n\n"
         f"- 命中数量：{payload['totalMatched']}\n"
         f"- 当前筛选：{filter_line}\n\n"
         f"{table}"
@@ -356,13 +370,11 @@ def format_detail_markdown(payload: dict[str, Any]) -> str:
     if not matches:
         return (
             "# 电路详情\n\n"
-            "> 当前结果来自静态演示数据。\n\n"
             f"未找到与 `{payload.get('query', '')}` 对应的电路。"
         )
     if len(matches) > 1 and "circuit" not in payload:
         return (
             "# 电路详情\n\n"
-            "> 当前结果来自静态演示数据。\n\n"
             "命中多条电路，请根据电路编码继续缩小范围：\n\n"
             + make_table(
                 ["电路编码", "状态", "类型", "客户"],
@@ -380,7 +392,6 @@ def format_detail_markdown(payload: dict[str, Any]) -> str:
 
     circuit = payload["circuit"]
     rows = [
-        ["数据性质", "静态演示数据"],
         ["电路编码", circuit["code"]],
         ["状态", status_label(circuit["status"])],
         ["客户名称", circuit["customer"]],
@@ -467,8 +478,6 @@ def format_cutover_markdown(payload: dict[str, Any]) -> str:
         parts = [
             "# 割接通知详情",
             "",
-            "> 当前结果来自静态演示数据。",
-            "",
             make_table(
                 ["字段", "值"],
                 [
@@ -510,8 +519,6 @@ def format_cutover_markdown(payload: dict[str, Any]) -> str:
     notices = payload.get("notices") or []
     parts = [
         "# 当前割接信息",
-        "",
-        "> 当前结果来自静态演示数据。",
     ]
     if cutover_circuits:
         parts.extend(
@@ -616,7 +623,6 @@ def format_rank_markdown(payload: dict[str, Any]) -> str:
     config = METRIC_CHOICES[metric]
     return (
         f"# 专线指标排行（{payload['metricLabel']}）\n\n"
-        "> 当前结果来自静态演示数据。\n\n"
         + make_table(
             ["排名", "电路编码", "状态", "类型", "客户", payload["metricLabel"]],
             [
@@ -687,6 +693,25 @@ def detect_metric_from_text(text: str) -> str:
     return ""
 
 
+def is_cutover_notice_query(text: str) -> bool:
+    return any(keyword in text for keyword in CUTOVER_NOTICE_DETAIL_KEYWORDS)
+
+
+def unsupported_payload(question: str, *, reason: str) -> dict[str, Any]:
+    return {
+        "question": question,
+        "reason": reason,
+    }
+
+
+def format_unsupported_markdown(payload: dict[str, Any]) -> str:
+    return (
+        "# 页面未提供该数据\n\n"
+        f"{payload['reason']}\n\n"
+        "当前页面可直接回答的内容包括：专线列表、状态、客户、A/Z 端、时延、可用率、带宽、割接通知及其影响电路。"
+    )
+
+
 def ask_payload(question: str) -> dict[str, Any]:
     text = question.strip()
     code_match = CODE_PATTERN.search(text)
@@ -696,13 +721,50 @@ def ask_payload(question: str) -> dict[str, Any]:
     customer = detect_customer_from_text(text)
     metric = detect_metric_from_text(text)
 
+    if any(keyword in text for keyword in UNSUPPORTED_REALTIME_KEYWORDS):
+        return {
+            "mode": "unsupported",
+            "payload": unsupported_payload(
+                question,
+                reason="当前页面没有实时接口或恢复状态字段，无法回答实时状态、实时流量或是否已恢复。",
+            ),
+        }
+
+    if any(keyword in text for keyword in UNSUPPORTED_REASON_KEYWORDS) and not is_cutover_notice_query(text):
+        return {
+            "mode": "unsupported",
+            "payload": unsupported_payload(
+                question,
+                reason="当前页面没有告警原因或根因字段，只能返回页面上已有的状态、时延、可用率、带宽等信息。",
+            ),
+        }
+
     if code and ("割接" in text or "通知" in text):
         return {
             "mode": "cutover",
             "payload": cutover_payload(code=code),
         }
 
+    if (
+        status == "cutover"
+        and not is_cutover_notice_query(text)
+        and "通知单" not in text
+        and "割接通知" not in text
+        and any(word in text for word in ("哪些", "列表", "专线", "电路", "几条", "多少条"))
+    ):
+        return {
+            "mode": "list",
+            "payload": list_payload(status="cutover"),
+        }
+
     if "割接" in text or "通知单" in text or "割接通知" in text:
+        if not is_cutover_notice_query(text) and any(
+            word in text for word in ("哪些", "列表", "专线", "电路", "几条", "多少条")
+        ):
+            return {
+                "mode": "list",
+                "payload": list_payload(status="cutover"),
+            }
         keyword = code or customer or circuit_type
         return {
             "mode": "cutover",
@@ -783,6 +845,8 @@ def format_by_mode(mode: str, payload: dict[str, Any]) -> str:
         return format_cutover_markdown(payload)
     if mode == "rank":
         return format_rank_markdown(payload)
+    if mode == "unsupported":
+        return format_unsupported_markdown(payload)
     raise RuntimeError(f"unsupported mode: {mode}")
 
 
