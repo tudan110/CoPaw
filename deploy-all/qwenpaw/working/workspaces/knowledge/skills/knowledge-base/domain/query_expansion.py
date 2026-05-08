@@ -73,15 +73,23 @@ def generate_hyde(
     request_id: str = "hyde",
 ) -> str | None:
     """Synthesize a hypothetical answer for the query. Returns None on failure
-    so callers can fall back to literal-query embedding."""
+    so callers can fall back to literal-query embedding.
+
+    Provider preference matches LLMReranker: try QwenPaw's active model first
+    (the one configured in the portal — typically Ctyun GLM-5.1), then fall
+    back to DeepSeek. Without this fallback, deployments that don't set
+    DEEPSEEK_API_KEY silently lose HyDE entirely.
+    """
     if not query or not query.strip():
         return None
-    if not llm.is_available("deepseek"):
+
+    provider = llm.first_available("qwenpaw_active", "deepseek")
+    if provider is None:
         return None
 
     try:
         result = llm.call_llm(
-            "deepseek",
+            provider,
             messages=[
                 {"role": "system", "content": HYDE_SYSTEM_PROMPT},
                 {"role": "user", "content": query},
@@ -90,7 +98,7 @@ def generate_hyde(
             request_id=request_id,
         )
     except llm.LLMError as exc:
-        logger.warning("hyde generation failed: %s", exc)
+        logger.warning("hyde generation failed (%s): %s", provider, exc)
         return None
 
     answer = (result.get("answer") or "").strip()

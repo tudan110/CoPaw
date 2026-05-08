@@ -1552,6 +1552,7 @@ export default function DigitalEmployeePage({
                     onTicketAction={handleAlarmWorkbenchTicketAction}
                     onTicketRefresh={() => void loadAlarmWorkorders()}
                     ticketActionNotice={ticketActionNotice}
+                    activeModelLabel={activeModelLabel}
                     safeCapabilities={safeCapabilities}
                     safeQuickCommands={safeQuickCommands}
                     resourceImportCommand={RESOURCE_IMPORT_COMMAND}

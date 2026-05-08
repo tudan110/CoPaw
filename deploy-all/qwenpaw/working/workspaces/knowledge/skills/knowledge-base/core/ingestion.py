@@ -24,6 +24,7 @@ import sqlite_vec  # type: ignore
 from core import db
 from core.chunking import ParentPiece, chunk_document
 from providers import embedding
+from retrieval.recall_dense import normalize as _normalize_vec
 
 
 logger = logging.getLogger(__name__)
@@ -417,12 +418,14 @@ def _persist_extracted(
                 flat_idx += 1
 
         # Bulk insert vectors. sqlite-vec serializes Python lists to its binary
-        # format via serialize_float32.
+        # format via serialize_float32. Vectors are L2-normalized at write time
+        # so dense recall's cosine-from-L2 conversion (sim = 1 - L2²/2) is
+        # well-defined; the reindex path matches.
         if child_id_for_vec:
             conn.executemany(
                 "INSERT INTO child_vec(chunk_id, embedding) VALUES (?, ?)",
                 [
-                    (cid, sqlite_vec.serialize_float32(vec))
+                    (cid, sqlite_vec.serialize_float32(_normalize_vec(vec)))
                     for cid, vec in child_id_for_vec
                 ],
             )
