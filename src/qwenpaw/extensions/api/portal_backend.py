@@ -62,7 +62,7 @@ PORTAL_EMPLOYEE_STATUS_IDS = (
 )
 PORTAL_EMPLOYEE_STATUS_NAMES = {
     "query": "数据分析员",
-    "fault": "故障处置员",
+    "fault": "故障分析员",
     "knowledge": "知识专员",
     "resource": "资产管理员",
     "inspection": "巡检专员",

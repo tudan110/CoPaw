@@ -41,7 +41,7 @@ export const portalAgents: PortalAgent[] = [
   },
   {
     id: "AG001",
-    name: "故障处置员",
+    name: "故障分析员",
     type: "alert",
     status: "active",
     color: "#409eff",
@@ -134,7 +134,7 @@ export const digitalEmployees: DigitalEmployee[] = [
   },
   {
     id: "fault",
-    name: "故障处置员",
+    name: "故障分析员",
     desc: "故障处置、根因定位与恢复验证",
     icon: "fa-wrench",
     tasks: 892,
@@ -149,7 +149,7 @@ export const digitalEmployees: DigitalEmployee[] = [
       "数据库锁异常怎么处置",
     ],
     welcome:
-      "您好！我是故障处置员。故障处置、根因定位与恢复验证。<br><br>我可以帮您完成以下工作：<br>• 故障诊断 - 围绕具体告警或工单分析故障类型<br>• 根因定位 - 结合拓扑、日志快速定位故障根源<br>• 自动修复 - 低风险操作自动执行，高风险等待授权<br>• 故障恢复 - 自动执行恢复策略，验证业务可用性<br>• 闭环复盘 - 清除告警、更新工单并沉淀复盘建议<br><br>您可以直接让我查看待处置告警、分析某条告警根因，或继续推进已有处置流程；如果只是做全局统计报表，再交给数据分析员更合适。",
+      "您好！我是故障分析员。故障处置、根因定位与恢复验证。<br><br>我可以帮您完成以下工作：<br>• 故障诊断 - 围绕具体告警或工单分析故障类型<br>• 根因定位 - 结合拓扑、日志快速定位故障根源<br>• 自动修复 - 低风险操作自动执行，高风险等待授权<br>• 故障恢复 - 自动执行恢复策略，验证业务可用性<br>• 闭环复盘 - 清除告警、更新工单并沉淀复盘建议<br><br>您可以直接让我查看待处置告警、分析某条告警根因，或继续推进已有处置流程；如果只是做全局统计报表，再交给数据分析员更合适。",
   },
   {
     id: "resource",
@@ -416,7 +416,7 @@ export const taskDailyOverviewItems: TaskViewItem[] = [
     id: "DLY-007",
     title: "K8s Pod异常重启排查",
     employeeId: "fault",
-    employeeLabel: "故障处置员·雷小闪",
+    employeeLabel: "故障分析员·雷小闪",
     source: "告警触发",
     status: "running",
     statusText: "运行中",
@@ -595,7 +595,7 @@ export const taskViewItems: TaskViewItem[] = [
     id: "TSK-002",
     title: "支付服务故障修复",
     employeeId: "fault",
-    employeeLabel: "故障处置员·雷小闪",
+    employeeLabel: "故障分析员·雷小闪",
     source: "告警触发",
     status: "urgent",
     statusText: "紧急",
@@ -688,7 +688,7 @@ export const taskViewItems: TaskViewItem[] = [
     id: "TSK-008",
     title: "数据库主从修复",
     employeeId: "fault",
-    employeeLabel: "故障处置员·雷小闪",
+    employeeLabel: "故障分析员·雷小闪",
     source: "告警触发",
     status: "urgent",
     statusText: "紧急",
@@ -811,7 +811,7 @@ export const taskViewItems: TaskViewItem[] = [
     id: "TSK-016",
     title: "网络延迟异常排查",
     employeeId: "fault",
-    employeeLabel: "故障处置员·雷小闪",
+    employeeLabel: "故障分析员·雷小闪",
     source: "告警触发",
     status: "urgent",
     statusText: "紧急",
@@ -922,7 +922,7 @@ export const operationsBoardColumns: OperationsBoardColumn[] = [
       {
         id: "running-payment-recovery",
         ownerEmployeeIds: ["fault"],
-        ownerLabel: "故障处置员·雷小闪",
+        ownerLabel: "故障分析员·雷小闪",
         ownerColor: "#ef4444",
         title: "支付服务故障修复",
         description: "连接池优化已执行，监控恢复中",
@@ -1076,7 +1076,7 @@ export const operationsBoardColumns: OperationsBoardColumn[] = [
       {
         id: "closed-alert-tuning",
         ownerEmployeeIds: ["fault"],
-        ownerLabel: "故障处置员·雷小闪",
+        ownerLabel: "故障分析员·雷小闪",
         ownerColor: "#ef4444",
         title: "误报告警处理",
         description: "磁盘告警阈值误配置，已修正",
@@ -1107,11 +1107,11 @@ export const operationsBoardColumns: OperationsBoardColumn[] = [
 
 export const executionHistory = [
   { id: 1, time: "10:25:32", title: "IP扫描 10.0.1.0/24", detail: "发现设备 156 台，成功纳管 143 台", agent: "资产管理员", agentIcon: "fa-server", status: "success" },
-  { id: 2, time: "10:18:15", title: "故障自愈 - 数据库连接", detail: "自动重启连接池，恢复正常", agent: "故障处置员", agentIcon: "fa-wrench", status: "success" },
+  { id: 2, time: "10:18:15", title: "故障自愈 - 数据库连接", detail: "自动重启连接池，恢复正常", agent: "故障分析员", agentIcon: "fa-wrench", status: "success" },
   { id: 3, time: "10:12:08", title: "健康检查巡检", detail: "评分 98.5，发现 3 项异常", agent: "巡检专员", agentIcon: "fa-clipboard-check", status: "success" },
   { id: 4, time: "10:05:45", title: "工单自动分派", detail: "分派工单 WO-2024-0325-0089", agent: "工单调度员", agentIcon: "fa-ticket-alt", status: "success" },
   { id: 5, time: "09:58:22", title: "性能报表生成", detail: "生成本周运维周报 PDF", agent: "数据分析员", agentIcon: "fa-chart-bar", status: "success" },
-  { id: 6, time: "09:45:10", title: "Redis 故障处理", detail: "缓存穿透问题，正在修复中", agent: "故障处置员", agentIcon: "fa-wrench", status: "running" },
+  { id: 6, time: "09:45:10", title: "Redis 故障处理", detail: "缓存穿透问题，正在修复中", agent: "故障分析员", agentIcon: "fa-wrench", status: "running" },
   { id: 7, time: "09:30:05", title: "知识问答查询", detail: "查询 Oracle 死锁解决方案", agent: "知识专员", agentIcon: "fa-book-open", status: "success" },
   { id: 8, time: "09:15:33", title: "网络设备扫描", detail: "扫描核心交换机 12 台", agent: "资产管理员", agentIcon: "fa-server", status: "success" },
 ];
