@@ -18,19 +18,87 @@ error() {
     printf '[sync-working] %s\n' "$*" >&2
 }
 
+sync_workspace_skills_to_pool() {
+    local source_dir="$1"
+    local target_dir="$2"
+    local quiet_flag="$3"
+    local pool_dir="$target_dir/skill_pool"
+    local workspaces_dir="$source_dir/workspaces"
+    local seen_file=""
+    local synced_count=0
+    local skipped_count=0
+    local workspace_dir=""
+    local skills_dir=""
+    local skill_dir=""
+    local skill_name=""
+    local target_skill_dir=""
+
+    mkdir -p "$pool_dir"
+    if [ ! -d "$workspaces_dir" ]; then
+        return
+    fi
+
+    seen_file="$(mktemp)"
+    trap 'rm -f "$seen_file"' RETURN
+
+    for workspace_dir in "$workspaces_dir"/*; do
+        [ -d "$workspace_dir" ] || continue
+        skills_dir="$workspace_dir/skills"
+        [ -d "$skills_dir" ] || continue
+
+        for skill_dir in "$skills_dir"/*; do
+            [ -d "$skill_dir" ] || continue
+            [ -f "$skill_dir/SKILL.md" ] || continue
+
+            skill_name="$(basename "$skill_dir")"
+            if grep -Fqx "$skill_name" "$seen_file"; then
+                skipped_count=$((skipped_count + 1))
+                if [ "$quiet_flag" != true ]; then
+                    info "  skip $(basename "$workspace_dir")/$skill_name"
+                fi
+                continue
+            fi
+
+            printf '%s\n' "$skill_name" >>"$seen_file"
+            target_skill_dir="$pool_dir/$skill_name"
+            mkdir -p "$target_skill_dir"
+            rsync -a --delete \
+                --exclude "__pycache__" \
+                --exclude "__MACOSX" \
+                --exclude ".DS_Store" \
+                --exclude "Thumbs.db" \
+                --exclude "desktop.ini" \
+                "$skill_dir/" "$target_skill_dir/"
+            synced_count=$((synced_count + 1))
+            if [ "$quiet_flag" != true ]; then
+                info "  pool $skill_name <- $(basename "$workspace_dir")"
+            fi
+        done
+    done
+
+    rm -f "$seen_file"
+    trap - RETURN
+
+    if [ "$synced_count" -gt 0 ] || [ "$skipped_count" -gt 0 ]; then
+        info "技能池已同步: ${synced_count} 个自定义技能，跳过 ${skipped_count} 个同名技能"
+    fi
+}
+
 usage() {
     cat <<'EOF'
 用法:
   ./sync-qwenpaw-working.sh [--delete] [target_dir]
 
 说明:
-  将 deploy-all/qwenpaw/working/ 下的文件同步到本地工作目录。
-  默认目标目录为 ~/.qwenpaw/，也可通过 QWENPAW_WORKING_DIR 环境变量覆盖。
+   将 deploy-all/qwenpaw/working/ 下的文件同步到本地工作目录。
+   同时会把各 workspace 里维护的自定义 skill 复制到目标 skill_pool。
+   默认目标目录为 ~/.qwenpaw/，也可通过 QWENPAW_WORKING_DIR 环境变量覆盖。
 
 同步规则:
   - 源里有、目标里没有的文件: 直接拷贝过去
   - 两边都有的文件: 以源为准，按内容（checksum）比较后覆盖更新
   - 目标里有、源里没有的文件: 默认保留，加 --delete 才会清理
+  - 同步到 skill_pool 时，同名 skill 只保留一份，后续重复项直接跳过
 
 参数:
   --delete     删除目标目录中源目录不存在的文件，执行严格镜像
@@ -127,5 +195,6 @@ else
 fi
 
 rsync "${RSYNC_ARGS[@]}" "$SOURCE_DIR/" "$TARGET_DIR/"
+sync_workspace_skills_to_pool "$SOURCE_DIR" "$TARGET_DIR" "$QUIET_MODE"
 
 info "同步完成"

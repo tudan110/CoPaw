@@ -1,6 +1,6 @@
 {
   "schema_version": "workspace-skill-manifest.v1",
-  "version": 1778223075940,
+  "version": 1778225253000,
   "skills": {
     "alarm-analyst": {
       "enabled": true,
@@ -26,56 +26,6 @@
         "require_envs": []
       },
       "updated_at": "2026-05-08T00:31:10.719329Z"
-    },
-    "fault-disposal": {
-      "enabled": true,
-      "channels": [
-        "all"
-      ],
-      "source": "customized",
-      "metadata": {
-        "name": "fault-disposal",
-        "description": "面向工单驱动故障处置的技能。适用于 Portal 或上游系统已经整理好工单上下文，并希望在当前 CoPAW 聊天会话中完成根因分析、处置建议、动作执行和恢复验证的场景。仅当用户意图是“基于工单上下文推进故障处置闭环”时使用；如果用户只是查询实时告警列表、告警统计、告警分布或告警详情，应交给 query 数字员工的 real-alarm，而不是本技能。",
-        "version_text": "",
-        "commit_text": "",
-        "source": "customized",
-        "protected": false,
-        "requirements": {
-          "require_bins": [],
-          "require_envs": []
-        },
-        "updated_at": "2026-04-23T08:05:49.533411Z"
-      },
-      "requirements": {
-        "require_bins": [],
-        "require_envs": []
-      },
-      "updated_at": "2026-04-23T08:05:49.533411Z"
-    },
-    "mysql-deadlock-inspector": {
-      "enabled": true,
-      "channels": [
-        "all"
-      ],
-      "source": "customized",
-      "metadata": {
-        "name": "mysql-deadlock-inspector",
-        "description": "面向 MySQL 死锁、锁等待和阻塞事务证据采集的只读 skill。当前阶段保留 JSON 脚手架，供后续 RCA 链路接线。",
-        "version_text": "",
-        "commit_text": "",
-        "source": "customized",
-        "protected": false,
-        "requirements": {
-          "require_bins": [],
-          "require_envs": []
-        },
-        "updated_at": "2026-04-22T00:50:27.076465Z"
-      },
-      "requirements": {
-        "require_bins": [],
-        "require_envs": []
-      },
-      "updated_at": "2026-04-22T00:50:27.076465Z"
     },
     "real-alarm": {
       "enabled": true,
