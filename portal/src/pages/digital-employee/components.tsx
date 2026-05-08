@@ -339,11 +339,13 @@ function KnowledgeAnswerReport({
   payload,
   onUploadRequest,
   onManagementOpen,
+  defaultModelLabel,
 }: {
   content: string;
   payload?: KnowledgeAnswerPayload | null;
   onUploadRequest?: () => void;
   onManagementOpen?: () => void;
+  defaultModelLabel?: string;
 }) {
   const parsedPayload = payload?.result ? payload : parseKnowledgeAnswerContent(content);
   const result = parsedPayload?.result;
@@ -359,12 +361,17 @@ function KnowledgeAnswerReport({
   const aiAnswer = String(parsedPayload?.answer || payload?.answer || synthesis.answer || "").trim();
   const synthesisError = String(synthesis.error || "").trim();
   const synthesisSkipped = Boolean(synthesis.skipped);
-  const modelLabel = String(
-    synthesis.model_label
-      || synthesis.model_name
+  // Prefer the bare model name (e.g. "GLM-5.1") over model_label (which the
+  // backend formats as "<provider> / <model>", e.g. "天翼云 / GLM-5.1").
+  // Fall back to the page-level active model label so the "使用 …" hint is
+  // populated immediately during the loading state, before synthesis returns.
+  const synthesisModelLabel = String(
+    synthesis.model_name
       || synthesis.model
+      || synthesis.model_label
       || "",
   ).trim();
+  const modelLabel = synthesisModelLabel || (defaultModelLabel || "").trim();
   const query = parsedPayload?.query || "";
 
   const handleSaveAnswer = async () => {
@@ -443,7 +450,7 @@ function KnowledgeAnswerReport({
               <i className="fas fa-magic" />
               AI 总结
             </span>
-            <small>{modelLabel ? `使用 ${modelLabel}` : "使用当前 active 模型"}</small>
+            <small>{modelLabel ? `使用 ${modelLabel}` : "使用当前模型"}</small>
           </div>
           {aiAnswer ? (
             <MessageMarkdown content={aiAnswer} />
@@ -778,6 +785,7 @@ export const ChatMessageItem = memo(function ChatMessageItem({
   onTicketAction,
   onTicketRefresh,
   ticketActionNotice,
+  activeModelLabel,
 }: any) {
   const allBlocks = message.processBlocks || [];
   const condensedBlocks = condenseBackgroundPollingBlocks(allBlocks);
@@ -1034,6 +1042,7 @@ export const ChatMessageItem = memo(function ChatMessageItem({
                 payload={message.knowledgeAnswerPayload}
                 onUploadRequest={onKnowledgeBaseUploadRequest}
                 onManagementOpen={onKnowledgeBaseManagementOpen}
+                defaultModelLabel={activeModelLabel}
               />
             ) : (
               <MessageMarkdown
