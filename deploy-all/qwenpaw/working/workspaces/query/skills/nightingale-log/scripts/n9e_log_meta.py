@@ -40,9 +40,9 @@ def _cmd_datasources(args: argparse.Namespace) -> int:
         nc.stdout_json(nc.make_ok({"total": len(rows), "rows": rows}))
         return 0
 
-    md = ["# 夜莺日志数据源", ""]
+    md = ["# 智观日志数据源", ""]
     if not rows:
-        md.append("_未找到任何数据源（可能账号无权限或夜莺未配置数据源）_")
+        md.append("_未找到任何数据源（可能账号无权限或日志服务未配置数据源）_")
     else:
         es_rows = [r for r in rows if (r.get("plugin_type") or "").lower() == "elasticsearch"]
         md.append(
