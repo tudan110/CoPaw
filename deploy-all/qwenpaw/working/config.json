@@ -560,6 +560,11 @@
       "enabled": true,
       "guarded_tools": null,
       "denied_tools": [],
+      "auto_denied_rules": [
+        "TOOL_CMD_DANGEROUS_RM",
+        "TOOL_CMD_DANGEROUS_MV",
+        "TOOL_CMD_FS_DESTRUCTION"
+      ],
       "custom_rules": [],
       "disabled_rules": []
     },

@@ -42,6 +42,7 @@ from .routers.agent_scoped import AgentContextMiddleware
 from .routers.approval import router as approval_router
 from .routers.voice import voice_router
 from ..extensions.api.portal_backend import router as portal_router
+from ..extensions.api.delete_block_middleware import DeleteBlockMiddleware
 from ..envs import load_envs_into_environ
 from ..providers.provider_manager import ProviderManager
 from ..local_models.manager import LocalModelManager
@@ -558,6 +559,11 @@ if CORS_ORIGINS:
         allow_headers=["*"],
         expose_headers=["Content-Disposition"],
     )
+
+# Outermost guard: deny all HTTP DELETE before auth / agent context
+# kicks in. Override with QWENPAW_DELETE_OPS_DISABLED=false only
+# during change-controlled maintenance windows.
+app.add_middleware(DeleteBlockMiddleware)
 
 
 _CONSOLE_STATIC_ENV = "QWENPAW_CONSOLE_STATIC_DIR"
