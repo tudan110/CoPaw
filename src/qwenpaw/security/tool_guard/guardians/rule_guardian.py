@@ -635,8 +635,12 @@ class RuleBasedToolGuardian(BaseToolGuardian):
                     end = min(len(value_str), m.end() + 40)
                     snippet = value_str[start:end]
 
-                    # Enhanced description for rm commands
-                    description = (
+                    # Surface the rule's own description (which the rule
+                    # author wrote for the operator/LLM to read) instead
+                    # of a generic "Rule X matched ..." string. Fall back
+                    # to the generic message for rules without a
+                    # description set.
+                    description = rule.description or (
                         f"Rule {rule.id} matched parameter "
                         f"'{param_name}' of tool '{tool_name}'."
                     )

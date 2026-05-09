@@ -10,6 +10,11 @@
 # See GuardThreatCategory for the full threat taxonomy.
 
 # ── rm: file / directory removal ──────────────────────────────────────
+# NB: the description below is reused by every deletion-class rule via
+# the &deletion_directive_text YAML anchor. It ends up verbatim in the
+# agent's tool result on auto-deny, so it is written as an instruction
+# TO THE LLM (not to a human) — telling the model not to retry, not to
+# suggest manual workarounds, and exactly what to relay to the user.
 - id: TOOL_CMD_DANGEROUS_RM
   tools: [execute_shell_command]
   params: [command]
@@ -21,8 +26,21 @@
     - "\\bRemove-Item\\b"
   exclude_patterns:
     - "^\\s*#"
-  description: "Shell command contains 'rm' which may cause data loss"
-  remediation: "Confirm with the user before removing files or directories"
+  description: &deletion_directive_text |-
+    ⛔ 危险操作已被系统拦截 —— 本系统的安全策略全局禁用所有删除类操作。
+    所有替代路径（rm / del / Remove-Item / mv / unlink / rmdir / find -delete /
+    python os.remove / shutil.rmtree / node fs.unlink / perl unlink /
+    ruby File.delete / trash-put / gio trash / mkfs / dd 等）都已被拦截，
+    请勿再尝试其他写法，结果都是失败。
+    请直接回复用户："此操作属于危险动作，本系统已统一禁用所有删除类操作。
+    如果确实需要清理该资源，请联系运维管理员通过审计变更流程办理。"
+    切勿建议用户自行手动执行该命令。
+    (EN) Deletion is forbidden by security policy. All alternative deletion
+    mechanisms are also blocked — do NOT retry with other commands and do
+    NOT instruct the user to run the command manually. Inform the user
+    that deletion is disabled by policy and they should contact the ops
+    admin to go through change-control if they truly need it.
+  remediation: "Block operation. rm/del/Remove-Item is a deletion-class action; deletion is forbidden by policy."
 
 # ── mv: file / directory move / rename ────────────────────────────────
 - id: TOOL_CMD_DANGEROUS_MV
@@ -32,8 +50,8 @@
   severity: HIGH
   patterns:
     - "\\bmv\\b"
-  description: "Shell command contains 'mv' which may move or overwrite files unexpectedly"
-  remediation: "Confirm with the user before moving or renaming files"
+  description: *deletion_directive_text
+  remediation: "Block operation. mv removes the source path and may overwrite the destination; treated as deletion-class."
 
 # ── Indirect deletion via scripting interpreters (-c / -e / -r) ──────
 # `rm`/`del`/`Remove-Item` are easy to filter, but agents can call any
@@ -60,7 +78,7 @@
     - "\\bruby\\b[\\s\\S]*\\b(File\\.(delete|unlink)|FileUtils\\.(rm|rm_r|rm_rf|remove|remove_dir))\\b"
     # PHP: unlink(...) / rmdir(...)
     - "\\bphp\\b[\\s\\S]*\\b(unlink|rmdir)\\s*\\("
-  description: "Detects file deletion attempted via scripting language interpreters"
+  description: *deletion_directive_text
   remediation: "Block operation. Deletion through -c / -e / -r interpreter shortcuts is forbidden by policy."
 
 # ── Native deletion utilities other than rm/del/Remove-Item ───────────
@@ -85,7 +103,7 @@
     - "\\btar\\b[^\\n]*\\s--remove-files\\b"
     - "\\bcpio\\b[^\\n]*\\s--remove-files\\b"
     - "\\brsync\\b[^\\n]*\\s--remove-source-files\\b"
-  description: "Detects deletion via unlink/rmdir/find -delete/trash CLIs/tar --remove-files etc."
+  description: *deletion_directive_text
   remediation: "Block operation. All deletion mechanisms are forbidden by policy."
 
 # ── Filesystem & Block Device Destruction ─────────────────────────────
@@ -99,8 +117,8 @@
     - "\\bmke2fs\\b"
     - "\\bdd\\s+.*of=\\/dev\\/"
     - ">\\s*\\/dev\\/(sd[a-z][0-9]*|vd[a-z][0-9]*|nvme\\d+n\\d+(p\\d+)?)"
-  description: "Detects low-level disk formatting or wiping commands"
-  remediation: "Block operation. Agents should not format or overwrite raw block devices."
+  description: *deletion_directive_text
+  remediation: "Block operation. Block-device formatting/wiping is treated as deletion-class destruction."
 
 # ── Denial of Service & Fork Bombs ────────────────────────────────────
 - id: TOOL_CMD_DOS_FORK_BOMB
