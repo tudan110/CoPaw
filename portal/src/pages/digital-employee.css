@@ -5504,8 +5504,10 @@
 }
 
 .portal-digital-employee .alarm-analyst-card-stack {
-  display: grid;
-  gap: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
 }
 
 .portal-digital-employee .alarm-analyst-card {
@@ -6278,8 +6280,8 @@
 .portal-digital-employee .alarm-analyst-raw-report {
   border: 1px dashed var(--border);
   border-radius: 16px;
-  padding: 12px 14px;
   background: var(--bg-white);
+  overflow: hidden;
 }
 
 .portal-digital-employee .alarm-analyst-raw-report-priority {
@@ -6294,6 +6296,12 @@
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+  padding: 16px 18px;
+  list-style: none;
+}
+
+.portal-digital-employee .alarm-analyst-raw-report summary::-webkit-details-marker {
+  display: none;
 }
 
 .portal-digital-employee .alarm-analyst-raw-report summary small {
@@ -6304,6 +6312,40 @@
 
 .portal-digital-employee .alarm-analyst-raw-report-body {
   margin-top: 12px;
+  border-top: 1px solid rgba(148, 163, 184, 0.12);
+  padding: 14px 18px;
+  overflow: visible;
+}
+
+.portal-digital-employee .alarm-analyst-raw-report-body .portal-qwenpaw-markdown-host {
+  display: block;
+  min-width: 0;
+}
+
+.portal-digital-employee .alarm-analyst-raw-report-body .alarm-analyst-raw-report-table-scroll {
+  display: block;
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-gutter: stable;
+  -webkit-overflow-scrolling: touch;
+}
+
+.portal-digital-employee .alarm-analyst-raw-report-body .portal-x-markdown table {
+  display: table;
+  width: max-content;
+  min-width: 0;
+  max-width: none;
+  overflow: visible;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+}
+
+.portal-digital-employee .alarm-analyst-raw-report-body .portal-x-markdown th,
+.portal-digital-employee .alarm-analyst-raw-report-body .portal-x-markdown td {
+  white-space: pre;
 }
 
 @media (max-width: 768px) {

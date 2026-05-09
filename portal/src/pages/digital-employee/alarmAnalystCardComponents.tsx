@@ -1,4 +1,4 @@
-import { memo, useEffect, useMemo, useState } from "react";
+import { memo, useEffect, useMemo, useState, type ComponentPropsWithoutRef } from "react";
 
 import { PortalQwenPawMarkdown } from "../../components/PortalQwenPawMarkdown";
 import { DeferredEChartsBlock } from "../../components/DeferredVisualizationBlocks";
@@ -206,6 +206,16 @@ function buildTopologyChart(card: AlarmAnalystCardV1) {
     || buildReportTopologyChart(card, highlightTokens);
 }
 
+function AlarmAnalystReportTable(props: ComponentPropsWithoutRef<"table">) {
+  const { className, ...rest } = props;
+
+  return (
+    <div className="alarm-analyst-raw-report-table-scroll">
+      <table {...rest} className={className} />
+    </div>
+  );
+}
+
 function AlarmAnalystMarkdown({ content }: { content: string }) {
   const isDarkTheme =
     typeof document !== "undefined"
@@ -220,6 +230,7 @@ function AlarmAnalystMarkdown({ content }: { content: string }) {
       className={`portal-x-markdown ${markdownThemeClass}`}
       content={normalizedContent}
       isStreaming={false}
+      components={{ table: AlarmAnalystReportTable }}
     />
   );
 }
@@ -741,7 +752,7 @@ export const AlarmAnalystCardPanel = memo(function AlarmAnalystCardPanel({
             <span>查看完整分析</span>
             <small>展开最后一次完整回复</small>
           </summary>
-          <div className="message-bubble markdown-bubble alarm-analyst-raw-report-body">
+          <div className="alarm-analyst-raw-report-body">
             <AlarmAnalystMarkdown content={card.rawReportMarkdown} />
           </div>
         </details>
