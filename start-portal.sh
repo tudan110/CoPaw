@@ -6,11 +6,26 @@ if [ -z "$BASH_VERSION" ]; then
 fi
 
 set -euo pipefail
+trap '' HUP
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PORTAL_DIR="$ROOT_DIR/portal"
 PORT="${PORT:-5173}"
 CLEAN_START="${CLEAN_START:-0}"
+
+run_portal_dev() {
+  local -a cmd=("pnpm" "dev" "--host" "0.0.0.0" "--strictPort" "--port" "$PORT")
+  if [[ "${1:-}" == "--force" ]]; then
+    cmd=("pnpm" "dev" "--force" "--host" "0.0.0.0" "--strictPort" "--port" "$PORT")
+  fi
+
+  if [[ ! -t 0 ]]; then
+    echo "[start] Detected detached/non-interactive launch; shielding Vite from SIGHUP."
+    exec nohup "${cmd[@]}" </dev/null
+  fi
+
+  exec "${cmd[@]}"
+}
 
 require_cmd() {
   local cmd="$1"
@@ -85,7 +100,7 @@ if [[ "$CLEAN_START" == "1" || "$AUTO_CLEAN" == "1" ]]; then
   fi
   echo "[start] Starting portal on :$PORT with forced dependency re-optimization..."
   echo "[start] strictPort enabled; if :$PORT is occupied, startup will fail instead of switching ports."
-  pnpm dev --force --host 0.0.0.0 --strictPort --port "$PORT"
+  run_portal_dev --force
 else
   if [[ -n "$CURRENT_FINGERPRINT" ]]; then
     mkdir -p "$PORTAL_DIR/node_modules/.vite"
@@ -94,5 +109,5 @@ else
   echo "[start] Starting portal on :$PORT ..."
   echo "[start] strictPort enabled; if :$PORT is occupied, startup will fail instead of switching ports."
   echo "[start] Using normal Vite startup to avoid mixed optimized-deps hashes on first load."
-  pnpm dev --host 0.0.0.0 --strictPort --port "$PORT"
+  run_portal_dev
 fi
