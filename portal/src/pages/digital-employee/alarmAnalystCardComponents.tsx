@@ -322,7 +322,8 @@ function buildSummaryRowsFromReport(card: AlarmAnalystCardV1): AlarmAnalystSumma
       continue;
     }
     const label = normalizeLabel(match[1]);
-    const value = stripMarkdownInline(match[2]);
+    const rawValue = stripMarkdownInline(match[2]);
+    const value = label === "置信度" ? mapConfidenceLabel(rawValue) : rawValue;
     if (!label || !value) {
       continue;
     }
@@ -349,24 +350,36 @@ function joinUnique(items: string[] = []) {
   return [...new Set(items.map((item) => item.trim()).filter(Boolean))].join("、");
 }
 
-function mapConfidenceLabel(value: string) {
-  const normalized = String(value || "").trim().toLowerCase();
+function mapConfidenceLabel(value: unknown) {
+  const raw = String(value || "").trim();
+  const normalized = raw.toLowerCase();
   if (!normalized) {
     return "";
   }
-  if (normalized.includes("%")) {
-    return normalized.toUpperCase();
+
+  const percentMatch = normalized.match(/^(\d{1,3})(?:\.\d+)?\s*%$/);
+  if (percentMatch) {
+    const percent = Math.max(0, Math.min(100, Number(percentMatch[1])));
+    return `${percent}%`;
   }
-  if (normalized === "high") {
-    return "高";
+
+  const numericValue = Number(normalized);
+  if (Number.isFinite(numericValue)) {
+    const percent = numericValue <= 1
+      ? Math.round(numericValue * 100)
+      : Math.round(numericValue);
+    return `${Math.max(0, Math.min(100, percent))}%`;
   }
-  if (normalized === "medium") {
-    return "中";
+  if (normalized === "high" || normalized === "高") {
+    return "90%";
   }
-  if (normalized === "low") {
-    return "低";
+  if (normalized === "medium" || normalized === "中") {
+    return "70%";
   }
-  return String(value).trim();
+  if (normalized === "low" || normalized === "低") {
+    return "50%";
+  }
+  return raw;
 }
 
 function mapStatusLabel(value: string) {
