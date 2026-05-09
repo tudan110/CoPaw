@@ -188,6 +188,9 @@ export function usePortalDashboard({
     if (kanbanFilter === "all") {
       return dashboardWorkColumns;
     }
+    if (kanbanFilter === "idle") {
+      return dashboardWorkColumns;
+    }
 
     return dashboardWorkColumns
       .map((column) => ({
@@ -201,10 +204,17 @@ export function usePortalDashboard({
 
   const filteredDashboardEmployeeSnapshots = useMemo(() => {
     if (kanbanFilter === "urgent") {
-      return dashboardEmployeeSnapshots.filter((worker) => worker.runtimeState === "running");
+      return dashboardEmployeeSnapshots.filter((worker) => worker.urgent);
     }
     if (kanbanFilter === "running") {
-      return dashboardEmployeeSnapshots.filter((worker) => worker.runtimeState === "idle");
+      return dashboardEmployeeSnapshots.filter(
+        (worker) => !worker.urgent && worker.runtimeState === "running",
+      );
+    }
+    if (kanbanFilter === "idle") {
+      return dashboardEmployeeSnapshots.filter(
+        (worker) => !worker.urgent && worker.runtimeState === "idle",
+      );
     }
     return dashboardEmployeeSnapshots;
   }, [dashboardEmployeeSnapshots, kanbanFilter]);

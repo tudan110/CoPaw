@@ -956,7 +956,10 @@ def _get_cached_fault_alert_count(*, require_fresh: bool) -> int | None:
 async def _refresh_fault_alert_count_cache() -> int:
     try:
         result = await asyncio.wait_for(
-            asyncio.to_thread(query_alarm_workorders, PORTAL_FAULT_ALERT_LIMIT),
+            asyncio.to_thread(
+                _query_visible_portal_real_alarms,
+                PORTAL_REAL_ALARM_ROUTE_DEFAULT_LIMIT,
+            ),
             timeout=PORTAL_STATUS_ALERT_TIMEOUT_SECONDS,
         )
         items = result.get("items") or []
@@ -1064,22 +1067,7 @@ async def _get_employee_alert_count(employee_id: str, *, include_alert_count: bo
     ):
         return 0
 
-    cached_count = _get_cached_fault_alert_count(require_fresh=True)
-    if cached_count is not None:
-        return cached_count
-
-    task = _ensure_fault_alert_count_refresh()
-    stale_count = _get_cached_fault_alert_count(require_fresh=False)
-    if stale_count is not None:
-        return stale_count
-
-    try:
-        return await asyncio.wait_for(
-            asyncio.shield(task),
-            timeout=PORTAL_STATUS_ALERT_FAST_TIMEOUT_SECONDS,
-        )
-    except asyncio.TimeoutError:
-        return 0
+    return await _refresh_fault_alert_count_cache()
 
 
 async def collect_portal_employee_statuses(

@@ -292,7 +292,7 @@ export function mergeSessionRecords(primary: SessionRecord[], secondary: Session
     });
 }
 export type DashboardKanbanMode = "work" | "employee";
-export type DashboardKanbanFilter = "all" | "urgent" | "running";
+export type DashboardKanbanFilter = "all" | "urgent" | "running" | "idle";
 export type DashboardWorkColumnId = "pending" | "running" | "completed" | "closed";
 
 export type DashboardWorkCard = {
@@ -325,6 +325,7 @@ export type DashboardEmployeeSnapshot = {
   desc: string;
   color: string;
   runtimeState: "running" | "idle";
+  statusLabel: string;
   currentJob: string;
   historyCount: number;
   progress: number;
@@ -389,6 +390,24 @@ export function formatRuntimeUpdatedAt(value: string) {
   }).format(new Date(timestamp));
 }
 
+function parseRuntimeProgress(value: PortalEmployeeRuntimeStatus["progress"] | undefined): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return Math.max(0, Math.min(100, value));
+  }
+
+  const text = String(value || "").trim();
+  if (!text || text === "--") {
+    return 0;
+  }
+
+  const match = text.match(/^(\d{1,3})%$/);
+  if (!match) {
+    return null;
+  }
+
+  return Math.max(0, Math.min(100, Number(match[1])));
+}
+
 export function areEmployeeRuntimeStatusMapsEqual(
   left: Record<string, PortalEmployeeRuntimeStatus>,
   right: Record<string, PortalEmployeeRuntimeStatus>,
@@ -402,12 +421,15 @@ export function areEmployeeRuntimeStatusMapsEqual(
   return leftKeys.every((key) => JSON.stringify(left[key]) === JSON.stringify(right[key]));
 }
 
-export function getDashboardFilterLabels(mode: DashboardKanbanMode) {
+export function getDashboardFilterLabels(
+  mode: DashboardKanbanMode,
+): Partial<Record<DashboardKanbanFilter, string>> {
   return mode === "employee"
     ? {
         all: "全部",
-        urgent: "运行中",
-        running: "闲置中",
+        running: "运行中",
+        idle: "待机",
+        urgent: "紧急任务",
       }
     : {
         all: "全部",
@@ -660,7 +682,14 @@ export function buildDashboardEmployeeSnapshots(
     string,
     Omit<
       DashboardEmployeeSnapshot,
-      "id" | "name" | "desc" | "color" | "runtimeState" | "historyCount" | "urgent"
+      | "id"
+      | "name"
+      | "desc"
+      | "color"
+      | "runtimeState"
+      | "statusLabel"
+      | "historyCount"
+      | "urgent"
     >
   > = {
     resource: {
@@ -705,22 +734,26 @@ export function buildDashboardEmployeeSnapshots(
     const template = templates[employee.id];
     const runtime = runtimeStatuses[employee.id];
     const runtimeState = employee.status === "running" ? "running" : "idle";
+    const statusLabel =
+      runtime?.stateLabel ||
+      (employee.urgent ? "紧急任务" : runtimeState === "running" ? "运行中" : "待机");
     return {
       id: employee.id,
       name: employee.name,
       desc: employee.desc,
       color: getDashboardEmployeeColor(employee.id),
       runtimeState,
+      statusLabel,
       currentJob:
         runtime?.currentJob ||
         template?.currentJob ||
         (runtimeState === "running" ? `${employee.name}任务处理中` : "暂无对话"),
       historyCount: historyCounts[employee.id] || 0,
-      progress: template?.progress ?? 0,
+      progress: parseRuntimeProgress(runtime?.progress) ?? template?.progress ?? 0,
       workStatus:
         runtime?.workStatus ||
         template?.workStatus ||
-        (employee.urgent ? "紧急任务" : runtimeState === "running" ? "运行中" : "待机"),
+        statusLabel,
       updatedAt: formatRuntimeUpdatedAt(runtime?.updatedAt || "") || template?.updatedAt || "刚刚",
       urgent: employee.urgent,
     };

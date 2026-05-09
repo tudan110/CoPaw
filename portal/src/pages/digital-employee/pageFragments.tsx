@@ -517,7 +517,7 @@ export function DashboardPanel({
 }: {
   kanbanMode: "work" | "employee";
   kanbanFilter: DashboardKanbanFilter;
-  kanbanFilterLabels: Record<DashboardKanbanFilter, string>;
+  kanbanFilterLabels: Partial<Record<DashboardKanbanFilter, string>>;
   dashboardClock: string;
   alertBell: ReactNode;
   themeToggleIcon: ReactNode;
@@ -598,11 +598,7 @@ export function DashboardPanel({
           {filteredDashboardEmployeeSnapshots.length ? (
             filteredDashboardEmployeeSnapshots.map((worker) => {
               const latestSession = dashboardLatestSessions[worker.id];
-              const runtimeLabel = worker.urgent
-                ? "紧急处理中"
-                : worker.runtimeState === "running"
-                  ? "运行中"
-                  : "闲置中";
+              const runtimeLabel = worker.statusLabel;
               const runtimeColor = worker.urgent
                 ? "#f97316"
                 : worker.runtimeState === "running"

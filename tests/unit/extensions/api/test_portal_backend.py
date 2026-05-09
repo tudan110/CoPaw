@@ -99,8 +99,8 @@ async def test_collect_portal_employee_statuses_uses_runtime_and_alerts(
     )
     monkeypatch.setattr(
         portal_backend,
-        "query_alarm_workorders",
-        lambda _limit: {"total": 2, "items": [], "source": "mock"},
+        "_query_visible_portal_real_alarms",
+        lambda _limit: {"total": 2, "items": [{"id": "alarm-1"}, {"id": "alarm-2"}], "source": "mock"},
     )
 
     statuses = await portal_backend.collect_portal_employee_statuses(
@@ -127,6 +127,24 @@ async def test_collect_portal_employee_statuses_uses_runtime_and_alerts(
     assert by_id["resource"]["employeeName"] == "资产管理员"
     assert by_id["resource"]["status"] == "idle"
     assert by_id["resource"]["currentJob"] == "暂无对话"
+
+
+@pytest.mark.asyncio
+async def test_get_employee_alert_count_prefers_live_visible_alarm_count(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setitem(portal_backend.PORTAL_STATUS_ALERT_COUNT_CACHE, "value", 16)
+    monkeypatch.setitem(portal_backend.PORTAL_STATUS_ALERT_COUNT_CACHE, "updated_at", 123.0)
+    monkeypatch.setattr(
+        portal_backend,
+        "_query_visible_portal_real_alarms",
+        lambda _limit: {"total": 3, "items": [{"id": "alarm-1"}, {"id": "alarm-2"}, {"id": "alarm-3"}]},
+    )
+
+    count = await portal_backend._get_employee_alert_count("fault")
+
+    assert count == 3
+    assert portal_backend.PORTAL_STATUS_ALERT_COUNT_CACHE["value"] == 3
 
 
 def test_build_portal_employee_status_payload_prefers_recent_session_for_idle() -> None:
