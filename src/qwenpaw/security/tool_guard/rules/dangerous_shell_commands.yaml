@@ -35,6 +35,59 @@
   description: "Shell command contains 'mv' which may move or overwrite files unexpectedly"
   remediation: "Confirm with the user before moving or renaming files"
 
+# ── Indirect deletion via scripting interpreters (-c / -e / -r) ──────
+# `rm`/`del`/`Remove-Item` are easy to filter, but agents can call any
+# delete syscall via python / perl / node / ruby / php one-liners. This
+# rule plugs that bypass family. Add new languages here as you discover
+# them — regex-based shell filtering is fundamentally a denylist game.
+- id: TOOL_CMD_INTERPRETER_DELETE
+  tools: [execute_shell_command]
+  params: [command]
+  category: command_injection
+  severity: HIGH
+  patterns:
+    # Python / PyPy: os.remove, os.unlink, os.removedirs, os.rmdir,
+    # shutil.rmtree, pathlib.Path(...).unlink(), pathlib.Path(...).rmdir()
+    - "\\b(python\\d*|pypy\\d*)\\b[\\s\\S]*\\bos\\.(remove|unlink|removedirs|rmdir)\\b"
+    - "\\b(python\\d*|pypy\\d*)\\b[\\s\\S]*\\bshutil\\.rmtree\\b"
+    - "\\b(python\\d*|pypy\\d*)\\b[\\s\\S]*\\b(Path|pathlib)\\b[\\s\\S]*\\.(unlink|rmdir)\\b"
+    # Perl: unlink(...)
+    - "\\bperl\\b[\\s\\S]*\\bunlink\\s*[\\(\\s\\\"']"
+    # Node.js: fs.unlink, fs.rm, fs.rmdir (sync/async; works regardless of
+    # whether `fs` is destructured, aliased, or chained from require()).
+    - "\\bnode\\b[\\s\\S]*\\b(unlink|unlinkSync|rmSync|rmdir|rmdirSync)\\s*\\("
+    # Ruby: File.delete, File.unlink, FileUtils.rm{,_r,_rf}, FileUtils.remove{,_dir}
+    - "\\bruby\\b[\\s\\S]*\\b(File\\.(delete|unlink)|FileUtils\\.(rm|rm_r|rm_rf|remove|remove_dir))\\b"
+    # PHP: unlink(...) / rmdir(...)
+    - "\\bphp\\b[\\s\\S]*\\b(unlink|rmdir)\\s*\\("
+  description: "Detects file deletion attempted via scripting language interpreters"
+  remediation: "Block operation. Deletion through -c / -e / -r interpreter shortcuts is forbidden by policy."
+
+# ── Native deletion utilities other than rm/del/Remove-Item ───────────
+- id: TOOL_CMD_NATIVE_DELETE_TOOLS
+  tools: [execute_shell_command]
+  params: [command]
+  category: command_injection
+  severity: HIGH
+  patterns:
+    # POSIX `unlink` command (distinct from `rm`)
+    - "\\bunlink\\s+[\\\"']?[/\\.~\\w-]"
+    # Empty-directory removal
+    - "\\brmdir\\b"
+    # find -delete / -exec(dir) rm/unlink/rmdir
+    - "\\bfind\\b[^\\n]*\\s-delete\\b"
+    - "\\bfind\\b[^\\n]*-exec(dir)?\\s+(rm|unlink|rmdir)\\b"
+    # GNOME/GTK trash CLIs (still data loss from operator's view)
+    - "\\b(trash-put|gvfs-trash)\\b"
+    - "\\bgio\\s+trash\\b"
+    - "\\bkioclient5?\\s+move[^\\n]*--trash"
+    # Archive/sync tools that delete sources
+    - "\\btar\\b[^\\n]*\\s--remove-files\\b"
+    - "\\bcpio\\b[^\\n]*\\s--remove-files\\b"
+    - "\\brsync\\b[^\\n]*\\s--remove-source-files\\b"
+  description: "Detects deletion via unlink/rmdir/find -delete/trash CLIs/tar --remove-files etc."
+  remediation: "Block operation. All deletion mechanisms are forbidden by policy."
+
 # ── Filesystem & Block Device Destruction ─────────────────────────────
 - id: TOOL_CMD_FS_DESTRUCTION
   tools: [execute_shell_command]

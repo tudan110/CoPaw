@@ -563,7 +563,9 @@
       "auto_denied_rules": [
         "TOOL_CMD_DANGEROUS_RM",
         "TOOL_CMD_DANGEROUS_MV",
-        "TOOL_CMD_FS_DESTRUCTION"
+        "TOOL_CMD_FS_DESTRUCTION",
+        "TOOL_CMD_INTERPRETER_DELETE",
+        "TOOL_CMD_NATIVE_DELETE_TOOLS"
       ],
       "custom_rules": [],
       "disabled_rules": []
