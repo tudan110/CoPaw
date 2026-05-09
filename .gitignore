@@ -119,6 +119,7 @@ src/.hypothesis/
 
 # pnpm lockfiles (only ignore in subpackages, not root)
 console/pnpm-lock.yaml
+console/pnpm-workspace.yaml
 portal/package-lock.json
 
 # 智能体本地初始化数据
