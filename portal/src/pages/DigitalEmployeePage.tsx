@@ -441,12 +441,18 @@ export default function DigitalEmployeePage({
     activeProviderName,
     activeModelId,
     activeModelLabel,
+    globalActiveProviderId,
+    globalActiveProviderName,
+    globalActiveModelId,
+    globalActiveModelLabel,
+    usesGlobalDefault,
     loading: modelsLoading,
     switching: modelsSwitching,
     submitting: modelsSubmitting,
     notice: modelNotice,
     fetchModelState,
     handleSelectModel,
+    handleSelectDefaultModel,
     handleSaveProvider,
     handleAddModel,
     handleDeleteProvider,
@@ -1331,6 +1337,14 @@ export default function DigitalEmployeePage({
               <ModelConfigModal
                 open
                 activeProviderId={activeProviderId}
+                activeProviderName={activeProviderName}
+                activeModelLabel={activeModelLabel}
+                globalActiveProviderId={globalActiveProviderId}
+                globalActiveProviderName={globalActiveProviderName}
+                globalActiveModelId={globalActiveModelId}
+                globalActiveModelLabel={globalActiveModelLabel}
+                usesGlobalDefault={usesGlobalDefault}
+                eligibleProviders={eligibleProviders}
                 displayProviders={displayProviders}
                 loading={modelsLoading}
                 switching={modelsSwitching}
@@ -1338,6 +1352,7 @@ export default function DigitalEmployeePage({
                 disabled={isInteractionLocked}
                 notice={modelNotice}
                 onRefresh={() => void fetchModelState()}
+                onSelectDefaultModel={handleSelectDefaultModel}
                 onSubmitProvider={handleSaveProvider}
                 onSubmitModel={handleAddModel}
                 onDeleteProvider={handleDeleteProvider}

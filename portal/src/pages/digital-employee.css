@@ -9315,6 +9315,60 @@
   box-shadow: var(--shadow-sm);
 }
 
+.portal-digital-employee .portal-default-llm-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.portal-digital-employee .portal-default-llm-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+  gap: 16px;
+  align-items: end;
+}
+
+.portal-digital-employee .portal-default-llm-action-slot {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+
+.portal-digital-employee .portal-default-llm-action-label {
+  font-size: 12px;
+  color: transparent;
+  user-select: none;
+}
+
+.portal-digital-employee .portal-default-llm-action-slot .portal-model-btn {
+  min-height: 40px;
+  white-space: nowrap;
+}
+
+.portal-digital-employee .portal-default-llm-help {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.6;
+}
+
+@media (max-width: 900px) {
+  .portal-digital-employee .portal-default-llm-row {
+    grid-template-columns: 1fr;
+  }
+
+  .portal-digital-employee .portal-default-llm-action-slot {
+    width: 100%;
+  }
+
+  .portal-digital-employee .portal-default-llm-action-slot .portal-model-btn {
+    width: 100%;
+    justify-content: center;
+  }
+}
+
 .portal-digital-employee .portal-provider-config-dialog {
   max-width: 760px;
   width: min(760px, 92vw);
@@ -9420,6 +9474,14 @@
   gap: 2px;
 }
 
+.portal-digital-employee .portal-select-option-copy {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+ }
+
 .portal-digital-employee .portal-select-title {
   font-size: 13px;
   font-weight: 600;
@@ -9444,6 +9506,13 @@
   background: rgba(255, 255, 255, 0.98);
   box-shadow: 0 16px 40px rgba(15, 23, 42, 0.16);
   backdrop-filter: blur(12px);
+}
+
+.portal-digital-employee .portal-select-empty {
+  padding: 12px;
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.6;
 }
 
 .portal-digital-employee .portal-select-option {

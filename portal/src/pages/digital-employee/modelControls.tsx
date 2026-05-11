@@ -75,12 +75,24 @@ const PROTOCOL_OPTIONS = [
   },
 ] as const;
 
-function ProtocolSelect({
+type PortalSelectOption = {
+  value: string;
+  label: string;
+  description?: string;
+};
+
+function PortalSelect({
   value,
+  options,
+  placeholder,
+  emptyText,
   disabled,
   onChange,
 }: {
   value: string;
+  options: readonly PortalSelectOption[];
+  placeholder: string;
+  emptyText?: string;
   disabled?: boolean;
   onChange: (value: string) => void;
 }) {
@@ -89,7 +101,7 @@ function ProtocolSelect({
 
   useOutsideClose(open, containerRef, () => setOpen(false));
 
-  const selected = PROTOCOL_OPTIONS.find((option) => option.value === value) || PROTOCOL_OPTIONS[0];
+  const selected = options.find((option) => option.value === value) || null;
 
   return (
     <div className="portal-select" ref={containerRef}>
@@ -104,34 +116,62 @@ function ProtocolSelect({
         }}
       >
         <span className="portal-select-copy">
-          <span className="portal-select-title">{selected.label}</span>
+          <span className="portal-select-title">{selected?.label || placeholder}</span>
         </span>
         <i className={`fas ${open ? "fa-chevron-up" : "fa-chevron-down"}`} />
       </button>
 
       {open ? (
         <div className="portal-select-menu">
-          {PROTOCOL_OPTIONS.map((option) => {
-            const active = option.value === value;
-            return (
-              <button
-                key={option.value}
-                type="button"
-                className={active ? "portal-select-option active" : "portal-select-option"}
-                onClick={() => {
-                  onChange(option.value);
-                  setOpen(false);
-                }}
-              >
-                <span className="portal-select-title">{option.label}</span>
-                <span className="portal-select-desc">{option.description}</span>
-                {active ? <i className="fas fa-check" /> : null}
-              </button>
-            );
-          })}
+          {options.length ? (
+            options.map((option) => {
+              const active = option.value === value;
+              return (
+                <button
+                  key={option.value}
+                  type="button"
+                  className={active ? "portal-select-option active" : "portal-select-option"}
+                  onClick={() => {
+                    onChange(option.value);
+                    setOpen(false);
+                  }}
+                >
+                  <span className="portal-select-option-copy">
+                    <span className="portal-select-title">{option.label}</span>
+                    {option.description ? (
+                      <span className="portal-select-desc">{option.description}</span>
+                    ) : null}
+                  </span>
+                  {active ? <i className="fas fa-check" /> : null}
+                </button>
+              );
+            })
+          ) : (
+            <div className="portal-select-empty">{emptyText || placeholder}</div>
+          )}
         </div>
       ) : null}
     </div>
+  );
+}
+
+function ProtocolSelect({
+  value,
+  disabled,
+  onChange,
+}: {
+  value: string;
+  disabled?: boolean;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <PortalSelect
+      value={value}
+      options={PROTOCOL_OPTIONS}
+      placeholder="请选择协议"
+      disabled={disabled}
+      onChange={onChange}
+    />
   );
 }
 
@@ -1539,6 +1579,14 @@ export function ChatModelSelector({
 export function ModelConfigModal({
   open,
   activeProviderId,
+  activeProviderName,
+  activeModelLabel,
+  globalActiveProviderId,
+  globalActiveProviderName,
+  globalActiveModelId,
+  globalActiveModelLabel,
+  usesGlobalDefault,
+  eligibleProviders,
   displayProviders,
   loading,
   switching,
@@ -1546,6 +1594,7 @@ export function ModelConfigModal({
   disabled,
   notice,
   onRefresh,
+  onSelectDefaultModel,
   onSubmitProvider,
   onSubmitModel,
   onDeleteProvider,
@@ -1560,6 +1609,14 @@ export function ModelConfigModal({
 }: {
   open: boolean;
   activeProviderId: string;
+  activeProviderName: string;
+  activeModelLabel: string;
+  globalActiveProviderId: string;
+  globalActiveProviderName: string;
+  globalActiveModelId: string;
+  globalActiveModelLabel: string;
+  usesGlobalDefault: boolean;
+  eligibleProviders: EligibleProvider[];
   displayProviders: DisplayProvider[];
   loading: boolean;
   switching: boolean;
@@ -1567,6 +1624,7 @@ export function ModelConfigModal({
   disabled?: boolean;
   notice: ModelNoticeState | null;
   onRefresh: () => void;
+  onSelectDefaultModel: (providerId: string, modelId: string) => Promise<boolean>;
   onSubmitProvider: (payload: SaveProviderPayload) => Promise<boolean>;
   onSubmitModel: (payload: AddProviderModelPayload) => Promise<boolean>;
   onDeleteProvider: (providerId: string) => Promise<boolean>;
@@ -1598,6 +1656,8 @@ export function ModelConfigModal({
   const [modelDialogOpen, setModelDialogOpen] = useState(false);
   const [builtinApiDialogOpen, setBuiltinApiDialogOpen] = useState(false);
   const [builtinApiProvider, setBuiltinApiProvider] = useState<DisplayProvider | null>(null);
+  const [defaultProviderId, setDefaultProviderId] = useState("");
+  const [defaultModelId, setDefaultModelId] = useState("");
 
   useEffect(() => {
     if (open) {
@@ -1609,8 +1669,10 @@ export function ModelConfigModal({
       setModelDialogOpen(false);
       setBuiltinApiDialogOpen(false);
       setBuiltinApiProvider(null);
+      setDefaultProviderId(globalActiveProviderId);
+      setDefaultModelId(globalActiveModelId);
     }
-  }, [open]);
+  }, [globalActiveModelId, globalActiveProviderId, open]);
 
   if (!open) {
     return null;
@@ -1655,12 +1717,52 @@ export function ModelConfigModal({
   };
 
   const managedProvider = displayProviders.find((provider) => provider.id === managedProviderId) || null;
+  const selectedDefaultProvider =
+    eligibleProviders.find((provider) => provider.id === defaultProviderId) || null;
+  const selectedDefaultModels = selectedDefaultProvider?.models || [];
+  const defaultProviderOptions = eligibleProviders.map((provider) => ({
+    value: provider.id,
+    label: provider.name,
+    description: provider.description,
+  }));
+  const defaultModelOptions = selectedDefaultModels.map((model) => ({
+    value: model.id,
+    label: model.name || model.id,
+    description:
+      model.name && model.name !== model.id
+        ? model.id
+        : selectedDefaultProvider
+          ? `来自 ${selectedDefaultProvider.name}`
+          : undefined,
+  }));
+  const defaultDirty =
+    defaultProviderId !== globalActiveProviderId || defaultModelId !== globalActiveModelId;
+  const defaultSaveDisabled =
+    disabled
+    || switching
+    || !defaultProviderId
+    || !defaultModelId
+    || !defaultDirty;
 
   const handleAddProvider = () => {
     setManagedProviderId("");
     setProviderForm(DEFAULT_PROVIDER_FORM_STATE);
     setProviderDialogMode("create");
     setProviderDialogOpen(true);
+  };
+
+  const handleDefaultProviderChange = (nextProviderId: string) => {
+    const nextProvider = eligibleProviders.find((provider) => provider.id === nextProviderId) || null;
+    setDefaultProviderId(nextProviderId);
+    setDefaultModelId(nextProvider?.models[0]?.id || "");
+  };
+
+  const handleSaveDefaultModel = async () => {
+    const succeeded = await onSelectDefaultModel(defaultProviderId, defaultModelId);
+    if (succeeded) {
+      setDefaultProviderId(defaultProviderId);
+      setDefaultModelId(defaultModelId);
+    }
   };
 
   const handleOpenBuiltinApiDialog = (provider: DisplayProvider) => {
@@ -1741,6 +1843,52 @@ export function ModelConfigModal({
         </div>
         <div className="model-config-scroll">
           <div className="portal-model-shell">
+            <section className="portal-form-section portal-default-llm-card">
+              <div className="portal-model-block-head">
+                <div>
+                  <h4>默认LLM</h4>
+                </div>
+              </div>
+              <div className="portal-default-llm-row">
+                <div className="portal-form-group">
+                  <label>提供商</label>
+                  <PortalSelect
+                    value={defaultProviderId}
+                    options={defaultProviderOptions}
+                    placeholder="请选择提供商"
+                    emptyText="当前没有可用提供商"
+                    disabled={disabled || switching || eligibleProviders.length === 0}
+                    onChange={handleDefaultProviderChange}
+                  />
+                </div>
+                <div className="portal-form-group">
+                  <label>模型</label>
+                  <PortalSelect
+                    value={defaultModelId}
+                    options={defaultModelOptions}
+                    placeholder="请选择模型"
+                    emptyText="请先选择提供商"
+                    disabled={disabled || switching || !selectedDefaultModels.length}
+                    onChange={setDefaultModelId}
+                  />
+                </div>
+                <div className="portal-default-llm-action-slot">
+                  <span className="portal-default-llm-action-label">保存</span>
+                  <button
+                    type="button"
+                    className={defaultDirty ? "portal-model-btn" : "portal-model-btn secondary compact"}
+                    disabled={defaultSaveDisabled}
+                    onClick={() => void handleSaveDefaultModel()}
+                  >
+                    <i className={`fas ${switching ? "fa-spinner fa-spin" : "fa-floppy-disk"}`} />
+                    {defaultDirty ? "保存" : "已保存"}
+                  </button>
+                </div>
+              </div>
+              <p className="portal-default-llm-help">
+                在这里设置全局默认的 LLM 模型。你也可以在聊天页面为具体 Agent 单独选择使用的模型。
+              </p>
+            </section>
             <section>
               <div className="portal-model-block-head">
                 <div>

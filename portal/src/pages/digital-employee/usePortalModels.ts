@@ -192,7 +192,10 @@ export function usePortalModels({
 }) {
   const resolvedAgentId = agentId || DEFAULT_MODEL_AGENT_ID;
   const [providers, setProviders] = useState<ProviderInfo[]>([]);
+  const [allProviders, setAllProviders] = useState<ProviderInfo[]>([]);
   const [activeModels, setActiveModels] = useState<ActiveModelsInfo | null>(null);
+  const [globalActiveModels, setGlobalActiveModels] = useState<ActiveModelsInfo | null>(null);
+  const [usesGlobalDefault, setUsesGlobalDefault] = useState(true);
   const [loading, setLoading] = useState(false);
   const [switching, setSwitching] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -239,7 +242,7 @@ export function usePortalModels({
 
     setLoading(true);
     try {
-      const [providerList, active, globalActive] = await Promise.all([
+      const [providerList, active, globalActive, agentActive] = await Promise.all([
         modelsApi.listProviders(),
         modelsApi.getActiveModels({
           scope: "effective",
@@ -248,6 +251,10 @@ export function usePortalModels({
         modelsApi.getActiveModels({
           scope: "global",
         }),
+        modelsApi.getActiveModels({
+          scope: "agent",
+          agent_id: resolvedAgentId,
+        }),
       ]);
       const effectiveActive = active?.active_llm
         ? active
@@ -255,12 +262,14 @@ export function usePortalModels({
           ? globalActive
           : null;
 
-      const nextProviders = (Array.isArray(providerList) ? providerList : []).filter(
-        (provider) => provider.is_custom,
-      );
+      const nextAllProviders = Array.isArray(providerList) ? providerList : [];
+      const nextProviders = nextAllProviders.filter((provider) => provider.is_custom);
+      setAllProviders(buildDisplayProviders(nextAllProviders));
       setProviders(buildDisplayProviders(nextProviders));
       providersRef.current = nextProviders;
       setActiveModels(effectiveActive);
+      setGlobalActiveModels(globalActive?.active_llm ? globalActive : null);
+      setUsesGlobalDefault(!agentActive?.active_llm);
     } catch (error: any) {
       pushNotice("error", error?.message || "模型配置加载失败");
     } finally {
@@ -270,6 +279,7 @@ export function usePortalModels({
 
   useEffect(() => {
     setActiveModels(null);
+    setGlobalActiveModels(null);
     void fetchModelState();
   }, [fetchModelState, resolvedAgentId]);
 
@@ -361,15 +371,33 @@ export function usePortalModels({
       return "选择模型";
     }
 
-    const provider = providers.find((item) => item.id === activeProviderId);
+    const provider = allProviders.find((item) => item.id === activeProviderId);
     const model = getPortalProviderModels(provider).find((item) => item.id === activeModelId);
     return model?.name || activeModelId;
-  }, [activeModelId, activeProviderId, providers]);
+  }, [activeModelId, activeProviderId, allProviders]);
 
   const activeProviderName = useMemo(() => {
-    const provider = providers.find((item) => item.id === activeProviderId);
+    const provider = allProviders.find((item) => item.id === activeProviderId);
     return provider?.name || activeProviderId || "默认模型源";
-  }, [activeProviderId, providers]);
+  }, [activeProviderId, allProviders]);
+
+  const globalActiveProviderId = globalActiveModels?.active_llm?.provider_id || "";
+  const globalActiveModelId = globalActiveModels?.active_llm?.model || "";
+
+  const globalActiveModelLabel = useMemo(() => {
+    if (!globalActiveProviderId || !globalActiveModelId) {
+      return "未设置默认模型";
+    }
+
+    const provider = allProviders.find((item) => item.id === globalActiveProviderId);
+    const model = getPortalProviderModels(provider).find((item) => item.id === globalActiveModelId);
+    return model?.name || globalActiveModelId;
+  }, [allProviders, globalActiveModelId, globalActiveProviderId]);
+
+  const globalActiveProviderName = useMemo(() => {
+    const provider = allProviders.find((item) => item.id === globalActiveProviderId);
+    return provider?.name || globalActiveProviderId || "默认模型源";
+  }, [allProviders, globalActiveProviderId]);
 
   const handleSelectModel = useCallback(async (
     providerId: string,
@@ -398,6 +426,7 @@ export function usePortalModels({
           model: modelId,
         },
       });
+      setUsesGlobalDefault(false);
       window.dispatchEvent(new CustomEvent("model-switched"));
       pushNotice("success", `当前会话已切换到 ${modelId}`);
       return true;
@@ -413,6 +442,53 @@ export function usePortalModels({
     pushNotice,
     resolvedAgentId,
     switching,
+  ]);
+
+  const handleSelectDefaultModel = useCallback(async (
+    providerId: string,
+    modelId: string,
+  ) => {
+    if (!providerId || !modelId || switching) {
+      return false;
+    }
+
+    if (providerId === globalActiveProviderId && modelId === globalActiveModelId) {
+      return true;
+    }
+
+    setSwitching(true);
+    try {
+      const nextGlobalActive = await modelsApi.setActiveLlm({
+        provider_id: providerId,
+        model: modelId,
+        scope: "global",
+      });
+
+      const fallbackActive = nextGlobalActive || {
+        active_llm: {
+          provider_id: providerId,
+          model: modelId,
+        },
+      };
+
+      setGlobalActiveModels(fallbackActive);
+      if (usesGlobalDefault) {
+        setActiveModels(fallbackActive);
+      }
+      pushNotice("success", `默认 LLM 已更新为 ${modelId}`);
+      return true;
+    } catch (error: any) {
+      pushNotice("error", error?.message || "默认 LLM 更新失败");
+      return false;
+    } finally {
+      setSwitching(false);
+    }
+  }, [
+    globalActiveModelId,
+    globalActiveProviderId,
+    pushNotice,
+    switching,
+    usesGlobalDefault,
   ]);
 
   const handleSaveProvider = useCallback(async (payload: SaveProviderPayload) => {
@@ -854,6 +930,11 @@ export function usePortalModels({
     activeProviderName,
     activeModelId,
     activeModelLabel,
+    globalActiveProviderId,
+    globalActiveProviderName,
+    globalActiveModelId,
+    globalActiveModelLabel,
+    usesGlobalDefault,
     loading,
     switching,
     submitting,
@@ -861,6 +942,7 @@ export function usePortalModels({
     clearNotice,
     fetchModelState,
     handleSelectModel,
+    handleSelectDefaultModel,
     handleSaveProvider,
     handleAddModel,
     handleDeleteProvider,
