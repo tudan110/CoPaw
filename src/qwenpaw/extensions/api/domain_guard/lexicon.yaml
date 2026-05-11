@@ -1,0 +1,178 @@
+# 领域关键词词库（可由运维管理员编辑）
+#   positive   : 网管/网络运维强相关词 —— 命中越多越倾向"相关"
+#   negative   : 其它专业方向的强信号词 —— 命中越多越倾向"不相关"
+#   borderline : 通用工具词 —— 命中后会提示 LLM 仔细判断是否声明了网管场景
+# 这只是给 LLM 的"先验信号"，最终判定仍由 LLM 主审 + 置信度分档决定。
+
+positive:
+  - 网管
+  - 网络管理
+  - 网络运维
+  - 运维
+  - o&m
+  - nms
+  - ems
+  - oss
+  - bss
+  - itsm
+  - 告警
+  - alarm
+  - alert
+  - 告警分析
+  - 告警收敛
+  - 故障
+  - fault
+  - 故障处置
+  - 根因
+  - root cause
+  - rca
+  - 工单
+  - workorder
+  - work order
+  - 派单
+  - 拓扑
+  - topology
+  - 网元
+  - network element
+  - 链路
+  - 端口
+  - 流量
+  - traffic
+  - 性能指标
+  - kpi
+  - 阈值
+  - 基线
+  - 容量管理
+  - 巡检
+  - inspection
+  - 拨测
+  - 健康检查
+  - 配置管理
+  - 配置基线
+  - 变更管理
+  - cmdb
+  - 资源管理
+  - 资源导入
+  - 设备管理
+  - 监控
+  - monitoring
+  - sla
+  - snmp
+  - netconf
+  - bgp
+  - ospf
+  - mpls
+  - vlan
+  - 路由器
+  - router
+  - 交换机
+  - switch
+  - 防火墙
+  - firewall
+  - 负载均衡
+  - olt
+  - onu
+  - pon
+  - gpon
+  - 核心网
+  - 承载网
+  - 传输网
+  - 接入网
+  - 5g
+  - 4g
+  - lte
+  - 基站
+  - 光缆
+  - 数据中心
+  - idc
+  - 机房
+  - 网络设备
+  - 网络拓扑
+  - 应用拓扑
+
+negative:
+  - 报销
+  - 发票
+  - invoice
+  - 会计
+  - 财务报表
+  - 记账
+  - 医疗
+  - 病历
+  - 临床
+  - 诊断报告
+  - 处方
+  - hipaa
+  - 法律
+  - 合同审查
+  - 诉讼
+  - litigation
+  - 律师
+  - 招聘
+  - 简历
+  - resume
+  - 绩效考核
+  - 薪酬
+  - 营销文案
+  - seo
+  - 社交媒体运营
+  - 小红书
+  - 抖音运营
+  - 电商
+  - 订单履约
+  - 选品
+  - 商品详情页
+  - 股票
+  - 炒股
+  - 交易策略
+  - 加密货币
+  - 区块链投资
+  - 食谱
+  - 菜谱
+  - recipe
+  - 旅行攻略
+  - 行程规划
+  - 小说创作
+  - 写作文
+  - 诗歌创作
+
+borderline:
+  - shell
+  - bash
+  - 命令行
+  - 命令执行
+  - 文件读写
+  - 文件系统
+  - file system
+  - filesystem
+  - grep
+  - http 请求
+  - http request
+  - rest api
+  - 接口调用
+  - 数据库查询
+  - sql
+  - database
+  - kubernetes
+  - k8s
+  - docker
+  - 容器
+  - prometheus
+  - grafana
+  - jira
+  - confluence
+  - 钉钉
+  - 飞书
+  - 企业微信
+  - slack
+  - 邮件发送
+  - 短信
+  - 浏览器
+  - browser
+  - 爬虫
+  - 网页抓取
+  - 翻译
+  - translate
+  - 总结
+  - summarize
+  - 摘要

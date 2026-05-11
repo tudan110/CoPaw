@@ -20,6 +20,10 @@ env:
   QWENPAW_PORT: "8088"
   QWENPAW_DISABLED_CHANNELS: "imessage"
   # QWENPAW_ENABLED_CHANNELS: ""
+  # NB: 安全姿态（skill_scanner 模式、domain_guard、delete_ops_disabled、
+  # tool_guard auto_denied_rules）放在工作目录的 config.json -> "security" 段，
+  # 随 PVC / 镜像内的 working 目录走，换部署方式不会丢。这里不要再固定
+  # QWENPAW_*_MODE / QWENPAW_DELETE_OPS_DISABLED —— 它们只是应急覆盖开关。
 
 # 资源限制
 resources:

@@ -1,3 +1,5 @@
+import { requestPortalApi } from "./portalWorkorders";
+
 const DEFAULT_API_BASE_URL = "/copaw-api/api";
 const DEFAULT_FALLBACK_AGENT_ID = "default";
 
@@ -133,6 +135,33 @@ async function requestCopaw<T>(
   }
 
   throw new Error(lastErrorText || `MCP 请求失败：${lastStatus}`);
+}
+
+export interface McpImportResult {
+  created: boolean;
+  key: string;
+  name: string;
+  domain_category?: string;
+}
+
+/**
+ * Create an MCP client through the Portal's domain-checked endpoint
+ * (POST /portal-api/mcp/import). Off-domain clients are rejected by the
+ * backend with a 422 whose message is shown to the operator.
+ */
+export function importMcpClient(
+  clientKey: string,
+  client: McpClientCreateRequest,
+  agentId?: string,
+): Promise<McpImportResult> {
+  return requestPortalApi<McpImportResult>("/mcp/import", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(agentId ? { "X-Agent-Id": agentId } : {}),
+    },
+    body: JSON.stringify({ client_key: clientKey, client }),
+  });
 }
 
 export const mcpApi = {

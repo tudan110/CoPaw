@@ -1388,14 +1388,7 @@ export default function DigitalEmployeePage({
           ) : isOpsExpertMode ? (
             renderDeferredPanel(<OpsExpertPanel />)
           ) : isMcpMode ? (
-            renderDeferredPanel(
-              <McpPanel
-                agentId={effectiveMcpAgentId}
-                currentEmployeeId={effectiveMcpEmployee?.id || null}
-                currentEmployeeName={effectiveMcpEmployee?.name || currentEmployee.name}
-                onSwitchEmployee={switchMcpEmployee}
-              />,
-            )
+            renderDeferredPanel(<McpPanel />)
           ) : isSkillPoolMode ? (
             renderDeferredPanel(<SkillPoolPanel />)
           ) : isKnowledgeBaseMode ? (

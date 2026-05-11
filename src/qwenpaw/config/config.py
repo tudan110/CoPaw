@@ -1632,6 +1632,43 @@ class SkillScannerConfig(BaseModel):
     )
 
 
+class DomainGuardConfig(BaseModel):
+    """Domain-relevance guard settings under ``security.domain_guard``.
+
+    Before importing a skill / MCP the system checks whether it belongs to
+    this deployment's domain (network management / ops). ``mode``:
+    * ``"block"`` – reject off-domain (and check-unavailable) imports (default).
+    * ``"warn"``  – run the check but only log; do not reject.
+    * ``"off"``   – disable the domain check entirely.
+
+    The corresponding ``QWENPAW_DOMAIN_GUARD_*`` env vars override these
+    fields when set.
+    """
+
+    mode: Literal["block", "warn", "off"] = Field(
+        default="block",
+        description="Domain guard mode: block, warn, or off.",
+    )
+    confidence_threshold: float = Field(
+        default=0.7,
+        ge=0.0,
+        le=1.0,
+        description="LLM verdict confidence below which the verdict is treated "
+        "as borderline and rejected (strict).",
+    )
+    llm_timeout_seconds: float = Field(
+        default=15.0,
+        gt=0.0,
+        le=120.0,
+        description="Per-judgement timeout for the LLM call.",
+    )
+    allowlist: List[str] = Field(
+        default_factory=list,
+        description="Skill names / MCP URL fragments that always pass the "
+        "domain check.",
+    )
+
+
 class SecurityConfig(BaseModel):
     """Top-level ``security`` section in config.json."""
 
@@ -1639,6 +1676,19 @@ class SecurityConfig(BaseModel):
     file_guard: FileGuardConfig = Field(default_factory=FileGuardConfig)
     skill_scanner: SkillScannerConfig = Field(
         default_factory=SkillScannerConfig,
+    )
+    domain_guard: DomainGuardConfig = Field(
+        default_factory=DomainGuardConfig,
+    )
+    delete_ops_disabled: bool = Field(
+        default=True,
+        description=(
+            "When true, a middleware rejects every HTTP DELETE request "
+            "(skill / MCP / agent / cron ... management endpoints). "
+            "Set to false to allow management-API deletes; the agent-side "
+            "'delete via conversation' stays blocked by tool_guard. "
+            "The QWENPAW_DELETE_OPS_DISABLED env var overrides this field."
+        ),
     )
     allow_no_auth_hosts: List[str] = Field(
         default_factory=lambda: ["127.0.0.1", "::1"],
