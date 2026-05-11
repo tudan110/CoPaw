@@ -224,6 +224,8 @@ export function AdvancedModelEntry({
   isKnowledgeBaseActive,
   isInspirationActive,
   isCliActive,
+  isNlCustomizationActive,
+  onOpenNlCustomization,
   onOpenConfig,
   onOpenSettings,
   onOpenCronJobs,
@@ -247,6 +249,8 @@ export function AdvancedModelEntry({
   isKnowledgeBaseActive?: boolean;
   isInspirationActive?: boolean;
   isCliActive?: boolean;
+  isNlCustomizationActive?: boolean;
+  onOpenNlCustomization: () => void;
   onOpenConfig: () => void;
   onOpenSettings: () => void;
   onOpenCronJobs: () => void;
@@ -390,6 +394,19 @@ export function AdvancedModelEntry({
           <div className="sidebar-advanced-item-name">CLI终端</div>
           <div className="sidebar-advanced-item-desc">命令行交互界面</div>
           <div className="sidebar-advanced-item-meta">help / use / ask / run</div>
+        </button>
+        <button
+          className={isNlCustomizationActive ? "sidebar-advanced-item active" : "sidebar-advanced-item"}
+          onClick={onOpenNlCustomization}
+        >
+          <div className="sidebar-advanced-item-icon">
+            <span role="img" aria-label="natural-language-customization">
+              ✨
+            </span>
+          </div>
+          <div className="sidebar-advanced-item-name">自然语言定制</div>
+          <div className="sidebar-advanced-item-desc">客户需求配置工作台</div>
+          <div className="sidebar-advanced-item-meta">预览 / 发布 / 版本留档</div>
         </button>
         <button
           className={isSettingsActive ? "sidebar-advanced-item active" : "sidebar-advanced-item"}

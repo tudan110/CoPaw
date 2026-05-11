@@ -29,6 +29,9 @@ from qwenpaw.extensions.api.alarm_analyst_card_service import (
     build_alarm_analyst_card,
     is_alarm_analyst_card_candidate,
 )
+from qwenpaw.extensions.api.natural_language_customization_api import (
+    router as nl_customization_router,
+)
 from qwenpaw.config.utils import load_config
 from qwenpaw.extensions.api.fault_manual_workorder_models import (
     ManualWorkorderCloseNotificationRequest,
@@ -55,6 +58,7 @@ from qwenpaw.app.agent_context import get_agent_for_request
 from qwenpaw.app.channels.base import ContentType, TextContent
 
 router = APIRouter(prefix="/api/portal", tags=["portal"])
+router.include_router(nl_customization_router)
 app = FastAPI(title="Portal Backend")
 FAULT_DISPOSAL_SCRIPT_TIMEOUT_SECONDS = 45
 PORTAL_REAL_ALARM_ROUTE_DEFAULT_LIMIT = 20

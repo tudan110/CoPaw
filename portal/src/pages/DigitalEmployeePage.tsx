@@ -132,6 +132,10 @@ const KnowledgeBasePanel = lazyNamed(
   () => import("./digital-employee/knowledgeBasePanel"),
   "KnowledgeBasePanel",
 );
+const NaturalLanguageCustomizationPanel = lazyNamed(
+  () => import("./digital-employee/naturalLanguageCustomizationPanel"),
+  "NaturalLanguageCustomizationPanel",
+);
 const TokenUsagePanel = lazyNamed(
   () => import("./digital-employee/tokenUsagePanel"),
   "TokenUsagePanel",
@@ -201,6 +205,7 @@ export default function DigitalEmployeePage({
   const isInspirationMode = activeAdvancedPanel === "inspiration";
   const isCliMode = activeAdvancedPanel === "cli";
   const isResourceImportMode = activeAdvancedPanel === "resource-import";
+  const isNlCustomizationMode = activeAdvancedPanel === "nl-customization";
   const isPortalHome = !selectedEmployee;
   const isPortalHomeChat = isPortalHome && currentView === "chat" && !activeAdvancedPanel;
   const isAlarmWorkbenchMode = Boolean(
@@ -1273,6 +1278,12 @@ export default function DigitalEmployeePage({
             isKnowledgeBaseActive={isKnowledgeBaseMode}
             isInspirationActive={isInspirationMode}
             isCliActive={isCliMode}
+            isNlCustomizationActive={isNlCustomizationMode}
+            onOpenNlCustomization={() =>
+              updateCurrentEmployeeRoute({
+                panel: "nl-customization",
+              })
+            }
             onOpenConfig={openModelConfig}
             onOpenSettings={() =>
               updateCurrentEmployeeRoute({
@@ -1309,7 +1320,7 @@ export default function DigitalEmployeePage({
 
         <div
           className={
-            isModelConfigMode || isSettingsMode || isTokenUsageMode || isOpsExpertMode || isMcpMode || isSkillPoolMode || isKnowledgeBaseMode || isInspirationMode || isCliMode || isResourceImportMode
+            isModelConfigMode || isSettingsMode || isTokenUsageMode || isOpsExpertMode || isMcpMode || isSkillPoolMode || isKnowledgeBaseMode || isInspirationMode || isCliMode || isResourceImportMode || isNlCustomizationMode
               ? `main-content advanced-page-mode${isKnowledgeBaseMode ? " knowledge-base-page-mode" : ""}`
               : currentView === "chat"
                 ? "main-content"
@@ -1417,6 +1428,8 @@ export default function DigitalEmployeePage({
                 onOpenEmployeeChat={openEmployeeChat}
               />,
             )
+          ) : isNlCustomizationMode ? (
+            renderDeferredPanel(<NaturalLanguageCustomizationPanel />)
           ) : isResourceImportMode ? (
             renderDeferredPanel(<ResourceImportPanel />)
           ) : (

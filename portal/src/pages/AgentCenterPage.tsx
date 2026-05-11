@@ -73,6 +73,10 @@ export default function AgentCenterPage() {
               <i className="fa-solid fa-rotate-right" />
               刷新
             </button>
+            <Link className="ghost-btn" to="/nl-customization" style={{ textDecoration: "none" }}>
+              <i className="fa-solid fa-wand-magic-sparkles" />
+              自然语言定制
+            </Link>
             <PortalTraditionalViewButton />
           </div>
         </div>

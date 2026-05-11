@@ -32,6 +32,10 @@ export default function App() {
         <Route path="/" element={renderDeferredPage(<DigitalEmployeePage />)} />
       <Route path="/agent-center" element={renderDeferredPage(<AgentCenterPage />)} />
       <Route
+        path="/nl-customization"
+        element={renderDeferredPage(<DigitalEmployeePage forcedSection="nl-customization" />)}
+      />
+      <Route
         path="/ops-expert"
         element={renderDeferredPage(<DigitalEmployeePage forcedSection="ops-expert" />)}
       />
