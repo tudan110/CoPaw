@@ -652,3 +652,211 @@
     padding: 12px;
   }
 }
+
+/* ---- Skill import dropdown ---- */
+.skill-pool-import-menu {
+  position: relative;
+  display: inline-flex;
+}
+
+.skill-pool-import-dropdown {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 30;
+  min-width: 200px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg-white);
+  box-shadow: 0 18px 40px rgba(2, 6, 23, 0.18);
+}
+
+.skill-pool-import-dropdown button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-primary);
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.skill-pool-import-dropdown button:hover {
+  background: rgba(79, 110, 247, 0.08);
+}
+
+/* ---- Compact modal variant ---- */
+.skill-pool-modal.compact {
+  width: min(560px, 100%);
+}
+
+.skill-pool-badge.enabled {
+  background: rgba(34, 197, 94, 0.16);
+  color: #047857;
+}
+
+/* ---- Assign / enable row ---- */
+.skill-pool-assign-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 0;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+/* ---- Builtin import list ---- */
+.skill-pool-builtin-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 360px;
+  overflow-y: auto;
+  margin-bottom: 14px;
+}
+
+.skill-pool-builtin-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg-gray);
+  cursor: pointer;
+}
+
+.skill-pool-builtin-item input[type="checkbox"] {
+  flex: none;
+}
+
+.skill-pool-builtin-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+
+.skill-pool-builtin-copy strong {
+  font-size: 13px;
+}
+
+.skill-pool-builtin-copy span {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.skill-pool-builtin-copy small {
+  font-size: 11px;
+  color: var(--text-secondary);
+  opacity: 0.8;
+}
+
+.skill-pool-builtin-item select {
+  flex: none;
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-white);
+  font-size: 12px;
+}
+
+.skill-pool-builtin-lang {
+  flex: none;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.skill-pool-builtin-count {
+  margin-right: auto;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+/* ---- Security scan findings ---- */
+.skill-pool-scan-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 420px;
+  overflow-y: auto;
+  margin-bottom: 14px;
+}
+
+.skill-pool-scan-item {
+  padding: 12px 14px;
+  border: 1px solid rgba(239, 68, 68, 0.24);
+  border-radius: 12px;
+  background: rgba(239, 68, 68, 0.05);
+}
+
+.skill-pool-scan-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.skill-pool-scan-head strong {
+  font-size: 13px;
+}
+
+.skill-pool-scan-item p {
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.skill-pool-scan-item small {
+  display: block;
+  margin-top: 6px;
+  font-size: 11px;
+  color: var(--text-secondary);
+  font-family: var(--font-mono, monospace);
+}
+
+.skill-pool-scan-severity {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  background: rgba(148, 163, 184, 0.18);
+  color: var(--text-secondary);
+}
+
+.skill-pool-scan-severity.critical,
+.skill-pool-scan-severity.high {
+  background: rgba(239, 68, 68, 0.16);
+  color: #b91c1c;
+}
+
+.skill-pool-scan-severity.medium {
+  background: rgba(245, 158, 11, 0.16);
+  color: #b45309;
+}
+
+.skill-pool-scan-severity.low,
+.skill-pool-scan-severity.info {
+  background: rgba(59, 130, 246, 0.14);
+  color: #1d4ed8;
+}
+
+.skill-pool-scan-rule {
+  font-size: 11px;
+  color: var(--text-secondary);
+  font-family: var(--font-mono, monospace);
+  opacity: 0.85;
+}
