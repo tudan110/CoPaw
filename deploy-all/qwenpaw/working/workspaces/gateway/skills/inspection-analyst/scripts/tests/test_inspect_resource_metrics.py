@@ -168,10 +168,62 @@ def test_render_markdown_contains_metric_table():
     assert "## 基本信息" in markdown
     assert "db_mysql_001" in markdown
     assert "threads_running" in markdown
+    assert "判定依据" in markdown
     assert "| 巡检时间 | 2026-04-24 10:00:00 |" in markdown
     assert "| 状态 | 正常 |" in markdown
     assert "通知状态" in markdown
     assert "应用已发送" in markdown
+
+
+def test_apply_metric_verification_uses_threshold_rule_first():
+    metric_results = [
+        {
+            "metricName": "CPU 使用率",
+            "metricCode": "os_cpu_usage",
+            "latestValue": "85",
+            "avgValue": "85",
+            "unit": "%",
+            "source": "live",
+        }
+    ]
+    verification_rules = {
+        "source": "live",
+        "ruleConfigs": [
+            {
+                "ruleName": "CPU 使用率阈值",
+                "expression": "os_cpu_usage",
+                "conditions": [{"operator": "6", "staticValues": "90"}],
+            }
+        ],
+        "operatorMap": {"6": "<="},
+    }
+
+    result = INSPECTION_MODULE._apply_metric_verification(metric_results, verification_rules)
+
+    assert result[0]["verificationStatus"] == "正常"
+    assert "CPU 使用率阈值" in result[0]["verificationReason"]
+    assert "<= 90" in result[0]["verificationReason"]
+
+
+def test_apply_metric_verification_marks_missing_rule_for_llm_judgement():
+    metric_results = [
+        {
+            "metricName": "连接数使用率",
+            "metricCode": "mysql_conn_usage",
+            "latestValue": "82",
+            "avgValue": "82",
+            "unit": "%",
+            "source": "live",
+        }
+    ]
+
+    result = INSPECTION_MODULE._apply_metric_verification(
+        metric_results,
+        {"source": "live", "ruleConfigs": [], "operatorMap": {}},
+    )
+
+    assert result[0]["verificationStatus"] == "需大模型判断"
+    assert "未找到对应阈值规则配置" in result[0]["verificationReason"]
 
 
 def test_inspect_resource_metrics_triggers_notification_by_default():
@@ -182,6 +234,14 @@ def test_inspect_resource_metrics_triggers_notification_by_default():
             "metricsTotal": 1,
             "source": "live",
             "metrics": [{"code": "m1", "name": "指标1", "unit": ""}],
+        },
+    ), patch.object(
+        INSPECTION_MODULE,
+        "fetch_inspection_verification_rules",
+        return_value={
+            "source": "live",
+            "ruleConfigs": [{"ruleName": "指标1阈值", "expression": "m1", "conditions": [{"operator": "1", "staticValues": "1"}]}],
+            "operatorMap": {"1": "="},
         },
     ), patch.object(
         INSPECTION_MODULE,
@@ -216,6 +276,7 @@ def test_inspect_resource_metrics_triggers_notification_by_default():
 
     mocked_notify.assert_called_once()
     assert result["notification"]["status"] == "sent"
+    assert result["metricDataBatch"]["metricResults"][0]["verificationStatus"] == "正常"
 
 
 def test_inspect_resource_metrics_can_skip_notification():
@@ -227,6 +288,10 @@ def test_inspect_resource_metrics_can_skip_notification():
             "source": "live",
             "metrics": [{"code": "m1", "name": "指标1", "unit": ""}],
         },
+    ), patch.object(
+        INSPECTION_MODULE,
+        "fetch_inspection_verification_rules",
+        return_value={"source": "live", "ruleConfigs": [], "operatorMap": {}},
     ), patch.object(
         INSPECTION_MODULE,
         "fetch_metric_data_batch",

@@ -19,11 +19,14 @@ import argparse
 import base64
 import hashlib
 import hmac
+import html
 import importlib.util
 import json
 import os
 import re
+import subprocess
 import sys
+import tempfile
 import time
 from pathlib import Path
 from typing import Any
@@ -113,6 +116,111 @@ def _get_timeout(timeout_seconds: int | None) -> int:
     if raw:
         return int(raw)
     return int(getattr(_ALARM_METRIC_HELPERS, "DEFAULT_TIMEOUT_SECONDS", 120))
+
+
+def _normalize_rule_text(value: Any) -> str:
+    return html.unescape(_safe_str(value))
+
+
+def _extract_rows(payload: Any) -> list[dict[str, Any]]:
+    if isinstance(payload, list):
+        return [item for item in payload if isinstance(item, dict)]
+    if not isinstance(payload, dict):
+        return []
+
+    for key in ("rows", "records", "list", "items", "data"):
+        value = payload.get(key)
+        if isinstance(value, list):
+            return [item for item in value if isinstance(item, dict)]
+
+    for key in ("page", "result", "data"):
+        nested = payload.get(key)
+        rows = _extract_rows(nested)
+        if rows:
+            return rows
+
+    return []
+
+
+def _curl_get_json(
+    *,
+    url: str,
+    headers: dict[str, str],
+    timeout_seconds: int,
+) -> dict[str, Any]:
+    with tempfile.NamedTemporaryFile(delete=False) as body_file:
+        body_path = body_file.name
+
+    args = [
+        "curl",
+        "-sS",
+        "--location",
+        "-X",
+        "GET",
+        "--connect-timeout",
+        str(int(timeout_seconds)),
+        "--max-time",
+        str(int(timeout_seconds)),
+        "-o",
+        body_path,
+        "-w",
+        "%{http_code}",
+    ]
+    for key, value in headers.items():
+        args.extend(["-H", f"{key}: {value}"])
+    args.append(url)
+
+    try:
+        completed = subprocess.run(
+            args,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            timeout=max(int(timeout_seconds) + 5, 10),
+            check=False,
+        )
+        if completed.returncode != 0:
+            raise RuntimeError((completed.stderr or completed.stdout or "curl 请求失败").strip())
+        status_code = int((completed.stdout or "").strip() or "0")
+        with open(body_path, "r", encoding="utf-8", errors="replace") as handle:
+            body_text = handle.read()
+        if status_code >= 400:
+            raise requests.HTTPError(f"HTTP {status_code}: {body_text[:200]}")
+        if not body_text.strip():
+            raise ValueError("curl 接口返回空响应")
+        return json.loads(body_text)
+    finally:
+        try:
+            os.unlink(body_path)
+        except OSError:
+            pass
+
+
+def _get_json_with_fallback(
+    *,
+    url: str,
+    headers: dict[str, str],
+    timeout_seconds: int,
+) -> tuple[dict[str, Any], str]:
+    try:
+        response = requests.get(
+            url,
+            headers=headers,
+            timeout=timeout_seconds,
+        )
+        response.raise_for_status()
+        response_text = response.text.strip()
+        if not response_text:
+            raise ValueError("接口返回空响应")
+        return response.json(), "requests"
+    except (requests.exceptions.RequestException, ValueError, json.JSONDecodeError) as error:
+        if not _ALARM_METRIC_HELPERS._should_fallback_to_curl(error):  # noqa: SLF001
+            raise
+        return _curl_get_json(
+            url=url,
+            headers=headers,
+            timeout_seconds=timeout_seconds,
+        ), "curl"
 
 
 def _get_notify_env(name: str) -> str:
@@ -232,6 +340,201 @@ def fetch_all_metric_definitions(
     }
 
 
+def _normalize_inspection_rule_config(item: dict[str, Any]) -> dict[str, Any]:
+    params = [
+        {
+            "operator": _safe_str(param.get("operator")),
+            "staticValues": _normalize_rule_text(param.get("staticValues")),
+        }
+        for param in (item.get("opInspectionRuleConfigParaList") or [])
+        if isinstance(param, dict)
+    ]
+    return {
+        "ruleName": _safe_str(item.get("ruleName")),
+        "expression": _safe_str(item.get("expression")),
+        "ciType": _safe_str(item.get("ciType")),
+        "modelId": _safe_str(item.get("modelId")),
+        "status": _safe_str(item.get("status")),
+        "conditions": [param for param in params if param.get("operator")],
+        "raw": item,
+    }
+
+
+def _is_enabled_rule_config(item: dict[str, Any]) -> bool:
+    status = _safe_str(item.get("status"))
+    return not status or status in {"1", "true", "TRUE", "enabled", "active", "启用"}
+
+
+def fetch_inspection_rule_configs(
+    *,
+    api_base_url: str | None = None,
+    token: str | None = None,
+    timeout_seconds: int | None = None,
+    page_size: int | None = None,
+    max_pages: int = DEFAULT_MAX_PAGES,
+) -> dict[str, Any]:
+    resolved_page_size = _get_page_size(page_size)
+    if resolved_page_size < 1:
+        raise ValueError("page_size 必须大于等于 1")
+    if max_pages < 1:
+        raise ValueError("max_pages 必须大于等于 1")
+
+    base_url = _ALARM_METRIC_HELPERS._normalize_base_url(api_base_url)  # noqa: SLF001
+    headers = {
+        "Accept": "application/json",
+        "Authorization": f"Bearer {_ALARM_METRIC_HELPERS._get_token(token)}",  # noqa: SLF001
+    }
+    resolved_timeout = _get_timeout(timeout_seconds)
+    all_rules: list[dict[str, Any]] = []
+    first_url = ""
+
+    try:
+        for page_num in range(1, max_pages + 1):
+            url = (
+                f"{base_url}/resource/inspection/config/list"
+                f"?pageSize={resolved_page_size}&pageNum={page_num}"
+            )
+            if not first_url:
+                first_url = url
+            response_payload, _transport = _get_json_with_fallback(
+                url=url,
+                headers=headers,
+                timeout_seconds=resolved_timeout,
+            )
+            page_rules = [_normalize_inspection_rule_config(item) for item in _extract_rows(response_payload)]
+            enabled_rules = [
+                item
+                for item in page_rules
+                if _is_enabled_rule_config(item) and item.get("expression") and item.get("conditions")
+            ]
+            all_rules.extend(enabled_rules)
+            total = int(response_payload.get("total") or 0)
+            if not page_rules or len(page_rules) < resolved_page_size or (total and page_num * resolved_page_size >= total):
+                break
+    except (requests.exceptions.RequestException, ValueError, RuntimeError, json.JSONDecodeError) as error:
+        return {
+            "code": 200,
+            "msg": "巡检阈值规则查询失败，将回退到经验规则",
+            "source": "unavailable",
+            "fallbackReason": str(error),
+            "url": first_url,
+            "rulesTotal": 0,
+            "ruleConfigs": [],
+        }
+
+    return {
+        "code": 200,
+        "msg": "查询成功",
+        "source": "live",
+        "fallbackReason": None,
+        "url": first_url,
+        "rulesTotal": len(all_rules),
+        "ruleConfigs": all_rules,
+    }
+
+
+def fetch_verification_rule_dict(
+    *,
+    api_base_url: str | None = None,
+    token: str | None = None,
+    timeout_seconds: int | None = None,
+    page_size: int | None = None,
+) -> dict[str, Any]:
+    resolved_page_size = _get_page_size(page_size)
+    if resolved_page_size < 1:
+        raise ValueError("page_size 必须大于等于 1")
+
+    base_url = _ALARM_METRIC_HELPERS._normalize_base_url(api_base_url)  # noqa: SLF001
+    headers = {
+        "Accept": "application/json",
+        "Authorization": f"Bearer {_ALARM_METRIC_HELPERS._get_token(token)}",  # noqa: SLF001
+    }
+    resolved_timeout = _get_timeout(timeout_seconds)
+    url = (
+        f"{base_url}/admin/dict/data/list"
+        f"?pageNum=1&pageSize={resolved_page_size}&dictType=verification_rules_new"
+    )
+
+    try:
+        response_payload, _transport = _get_json_with_fallback(
+            url=url,
+            headers=headers,
+            timeout_seconds=resolved_timeout,
+        )
+        operator_map: dict[str, str] = {}
+        for item in _extract_rows(response_payload):
+            code = _safe_str(item.get("dictValue") or item.get("value") or item.get("dictCode"))
+            label = _normalize_rule_text(item.get("dictLabel") or item.get("label") or item.get("dictName"))
+            if code and label:
+                operator_map[code] = label
+        if not operator_map:
+            raise ValueError("verification_rules_new 字典未返回可用映射")
+    except (requests.exceptions.RequestException, ValueError, RuntimeError, json.JSONDecodeError) as error:
+        return {
+            "code": 200,
+            "msg": "规则操作符字典查询失败，将回退到经验规则",
+            "source": "unavailable",
+            "fallbackReason": str(error),
+            "url": url,
+            "operatorMap": {},
+        }
+
+    return {
+        "code": 200,
+        "msg": "查询成功",
+        "source": "live",
+        "fallbackReason": None,
+        "url": url,
+        "operatorMap": operator_map,
+    }
+
+
+def fetch_inspection_verification_rules(
+    *,
+    api_base_url: str | None = None,
+    token: str | None = None,
+    timeout_seconds: int | None = None,
+    page_size: int | None = None,
+) -> dict[str, Any]:
+    rule_configs = fetch_inspection_rule_configs(
+        api_base_url=api_base_url,
+        token=token,
+        timeout_seconds=timeout_seconds,
+        page_size=page_size,
+    )
+    operator_dict = fetch_verification_rule_dict(
+        api_base_url=api_base_url,
+        token=token,
+        timeout_seconds=timeout_seconds,
+        page_size=page_size,
+    )
+    sources = {_safe_str(rule_configs.get("source")), _safe_str(operator_dict.get("source"))}
+    if sources == {"live"}:
+        source = "live"
+    elif "live" in sources:
+        source = "partial"
+    else:
+        source = "unavailable"
+
+    fallback_reasons = [
+        _safe_str(rule_configs.get("fallbackReason")),
+        _safe_str(operator_dict.get("fallbackReason")),
+    ]
+    return {
+        "code": 200,
+        "msg": "查询成功" if source == "live" else "阈值规则查询未完全成功，将按规则/经验混合判断",
+        "source": source,
+        "fallbackReason": "；".join(reason for reason in fallback_reasons if reason) or None,
+        "ruleConfigsSource": _safe_str(rule_configs.get("source")) or "unknown",
+        "operatorDictSource": _safe_str(operator_dict.get("source")) or "unknown",
+        "ruleConfigsTotal": int(rule_configs.get("rulesTotal") or 0),
+        "ruleConfigs": rule_configs.get("ruleConfigs") or [],
+        "operatorMap": operator_dict.get("operatorMap") or {},
+        "ruleConfigsFallbackReason": rule_configs.get("fallbackReason"),
+        "operatorDictFallbackReason": operator_dict.get("fallbackReason"),
+    }
+
+
 def _build_mock_metric_data_batch_payload(
     *,
     res_id: str | int,
@@ -300,6 +603,16 @@ def _extract_metric_data_results(
     return results
 
 
+def _build_rule_config_index(rule_configs: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
+    index: dict[str, list[dict[str, Any]]] = {}
+    for config in rule_configs:
+        expression = _safe_str(config.get("expression")).lower()
+        if not expression:
+            continue
+        index.setdefault(expression, []).append(config)
+    return index
+
+
 def _notification_metric_preview(metric_results: list[dict[str, Any]], limit: int = 5) -> str:
     previews: list[str] = []
     for item in metric_results[:limit]:
@@ -316,21 +629,12 @@ def _format_notification_metric_value(item: dict[str, Any]) -> str:
 def _collect_inspection_findings(metric_results: list[dict[str, Any]]) -> list[str]:
     findings: list[str] = []
     for item in metric_results:
-        label = _safe_str(item.get("metricName") or item.get("metricCode"))
-        numeric = _parse_metric_numeric_value(
-            item.get("latestValue") or item.get("avgValue"),
-        )
-        if numeric is None:
+        status = _metric_status(item)
+        if status not in {"异常", "需关注", "需大模型判断"}:
             continue
         value = _format_notification_metric_value(item)
-        if "连接失败" in label and numeric > 0:
-            findings.append(f"{label}={value}")
-            continue
-        if ("慢查询" in label or "锁" in label) and numeric > 0:
-            findings.append(f"{label}={value}")
-            continue
-        if "使用率" in label and numeric >= 80:
-            findings.append(f"{label}={value}")
+        label = _safe_str(item.get("metricName") or item.get("metricCode"))
+        findings.append(f"{label}={value}（{_metric_reason(item)}）")
     return findings
 
 
@@ -344,11 +648,11 @@ def _build_inspection_conclusion(metric_results: list[dict[str, Any]]) -> str:
 
     if status == "异常":
         if finding_text:
-            return f"发现异常指标：{finding_text}，建议立即排查资源连接与服务状态。"
+            return f"发现异常指标：{finding_text}，建议优先按阈值规则排查对应资源状态。"
         return "存在异常指标，建议立即排查资源连接与服务状态。"
     if status == "需关注":
         if finding_text:
-            return f"发现需关注指标：{finding_text}，建议持续观察并进一步核查。"
+            return f"发现需关注指标：{finding_text}，其中未命中规则配置的指标需结合上下文由大模型进一步判断。"
         return "存在需关注指标，建议持续观察并进一步核查。"
     return "各项指标均在正常范围，资源运行健康。"
 
@@ -968,6 +1272,12 @@ def inspect_resource_metrics(
         token=token,
         timeout_seconds=timeout_seconds,
     )
+    verification_rules = fetch_inspection_verification_rules(
+        api_base_url=api_base_url,
+        token=token,
+        timeout_seconds=timeout_seconds,
+        page_size=page_size,
+    )
     metric_data_batch = fetch_metric_data_batch(
         res_id=res_id,
         metric_definitions=definitions.get("metrics") or [],
@@ -978,6 +1288,10 @@ def inspect_resource_metrics(
         token=token,
         timeout_seconds=timeout_seconds,
     )
+    metric_data_batch["metricResults"] = _apply_metric_verification(
+        metric_data_batch.get("metricResults") or [],
+        verification_rules,
+    )
     result = {
         "code": 200,
         "msg": "查询成功",
@@ -986,6 +1300,7 @@ def inspect_resource_metrics(
         "metricType": _safe_str(metric_type),
         "resId": _safe_str(res_id),
         "definitions": definitions,
+        "verificationRules": verification_rules,
         "metricDataBatch": metric_data_batch,
     }
     result["notification"] = _notify_inspection_result(result) if notify else {
@@ -1002,8 +1317,8 @@ def _render_metric_data_table(metric_results: list[dict[str, Any]]) -> str:
         return "- 未获取到指标值"
 
     lines = [
-        "| 指标名 | 指标编码 | 最近值 | 采样时间 | Min/Avg/Max | 数据来源 |",
-        "|---|---|---|---|---|---|",
+        "| 指标名 | 指标编码 | 最近值 | 采样时间 | Min/Avg/Max | 数据来源 | 判定 | 判定依据 |",
+        "|---|---|---|---|---|---|---|---|",
     ]
     for item in metric_results:
         value = _safe_str(item.get("latestValue") or item.get("avgValue") or "-")
@@ -1018,13 +1333,15 @@ def _render_metric_data_table(metric_results: list[dict[str, Any]]) -> str:
             ]
         )
         lines.append(
-            "| {name} | {code} | {value} | {sample_time} | {mam} | {source} |".format(
+            "| {name} | {code} | {value} | {sample_time} | {mam} | {source} | {status} | {reason} |".format(
                 name=_safe_str(item.get("metricName") or item.get("metricCode") or "-").replace("|", "\\|"),
                 code=_safe_str(item.get("metricCode") or "-").replace("|", "\\|"),
                 value=value.replace("|", "\\|"),
                 sample_time=_safe_str(item.get("sampleTime") or "-").replace("|", "\\|"),
                 mam=min_avg_max.replace("|", "\\|"),
                 source=_safe_str(item.get("source") or "-").replace("|", "\\|"),
+                status=_metric_status(item).replace("|", "\\|"),
+                reason=_metric_reason(item).replace("|", "\\|"),
             )
         )
     return "\n".join(lines)
@@ -1051,24 +1368,232 @@ def _parse_metric_numeric_value(value: Any) -> float | None:
         return None
 
 
+def _split_rule_static_values(value: Any) -> list[str]:
+    text = _normalize_rule_text(value)
+    if not text:
+        return []
+    if text.startswith("[") and text.endswith("]"):
+        try:
+            parsed = json.loads(text)
+        except json.JSONDecodeError:
+            parsed = None
+        if isinstance(parsed, list):
+            return [_normalize_rule_text(item) for item in parsed if _normalize_rule_text(item)]
+    return [item.strip() for item in re.split(r"[;,，；]+", text) if item.strip()]
+
+
+def _format_rule_condition(operator_label: str, static_values: list[str]) -> str:
+    if not static_values:
+        return operator_label
+    if operator_label in {"介于", "不介于"} and len(static_values) >= 2:
+        return f"{operator_label} {static_values[0]} ~ {static_values[1]}"
+    return f"{operator_label} {' / '.join(static_values)}"
+
+
+def _values_equal(left: str, right: str) -> bool:
+    left_number = _parse_metric_numeric_value(left)
+    right_number = _parse_metric_numeric_value(right)
+    if left_number is not None and right_number is not None:
+        return left_number == right_number
+    return left.strip().lower() == right.strip().lower()
+
+
+def _evaluate_rule_condition(
+    metric_value: str,
+    operator_label: str,
+    static_values: list[str],
+) -> bool | None:
+    normalized_operator = operator_label.strip()
+    numeric_value = _parse_metric_numeric_value(metric_value)
+
+    if normalized_operator == "=":
+        return bool(static_values) and _values_equal(metric_value, static_values[0])
+    if normalized_operator == "!=":
+        return bool(static_values) and not _values_equal(metric_value, static_values[0])
+    if normalized_operator in {">", "<", ">=", "<="}:
+        threshold = _parse_metric_numeric_value(static_values[0] if static_values else "")
+        if numeric_value is None or threshold is None:
+            return None
+        if normalized_operator == ">":
+            return numeric_value > threshold
+        if normalized_operator == "<":
+            return numeric_value < threshold
+        if normalized_operator == ">=":
+            return numeric_value >= threshold
+        return numeric_value <= threshold
+    if normalized_operator in {"介于", "不介于"}:
+        if len(static_values) < 2:
+            return None
+        lower = _parse_metric_numeric_value(static_values[0])
+        upper = _parse_metric_numeric_value(static_values[1])
+        if numeric_value is None or lower is None or upper is None:
+            return None
+        is_between = lower <= numeric_value <= upper
+        return is_between if normalized_operator == "介于" else not is_between
+    if normalized_operator == "包含":
+        return bool(static_values) and static_values[0].lower() in metric_value.lower()
+    if normalized_operator == "不包含":
+        return bool(static_values) and static_values[0].lower() not in metric_value.lower()
+    if normalized_operator in {"开始以", "开始不是以"}:
+        if not static_values:
+            return None
+        starts = metric_value.lower().startswith(static_values[0].lower())
+        return starts if normalized_operator == "开始以" else not starts
+    if normalized_operator in {"结束以", "结束不是以"}:
+        if not static_values:
+            return None
+        ends = metric_value.lower().endswith(static_values[0].lower())
+        return ends if normalized_operator == "结束以" else not ends
+    if normalized_operator in {"是空的", "不是空的"}:
+        is_empty = not metric_value.strip()
+        return is_empty if normalized_operator == "是空的" else not is_empty
+    if normalized_operator in {"在列表", "不在列表"}:
+        if not static_values:
+            return None
+        matched = any(_values_equal(metric_value, item) for item in static_values)
+        return matched if normalized_operator == "在列表" else not matched
+    if normalized_operator == "使用语法匹配值":
+        if not static_values:
+            return None
+        try:
+            return re.search(static_values[0], metric_value) is not None
+        except re.error:
+            return None
+    return None
+
+
+def _derive_heuristic_metric_status(item: dict[str, Any]) -> tuple[str, str]:
+    label = _safe_str(item.get("metricName") or item.get("metricCode"))
+    numeric = _parse_metric_numeric_value(item.get("latestValue") or item.get("avgValue"))
+    if numeric is None:
+        return "正常", "经验规则未识别到明显异常"
+    if "连接失败" in label and numeric > 0:
+        return "异常", "经验规则判定连接失败次数大于 0"
+    if ("慢查询" in label or "锁" in label) and numeric > 0:
+        return "需关注", "经验规则判定慢查询或锁相关指标大于 0"
+    if "使用率" in label and numeric >= 80:
+        return "需关注", "经验规则判定使用率达到 80% 及以上"
+    return "正常", "经验规则未发现异常"
+
+
+def _resolve_metric_verification(
+    item: dict[str, Any],
+    *,
+    rule_index: dict[str, list[dict[str, Any]]],
+    operator_map: dict[str, str],
+    verification_source: str,
+) -> dict[str, Any]:
+    metric_code = _safe_str(item.get("metricCode"))
+    metric_name = _safe_str(item.get("metricName") or metric_code) or "指标"
+    metric_value = _safe_str(item.get("latestValue") or item.get("avgValue"))
+
+    if verification_source != "live":
+        heuristic_status, heuristic_reason = _derive_heuristic_metric_status(item)
+        return {
+            **item,
+            "verificationStatus": heuristic_status,
+            "verificationReason": f"阈值规则不可用，{heuristic_reason}",
+            "verificationSource": "heuristic",
+            "matchedRuleName": "",
+        }
+
+    matched_rules = rule_index.get(metric_code.lower(), [])
+    if not matched_rules:
+        return {
+            **item,
+            "verificationStatus": "需大模型判断",
+            "verificationReason": "未找到对应阈值规则配置",
+            "verificationSource": "llm",
+            "matchedRuleName": "",
+        }
+
+    config = matched_rules[0]
+    rule_name = _safe_str(config.get("ruleName")) or metric_name
+    unsupported_conditions: list[str] = []
+    failed_conditions: list[str] = []
+    passed_conditions: list[str] = []
+    for condition in config.get("conditions") or []:
+        operator_label = operator_map.get(_safe_str(condition.get("operator"))) or _safe_str(condition.get("operator"))
+        static_values = _split_rule_static_values(condition.get("staticValues"))
+        condition_text = _format_rule_condition(operator_label, static_values)
+        matched = _evaluate_rule_condition(metric_value, operator_label, static_values)
+        if matched is True:
+            passed_conditions.append(condition_text)
+            continue
+        if matched is False:
+            failed_conditions.append(condition_text)
+            continue
+        unsupported_conditions.append(condition_text)
+
+    if failed_conditions:
+        return {
+            **item,
+            "verificationStatus": "异常",
+            "verificationReason": f"不满足规则“{rule_name}”：{'；'.join(failed_conditions)}，当前值 {metric_value or '-'}",
+            "verificationSource": "rule",
+            "matchedRuleName": rule_name,
+        }
+    if unsupported_conditions:
+        return {
+            **item,
+            "verificationStatus": "需大模型判断",
+            "verificationReason": f"规则“{rule_name}”包含暂不支持自动判定的条件：{'；'.join(unsupported_conditions)}",
+            "verificationSource": "llm",
+            "matchedRuleName": rule_name,
+        }
+    return {
+        **item,
+        "verificationStatus": "正常",
+        "verificationReason": f"满足规则“{rule_name}”：{'；'.join(passed_conditions) or '命中阈值配置'}",
+        "verificationSource": "rule",
+        "matchedRuleName": rule_name,
+    }
+
+
+def _apply_metric_verification(
+    metric_results: list[dict[str, Any]],
+    verification_rules: dict[str, Any],
+) -> list[dict[str, Any]]:
+    rule_index = _build_rule_config_index(verification_rules.get("ruleConfigs") or [])
+    operator_map = verification_rules.get("operatorMap") or {}
+    verification_source = _safe_str(verification_rules.get("source")) or "unavailable"
+    return [
+        _resolve_metric_verification(
+            item,
+            rule_index=rule_index,
+            operator_map=operator_map,
+            verification_source=verification_source,
+        )
+        for item in metric_results
+    ]
+
+
+def _metric_status(item: dict[str, Any]) -> str:
+    status = _safe_str(item.get("verificationStatus"))
+    if status:
+        return status
+    heuristic_status, _heuristic_reason = _derive_heuristic_metric_status(item)
+    return heuristic_status
+
+
+def _metric_reason(item: dict[str, Any]) -> str:
+    reason = _safe_str(item.get("verificationReason"))
+    if reason:
+        return reason
+    _heuristic_status, heuristic_reason = _derive_heuristic_metric_status(item)
+    return heuristic_reason
+
+
 def _derive_inspection_status(metric_results: list[dict[str, Any]]) -> str:
     if not metric_results:
         return "未知"
 
     has_warning = False
     for item in metric_results:
-        label = _safe_str(item.get("metricName") or item.get("metricCode"))
-        numeric = _parse_metric_numeric_value(
-            item.get("latestValue") or item.get("avgValue"),
-        )
-
-        if numeric is None:
-            continue
-        if "连接失败" in label and numeric > 0:
+        status = _metric_status(item)
+        if status == "异常":
             return "异常"
-        if ("慢查询" in label or "锁" in label) and numeric > 0:
-            has_warning = True
-        if "使用率" in label and numeric >= 80:
+        if status in {"需关注", "需大模型判断"}:
             has_warning = True
 
     return "需关注" if has_warning else "正常"
@@ -1076,6 +1601,7 @@ def _derive_inspection_status(metric_results: list[dict[str, Any]]) -> str:
 
 def render_markdown(result: dict[str, Any]) -> str:
     definitions = result.get("definitions") or {}
+    verification_rules = result.get("verificationRules") or {}
     metric_batch = result.get("metricDataBatch") or {}
     metric_results = metric_batch.get("metricResults") or []
     notification = result.get("notification") or {}
@@ -1124,6 +1650,10 @@ def render_markdown(result: dict[str, Any]) -> str:
         lines.append(f"- 指标定义回退原因：{definitions['fallbackReason']}")
     if metric_batch.get("fallbackReason"):
         lines.append(f"- 指标数据回退原因：{metric_batch['fallbackReason']}")
+    if verification_rules.get("ruleConfigsFallbackReason"):
+        lines.append(f"- 阈值规则回退原因：{verification_rules['ruleConfigsFallbackReason']}")
+    if verification_rules.get("operatorDictFallbackReason"):
+        lines.append(f"- 规则字典回退原因：{verification_rules['operatorDictFallbackReason']}")
     return "\n".join(lines)
 
 

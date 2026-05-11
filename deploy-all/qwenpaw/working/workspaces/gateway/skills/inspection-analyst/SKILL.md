@@ -186,6 +186,10 @@ INSPECTION_NOTIFY_MENTION_ALL=true
 
 - 必须使用 `INOE_API_BASE_URL` 与 `INOE_API_TOKEN`
 - `getMetricDefinitions` 与 `getMetricData` 共用同一个 base URL
+- 巡检指标判定时，优先查询 `/resource/inspection/config/list` 获取该指标对应的阈值规则
+- `operator` 不是直接可读文案，必须再查询 `/admin/dict/data/list?dictType=verification_rules_new` 做字典解码
+- 命中规则配置时：**满足规则=正常，不满足规则=异常**
+- 如果某个指标没有对应规则配置，必须明确标注“需结合上下文由大模型判断”，不要擅自伪造阈值
 - 缺少 token 时，必须明确报错，不能假装查询成功
 - `INSPECTION_NOTIFY_PUSH_URL` 是应用推送接口地址，可对接量子密信 `/api/push/{token}`
 - 支持按配置同时推送到：应用（可配置为量子密信）、钉钉、飞书
@@ -204,9 +208,10 @@ INSPECTION_NOTIFY_MENTION_ALL=true
 1. 查询全部指标定义
 2. 提取全部指标编码
 3. 调用 `/resource/pm/getMetricData`
-4. 使用 `resId + queryKeys=[全部指标编码]` 一次性查询指标数据
-5. 在通知地址已配置时，自动把巡检结果推送到应用（可配置为量子密信）、钉钉、飞书
-6. 输出 Markdown / JSON 结果
+4. 调用 `/resource/inspection/config/list` 与 `verification_rules_new` 字典，给指标结果补齐阈值判定依据
+5. 使用 `resId + queryKeys=[全部指标编码]` 一次性查询指标数据
+6. 在通知地址已配置时，自动把巡检结果推送到应用（可配置为量子密信）、钉钉、飞书
+7. 输出 Markdown / JSON 结果，并标注每个指标是“正常 / 异常 / 需大模型判断”以及对应依据
 
 常用方式：
 
