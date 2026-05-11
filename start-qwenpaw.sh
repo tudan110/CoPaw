@@ -33,6 +33,12 @@ export QWENPAW_WORKING_DIR="$WORKING_DIR"
 # Knowledge-base retrieval defaults. Set in env before launch to override.
 export KNOWLEDGE_BASE_RERANKER="${KNOWLEDGE_BASE_RERANKER:-llm}"
 export KNOWLEDGE_BASE_HYDE_ENABLED="${KNOWLEDGE_BASE_HYDE_ENABLED:-true}"
+
+# NB: the security posture (skill_scanner mode, domain_guard, delete_ops_disabled,
+# tool_guard auto_denied_rules) lives in config.json -> "security" (it travels
+# with WORKING_DIR, so it survives any deployment method). The QWENPAW_*_MODE /
+# QWENPAW_DELETE_OPS_DISABLED env vars are only emergency overrides — don't pin
+# them here.
 VENV_DIR=".venv"
 PYTHON_BIN="$SCRIPT_DIR/$VENV_DIR/bin/python"
 UV_LOCAL_BIN="$HOME/.local/bin/uv"

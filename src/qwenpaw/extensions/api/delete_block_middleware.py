@@ -3,12 +3,16 @@
 
 Internal hardening: deletion of any registered resource (skill, provider,
 agent, MCP server, local model, chat history, cron job, env var, config
-entry, ...) is forbidden across the operations stack. Operators should
+entry, ...) can be forbidden across the operations stack. Operators should
 replace destructive removal with archiving / disabling flows instead.
 
-Toggle via env var ``QWENPAW_DELETE_OPS_DISABLED`` (default ``true``).
-Set to ``false`` only during emergency maintenance with explicit change
-control approval.
+Resolution order for whether DELETE is blocked:
+    1. env var ``QWENPAW_DELETE_OPS_DISABLED`` (if set) — emergency override
+    2. ``config.json`` -> ``security.delete_ops_disabled``
+    3. default ``True``
+
+So the deployment posture lives in ``config.json`` (which travels with the
+working dir under every deployment method); the env var is just an override.
 """
 from __future__ import annotations
 
@@ -23,13 +27,24 @@ from ...constant import EnvVarLoader
 logger = logging.getLogger(__name__)
 
 _TRUE_STRINGS = {"true", "1", "yes", "on"}
+_FALSE_STRINGS = {"false", "0", "no", "off"}
 
 
 def _delete_ops_disabled() -> bool:
     raw = EnvVarLoader.get_str("QWENPAW_DELETE_OPS_DISABLED")
-    if raw is None or not raw.strip():
+    if raw is not None and raw.strip():
+        token = raw.strip().lower()
+        if token in _FALSE_STRINGS:
+            return False
+        if token in _TRUE_STRINGS:
+            return True
+        # unrecognised value -> fall through to config
+    try:
+        from ...config import load_config
+
+        return bool(load_config().security.delete_ops_disabled)
+    except Exception:  # pragma: no cover - defensive (config not ready)
         return True
-    return raw.strip().lower() in _TRUE_STRINGS
 
 
 class DeleteBlockMiddleware(BaseHTTPMiddleware):

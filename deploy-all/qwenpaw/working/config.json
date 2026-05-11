@@ -565,7 +565,8 @@
         "TOOL_CMD_DANGEROUS_MV",
         "TOOL_CMD_FS_DESTRUCTION",
         "TOOL_CMD_INTERPRETER_DELETE",
-        "TOOL_CMD_NATIVE_DELETE_TOOLS"
+        "TOOL_CMD_NATIVE_DELETE_TOOLS",
+        "TOOL_CMD_HTTP_DELETE"
       ],
       "custom_rules": [],
       "disabled_rules": []
@@ -575,9 +576,16 @@
       "sensitive_files": []
     },
     "skill_scanner": {
-      "mode": "warn",
+      "mode": "block",
       "timeout": 30,
       "whitelist": []
+    },
+    "delete_ops_disabled": false,
+    "domain_guard": {
+      "mode": "block",
+      "confidence_threshold": 0.7,
+      "llm_timeout_seconds": 15,
+      "allowlist": []
     }
   },
   "show_tool_details": true,
