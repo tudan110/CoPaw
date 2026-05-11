@@ -69,6 +69,8 @@ include-package-data = true
     "security/tool_guard/rules/**",
     "security/skill_scanner/rules/**",
     "security/skill_scanner/data/**",
+    "extensions/api/domain_guard/*.md",
+    "extensions/api/domain_guard/*.yaml",
 ]
 
 [build-system]

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import {
   McpClientCreateRequest,
@@ -6,10 +6,11 @@ import {
   McpClientUpdateRequest,
   McpToolInfo,
   McpTransport,
+  importMcpClient,
   mcpApi,
 } from "../../api/mcp";
-import DigitalEmployeeAvatar from "../../components/DigitalEmployeeAvatar";
-import { digitalEmployees } from "../../data/portalData";
+import { type McpImportEntry, parseMcpImportText } from "../../api/mcpImport";
+import { portalGatewayAgentId } from "../../config/portalBranding";
 import "../mcp-panel.css";
 
 type NoticeState =
@@ -176,17 +177,12 @@ function buildPayload(form: FormState): {
   return { clientKey, payload };
 }
 
-export function McpPanel({
-  agentId,
-  currentEmployeeId,
-  currentEmployeeName,
-  onSwitchEmployee,
-}: {
-  agentId: string;
-  currentEmployeeId: string | null;
-  currentEmployeeName: string;
-  onSwitchEmployee: (employeeId: string | null) => void;
-}) {
+export function McpPanel() {
+  // The Portal only exposes a single public entry agent ("gateway"); MCP
+  // clients are always read from / written to that agent. The internal
+  // per-employee agents are intentionally not surfaced here.
+  const agentId = portalGatewayAgentId;
+
   const [clients, setClients] = useState<McpClientInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -199,8 +195,10 @@ export function McpPanel({
   const [selectedClientKey, setSelectedClientKey] = useState<string | null>(null);
   const [tools, setTools] = useState<Record<string, McpToolInfo[]>>({});
   const [toolsLoadingKey, setToolsLoadingKey] = useState<string | null>(null);
-  const [employeeMenuOpen, setEmployeeMenuOpen] = useState(false);
-  const employeeMenuRef = useRef<HTMLDivElement | null>(null);
+  const [importModalOpen, setImportModalOpen] = useState(false);
+  const [importText, setImportText] = useState("");
+  const [importBusy, setImportBusy] = useState(false);
+  const [importError, setImportError] = useState("");
 
   const loadClients = useCallback(async () => {
     setLoading(true);
@@ -221,26 +219,8 @@ export function McpPanel({
     setSelectedClientKey(null);
     setTools({});
     setNotice(null);
-    setEmployeeMenuOpen(false);
     void loadClients();
   }, [agentId, loadClients]);
-
-  useEffect(() => {
-    if (!employeeMenuOpen) {
-      return;
-    }
-
-    const handlePointerDown = (event: MouseEvent) => {
-      if (!employeeMenuRef.current?.contains(event.target as Node)) {
-        setEmployeeMenuOpen(false);
-      }
-    };
-
-    document.addEventListener("mousedown", handlePointerDown);
-    return () => {
-      document.removeEventListener("mousedown", handlePointerDown);
-    };
-  }, [employeeMenuOpen]);
 
   const filteredClients = useMemo(() => {
     const keyword = search.trim().toLowerCase();
@@ -268,10 +248,6 @@ export function McpPanel({
   const selectedClient = selectedClientKey
     ? clients.find((client) => client.key === selectedClientKey) || null
     : null;
-  const currentScopeEmployee = useMemo(
-    () => digitalEmployees.find((employee) => employee.id === currentEmployeeId) || null,
-    [currentEmployeeId],
-  );
 
   const openCreateModal = () => {
     setEditingClient(null);
@@ -326,7 +302,8 @@ export function McpPanel({
         await mcpApi.updateClient(clientKey, payload, agentId);
         setNotice({ type: "success", message: `已更新 MCP：${payload.name}` });
       } else {
-        await mcpApi.createClient(clientKey, payload as McpClientCreateRequest, agentId);
+        // Domain-checked create: off-domain clients are rejected by the backend.
+        await importMcpClient(clientKey, payload as McpClientCreateRequest, agentId);
         setNotice({ type: "success", message: `已新增 MCP：${payload.name}` });
       }
 
@@ -340,6 +317,87 @@ export function McpPanel({
     } finally {
       setSaving(false);
     }
+  };
+
+  const openImportModal = () => {
+    setImportText("");
+    setImportError("");
+    setImportModalOpen(true);
+  };
+
+  const closeImportModal = () => {
+    if (importBusy) {
+      return;
+    }
+    setImportModalOpen(false);
+  };
+
+  const handleImportSubmit = async () => {
+    let entries: McpImportEntry[];
+    try {
+      entries = parseMcpImportText(importText);
+    } catch (error) {
+      setImportError(error instanceof Error ? error.message : "解析 MCP 配置失败");
+      return;
+    }
+    setImportError("");
+    setImportBusy(true);
+    const created: string[] = [];
+    const skipped: string[] = [];
+    const rejected: string[] = []; // 领域不符
+    const unavailable: string[] = []; // 领域审核未完成 / 不可用，可重试
+    const failed: string[] = [];
+    for (const entry of entries) {
+      try {
+        // Domain-checked create — off-domain entries are rejected by the backend.
+        await importMcpClient(entry.clientKey, entry.payload, agentId);
+        created.push(entry.clientKey);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "";
+        if (/exist/i.test(message) || message.includes("已存在")) {
+          skipped.push(entry.clientKey);
+        } else if (
+          message.includes("领域审核失败") ||
+          message.includes("审核未完成") ||
+          message.includes("稍后重试")
+        ) {
+          unavailable.push(`${entry.clientKey}（${message}）`);
+        } else if (
+          message.includes("当前系统仅支持") ||
+          message.includes("加入白名单")
+        ) {
+          rejected.push(`${entry.clientKey}（${message}）`);
+        } else {
+          failed.push(`${entry.clientKey}（${message || "未知错误"}）`);
+        }
+      }
+    }
+    setImportBusy(false);
+    setImportModalOpen(false);
+    await loadClients();
+    const summary: string[] = [];
+    if (created.length) {
+      summary.push(`新增 ${created.length} 个`);
+    }
+    if (skipped.length) {
+      summary.push(`跳过 ${skipped.length} 个（已存在）`);
+    }
+    if (rejected.length) {
+      summary.push(`领域不符 ${rejected.length} 个`);
+    }
+    if (unavailable.length) {
+      summary.push(`审核未完成 ${unavailable.length} 个（可重试）`);
+    }
+    if (failed.length) {
+      summary.push(`失败 ${failed.length} 个`);
+    }
+    const details = [...rejected, ...unavailable, ...failed];
+    setNotice({
+      type: failed.length || rejected.length || unavailable.length ? "error" : "success",
+      message:
+        `MCP 导入完成：${summary.join("，") || "无变更"}` +
+        (details.length ? `；${details.join("；")}` : ""),
+    });
   };
 
   const handleToggle = async (client: McpClientInfo) => {
@@ -379,7 +437,6 @@ export function McpPanel({
   };
 
   const selectedToolsCount = selectedClientKey ? tools[selectedClientKey]?.length : 0;
-  const scopeLabel = currentEmployeeName === "全局" ? "默认 Agent MCP 配置" : "当前数字员工 MCP 配置";
 
   return (
     <div className="mcp-panel">
@@ -388,81 +445,13 @@ export function McpPanel({
           MCP管理 <small>Model Context Protocol</small>
         </div>
         <div className="portal-model-page-actions">
-          <div
-            ref={employeeMenuRef}
-            className={employeeMenuOpen ? "mcp-employee-switcher open" : "mcp-employee-switcher"}
-          >
-            <button
-              type="button"
-              className="mcp-employee-switcher-trigger"
-              onClick={() => setEmployeeMenuOpen((value) => !value)}
-            >
-              {currentScopeEmployee ? (
-                <DigitalEmployeeAvatar
-                  employee={currentScopeEmployee}
-                  className="mcp-employee-switcher-avatar"
-                  style={
-                    {
-                      "--de-avatar-size": "32px",
-                      "--de-avatar-radius": "10px",
-                      "--de-avatar-icon-size": "14px",
-                      "--de-avatar-animation-size": "18px",
-                    } as CSSProperties
-                  }
-                />
-              ) : (
-                <span className="mcp-employee-switcher-fallback">
-                  <i className="fas fa-globe" />
-                </span>
-              )}
-              <span className="mcp-employee-switcher-copy">
-                <strong>{currentEmployeeName}</strong>
-                <small>{agentId}</small>
-              </span>
-              <i className={`fas ${employeeMenuOpen ? "fa-chevron-up" : "fa-chevron-down"}`} />
-            </button>
-
-            {employeeMenuOpen ? (
-              <div className="mcp-employee-switcher-menu">
-                {digitalEmployees.map((employee) => (
-                  <button
-                    key={employee.id}
-                    type="button"
-                    className={
-                      currentEmployeeId === employee.id
-                        ? "mcp-employee-option active"
-                        : "mcp-employee-option"
-                    }
-                    onClick={() => {
-                      setEmployeeMenuOpen(false);
-                      onSwitchEmployee(employee.id);
-                    }}
-                  >
-                    <DigitalEmployeeAvatar
-                      employee={employee}
-                      className="mcp-employee-switcher-avatar"
-                      style={
-                        {
-                          "--de-avatar-size": "30px",
-                          "--de-avatar-radius": "9px",
-                          "--de-avatar-icon-size": "13px",
-                          "--de-avatar-animation-size": "16px",
-                        } as CSSProperties
-                      }
-                    />
-                    <span className="mcp-employee-option-copy">
-                      <strong>{employee.name}</strong>
-                      <small>{employee.id}</small>
-                    </span>
-                  </button>
-                ))}
-              </div>
-            ) : null}
-          </div>
-
           <button type="button" className="portal-model-btn" onClick={openCreateModal}>
             <i className="fas fa-plus" />
             新增MCP
+          </button>
+          <button type="button" className="portal-model-btn" onClick={openImportModal}>
+            <i className="fas fa-file-import" />
+            JSON 导入
           </button>
           <button
             type="button"
@@ -480,8 +469,8 @@ export function McpPanel({
 
       <div className="mcp-panel-content">
         <div className="portal-model-scope-bar mcp-scope-bar">
-          <span>当前数字员工：{currentEmployeeName}</span>
-          <span>管理范围：{scopeLabel}</span>
+          <span>管理范围：网关入口 Agent 的 MCP 配置</span>
+          <span>所有导入 / 新增的 MCP 都接入到该入口</span>
         </div>
 
         <div className="mcp-panel-toolbar">
@@ -807,6 +796,61 @@ export function McpPanel({
                   onClick={() => void handleSubmit()}
                 >
                   {saving ? "保存中..." : editingClient ? "保存修改" : "创建 MCP"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {importModalOpen ? (
+        <div className="mcp-modal-backdrop" onClick={closeImportModal}>
+          <div className="mcp-modal" onClick={(event) => event.stopPropagation()}>
+            <div className="mcp-modal-header">
+              <div>
+                <h3>JSON 批量导入 MCP</h3>
+                <p>
+                  支持标准 <code>{"{ \"mcpServers\": { ... } }"}</code> 或直接的 <code>{"{ \"客户端名\": { ... } }"}</code> 映射；
+                  会逐条创建到网关入口 Agent，并先做领域校验（非网管相关的会被拒绝）。
+                </p>
+              </div>
+              <button type="button" className="mcp-modal-close" onClick={closeImportModal}>
+                <i className="ri-close-line" />
+              </button>
+            </div>
+
+            <div className="mcp-form">
+              <div className="mcp-form-field full">
+                <label>MCP 配置 JSON</label>
+                <textarea
+                  value={importText}
+                  onChange={(event) => {
+                    setImportText(event.target.value);
+                    setImportError("");
+                  }}
+                  rows={16}
+                  placeholder={
+                    '{\n  "mcpServers": {\n    "filesystem": {\n      "command": "npx",\n      "args": ["-y", "@modelcontextprotocol/server-filesystem", "/data"]\n    },\n    "monitoring": {\n      "transport": "streamable_http",\n      "url": "http://localhost:3001/mcp",\n      "headers": { "Authorization": "Bearer xxx" }\n    }\n  }\n}'
+                  }
+                />
+                <span className="mcp-form-hint">
+                  没写 transport 时：含 command 视为 stdio，含 url 视为 streamable_http；已存在的 Key 会跳过。
+                </span>
+              </div>
+
+              {importError ? <div className="mcp-panel-notice error">{importError}</div> : null}
+
+              <div className="mcp-form-actions">
+                <button type="button" className="mcp-form-cancel" onClick={closeImportModal}>
+                  取消
+                </button>
+                <button
+                  type="button"
+                  className="mcp-form-submit"
+                  disabled={importBusy}
+                  onClick={() => void handleImportSubmit()}
+                >
+                  {importBusy ? "导入中..." : "解析并导入"}
                 </button>
               </div>
             </div>
