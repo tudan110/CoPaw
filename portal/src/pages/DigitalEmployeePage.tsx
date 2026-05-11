@@ -1123,6 +1123,17 @@ export default function DigitalEmployeePage({
       }))
     : chatSidebarCollaborators;
   const showChatSidebarToggle = Boolean(!isPortalHomeChat && selectedEmployee);
+  const sidebarToggleButton = (
+    <button
+      type="button"
+      className="sidebar-collapse-btn"
+      onClick={() => setSidebarCollapsed((value) => !value)}
+      title={sidebarCollapsed ? "展开左侧面板" : "收起左侧面板"}
+      aria-label={sidebarCollapsed ? "展开左侧面板" : "收起左侧面板"}
+    >
+      <i className={sidebarCollapsed ? "fas fa-chevron-right" : "fas fa-chevron-left"} />
+    </button>
+  );
   const chatSidebarToggleButton = showChatSidebarToggle ? (
     <button
       type="button"
@@ -1176,7 +1187,8 @@ export default function DigitalEmployeePage({
       </div>
 
       <div className="app-container">
-        <div className="sidebar">
+        <div className={sidebarCollapsed ? "sidebar sidebar-collapsed" : "sidebar"}>
+          {sidebarToggleButton}
           <button
             type="button"
             className={isPortalHomeChat ? "logo active" : "logo"}
