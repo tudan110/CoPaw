@@ -66,7 +66,7 @@ export function AppMarketPanel() {
             token: `app-market-${item.appId}-${Date.now()}`,
             targetEmployeeId: employee.id,
             content: item.launchPrompt,
-            visibleContent: `使用应用：${item.title}`,
+            visibleContent: `执行应用：${item.title}`,
             forceNewChat: true,
           },
         } satisfies PortalLocationState,
@@ -118,24 +118,18 @@ export function AppMarketPanel() {
                     {item.matchedSkillId ? <span>{item.matchedSkillId}</span> : null}
                   </div>
 
-                  <div className="app-market-meta">
-                    <div>
-                      <span>发布时间</span>
-                      <strong>{formatFriendlyDateTime(item.publishedAt)}</strong>
-                    </div>
-                    <div>
-                      <span>上架时间</span>
-                      <strong>{formatFriendlyDateTime(item.listedAt || item.installedAt)}</strong>
+                  <div className="app-market-footer">
+                    <div className="app-market-meta-inline">
+                      <span>上架时间：{formatFriendlyDateTime(item.listedAt || item.installedAt)}</span>
                     </div>
                   </div>
-
                   <div className="app-market-actions">
                     <button
                       type="button"
-                      className="primary-btn"
+                      className="primary-btn app-market-launch-btn"
                       onClick={() => handleLaunchApp(item)}
                     >
-                      立即使用
+                      使用
                     </button>
                   </div>
                 </article>

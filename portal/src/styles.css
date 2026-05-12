@@ -152,9 +152,9 @@ button {
   color: var(--text-secondary);
 }
 
-.primary-btn:hover,
-.ghost-btn:hover,
-.icon-btn:hover,
+.primary-btn:hover:not(:disabled),
+.ghost-btn:hover:not(:disabled),
+.icon-btn:hover:not(:disabled),
 .view-chip:hover,
 .tab-btn:hover,
 .mini-stat-card:hover,
@@ -162,6 +162,16 @@ button {
 .quick-command:hover,
 .history-chip:hover {
   transform: translateY(-1px);
+}
+
+.primary-btn:disabled,
+.ghost-btn:disabled,
+.icon-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.56;
+  filter: saturate(0.72);
+  transform: none;
+  box-shadow: none;
 }
 
 .stats-row,

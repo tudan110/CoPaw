@@ -152,8 +152,20 @@
   line-height: 1.6;
 }
 
+.nl-card-header-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
 .nl-card-body {
   padding: 22px 24px 24px;
+}
+
+.nl-panel-stack {
+  display: grid;
+  gap: 16px;
 }
 
 .nl-form-grid {
@@ -310,6 +322,73 @@
   gap: 14px;
 }
 
+.nl-app-list-grid {
+  display: grid;
+  gap: 14px;
+}
+
+.nl-app-list-card {
+  padding: 16px 18px;
+  border-radius: 20px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+}
+
+.nl-app-list-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.nl-app-list-card-head h3 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.nl-app-list-card-head p {
+  margin: 6px 0 0;
+  color: #64748b;
+  line-height: 1.5;
+}
+
+.nl-app-list-card-side {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.nl-app-list-card-side .nl-version-meta {
+  align-items: center;
+  margin-bottom: 0;
+}
+
+.nl-app-list-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 10px;
+  margin-top: 12px;
+  font-size: 12px;
+  color: #64748b;
+}
+
+.nl-app-list-card-meta span {
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.12);
+}
+
+.nl-app-list-manage-btn {
+  min-height: auto;
+  height: 32px;
+  padding: 0 14px;
+  border-radius: 10px;
+  font-size: 13px;
+  line-height: 1;
+}
+
 .nl-app-group.expanded {
   border-color: rgba(59, 130, 246, 0.28);
   box-shadow: 0 10px 24px rgba(15, 23, 42, 0.06);
@@ -358,6 +437,36 @@
   padding: 4px 10px;
   border-radius: 999px;
   background: rgba(148, 163, 184, 0.12);
+}
+
+.nl-workspace-banner {
+  margin-bottom: 24px;
+}
+
+.nl-workspace-banner-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.nl-workspace-banner-row h2 {
+  margin: 10px 0 0;
+  font-size: 24px;
+}
+
+.nl-workspace-banner-row p {
+  margin: 10px 0 0;
+  color: #64748b;
+  line-height: 1.6;
+  max-width: 760px;
+}
+
+.nl-workspace-backline {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
 }
 
 .nl-app-group-toggle {
@@ -514,6 +623,25 @@
   background: rgba(248, 250, 252, 0.92);
 }
 
+.nl-empty-state strong,
+.nl-empty-state span {
+  display: block;
+}
+
+.nl-empty-state strong + span {
+  margin-top: 8px;
+}
+
+.nl-empty-state-large {
+  padding: 28px 24px;
+}
+
+.nl-empty-state-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 16px;
+}
+
 @media (max-width: 1100px) {
   .nl-customization-grid,
   .nl-json-grid,
@@ -528,6 +656,17 @@
 
   .nl-app-group-head {
     flex-direction: column;
+  }
+
+  .nl-card-header-row,
+  .nl-app-list-card-head,
+  .nl-workspace-banner-row {
+    flex-direction: column;
+  }
+
+  .nl-app-list-card-side {
+    width: 100%;
+    justify-content: flex-start;
   }
 
   .nl-app-group-head-side {
@@ -570,6 +709,7 @@
 .portal-digital-employee.theme-dark .nl-card,
 .portal-digital-employee.theme-dark .nl-kv-item,
 .portal-digital-employee.theme-dark .nl-app-summary-item,
+.portal-digital-employee.theme-dark .nl-app-list-card,
 .portal-digital-employee.theme-dark .nl-app-group,
 .portal-digital-employee.theme-dark .nl-version-item,
 .portal-digital-employee.theme-dark .nl-empty-state,
@@ -592,14 +732,21 @@
 .portal-digital-employee.theme-dark .nl-card-header p,
 .portal-digital-employee.theme-dark .nl-kv-item span,
 .portal-digital-employee.theme-dark .nl-status-text,
+.portal-digital-employee.theme-dark .nl-app-list-card-meta,
 .portal-digital-employee.theme-dark .nl-app-compact-meta,
 .portal-digital-employee.theme-dark .nl-app-group-head p,
+.portal-digital-employee.theme-dark .nl-app-list-card-head p,
+.portal-digital-employee.theme-dark .nl-workspace-banner-row p,
 .portal-digital-employee.theme-dark .nl-version-prompt,
 .portal-digital-employee.theme-dark .nl-empty-state {
   color: #94a3b8;
 }
 
 .portal-digital-employee.theme-dark .nl-app-compact-meta span {
+  background: rgba(79, 110, 247, 0.12);
+}
+
+.portal-digital-employee.theme-dark .nl-app-list-card-meta span {
   background: rgba(79, 110, 247, 0.12);
 }
 

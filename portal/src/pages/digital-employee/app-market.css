@@ -29,10 +29,10 @@
   background: var(--bg-white);
   border: 1px solid var(--border);
   border-radius: 20px;
-  padding: 20px;
+  padding: 18px;
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 12px;
   box-shadow: var(--shadow-sm);
 }
 
@@ -50,10 +50,14 @@
 }
 
 .app-market-card p {
-  margin: 8px 0 0;
+  margin: 6px 0 0;
   color: var(--text-muted);
-  line-height: 1.6;
+  line-height: 1.55;
   font-size: 13px;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 .app-market-badge {
@@ -68,41 +72,63 @@
 .app-market-tags {
   display: flex;
   gap: 8px;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  scrollbar-width: none;
 }
 
 .app-market-tags span {
-  padding: 6px 12px;
+  flex: 0 0 auto;
+  padding: 5px 10px;
   border-radius: 999px;
   background: rgba(59, 130, 246, 0.08);
   color: var(--text-secondary);
   font-size: 12px;
 }
 
-.app-market-meta {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
+.app-market-tags::-webkit-scrollbar {
+  display: none;
 }
 
-.app-market-meta div {
-  padding: 12px 14px;
-  border-radius: 16px;
-  background: var(--bg-gray);
-  border: 1px solid var(--border);
+.app-market-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 14px;
+  margin-top: 2px;
 }
 
-.app-market-meta span {
-  display: block;
+.app-market-meta-inline {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 10px;
+  flex: 1;
   font-size: 12px;
   color: var(--text-muted);
-  margin-bottom: 6px;
+  overflow-x: auto;
+  scrollbar-width: none;
 }
 
-.app-market-meta strong {
-  color: var(--text-primary);
-  font-size: 13px;
-  word-break: break-word;
+.app-market-meta-inline span {
+  flex: 0 0 auto;
+  padding: 8px 12px;
+  border-radius: 999px;
+  background: var(--bg-gray);
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.app-market-meta-inline::-webkit-scrollbar {
+  display: none;
+}
+
+.app-market-launch-btn {
+  min-height: auto;
+  height: 40px;
+  padding: 0 18px;
+  border-radius: 14px;
+  white-space: nowrap;
 }
 
 .app-market-actions {
@@ -142,7 +168,22 @@
     grid-template-columns: 1fr;
   }
 
-  .app-market-meta {
-    grid-template-columns: 1fr;
+  .app-market-footer {
+    align-items: stretch;
+  }
+
+  .app-market-tags,
+  .app-market-meta-inline {
+    width: 100%;
+    flex-wrap: wrap;
+    overflow: visible;
+  }
+
+  .app-market-launch-btn {
+    width: 100%;
+  }
+
+  .app-market-actions {
+    justify-content: stretch;
   }
 }
