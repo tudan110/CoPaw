@@ -362,18 +362,14 @@ export const skillsApi = {
       },
     }),
 
-  updatePoolSkillTags: (skillName: string, tags: string[]) => {
-    const params = new URLSearchParams();
-    if (tags.length) {
-      tags.forEach((tag) => params.append("tags", tag));
-    } else {
-      params.append("tags", "");
-    }
-    return requestSkills<{ updated: boolean; tags: string[] }>(
-      `/skills/pool/${encodeURIComponent(skillName)}/tags?${params.toString()}`,
-      { method: "PUT" },
-    );
-  },
+  updatePoolSkillTags: (skillName: string, tags: string[]) =>
+    requestSkills<{ updated: boolean; tags: string[] }>(
+      `/skills/pool/${encodeURIComponent(skillName)}/tags`,
+      // FastAPI parses `tags: list[str]` (no Query()) as a JSON body, not a
+      // query string — send the array as the request body. An empty array is
+      // still truthy in JS, so `[]` is sent verbatim (= clear all tags).
+      { method: "PUT", body: tags },
+    ),
 
   deletePoolSkill: (skillName: string) =>
     requestSkills<{ deleted: boolean }>(`/skills/pool/${encodeURIComponent(skillName)}`, {
@@ -526,18 +522,14 @@ export const skillsApi = {
     );
   },
 
-  updateAgentSkillTags: (agentId: string, skillName: string, tags: string[]) => {
-    const params = new URLSearchParams();
-    if (tags.length) {
-      tags.forEach((tag) => params.append("tags", tag));
-    } else {
-      params.append("tags", "");
-    }
-    return requestSkills<{ updated: boolean; tags: string[] }>(
-      `/skills/${encodeURIComponent(skillName)}/tags?${params.toString()}`,
-      { method: "PUT", agentId },
-    );
-  },
+  updateAgentSkillTags: (agentId: string, skillName: string, tags: string[]) =>
+    requestSkills<{ updated: boolean; tags: string[] }>(
+      `/skills/${encodeURIComponent(skillName)}/tags`,
+      // FastAPI parses `tags: list[str]` (no Query()) as a JSON body, not a
+      // query string — send the array as the request body. An empty array is
+      // still truthy in JS, so `[]` is sent verbatim (= clear all tags).
+      { method: "PUT", agentId, body: tags },
+    ),
 
   deleteAgentSkill: (agentId: string, skillName: string) =>
     requestSkills<{ deleted: boolean }>(`/skills/${encodeURIComponent(skillName)}`, {
