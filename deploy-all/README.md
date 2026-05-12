@@ -6,6 +6,7 @@
 
 ```
 deploy-all/
+├── docker/                     # docker run 方式部署说明
 ├── helm/
 │   └── cnos-inoe-agent/
 │       ├── Chart.yaml          # 父 Chart 配置，声明依赖
@@ -79,6 +80,7 @@ helm install cnos-inoe-agent ./deploy-all/helm/cnos-inoe-agent \
 
 - [QwenPaw 镜像打包说明](./QWENPAW_IMAGE_BUILD.md)
 - [从本地用户目录同步到 deploy-all 指南](./SYNC_GUIDE.md)
+- [docker run 启动说明](./docker/README.md)
 
 ## 访问地址
 
