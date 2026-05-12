@@ -1,0 +1,31 @@
+# -*- coding: utf-8 -*-
+from __future__ import annotations
+
+from pathlib import Path
+
+from qwenpaw.constant import WORKING_DIR
+
+EXTENSIONS_DATA_DIR = WORKING_DIR / "extensions"
+
+PORTAL_REAL_ALARM_DATA_DIR = EXTENSIONS_DATA_DIR / "portal_real_alarm"
+PORTAL_REAL_ALARM_REGISTRY_FILE = "portal_real_alarm_registry.json"
+PORTAL_REAL_ALARM_REGISTRY_PATH = (
+    PORTAL_REAL_ALARM_DATA_DIR / PORTAL_REAL_ALARM_REGISTRY_FILE
+)
+
+NL_CUSTOMIZATION_DATA_DIR = EXTENSIONS_DATA_DIR / "nl_customization"
+NL_CUSTOMIZATION_REGISTRY_FILE = "registry.json"
+NL_CUSTOMIZATION_BUNDLE_DIRNAME = "bundles"
+NL_CUSTOMIZATION_ACTIVE_FILE = "active.json"
+NL_CUSTOMIZATION_REGISTRY_PATH = (
+    NL_CUSTOMIZATION_DATA_DIR / NL_CUSTOMIZATION_REGISTRY_FILE
+)
+NL_CUSTOMIZATION_BUNDLE_DIR = (
+    NL_CUSTOMIZATION_DATA_DIR / NL_CUSTOMIZATION_BUNDLE_DIRNAME
+)
+NL_CUSTOMIZATION_ACTIVE_PATH = NL_CUSTOMIZATION_DATA_DIR / NL_CUSTOMIZATION_ACTIVE_FILE
+
+
+def ensure_extension_data_dir(path: Path) -> Path:
+    path.mkdir(parents=True, exist_ok=True)
+    return path
