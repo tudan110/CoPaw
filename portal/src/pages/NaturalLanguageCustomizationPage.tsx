@@ -801,11 +801,11 @@ export function NaturalLanguageCustomizationWorkspace({
           <div>
             {embedded ? (
               <div className="portal-model-page-title">
-                自然语言定制 <small>客户需求配置工作台</small>
+                轻应用工坊 <small>轻应用生成与管理</small>
               </div>
             ) : (
               <>
-                <h1>自然语言定制工作台</h1>
+                <h1>轻应用工坊</h1>
                 <p>
                   默认先进入应用列表，再按应用进入工作台生成结构化预览、发布版本和维护上架状态。
                 </p>

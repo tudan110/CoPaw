@@ -395,8 +395,8 @@ export function AdvancedModelEntry({
               ✨
             </span>
           </div>
-          <div className="sidebar-advanced-item-name">自然语言定制</div>
-          <div className="sidebar-advanced-item-desc">客户需求配置工作台</div>
+          <div className="sidebar-advanced-item-name">轻应用工坊</div>
+          <div className="sidebar-advanced-item-desc">轻应用生成与管理</div>
           <div className="sidebar-advanced-item-meta">预览 / 发布 / 版本留档</div>
         </button>
         <button

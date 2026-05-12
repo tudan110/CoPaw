@@ -93,7 +93,7 @@ export function AppMarketPanel() {
         {!loading && !items.length ? (
           <div className="app-market-empty">
             <i className="fas fa-store-slash" />
-            <p>当前还没有上架的应用。先在“自然语言定制”里应用一个版本，再上架到应用中心。</p>
+            <p>当前还没有上架的应用。先在“轻应用工坊”里应用一个版本，再上架到应用中心。</p>
           </div>
         ) : null}
 

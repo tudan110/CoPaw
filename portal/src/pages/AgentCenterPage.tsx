@@ -75,7 +75,7 @@ export default function AgentCenterPage() {
             </button>
             <Link className="ghost-btn" to="/nl-customization" style={{ textDecoration: "none" }}>
               <i className="fa-solid fa-wand-magic-sparkles" />
-              自然语言定制
+              轻应用工坊
             </Link>
             <PortalTraditionalViewButton />
           </div>

@@ -58,13 +58,13 @@ async function requestPortalApi<T>(
     });
     if (!response.ok) {
       throw new Error(
-        extractErrorMessage(await response.text()) || "自然语言定制请求失败",
+        extractErrorMessage(await response.text()) || "轻应用工坊请求失败",
       );
     }
     return response.json();
   } catch (error: any) {
     if (error?.name === "AbortError") {
-      throw new Error("自然语言定制请求超时，请稍后重试");
+      throw new Error("轻应用工坊请求超时，请稍后重试");
     }
     throw error;
   } finally {
