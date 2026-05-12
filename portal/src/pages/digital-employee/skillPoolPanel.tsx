@@ -254,6 +254,9 @@ export function SkillPoolPanel() {
   );
 
   const openCreateModal = () => {
+    if (saving) {
+      return;
+    }
     setModalMode("create");
     setEditingSkill(null);
     setForm(EMPTY_FORM);
@@ -333,6 +336,9 @@ export function SkillPoolPanel() {
   };
 
   const handleSubmit = async () => {
+    if (saving) {
+      return;
+    }
     const nextName = form.name.trim();
     if (!nextName) {
       setNotice({ type: "error", message: "请填写技能名称" });
@@ -423,6 +429,9 @@ export function SkillPoolPanel() {
 
   // ---- Import: upload .zip ----
   const openUploadModal = () => {
+    if (saving) {
+      return;
+    }
     setUploadFile(null);
     setUploadTargetName("");
     setUploadError("");
@@ -437,6 +446,9 @@ export function SkillPoolPanel() {
   };
 
   const handleUploadSubmit = async () => {
+    if (saving) {
+      return;
+    }
     if (!uploadFile) {
       setUploadError("请选择一个技能压缩包 (.zip)");
       return;
@@ -473,6 +485,9 @@ export function SkillPoolPanel() {
 
   // ---- Import: from hub URL (async polling) ----
   const openHubModal = () => {
+    if (saving) {
+      return;
+    }
     setHubUrl("");
     setHubVersion("");
     setHubTargetName("");
@@ -488,7 +503,12 @@ export function SkillPoolPanel() {
     setHubModalOpen(false);
   };
 
-  const pollHubInstall = async (taskId: string): Promise<string | null> => {
+  type PollResult =
+    | { ok: true; name: string }
+    | { ok: false; reason: "scan"; payload: SkillScanErrorPayload }
+    | { ok: false; reason: "error" };
+
+  const pollHubInstall = async (taskId: string): Promise<PollResult> => {
     for (let i = 0; i < 60; i++) {
       await new Promise((r) => setTimeout(r, 1500));
       let task: HubInstallTask;
@@ -496,32 +516,35 @@ export function SkillPoolPanel() {
         task = await skillsApi.getHubInstallStatus(taskId);
       } catch (e) {
         setHubError(describeError(e, "查询导入进度失败"));
-        return null;
+        return { ok: false, reason: "error" };
       }
       setHubInstall({ taskId, status: task.status });
       if (task.status === "completed") {
         const r = task.result as { name?: string } | null;
-        return (r && typeof r.name === "string" && r.name) || "";
+        return { ok: true, name: (r && typeof r.name === "string" && r.name) || "" };
       }
       if (task.status === "failed") {
         const r = task.result as SkillScanErrorPayload | { type?: string } | null;
         if (r && typeof r === "object" && (r as { type?: string }).type === "security_scan_failed") {
-          setScanError(r as SkillScanErrorPayload);
+          return { ok: false, reason: "scan", payload: r as SkillScanErrorPayload };
         } else {
           setHubError(task.error || "导入失败");
+          return { ok: false, reason: "error" };
         }
-        return null;
       }
       if (task.status === "cancelled") {
         setHubError("导入已取消");
-        return null;
+        return { ok: false, reason: "error" };
       }
     }
     setHubError("导入超时，请稍后在面板「刷新」查看");
-    return null;
+    return { ok: false, reason: "error" };
   };
 
   const handleHubSubmit = async () => {
+    if (saving) {
+      return;
+    }
     if (!hubUrl.trim()) {
       setHubError("请填写技能链接");
       return;
@@ -536,10 +559,15 @@ export function SkillPoolPanel() {
         targetName: hubTargetName,
       });
       setHubInstall({ taskId: task.task_id, status: task.status });
-      const installedName = await pollHubInstall(task.task_id);
-      if (installedName === null) {
+      const pollResult = await pollHubInstall(task.task_id);
+      if (!pollResult.ok) {
+        if (pollResult.reason === "scan") {
+          setHubModalOpen(false);
+          setScanError(pollResult.payload);
+        }
         return;
       }
+      const installedName = pollResult.name;
 
       await loadData();
       const after = await skillsApi.listAgentSkills(agentId);
@@ -776,272 +804,272 @@ export function SkillPoolPanel() {
             <div className={`skill-pool-notice ${notice.type}`}>{notice.message}</div>
           ) : null}
 
-        {loading ? (
-          <div className="skill-pool-empty">
-            <div className="skill-pool-loading">
-              <i className="ri-loader-4-line ri-spin" />
-              正在加载技能...
+          {loading ? (
+            <div className="skill-pool-empty">
+              <div className="skill-pool-loading">
+                <i className="ri-loader-4-line ri-spin" />
+                正在加载技能...
+              </div>
             </div>
-          </div>
-        ) : filteredSkills.length ? (
-          <div className="skill-pool-grid">
-            {filteredSkills.map((skill) => {
-              const isSelected = selectedSkillName === skill.name;
-              return (
-                <article
-                  key={skill.name}
-                  className={isSelected ? "skill-pool-card active" : "skill-pool-card"}
-                  onClick={() => setSelectedSkillName(skill.name)}
-                >
-                  <div className="skill-pool-card-head">
-                    <div className="skill-pool-card-title">
-                      <span className="skill-pool-card-icon">{getSkillEmoji(skill)}</span>
-                      <div className="skill-pool-card-copy">
-                        <div className="skill-pool-card-title-row">
-                          <h4>{skill.name}</h4>
-                          <div className="skill-pool-card-badges">
-                            {isErkai(skill) ? (
-                              <span className="skill-pool-badge erkai">二开</span>
-                            ) : (
-                              <span className="skill-pool-badge stock">出厂</span>
-                            )}
-                            {skill.enabled ? (
-                              <span className="skill-pool-badge enabled">已启用</span>
-                            ) : (
-                              <span className="skill-pool-badge">已停用</span>
-                            )}
+          ) : filteredSkills.length ? (
+            <div className="skill-pool-grid">
+              {filteredSkills.map((skill) => {
+                const isSelected = selectedSkillName === skill.name;
+                return (
+                  <article
+                    key={skill.name}
+                    className={isSelected ? "skill-pool-card active" : "skill-pool-card"}
+                    onClick={() => setSelectedSkillName(skill.name)}
+                  >
+                    <div className="skill-pool-card-head">
+                      <div className="skill-pool-card-title">
+                        <span className="skill-pool-card-icon">{getSkillEmoji(skill)}</span>
+                        <div className="skill-pool-card-copy">
+                          <div className="skill-pool-card-title-row">
+                            <h4>{skill.name}</h4>
+                            <div className="skill-pool-card-badges">
+                              {isErkai(skill) ? (
+                                <span className="skill-pool-badge erkai">二开</span>
+                              ) : (
+                                <span className="skill-pool-badge stock">出厂</span>
+                              )}
+                              {skill.enabled ? (
+                                <span className="skill-pool-badge enabled">已启用</span>
+                              ) : (
+                                <span className="skill-pool-badge">已停用</span>
+                              )}
+                            </div>
                           </div>
+                          <p>{skill.description || "未填写技能描述"}</p>
                         </div>
-                        <p>{skill.description || "未填写技能描述"}</p>
                       </div>
                     </div>
-                  </div>
 
-                  <div className="skill-pool-card-body">
-                    <div className="skill-pool-card-kv">
-                      <span>版本</span>
-                      <strong>{skill.version_text || "未标注"}</strong>
-                    </div>
-                    <div className="skill-pool-card-kv">
-                      <span>状态</span>
-                      <strong>{skill.enabled ? "已启用" : "已停用"}</strong>
-                    </div>
-                    <div className="skill-pool-card-kv">
-                      <span>更新时间</span>
-                      <strong>{formatLastUpdated(skill.last_updated)}</strong>
-                    </div>
-                    {skill.tags?.length ? (
-                      <div className="skill-pool-tags">
-                        {skill.tags.slice(0, 3).map((tag) => (
-                          <span key={tag} className="skill-pool-tag">
-                            {tag}
-                          </span>
-                        ))}
-                        {skill.tags.length > 3 ? (
-                          <span className="skill-pool-tag muted">+{skill.tags.length - 3}</span>
-                        ) : null}
+                    <div className="skill-pool-card-body">
+                      <div className="skill-pool-card-kv">
+                        <span>版本</span>
+                        <strong>{skill.version_text || "未标注"}</strong>
                       </div>
-                    ) : (
-                      <div className="skill-pool-card-hint">可通过标签补充场景分类</div>
-                    )}
-                  </div>
+                      <div className="skill-pool-card-kv">
+                        <span>状态</span>
+                        <strong>{skill.enabled ? "已启用" : "已停用"}</strong>
+                      </div>
+                      <div className="skill-pool-card-kv">
+                        <span>更新时间</span>
+                        <strong>{formatLastUpdated(skill.last_updated)}</strong>
+                      </div>
+                      {skill.tags?.length ? (
+                        <div className="skill-pool-tags">
+                          {skill.tags.slice(0, 3).map((tag) => (
+                            <span key={tag} className="skill-pool-tag">
+                              {tag}
+                            </span>
+                          ))}
+                          {skill.tags.length > 3 ? (
+                            <span className="skill-pool-tag muted">+{skill.tags.length - 3}</span>
+                          ) : null}
+                        </div>
+                      ) : (
+                        <div className="skill-pool-card-hint">可通过标签补充场景分类</div>
+                      )}
+                    </div>
 
-                  <div className="skill-pool-card-actions">
-                   <button
-                     type="button"
-                     className="portal-model-btn secondary compact"
-                     onClick={(event) => {
-                       event.stopPropagation();
-                        setSelectedSkillName(skill.name);
-                      }}
-                    >
-                      详情
-                    </button>
-                    <button
-                      type="button"
-                      className="portal-model-btn secondary compact"
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        openEditModal(skill);
-                     }}
-                    >
-                      编辑
-                    </button>
-                  </div>
-                </article>
-              );
-            })}
-          </div>
-        ) : (
-          <div className="skill-pool-empty">
-            <i className="fas fa-bolt" />
-            <strong>还没有匹配的技能</strong>
-            <span>可以新建自定义技能，或通过「导入技能」上传压缩包 / 从链接导入。</span>
-          </div>
-        )}
+                    <div className="skill-pool-card-actions">
+                      <button
+                        type="button"
+                        className="portal-model-btn secondary compact"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          setSelectedSkillName(skill.name);
+                        }}
+                      >
+                        详情
+                      </button>
+                      <button
+                        type="button"
+                        className="portal-model-btn secondary compact"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          openEditModal(skill);
+                        }}
+                      >
+                        编辑
+                      </button>
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="skill-pool-empty">
+              <i className="fas fa-bolt" />
+              <strong>还没有匹配的技能</strong>
+              <span>可以新建自定义技能，或通过「导入技能」上传压缩包 / 从链接导入。</span>
+            </div>
+          )}
 
           {selectedSkill ? (
-          <section className="skill-pool-detail">
-            <div className="skill-pool-detail-header">
-              <div>
-                <div className="skill-pool-detail-title">
-                  <span className="skill-pool-card-icon large">{getSkillEmoji(selectedSkill)}</span>
-                  <div>
-                    <h3>{selectedSkill.name}</h3>
-                    <p>{selectedSkill.description || "未填写技能描述"}</p>
+            <section className="skill-pool-detail">
+              <div className="skill-pool-detail-header">
+                <div>
+                  <div className="skill-pool-detail-title">
+                    <span className="skill-pool-card-icon large">{getSkillEmoji(selectedSkill)}</span>
+                    <div>
+                      <h3>{selectedSkill.name}</h3>
+                      <p>{selectedSkill.description || "未填写技能描述"}</p>
+                    </div>
+                  </div>
+                  <div className="skill-pool-detail-meta">
+                    {isErkai(selectedSkill) ? (
+                      <span className="skill-pool-badge erkai">二开</span>
+                    ) : (
+                      <span className="skill-pool-badge stock">出厂</span>
+                    )}
+                    <span className="skill-pool-badge info">版本 {selectedSkill.version_text || "未标注"}</span>
+                    <span className="skill-pool-badge info">
+                      更新于 {formatLastUpdated(selectedSkill.last_updated)}
+                    </span>
+                    {selectedSkill.enabled ? (
+                      <span className="skill-pool-badge enabled">已启用</span>
+                    ) : (
+                      <span className="skill-pool-badge">已停用</span>
+                    )}
                   </div>
                 </div>
-                <div className="skill-pool-detail-meta">
-                  {isErkai(selectedSkill) ? (
-                    <span className="skill-pool-badge erkai">二开</span>
-                  ) : (
-                    <span className="skill-pool-badge stock">出厂</span>
-                  )}
-                  <span className="skill-pool-badge info">版本 {selectedSkill.version_text || "未标注"}</span>
-                  <span className="skill-pool-badge info">
-                    更新于 {formatLastUpdated(selectedSkill.last_updated)}
-                  </span>
-                  {selectedSkill.enabled ? (
-                    <span className="skill-pool-badge enabled">已启用</span>
-                  ) : (
-                    <span className="skill-pool-badge">已停用</span>
-                  )}
-                </div>
-              </div>
 
-              <div className="skill-pool-detail-actions">
-                {selectedSkill.enabled ? (
+                <div className="skill-pool-detail-actions">
+                  {selectedSkill.enabled ? (
+                    <button
+                      type="button"
+                      className="portal-model-btn secondary danger"
+                      disabled={busySkill === selectedSkill.name}
+                      onClick={() => void handleDisable(selectedSkill)}
+                    >
+                      <i className={`fas ${busySkill === selectedSkill.name ? "fa-spinner fa-spin" : "fa-circle-stop"}`} />
+                      在「智观 AI」停用
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      className="portal-model-btn success"
+                      disabled={busySkill === selectedSkill.name}
+                      onClick={() => void handleEnable(selectedSkill)}
+                    >
+                      <i className={`fas ${busySkill === selectedSkill.name ? "fa-spinner fa-spin" : "fa-circle-play"}`} />
+                      在「智观 AI」启用
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    className="portal-model-btn secondary"
+                    onClick={() => openEditModal(selectedSkill)}
+                  >
+                    <i className="fas fa-pen" />
+                    编辑技能
+                  </button>
                   <button
                     type="button"
                     className="portal-model-btn secondary danger"
                     disabled={busySkill === selectedSkill.name}
-                    onClick={() => void handleDisable(selectedSkill)}
+                    onClick={() => void handleDelete(selectedSkill)}
                   >
-                    <i className={`fas ${busySkill === selectedSkill.name ? "fa-spinner fa-spin" : "fa-circle-stop"}`} />
-                    在「智观 AI」停用
+                    <i className={`fas ${busySkill === selectedSkill.name ? "fa-spinner fa-spin" : "fa-trash"}`} />
+                    删除
                   </button>
-                ) : (
-                  <button
-                    type="button"
-                    className="portal-model-btn success"
-                    disabled={busySkill === selectedSkill.name}
-                    onClick={() => void handleEnable(selectedSkill)}
-                  >
-                    <i className={`fas ${busySkill === selectedSkill.name ? "fa-spinner fa-spin" : "fa-circle-play"}`} />
-                    在「智观 AI」启用
-                  </button>
-                )}
-                <button
-                  type="button"
-                  className="portal-model-btn secondary"
-                  onClick={() => openEditModal(selectedSkill)}
-                >
-                  <i className="fas fa-pen" />
-                  编辑技能
-                </button>
-                <button
-                  type="button"
-                  className="portal-model-btn secondary danger"
-                  disabled={busySkill === selectedSkill.name}
-                  onClick={() => void handleDelete(selectedSkill)}
-                >
-                  <i className={`fas ${busySkill === selectedSkill.name ? "fa-spinner fa-spin" : "fa-trash"}`} />
-                  删除
-                </button>
-              </div>
-            </div>
-
-            <div className="skill-pool-detail-grid">
-              <div className="skill-pool-preview-card">
-                <div className="skill-pool-section-header">
-                  <h4>技能说明预览</h4>
-                  <span>{selectedSkill.tags?.length ? `${selectedSkill.tags.length} 个标签` : "未设置标签"}</span>
-                </div>
-                {selectedSkill.tags?.length ? (
-                  <div className="skill-pool-tags detail">
-                    {selectedSkill.tags.map((tag) => (
-                      <span key={tag} className="skill-pool-tag">
-                        {tag}
-                      </span>
-                    ))}
-                  </div>
-                ) : null}
-                <div className="skill-pool-markdown">
-                  <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                    {stripSkillFrontmatter(selectedSkill.content)}
-                  </ReactMarkdown>
                 </div>
               </div>
 
-              <aside className="skill-pool-side-column">
-                <div className="skill-pool-side-card">
+              <div className="skill-pool-detail-grid">
+                <div className="skill-pool-preview-card">
                   <div className="skill-pool-section-header">
-                    <h4>二开标记</h4>
-                    <span>{isErkai(selectedSkill) ? "二开" : "出厂"}</span>
+                    <h4>技能说明预览</h4>
+                    <span>{selectedSkill.tags?.length ? `${selectedSkill.tags.length} 个标签` : "未设置标签"}</span>
                   </div>
-                  <div className="skill-pool-tag-toggle">
-                    <button
-                      type="button"
-                      className={
-                        isErkai(selectedSkill)
-                          ? "portal-model-btn secondary compact"
-                          : "portal-model-btn success compact"
-                      }
-                      disabled={busySkill === selectedSkill.name}
-                      onClick={() => void handleToggleErkai(selectedSkill)}
-                    >
-                      {isErkai(selectedSkill) ? "取消二开" : "标为二开"}
-                    </button>
-                  </div>
-                  <div className="skill-pool-card-hint">
-                    二开 = 通过本面板导入 / 新建的定制技能；出厂 = 随系统部署。识别有误可在此手动纠正。
+                  {selectedSkill.tags?.length ? (
+                    <div className="skill-pool-tags detail">
+                      {selectedSkill.tags.map((tag) => (
+                        <span key={tag} className="skill-pool-tag">
+                          {tag}
+                        </span>
+                      ))}
+                    </div>
+                  ) : null}
+                  <div className="skill-pool-markdown">
+                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                      {stripSkillFrontmatter(selectedSkill.content)}
+                    </ReactMarkdown>
                   </div>
                 </div>
 
-                <div className="skill-pool-side-card">
-                  <div className="skill-pool-section-header">
-                    <h4>技能配置</h4>
-                    <span>{Object.keys(selectedSkill.config || {}).length} 项</span>
-                  </div>
-                  {Object.keys(selectedSkill.config || {}).length ? (
-                    <pre>{JSON.stringify(selectedSkill.config, null, 2)}</pre>
-                  ) : (
-                    <div className="skill-pool-placeholder">当前没有附加配置</div>
-                  )}
-                </div>
-
-                <div className="skill-pool-side-card">
-                  <div className="skill-pool-section-header">
-                    <h4>启用状态</h4>
-                    <span>智观 AI</span>
-                  </div>
-                  <div className="skill-pool-assign-row">
-                    <span>当前状态：{selectedSkill.enabled ? "已启用" : "已停用"}</span>
-                    {selectedSkill.enabled ? (
+                <aside className="skill-pool-side-column">
+                  <div className="skill-pool-side-card">
+                    <div className="skill-pool-section-header">
+                      <h4>二开标记</h4>
+                      <span>{isErkai(selectedSkill) ? "二开" : "出厂"}</span>
+                    </div>
+                    <div className="skill-pool-tag-toggle">
                       <button
                         type="button"
-                        className="portal-model-btn secondary danger compact"
+                        className={
+                          isErkai(selectedSkill)
+                            ? "portal-model-btn secondary compact"
+                            : "portal-model-btn success compact"
+                        }
                         disabled={busySkill === selectedSkill.name}
-                        onClick={() => void handleDisable(selectedSkill)}
+                        onClick={() => void handleToggleErkai(selectedSkill)}
                       >
-                        停用
+                        {isErkai(selectedSkill) ? "取消二开" : "标为二开"}
                       </button>
+                    </div>
+                    <div className="skill-pool-card-hint">
+                      二开 = 通过本面板导入 / 新建的定制技能；出厂 = 随系统部署。识别有误可在此手动纠正。
+                    </div>
+                  </div>
+
+                  <div className="skill-pool-side-card">
+                    <div className="skill-pool-section-header">
+                      <h4>技能配置</h4>
+                      <span>{Object.keys(selectedSkill.config || {}).length} 项</span>
+                    </div>
+                    {Object.keys(selectedSkill.config || {}).length ? (
+                      <pre>{JSON.stringify(selectedSkill.config, null, 2)}</pre>
                     ) : (
-                      <button
-                        type="button"
-                        className="portal-model-btn success compact"
-                        disabled={busySkill === selectedSkill.name}
-                        onClick={() => void handleEnable(selectedSkill)}
-                      >
-                        启用
-                      </button>
+                      <div className="skill-pool-placeholder">当前没有附加配置</div>
                     )}
                   </div>
-                  <div className="skill-pool-card-hint">启停后约 1–2 秒生效。</div>
-                </div>
-              </aside>
-            </div>
-          </section>
+
+                  <div className="skill-pool-side-card">
+                    <div className="skill-pool-section-header">
+                      <h4>启用状态</h4>
+                      <span>智观 AI</span>
+                    </div>
+                    <div className="skill-pool-assign-row">
+                      <span>当前状态：{selectedSkill.enabled ? "已启用" : "已停用"}</span>
+                      {selectedSkill.enabled ? (
+                        <button
+                          type="button"
+                          className="portal-model-btn secondary danger compact"
+                          disabled={busySkill === selectedSkill.name}
+                          onClick={() => void handleDisable(selectedSkill)}
+                        >
+                          停用
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          className="portal-model-btn success compact"
+                          disabled={busySkill === selectedSkill.name}
+                          onClick={() => void handleEnable(selectedSkill)}
+                        >
+                          启用
+                        </button>
+                      )}
+                    </div>
+                    <div className="skill-pool-card-hint">启停后约 1–2 秒生效。</div>
+                  </div>
+                </aside>
+              </div>
+            </section>
           ) : null}
         </div>
       </div>
