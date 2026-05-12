@@ -1,7 +1,13 @@
 const DEFAULT_API_BASE_URL = "/copaw-api/api";
 const DEFAULT_FALLBACK_AGENT_ID = "default";
-const DEFAULT_REQUEST_TIMEOUT_MS = 30000;
-const DEFAULT_STREAM_CONNECT_TIMEOUT_MS = 30000;
+// Plain JSON calls (create chat, list chats, history, stop). These also cover
+// the case where the backend is lazily loading an agent on first use, so give
+// them headroom rather than the previous tight 30s.
+const DEFAULT_REQUEST_TIMEOUT_MS = 45000;
+// Time the streaming endpoint has to send its *headers* (the SSE stream then
+// runs untimed). A busy model / first-token latency under load can take a
+// while, so 90s instead of 30s.
+const DEFAULT_STREAM_CONNECT_TIMEOUT_MS = 90000;
 
 const API_BASE_URL = (import.meta.env.VITE_COPAW_API_BASE_URL || DEFAULT_API_BASE_URL).replace(
   /\/$/,

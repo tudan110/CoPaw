@@ -49,6 +49,10 @@ export default function App() {
         element={renderDeferredPage(<DigitalEmployeePage forcedSection="skill-pool" />)}
       />
       <Route
+        path="/fde-workbench"
+        element={renderDeferredPage(<DigitalEmployeePage forcedSection="fde-workbench" />)}
+      />
+      <Route
         path="/knowledge-base"
         element={renderDeferredPage(<DigitalEmployeePage forcedSection="knowledge-base" />)}
       />

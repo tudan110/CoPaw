@@ -115,6 +115,10 @@ export function usePortalNavigationSidebar({
     navigate(buildPortalSectionPath("skill-pool"));
   }, [navigate]);
 
+  const openFdeWorkbench = useCallback(() => {
+    navigate(buildPortalSectionPath("fde-workbench"));
+  }, [navigate]);
+
   const openKnowledgeBase = useCallback(() => {
     navigate(buildPortalSectionPath("knowledge-base", {
       employeeId: "knowledge",
@@ -221,6 +225,7 @@ export function usePortalNavigationSidebar({
     navigateToPortalHome,
     updateCurrentEmployeeRoute,
     openSkillPool,
+    openFdeWorkbench,
     openKnowledgeBase,
     openInspiration,
     openCli,

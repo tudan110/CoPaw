@@ -1,0 +1,238 @@
+// FDE 交付工作台 API 客户端。
+// 后端路由前缀 `/api/portal/fde/*`，nginx 把 `/portal-api/*` 反代到那里。
+
+const DEFAULT_PORTAL_API_BASE_URL = "/portal-api";
+// Fast endpoints (workspace info, staged list).
+const DEFAULT_REQUEST_TIMEOUT_MS = 45000;
+// Endpoints whose backend run imports qwenpaw / scans / probes a skill.
+const HEAVY_TIMEOUT_MS = 120000;
+
+const PORTAL_API_BASE_URL = (
+  import.meta.env.VITE_PORTAL_API_BASE_URL || DEFAULT_PORTAL_API_BASE_URL
+).replace(/\/$/, "");
+
+export class FdeWorkbenchError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "FdeWorkbenchError";
+  }
+}
+
+async function requestFde<T = unknown>(
+  path: string,
+  init: RequestInit = {},
+  timeoutMs: number | null = DEFAULT_REQUEST_TIMEOUT_MS,
+): Promise<T> {
+  const controller = new AbortController();
+  const timer =
+    timeoutMs == null ? null : setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(`${PORTAL_API_BASE_URL}/fde${path}`, {
+      ...init,
+      signal: controller.signal,
+      headers: {
+        ...(init.body ? { "Content-Type": "application/json" } : {}),
+        ...(init.headers || {}),
+      },
+    });
+    const text = await response.text();
+    let body: unknown = undefined;
+    if (text) {
+      try {
+        body = JSON.parse(text);
+      } catch {
+        body = text;
+      }
+    }
+    if (!response.ok) {
+      const detail =
+        body && typeof body === "object" && "detail" in (body as object)
+          ? String((body as { detail: unknown }).detail)
+          : typeof body === "string"
+            ? body
+            : `请求失败 (${response.status})`;
+      throw new FdeWorkbenchError(detail);
+    }
+    // 后端用 200 + {reason:"fde_workbench_error", detail} 表达业务错误
+    if (
+      body &&
+      typeof body === "object" &&
+      (body as { reason?: string }).reason === "fde_workbench_error"
+    ) {
+      throw new FdeWorkbenchError(
+        String((body as { detail?: unknown }).detail || "FDE 工作台错误"),
+      );
+    }
+    return body as T;
+  } catch (error) {
+    if (error instanceof FdeWorkbenchError) {
+      throw error;
+    }
+    if (error instanceof DOMException && error.name === "AbortError") {
+      throw new FdeWorkbenchError("请求超时");
+    }
+    throw new FdeWorkbenchError(
+      error instanceof Error ? error.message : "网络错误",
+    );
+  } finally {
+    if (timer != null) {
+      clearTimeout(timer);
+    }
+  }
+}
+
+// --- 返回类型（与后端 fde_tools.py 的 JSON 输出对齐） ---
+
+export interface FdeWorkbenchInfo {
+  available: boolean;
+  reason?: string;
+  agentId?: string;
+  workspaceDir?: string;
+  stagedDir?: string;
+  onboardingSkill?: string;
+}
+
+export interface FdeStagedSummary {
+  skill_name: string;
+  staged_dir: string;
+  target_workspace: string;
+  created_at: string;
+  open_questions: string[];
+}
+
+export interface FdeStagedListResult {
+  staged_dir: string;
+  skills: FdeStagedSummary[];
+}
+
+export interface FdeStagedFile {
+  path: string;
+  size: number;
+  content?: string | null;
+  binary?: boolean;
+  truncated?: boolean;
+}
+
+export interface FdeSelfcheckResult {
+  ok: boolean;
+  skill_name?: string;
+  skill_dir?: string;
+  ready_for_review?: boolean;
+  blocked_reasons?: string[];
+  warnings?: string[];
+  scan?: Record<string, unknown>;
+  domain?: Record<string, unknown>;
+  syntax?: Record<string, unknown>;
+  todo?: string[];
+  error?: string;
+}
+
+export interface FdeStagedDetail {
+  skill_name: string;
+  staged_dir: string;
+  files: FdeStagedFile[];
+  selfcheck: FdeSelfcheckResult;
+}
+
+export interface FdeGenerateResult {
+  skill_name: string;
+  target_workspace: string;
+  staged_dir: string;
+  files: string[];
+  meta: Record<string, unknown>;
+  selfcheck: FdeSelfcheckResult;
+}
+
+export interface FdeProbeResult {
+  skill_dir: string;
+  returncode?: number;
+  stdout?: string;
+  stderr?: string;
+  ok: boolean;
+  error?: string;
+}
+
+export interface FdeInstallResult {
+  installed: boolean;
+  name: string;
+  target_workspace: string;
+  files: string[];
+  tag: string;
+}
+
+export interface FdeBrief {
+  description?: string;
+  summary?: string;
+  category?: string;
+  title?: string;
+  when_to_use?: string;
+  tags?: string[];
+  triggers?: string[];
+  open_questions?: string[];
+}
+
+export const fdeApi = {
+  getWorkbenchInfo: () => requestFde<FdeWorkbenchInfo>("/workspace"),
+
+  listStaged: () => requestFde<FdeStagedListResult>("/staged"),
+
+  showStaged: (skillName: string) =>
+    requestFde<FdeStagedDetail>(
+      `/staged/${encodeURIComponent(skillName)}`,
+      {},
+      HEAVY_TIMEOUT_MS,
+    ),
+
+  generate: (payload: {
+    name: string;
+    targetWorkspace: string;
+    brief?: FdeBrief;
+  }) =>
+    requestFde<FdeGenerateResult>(
+      "/generate",
+      {
+        method: "POST",
+        body: JSON.stringify({
+          name: payload.name,
+          target_workspace: payload.targetWorkspace,
+          brief: payload.brief || {},
+        }),
+      },
+      HEAVY_TIMEOUT_MS,
+    ),
+
+  selfcheckStaged: (skillName: string) =>
+    requestFde<FdeSelfcheckResult>(
+      `/staged/${encodeURIComponent(skillName)}/selfcheck`,
+      { method: "POST" },
+      HEAVY_TIMEOUT_MS,
+    ),
+
+  probeStaged: (skillName: string, context?: Record<string, unknown>) =>
+    requestFde<FdeProbeResult>(
+      `/staged/${encodeURIComponent(skillName)}/probe`,
+      {
+        method: "POST",
+        body: JSON.stringify({ context: context || {} }),
+      },
+      HEAVY_TIMEOUT_MS,
+    ),
+
+  installStaged: (skillName: string, targetWorkspace?: string) =>
+    requestFde<FdeInstallResult>(
+      `/staged/${encodeURIComponent(skillName)}/install`,
+      {
+        method: "POST",
+        body: JSON.stringify(
+          targetWorkspace ? { target_workspace: targetWorkspace } : {},
+        ),
+      },
+      HEAVY_TIMEOUT_MS,
+    ),
+
+  discardStaged: (skillName: string) =>
+    requestFde<{ discarded: string }>(
+      `/staged/${encodeURIComponent(skillName)}`,
+      { method: "DELETE" },
+    ),
+};

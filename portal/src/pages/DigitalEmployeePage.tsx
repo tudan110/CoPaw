@@ -128,6 +128,10 @@ const SkillPoolPanel = lazyNamed(
   () => import("./digital-employee/skillPoolPanel"),
   "SkillPoolPanel",
 );
+const FdeWorkbenchPanel = lazyNamed(
+  () => import("./digital-employee/fdeWorkbenchPanel"),
+  "FdeWorkbenchPanel",
+);
 const KnowledgeBasePanel = lazyNamed(
   () => import("./digital-employee/knowledgeBasePanel"),
   "KnowledgeBasePanel",
@@ -205,6 +209,7 @@ export default function DigitalEmployeePage({
   const isOpsExpertMode = activeAdvancedPanel === "ops-expert";
   const isMcpMode = activeAdvancedPanel === "mcp";
   const isSkillPoolMode = activeAdvancedPanel === "skill-pool";
+  const isFdeWorkbenchMode = activeAdvancedPanel === "fde-workbench";
   const isKnowledgeBaseMode = activeAdvancedPanel === "knowledge-base";
   const isInspirationMode = activeAdvancedPanel === "inspiration";
   const isCliMode = activeAdvancedPanel === "cli";
@@ -484,6 +489,7 @@ export default function DigitalEmployeePage({
     navigateToPortalHome,
     updateCurrentEmployeeRoute,
     openSkillPool,
+    openFdeWorkbench,
     openKnowledgeBase,
     openInspiration,
     openCli,
@@ -1280,6 +1286,7 @@ export default function DigitalEmployeePage({
             isOpsExpertActive={isOpsExpertMode}
             isMcpActive={isMcpMode}
             isSkillPoolActive={isSkillPoolMode}
+            isFdeWorkbenchActive={isFdeWorkbenchMode}
             isKnowledgeBaseActive={isKnowledgeBaseMode}
             isInspirationActive={isInspirationMode}
             isCliActive={isCliMode}
@@ -1323,6 +1330,7 @@ export default function DigitalEmployeePage({
               })
             }
             onOpenSkillPool={openSkillPool}
+            onOpenFdeWorkbench={openFdeWorkbench}
             onOpenKnowledgeBase={openKnowledgeBase}
             onOpenInspiration={openInspiration}
             onOpenCli={openCli}
@@ -1331,7 +1339,7 @@ export default function DigitalEmployeePage({
 
         <div
           className={
-            isModelConfigMode || isSettingsMode || isTokenUsageMode || isOpsExpertMode || isMcpMode || isSkillPoolMode || isKnowledgeBaseMode || isInspirationMode || isCliMode || isResourceImportMode || isNlCustomizationMode || isAppMarketMode
+            isModelConfigMode || isSettingsMode || isTokenUsageMode || isOpsExpertMode || isMcpMode || isSkillPoolMode || isFdeWorkbenchMode || isKnowledgeBaseMode || isInspirationMode || isCliMode || isResourceImportMode || isNlCustomizationMode || isAppMarketMode
               ? `main-content advanced-page-mode${isKnowledgeBaseMode ? " knowledge-base-page-mode" : ""}`
               : currentView === "chat"
                 ? "main-content"
@@ -1402,6 +1410,8 @@ export default function DigitalEmployeePage({
             renderDeferredPanel(<McpPanel />)
           ) : isSkillPoolMode ? (
             renderDeferredPanel(<SkillPoolPanel />)
+          ) : isFdeWorkbenchMode ? (
+            renderDeferredPanel(<FdeWorkbenchPanel />)
           ) : isKnowledgeBaseMode ? (
             renderDeferredPanel(
               <KnowledgeBasePanel />,
