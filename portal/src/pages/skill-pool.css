@@ -860,3 +860,26 @@
   font-family: var(--font-mono, monospace);
   opacity: 0.85;
 }
+
+/* --- gateway-scoped skill view --- */
+.skill-pool-badge.erkai {
+  background: rgba(124, 92, 255, 0.16);
+  color: #7c5cff;
+  border: 1px solid rgba(124, 92, 255, 0.32);
+}
+.skill-pool-badge.stock {
+  background: rgba(120, 144, 156, 0.14);
+  color: #607d8b;
+  border: 1px solid rgba(120, 144, 156, 0.28);
+}
+.skill-pool-hub-progress {
+  margin-top: 12px;
+  font-size: 13px;
+  color: #607d8b;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.skill-pool-tag-toggle {
+  margin-top: 8px;
+}
