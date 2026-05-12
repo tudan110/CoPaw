@@ -312,6 +312,29 @@ export interface PoolDownloadResult {
   downloaded: { workspace_id: string; workspace_name: string; name: string }[];
 }
 
+export type HubInstallTaskStatus =
+  | "pending"
+  | "importing"
+  | "completed"
+  | "failed"
+  | "cancelled";
+
+export interface HubInstallTask {
+  task_id: string;
+  bundle_url: string;
+  version: string;
+  enable: boolean;
+  status: HubInstallTaskStatus;
+  error: string | null;
+  result:
+    | { installed?: boolean; name?: string; enabled?: boolean; source_url?: string }
+    | SkillScanErrorPayload
+    | Record<string, unknown>
+    | null;
+  created_at: number;
+  updated_at: number;
+}
+
 export const skillsApi = {
   listPoolSkills: (signal?: AbortSignal) =>
     requestSkills<PoolSkillInfo[]>("/skills/pool", { signal }),
@@ -339,18 +362,14 @@ export const skillsApi = {
       },
     }),
 
-  updatePoolSkillTags: (skillName: string, tags: string[]) => {
-    const params = new URLSearchParams();
-    if (tags.length) {
-      tags.forEach((tag) => params.append("tags", tag));
-    } else {
-      params.append("tags", "");
-    }
-    return requestSkills<{ updated: boolean; tags: string[] }>(
-      `/skills/pool/${encodeURIComponent(skillName)}/tags?${params.toString()}`,
-      { method: "PUT" },
-    );
-  },
+  updatePoolSkillTags: (skillName: string, tags: string[]) =>
+    requestSkills<{ updated: boolean; tags: string[] }>(
+      `/skills/pool/${encodeURIComponent(skillName)}/tags`,
+      // FastAPI parses `tags: list[str]` (no Query()) as a JSON body, not a
+      // query string — send the array as the request body. An empty array is
+      // still truthy in JS, so `[]` is sent verbatim (= clear all tags).
+      { method: "PUT", body: tags },
+    ),
 
   deletePoolSkill: (skillName: string) =>
     requestSkills<{ deleted: boolean }>(`/skills/pool/${encodeURIComponent(skillName)}`, {
@@ -432,4 +451,110 @@ export const skillsApi = {
       method: "POST",
       agentId,
     }),
+
+  // --- Agent-scoped (X-Agent-Id) workspace skill APIs ---
+
+  listAgentSkills: (agentId: string, signal?: AbortSignal) =>
+    requestSkills<WorkspaceSkillInfo[]>("/skills", { agentId, signal }),
+
+  refreshAgentSkills: (agentId: string) =>
+    requestSkills<WorkspaceSkillInfo[]>("/skills/refresh", {
+      method: "POST",
+      agentId,
+    }),
+
+  createAgentSkill: (
+    agentId: string,
+    payload: { name: string; content: string; config?: Record<string, unknown> },
+  ) =>
+    requestSkills<{ created: boolean; name: string }>("/skills", {
+      method: "POST",
+      agentId,
+      body: {
+        name: payload.name,
+        content: payload.content,
+        config: payload.config || {},
+        enable: true,
+      },
+    }),
+
+  saveAgentSkill: (
+    agentId: string,
+    payload: {
+      name: string;
+      sourceName?: string;
+      content: string;
+      config?: Record<string, unknown>;
+      overwrite?: boolean;
+    },
+  ) =>
+    requestSkills<SavePoolSkillResult>("/skills/save", {
+      method: "PUT",
+      agentId,
+      body: {
+        name: payload.name,
+        source_name: payload.sourceName,
+        content: payload.content,
+        config: payload.config || {},
+        overwrite: Boolean(payload.overwrite),
+      },
+    }),
+
+  uploadSkillZipToAgent: (
+    agentId: string,
+    file: File,
+    options: { targetName?: string; renameMap?: Record<string, string> } = {},
+  ) => {
+    const params = new URLSearchParams();
+    params.set("enable", "true");
+    if (options.targetName?.trim()) {
+      params.set("target_name", options.targetName.trim());
+    }
+    if (options.renameMap && Object.keys(options.renameMap).length) {
+      params.set("rename_map", JSON.stringify(options.renameMap));
+    }
+    const formData = new FormData();
+    formData.append("file", file);
+    return requestSkillsForm<SkillImportResult>(
+      `/skills/upload?${params.toString()}`,
+      formData,
+      { agentId },
+    );
+  },
+
+  updateAgentSkillTags: (agentId: string, skillName: string, tags: string[]) =>
+    requestSkills<{ updated: boolean; tags: string[] }>(
+      `/skills/${encodeURIComponent(skillName)}/tags`,
+      // FastAPI parses `tags: list[str]` (no Query()) as a JSON body, not a
+      // query string — send the array as the request body. An empty array is
+      // still truthy in JS, so `[]` is sent verbatim (= clear all tags).
+      { method: "PUT", agentId, body: tags },
+    ),
+
+  deleteAgentSkill: (agentId: string, skillName: string) =>
+    requestSkills<{ deleted: boolean }>(`/skills/${encodeURIComponent(skillName)}`, {
+      method: "DELETE",
+      agentId,
+    }),
+
+  startHubInstallToAgent: (
+    agentId: string,
+    payload: { bundleUrl: string; version?: string; targetName?: string },
+  ) =>
+    requestSkills<HubInstallTask>("/skills/hub/install/start", {
+      method: "POST",
+      agentId,
+      body: {
+        bundle_url: payload.bundleUrl.trim(),
+        version: payload.version?.trim() || "",
+        target_name: payload.targetName?.trim() || "",
+        enable: true,
+      },
+    }),
+
+  getHubInstallStatus: (taskId: string, signal?: AbortSignal) =>
+    requestSkills<HubInstallTask>(
+      `/skills/hub/install/status/${encodeURIComponent(taskId)}`,
+      { signal },
+    ),
 };
