@@ -7,12 +7,19 @@ from typing import Any
 
 from qwenpaw.exceptions import ProviderError
 from qwenpaw.extensions.api.natural_language_customization_models import (
+    NlCustomizationListingRequest,
     NlCustomizationPreviewRequest,
     NlCustomizationPreviewResponse,
 )
 from qwenpaw.extensions.natural_language_customization_registry import (
+    apply_published_customization,
+    delete_published_customization,
+    get_published_customization,
+    get_active_customization,
+    list_installed_customization_apps,
     list_published_customizations,
     publish_customization,
+    update_customization_app_listing,
 )
 
 CONFIGURE_DEFAULT_LLM_MESSAGE = (
@@ -84,6 +91,7 @@ async def build_nl_customization_preview(
 
     return NlCustomizationPreviewResponse(
         previewId=f"nl-preview-{uuid.uuid4().hex[:10]}",
+        appId=str(request.appId or "").strip(),
         title=title,
         prompt=prompt,
         intent=intent,
@@ -117,6 +125,44 @@ def publish_nl_customization(
 
 def list_nl_customization_versions(*, limit: int = 20) -> list[dict[str, Any]]:
     return list_published_customizations(limit=limit)
+
+
+def get_nl_customization_version(*, version_id: str) -> dict[str, Any]:
+    return get_published_customization(version_id=version_id)
+
+
+def delete_nl_customization_version(*, version_id: str) -> dict[str, Any]:
+    return delete_published_customization(version_id=version_id)
+
+
+def apply_nl_customization_version(
+    *,
+    version_id: str,
+    requested_by: str = "portal",
+) -> dict[str, Any]:
+    return apply_published_customization(
+        version_id=version_id,
+        requested_by=requested_by,
+    )
+
+
+def update_nl_customization_listing(
+    *,
+    request: NlCustomizationListingRequest,
+) -> dict[str, Any]:
+    return update_customization_app_listing(
+        version_id=request.versionId,
+        listed=request.listed,
+        requested_by=request.requestedBy,
+    )
+
+
+def get_active_nl_customization() -> dict[str, Any]:
+    return get_active_customization()
+
+
+def list_nl_customization_apps(*, limit: int = 50) -> list[dict[str, Any]]:
+    return list_installed_customization_apps(limit=limit)
 
 
 async def _extract_intent(prompt: str) -> tuple[dict[str, Any], list[str]]:

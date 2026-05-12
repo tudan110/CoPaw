@@ -225,7 +225,9 @@ export function AdvancedModelEntry({
   isInspirationActive,
   isCliActive,
   isNlCustomizationActive,
+  isAppMarketActive,
   onOpenNlCustomization,
+  onOpenAppMarket,
   onOpenConfig,
   onOpenSettings,
   onOpenCronJobs,
@@ -250,7 +252,9 @@ export function AdvancedModelEntry({
   isInspirationActive?: boolean;
   isCliActive?: boolean;
   isNlCustomizationActive?: boolean;
+  isAppMarketActive?: boolean;
   onOpenNlCustomization: () => void;
+  onOpenAppMarket: () => void;
   onOpenConfig: () => void;
   onOpenSettings: () => void;
   onOpenCronJobs: () => void;
@@ -383,19 +387,6 @@ export function AdvancedModelEntry({
           <div className="sidebar-advanced-item-meta">场景 / 协作 / 自动化</div>
         </button>
         <button
-          className={isCliActive ? "sidebar-advanced-item active" : "sidebar-advanced-item"}
-          onClick={onOpenCli}
-        >
-          <div className="sidebar-advanced-item-icon">
-            <span role="img" aria-label="cli">
-              💻
-            </span>
-          </div>
-          <div className="sidebar-advanced-item-name">CLI终端</div>
-          <div className="sidebar-advanced-item-desc">命令行交互界面</div>
-          <div className="sidebar-advanced-item-meta">help / use / ask / run</div>
-        </button>
-        <button
           className={isNlCustomizationActive ? "sidebar-advanced-item active" : "sidebar-advanced-item"}
           onClick={onOpenNlCustomization}
         >
@@ -407,6 +398,32 @@ export function AdvancedModelEntry({
           <div className="sidebar-advanced-item-name">自然语言定制</div>
           <div className="sidebar-advanced-item-desc">客户需求配置工作台</div>
           <div className="sidebar-advanced-item-meta">预览 / 发布 / 版本留档</div>
+        </button>
+        <button
+          className={isAppMarketActive ? "sidebar-advanced-item active" : "sidebar-advanced-item"}
+          onClick={onOpenAppMarket}
+        >
+          <div className="sidebar-advanced-item-icon">
+            <span role="img" aria-label="app-market">
+              🛍️
+            </span>
+          </div>
+          <div className="sidebar-advanced-item-name">应用中心</div>
+          <div className="sidebar-advanced-item-desc">已上架的定制应用</div>
+          <div className="sidebar-advanced-item-meta">浏览 / 启动 / 统一入口</div>
+        </button>
+        <button
+          className={isCliActive ? "sidebar-advanced-item active" : "sidebar-advanced-item"}
+          onClick={onOpenCli}
+        >
+          <div className="sidebar-advanced-item-icon">
+            <span role="img" aria-label="cli">
+              💻
+            </span>
+          </div>
+          <div className="sidebar-advanced-item-name">CLI终端</div>
+          <div className="sidebar-advanced-item-desc">命令行交互界面</div>
+          <div className="sidebar-advanced-item-meta">help / use / ask / run</div>
         </button>
         <button
           className={isSettingsActive ? "sidebar-advanced-item active" : "sidebar-advanced-item"}

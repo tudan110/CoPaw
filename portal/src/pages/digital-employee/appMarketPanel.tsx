@@ -5,6 +5,7 @@ import { getEmployeeById } from "../../data/portalData";
 import { buildEmployeePagePath } from "./helpers";
 import type { PortalLocationState } from "./pageHelpers";
 import type { NlCustomizationAppRecord } from "../../types/naturalLanguageCustomization";
+import { formatFriendlyDateTime } from "../../utils/dateTime";
 import "./app-market.css";
 
 function extractErrorMessage(error: unknown) {
@@ -35,7 +36,7 @@ export function AppMarketPanel() {
         if (cancelled) {
           return;
         }
-        setError(extractErrorMessage(requestError) || "加载应用市场失败");
+        setError(extractErrorMessage(requestError) || "加载应用中心失败");
       })
       .finally(() => {
         if (!cancelled) {
@@ -77,7 +78,7 @@ export function AppMarketPanel() {
     <div className="app-market-panel">
       <div className="portal-model-page-header">
         <div className="portal-model-page-title">
-          应用市场 <small>已上架的定制应用</small>
+          应用中心 <small>已上架的定制应用</small>
         </div>
       </div>
 
@@ -92,7 +93,7 @@ export function AppMarketPanel() {
         {!loading && !items.length ? (
           <div className="app-market-empty">
             <i className="fas fa-store-slash" />
-            <p>当前还没有上架的应用。先在“自然语言定制”里发布并应用一个版本。</p>
+            <p>当前还没有上架的应用。先在“自然语言定制”里应用一个版本，再上架到应用中心。</p>
           </div>
         ) : null}
 
@@ -120,11 +121,11 @@ export function AppMarketPanel() {
                   <div className="app-market-meta">
                     <div>
                       <span>发布时间</span>
-                      <strong>{item.publishedAt || "-"}</strong>
+                      <strong>{formatFriendlyDateTime(item.publishedAt)}</strong>
                     </div>
                     <div>
                       <span>上架时间</span>
-                      <strong>{item.installedAt || "-"}</strong>
+                      <strong>{formatFriendlyDateTime(item.listedAt || item.installedAt)}</strong>
                     </div>
                   </div>
 

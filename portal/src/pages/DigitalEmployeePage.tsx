@@ -136,6 +136,10 @@ const NaturalLanguageCustomizationPanel = lazyNamed(
   () => import("./digital-employee/naturalLanguageCustomizationPanel"),
   "NaturalLanguageCustomizationPanel",
 );
+const AppMarketPanel = lazyNamed(
+  () => import("./digital-employee/appMarketPanel"),
+  "AppMarketPanel",
+);
 const TokenUsagePanel = lazyNamed(
   () => import("./digital-employee/tokenUsagePanel"),
   "TokenUsagePanel",
@@ -206,6 +210,7 @@ export default function DigitalEmployeePage({
   const isCliMode = activeAdvancedPanel === "cli";
   const isResourceImportMode = activeAdvancedPanel === "resource-import";
   const isNlCustomizationMode = activeAdvancedPanel === "nl-customization";
+  const isAppMarketMode = activeAdvancedPanel === "app-market";
   const isPortalHome = !selectedEmployee;
   const isPortalHomeChat = isPortalHome && currentView === "chat" && !activeAdvancedPanel;
   const isAlarmWorkbenchMode = Boolean(
@@ -1279,6 +1284,12 @@ export default function DigitalEmployeePage({
             isInspirationActive={isInspirationMode}
             isCliActive={isCliMode}
             isNlCustomizationActive={isNlCustomizationMode}
+            isAppMarketActive={isAppMarketMode}
+            onOpenAppMarket={() =>
+              updateCurrentEmployeeRoute({
+                panel: "app-market",
+              })
+            }
             onOpenNlCustomization={() =>
               updateCurrentEmployeeRoute({
                 panel: "nl-customization",
@@ -1320,7 +1331,7 @@ export default function DigitalEmployeePage({
 
         <div
           className={
-            isModelConfigMode || isSettingsMode || isTokenUsageMode || isOpsExpertMode || isMcpMode || isSkillPoolMode || isKnowledgeBaseMode || isInspirationMode || isCliMode || isResourceImportMode || isNlCustomizationMode
+            isModelConfigMode || isSettingsMode || isTokenUsageMode || isOpsExpertMode || isMcpMode || isSkillPoolMode || isKnowledgeBaseMode || isInspirationMode || isCliMode || isResourceImportMode || isNlCustomizationMode || isAppMarketMode
               ? `main-content advanced-page-mode${isKnowledgeBaseMode ? " knowledge-base-page-mode" : ""}`
               : currentView === "chat"
                 ? "main-content"
@@ -1423,6 +1434,8 @@ export default function DigitalEmployeePage({
             )
           ) : isNlCustomizationMode ? (
             renderDeferredPanel(<NaturalLanguageCustomizationPanel />)
+          ) : isAppMarketMode ? (
+            renderDeferredPanel(<AppMarketPanel />)
           ) : isResourceImportMode ? (
             renderDeferredPanel(<ResourceImportPanel />)
           ) : (

@@ -7,11 +7,17 @@ import threading
 from datetime import datetime, timedelta, timezone, tzinfo
 from pathlib import Path
 from typing import Any, Mapping
+import shutil
 
 from qwenpaw.constant import WORKING_DIR
+from qwenpaw.extensions.runtime_data_paths import (
+    PORTAL_REAL_ALARM_REGISTRY_PATH as DEFAULT_PORTAL_REAL_ALARM_REGISTRY_PATH,
+    ensure_extension_data_dir,
+)
 
 PORTAL_REAL_ALARM_REGISTRY_VERSION = 1
-PORTAL_REAL_ALARM_REGISTRY_PATH = WORKING_DIR / "portal_real_alarm_registry.json"
+PORTAL_REAL_ALARM_REGISTRY_PATH = DEFAULT_PORTAL_REAL_ALARM_REGISTRY_PATH
+LEGACY_PORTAL_REAL_ALARM_REGISTRY_PATH = WORKING_DIR / "portal_real_alarm_registry.json"
 PORTAL_REAL_ALARM_HIDDEN_STATUSES = frozenset(
     {
         "taken_over",
@@ -50,6 +56,16 @@ def _local_now_iso() -> str:
 
 def _resolve_registry_path(path: str | Path | None = None) -> Path:
     return Path(path) if path is not None else PORTAL_REAL_ALARM_REGISTRY_PATH
+
+
+def _migrate_legacy_registry_path(path: Path) -> None:
+    if path.exists() or path != DEFAULT_PORTAL_REAL_ALARM_REGISTRY_PATH:
+        return
+    legacy_path = LEGACY_PORTAL_REAL_ALARM_REGISTRY_PATH
+    if not legacy_path.exists():
+        return
+    ensure_extension_data_dir(path.parent)
+    shutil.move(str(legacy_path), str(path))
 
 
 def _default_registry_payload() -> dict[str, Any]:
@@ -116,6 +132,7 @@ def _merge_alarm_metadata(
 
 
 def _read_registry_unlocked(path: Path) -> dict[str, Any]:
+    _migrate_legacy_registry_path(path)
     if not path.exists():
         return _default_registry_payload()
     try:

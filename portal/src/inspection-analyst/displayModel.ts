@@ -207,6 +207,12 @@ function extractHeadingTitle(content: string, keyword: string) {
   return stripMarkdownInline(match?.[0] || "");
 }
 
+function extractFirstMeaningfulHeading(content: string) {
+  const headings = getMarkdownHeadingMatches(content);
+  const first = headings.find((heading) => !heading.title.includes("PORTAL INSPECTION CARD MODE"));
+  return first?.title || "";
+}
+
 function extractLeadParagraph(content: string, anchor: string) {
   const normalized = String(content || "").replace(/\r\n/g, "\n");
   const index = normalized.indexOf(anchor);
@@ -372,11 +378,135 @@ function buildInspectionMetricGroups(metricsSection: string) {
     : [];
 }
 
+function parseMetricCountValue(value: string) {
+  const match = String(value || "").match(/(\d+)/u);
+  return match ? Number(match[1]) : null;
+}
+
+function buildAggregateInspectionReportModel(content: string): InspectionDisplayModel | null {
+  const sections = extractHeadingSections(content, 2);
+  const resourceSections = sections
+    .map((section) => {
+      const basicInfoSection = extractMarkdownSection(section.body, ["基本信息"]);
+      const metricsSection = extractMarkdownSection(section.body, ["指标数据"]);
+      if (!basicInfoSection && !metricsSection) {
+        return null;
+      }
+      const basicInfoMap = rowsToKeyValueMap(extractFirstTable(basicInfoSection).rows);
+      const metrics = selectMetricRows(extractFirstTable(metricsSection).rows);
+      const conclusionSection = extractMarkdownSection(section.body, ["巡检结论"]);
+      return {
+        title: section.title,
+        basicInfoMap,
+        metrics,
+        summary: extractSectionLeadText(conclusionSection) || extractSectionLeadText(metricsSection),
+      };
+    })
+    .filter((section): section is {
+      title: string;
+      basicInfoMap: Map<string, string>;
+      metrics: InspectionMetricCard[];
+      summary: string;
+    } => Boolean(section));
+
+  if (!resourceSections.length) {
+    return null;
+  }
+
+  const reportSection = sections.find((section) =>
+    !extractMarkdownSection(section.body, ["基本信息"])
+    && !extractMarkdownSection(section.body, ["指标数据"]),
+  );
+  const firstInfo = resourceSections[0]?.basicInfoMap;
+  const inspectionObject = normalizeCardFieldValue(firstInfo?.get("巡检对象") || "");
+  const resourceType = normalizeCardFieldValue(firstInfo?.get("资源类型") || "");
+  const resourceNames = resourceSections
+    .map((section) => normalizeCardFieldValue(section.basicInfoMap.get("资源名称") || ""))
+    .filter(Boolean);
+  const statuses = resourceSections
+    .map((section) => normalizeCardFieldValue(section.basicInfoMap.get("状态") || ""))
+    .filter(Boolean);
+  const inspectionTimes = resourceSections
+    .map((section) => normalizeCardFieldValue(section.basicInfoMap.get("巡检时间") || ""))
+    .filter(Boolean);
+  const metricCounts = resourceSections
+    .map((section) => parseMetricCountValue(section.basicInfoMap.get("指标总数") || ""))
+    .filter((value): value is number => value !== null);
+  const totalMetricCount = metricCounts.length ? String(metricCounts.reduce((sum, value) => sum + value, 0)) : "";
+  const overallStatus = statuses.some((status) => /异常|故障|离线|失败/u.test(status))
+    ? "异常"
+    : statuses.some((status) => /关注|风险|告警|亚健康/u.test(status))
+      ? "需关注"
+      : statuses.some((status) => /正常|在线/u.test(status))
+        ? "正常"
+        : "";
+  const statusSummary = [
+    statuses.filter((status) => /异常|故障|离线|失败/u.test(status)).length
+      ? `${statuses.filter((status) => /异常|故障|离线|失败/u.test(status)).length} 异常`
+      : "",
+    statuses.filter((status) => /关注|风险|告警|亚健康/u.test(status)).length
+      ? `${statuses.filter((status) => /关注|风险|告警|亚健康/u.test(status)).length} 需关注`
+      : "",
+    statuses.filter((status) => /正常|在线/u.test(status)).length
+      ? `${statuses.filter((status) => /正常|在线/u.test(status)).length} 正常`
+      : "",
+  ].filter(Boolean).join(" / ");
+  const title = extractFirstMeaningfulHeading(content) || "巡检结果";
+  const lead = extractSectionLeadText(reportSection?.body || "") || [
+    resourceSections.length ? `共 ${resourceSections.length} 个资源` : "",
+    statusSummary ? `整体状态 ${statusSummary}` : "",
+  ].filter(Boolean).join("，");
+
+  return {
+    title,
+    eyebrow: "巡检结果摘要",
+    lead,
+    badges: [resourceType, `${resourceSections.length} 个实例`, overallStatus].filter(Boolean),
+    targetText: [
+      inspectionObject,
+      resourceNames.slice(0, 2).join(" / "),
+      resourceNames.length > 2 ? `等 ${resourceNames.length} 个资源` : "",
+    ].filter(Boolean).join(" · "),
+    stats: [
+      { label: "巡检时间", value: inspectionTimes.sort().at(-1) || "--" },
+      { label: "指标总数", value: totalMetricCount || `${resourceSections.length} 个实例` },
+      { label: "资源类型", value: resourceType || "--" },
+      {
+        label: "在线状态",
+        value: statusSummary || overallStatus || "--",
+        tone: overallStatus === "正常" ? "good" : overallStatus ? "warning" : "neutral",
+      },
+    ],
+    metrics: resourceSections.length === 1 ? resourceSections[0].metrics : [],
+    metricGroups: resourceSections.map((section) => ({
+      title: section.title,
+      summary: section.summary,
+      metrics: section.metrics,
+    })),
+    findingSections: [],
+    recommendations: [],
+    topologyChart: extractRawTopologyChart(content),
+  };
+}
+
 function buildInspectionReportModel(content: string): InspectionDisplayModel {
+  const standardInspectionTitle = extractHeadingTitle(content, "巡检结果");
+  if (!standardInspectionTitle) {
+    const aggregateModel = buildAggregateInspectionReportModel(content);
+    if (aggregateModel) {
+      return aggregateModel;
+    }
+  }
   const basicInfoSection = extractMarkdownSection(content, ["基本信息"]);
   const basicInfoMap = rowsToKeyValueMap(extractFirstTable(basicInfoSection).rows);
   const metricsSection = extractMarkdownSection(content, ["指标数据"]);
   const metricGroups = buildInspectionMetricGroups(metricsSection);
+  if (!basicInfoMap.size && !metricGroups.length) {
+    const aggregateModel = buildAggregateInspectionReportModel(content);
+    if (aggregateModel) {
+      return aggregateModel;
+    }
+  }
   const topologyChart = extractRawTopologyChart(content);
 
   const resourceName = normalizeCardFieldValue(basicInfoMap.get("资源名称") || "");
@@ -387,7 +517,7 @@ function buildInspectionReportModel(content: string): InspectionDisplayModel {
   const metricsCount = normalizeCardFieldValue(basicInfoMap.get("指标总数") || "");
   const dataSource = normalizeCardFieldValue(basicInfoMap.get("数据来源") || "");
   const inspectionTime = normalizeCardFieldValue(basicInfoMap.get("巡检时间") || "");
-  const title = extractHeadingTitle(content, "巡检结果") || "巡检结果";
+  const title = standardInspectionTitle || extractFirstMeaningfulHeading(content) || "巡检结果";
 
   return {
     title,

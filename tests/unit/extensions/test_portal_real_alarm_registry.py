@@ -99,3 +99,49 @@ def test_registry_timestamps_fall_back_to_east_eight_timezone(
     assert record["createdAt"].endswith("+08:00")
     assert record["updatedAt"].endswith("+08:00")
     assert payload["updatedAt"].endswith("+08:00")
+
+
+def test_default_registry_path_migrates_legacy_file_into_extension_subdir(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    legacy_path = tmp_path / "portal_real_alarm_registry.json"
+    new_path = tmp_path / "extensions" / "portal_real_alarm" / "portal_real_alarm_registry.json"
+    legacy_path.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "updatedAt": "2026-05-12T10:00:00+08:00",
+                "alarms": {
+                    "alarm-1": {
+                        "alarmId": "alarm-1",
+                        "status": "analyzing",
+                    }
+                },
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(
+        portal_real_alarm_registry,
+        "LEGACY_PORTAL_REAL_ALARM_REGISTRY_PATH",
+        legacy_path,
+    )
+    monkeypatch.setattr(
+        portal_real_alarm_registry,
+        "PORTAL_REAL_ALARM_REGISTRY_PATH",
+        new_path,
+    )
+    monkeypatch.setattr(
+        portal_real_alarm_registry,
+        "DEFAULT_PORTAL_REAL_ALARM_REGISTRY_PATH",
+        new_path,
+    )
+
+    records = portal_real_alarm_registry.load_alarm_records()
+
+    assert records["alarm-1"]["alarmId"] == "alarm-1"
+    assert new_path.exists()
+    assert not legacy_path.exists()

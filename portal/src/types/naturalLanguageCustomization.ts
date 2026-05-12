@@ -24,6 +24,7 @@ export interface NlCustomizationMatchedTemplate {
 
 export interface NlCustomizationPreviewResponse {
   previewId: string;
+  appId?: string;
   title: string;
   prompt: string;
   intent: NlCustomizationIntent;
@@ -41,9 +42,18 @@ export interface NlCustomizationPublishResponse {
   record: NlCustomizationVersionRecord;
 }
 
+export interface NlCustomizationApplyResponse {
+  versionId: string;
+  appliedAt: string;
+  activePath: string;
+  record: NlCustomizationVersionRecord;
+}
+
 export interface NlCustomizationVersionRecord {
+  appId?: string;
   versionId: string;
   title: string;
+  description?: string;
   prompt: string;
   scenarioType: string;
   targetType: string;
@@ -54,8 +64,61 @@ export interface NlCustomizationVersionRecord {
   warningCount: number;
   bundlePath: string;
   summaryMarkdown: string;
+  isActive?: boolean;
+  isListed?: boolean;
+  listedAt?: string;
+  isInstalled?: boolean;
+  appliedAt?: string;
+  activePath?: string;
 }
 
 export interface NlCustomizationVersionListResponse {
   items: NlCustomizationVersionRecord[];
+}
+
+export interface NlCustomizationVersionDetailResponse {
+  versionId: string;
+  record: NlCustomizationVersionRecord;
+  preview: NlCustomizationPreviewResponse;
+  bundlePath: string;
+}
+
+export interface NlCustomizationDeleteResponse {
+  versionId: string;
+  deleted: boolean;
+  bundlePath: string;
+  record: NlCustomizationVersionRecord;
+}
+
+export interface NlCustomizationActiveResponse {
+  activeVersionId: string;
+  appliedAt: string;
+  activePath: string;
+  record: NlCustomizationVersionRecord | null;
+  preview?: NlCustomizationPreviewResponse | null;
+  effectiveBundle: Record<string, unknown>;
+}
+
+export interface NlCustomizationAppRecord {
+  appId: string;
+  versionId: string;
+  title: string;
+  description: string;
+  prompt: string;
+  scenarioType: string;
+  targetType: string;
+  matchedSkillId: string;
+  displayTargets: string[];
+  launchEmployeeId: string;
+  launchPrompt: string;
+  listedAt: string;
+  installedAt: string;
+  publishedAt: string;
+  isListed?: boolean;
+  isInstalled?: boolean;
+  isActive?: boolean;
+}
+
+export interface NlCustomizationAppListResponse {
+  items: NlCustomizationAppRecord[];
 }

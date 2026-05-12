@@ -1,6 +1,11 @@
 import type {
+  NlCustomizationActiveResponse,
+  NlCustomizationAppListResponse,
+  NlCustomizationApplyResponse,
+  NlCustomizationDeleteResponse,
   NlCustomizationPreviewResponse,
   NlCustomizationPublishResponse,
+  NlCustomizationVersionDetailResponse,
   NlCustomizationVersionListResponse,
 } from "../types/naturalLanguageCustomization";
 
@@ -70,6 +75,7 @@ async function requestPortalApi<T>(
 export function previewNlCustomization(payload: {
   prompt: string;
   title?: string;
+  appId?: string;
 }) {
   return requestPortalApi<NlCustomizationPreviewResponse>(
     "/nl-customization/preview",
@@ -98,8 +104,64 @@ export function publishNlCustomization(payload: {
   });
 }
 
+export function applyNlCustomizationVersion(payload: {
+  versionId: string;
+  requestedBy?: string;
+}) {
+  return requestPortalApi<NlCustomizationApplyResponse>("/nl-customization/apply", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+}
+
+export function updateNlCustomizationListing(payload: {
+  versionId: string;
+  listed: boolean;
+  requestedBy?: string;
+}) {
+  return requestPortalApi<{
+    versionId: string;
+    listed: boolean;
+    listedAt: string;
+  }>("/nl-customization/listing", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+}
+
 export function listNlCustomizationVersions(limit = 20) {
   return requestPortalApi<NlCustomizationVersionListResponse>(
     `/nl-customization/versions?limit=${encodeURIComponent(String(limit))}`,
+  );
+}
+
+export function getNlCustomizationVersion(versionId: string) {
+  return requestPortalApi<NlCustomizationVersionDetailResponse>(
+    `/nl-customization/versions/${encodeURIComponent(versionId)}`,
+  );
+}
+
+export function deleteNlCustomizationVersion(versionId: string) {
+  return requestPortalApi<NlCustomizationDeleteResponse>(
+    `/nl-customization/versions/${encodeURIComponent(versionId)}`,
+    {
+      method: "DELETE",
+    },
+  );
+}
+
+export function getActiveNlCustomization() {
+  return requestPortalApi<NlCustomizationActiveResponse>("/nl-customization/active");
+}
+
+export function listNlCustomizationApps(limit = 50) {
+  return requestPortalApi<NlCustomizationAppListResponse>(
+    `/nl-customization/apps?limit=${encodeURIComponent(String(limit))}`,
   );
 }

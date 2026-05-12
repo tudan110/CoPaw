@@ -7,22 +7,23 @@ export const PORTAL_FAULT_WORKORDER_MARKER = "# PORTAL FAULT WORKORDER MODE";
 export const PORTAL_ALARM_ANALYST_CARD_MARKER = "# PORTAL ALARM ANALYST CARD MODE";
 export const PORTAL_INSPECTION_CARD_MARKER = "# PORTAL INSPECTION CARD MODE";
 export const PORTAL_VIEW_OPTIONS = ["chat", "overview", "dashboard", "tasks"] as const;
-export const PORTAL_ADVANCED_PANEL_OPTIONS = ["model-config", "settings", "token-usage", "ops-expert", "mcp", "skill-pool", "knowledge-base", "inspiration", "cli", "resource-import", "nl-customization"] as const;
+export const PORTAL_ADVANCED_PANEL_OPTIONS = ["model-config", "token-usage", "ops-expert", "mcp", "skill-pool", "knowledge-base", "inspiration", "resource-import", "nl-customization", "app-market", "cli", "settings"] as const;
 export const PORTAL_ROUTE_SECTION_OPTIONS = [
   "overview",
   "dashboard",
   "tasks",
   "model-config",
-  "settings",
   "token-usage",
   "ops-expert",
   "mcp",
   "skill-pool",
   "knowledge-base",
   "inspiration",
-  "cli",
   "resource-import",
   "nl-customization",
+  "app-market",
+  "cli",
+  "settings",
 ] as const;
 
 export type PortalView = (typeof PORTAL_VIEW_OPTIONS)[number];
@@ -946,6 +947,14 @@ export function unwrapPortalInspectionCardContent(content: string) {
         ) {
           return candidate;
         }
+      }
+      const combined = segments
+        .slice(markerIndex + 1)
+        .map((segment) => segment.trim())
+        .filter(Boolean)
+        .join("\n\n---\n\n");
+      if (combined) {
+        return combined;
       }
       if (fallback) {
         return fallback;
