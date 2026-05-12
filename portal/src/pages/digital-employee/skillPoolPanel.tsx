@@ -3,41 +3,31 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
 import {
-  type BuiltinImportSpec,
-  type PoolSkillInfo,
+  type HubInstallTask,
   SkillConflictError,
   SkillScanError,
   type SkillScanErrorPayload,
+  type SkillImportResult,
   skillsApi,
-  type WorkspaceSkillSummary,
+  type WorkspaceSkillInfo,
 } from "../../api/skills";
 import { portalGatewayAgentId } from "../../config/portalBranding";
 import "../skill-pool.css";
+
+const ERKAI_TAG = "二开";
 
 type NoticeState =
   | { type: "success" | "error"; message: string }
   | null;
 
-type FilterMode = "all" | "custom" | "builtin" | "used" | "unused";
-type ModalMode = "create" | "edit" | "fork";
+type FilterMode = "all" | "erkai" | "stock" | "enabled" | "disabled";
+type ModalMode = "create" | "edit";
 
 type SkillFormState = {
   name: string;
   content: string;
   tagsText: string;
   configText: string;
-};
-
-type WorkspaceUsage = {
-  agentId: string;
-  agentName: string;
-  enabled: boolean;
-  channels: string[];
-};
-
-type BuiltinSelection = {
-  selected: boolean;
-  language: string;
 };
 
 const EMPTY_SKILL_CONTENT = `---
@@ -127,7 +117,7 @@ function formatLastUpdated(value: string) {
   });
 }
 
-function getSkillEmoji(skill: PoolSkillInfo) {
+function getSkillEmoji(skill: WorkspaceSkillInfo) {
   if (skill.emoji?.trim()) {
     return skill.emoji.trim();
   }
@@ -139,31 +129,14 @@ function getSkillEmoji(skill: PoolSkillInfo) {
   return "⚡";
 }
 
-function getSkillSourceLabel(skill: PoolSkillInfo) {
-  if (skill.source === "builtin") {
-    return "内置";
-  }
-  return "自定义";
-}
-
-function buildCopyName(skillName: string, existingNames: string[]) {
-  const existing = new Set(existingNames);
-  let candidate = `${skillName}-copy`;
-  let index = 2;
-  while (existing.has(candidate)) {
-    candidate = `${skillName}-copy-${index}`;
-    index += 1;
-  }
-  return candidate;
-}
-
 function describeError(error: unknown, fallback: string) {
   return error instanceof Error ? error.message : fallback;
 }
 
 export function SkillPoolPanel() {
-  const [skills, setSkills] = useState<PoolSkillInfo[]>([]);
-  const [workspaces, setWorkspaces] = useState<WorkspaceSkillSummary[]>([]);
+  const agentId = portalGatewayAgentId;
+
+  const [skills, setSkills] = useState<WorkspaceSkillInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState<NoticeState>(null);
@@ -172,14 +145,14 @@ export function SkillPoolPanel() {
   const [selectedSkillName, setSelectedSkillName] = useState<string | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [modalMode, setModalMode] = useState<ModalMode>("create");
-  const [editingSkill, setEditingSkill] = useState<PoolSkillInfo | null>(null);
+  const [editingSkill, setEditingSkill] = useState<WorkspaceSkillInfo | null>(null);
   const [form, setForm] = useState<SkillFormState>(EMPTY_FORM);
 
-  // Import + assign state
+  // Import + per-skill busy state
   const [importMenuOpen, setImportMenuOpen] = useState(false);
   const importMenuRef = useRef<HTMLDivElement | null>(null);
   const [scanError, setScanError] = useState<SkillScanErrorPayload | null>(null);
-  const [assigningSkill, setAssigningSkill] = useState<string | null>(null);
+  const [busySkill, setBusySkill] = useState<string | null>(null);
 
   const [uploadModalOpen, setUploadModalOpen] = useState(false);
   const [uploadFile, setUploadFile] = useState<File | null>(null);
@@ -191,31 +164,24 @@ export function SkillPoolPanel() {
   const [hubVersion, setHubVersion] = useState("");
   const [hubTargetName, setHubTargetName] = useState("");
   const [hubError, setHubError] = useState("");
-
-  const [builtinModalOpen, setBuiltinModalOpen] = useState(false);
-  const [builtinLoading, setBuiltinLoading] = useState(false);
-  const [builtinSources, setBuiltinSources] = useState<BuiltinImportSpec[]>([]);
-  const [builtinSelection, setBuiltinSelection] = useState<Record<string, BuiltinSelection>>({});
-  const [builtinError, setBuiltinError] = useState("");
+  const [hubInstall, setHubInstall] = useState<
+    { taskId: string; status: HubInstallTask["status"] } | null
+  >(null);
 
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      const [poolSkills, workspaceSkills] = await Promise.all([
-        skillsApi.listPoolSkills(),
-        skillsApi.listWorkspaceSkills(),
-      ]);
-      setSkills(poolSkills);
-      setWorkspaces(workspaceSkills);
+      const list = await skillsApi.listAgentSkills(agentId);
+      setSkills(list);
     } catch (error) {
       setNotice({
         type: "error",
-        message: describeError(error, "技能池列表加载失败"),
+        message: describeError(error, "技能列表加载失败"),
       });
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [agentId]);
 
   useEffect(() => {
     void loadData();
@@ -236,51 +202,21 @@ export function SkillPoolPanel() {
     };
   }, [importMenuOpen]);
 
-  const targetWorkspace = useMemo(() => {
-    if (!workspaces.length) {
-      return null;
-    }
-    return (
-      workspaces.find((workspace) => workspace.agent_id === portalGatewayAgentId) ||
-      workspaces.find((workspace) => workspace.agent_id === "default") ||
-      workspaces[0]
-    );
-  }, [workspaces]);
+  const isErkai = (s: WorkspaceSkillInfo) => (s.tags || []).includes(ERKAI_TAG);
 
-  const targetAgentId = targetWorkspace?.agent_id || portalGatewayAgentId;
-  const targetAgentName = targetWorkspace?.agent_name || targetWorkspace?.agent_id || portalGatewayAgentId;
-
-  const usageMap = useMemo(() => {
-    const next: Record<string, WorkspaceUsage[]> = {};
-
-    for (const workspace of workspaces) {
-      for (const skill of workspace.skills || []) {
-        if (!next[skill.name]) {
-          next[skill.name] = [];
-        }
-        next[skill.name].push({
-          agentId: workspace.agent_id,
-          agentName: workspace.agent_name || workspace.agent_id,
-          enabled: Boolean(skill.enabled),
-          channels: skill.channels || ["all"],
-        });
-      }
-    }
-
-    return next;
-  }, [workspaces]);
+  const erkaiCount = useMemo(() => skills.filter(isErkai).length, [skills]);
+  const enabledCount = useMemo(() => skills.filter((s) => s.enabled).length, [skills]);
 
   const filteredSkills = useMemo(() => {
     const keyword = search.trim().toLowerCase();
 
     return skills.filter((skill) => {
-      const usageCount = usageMap[skill.name]?.length || 0;
       const matchedFilter =
         filter === "all"
-        || (filter === "custom" && skill.source !== "builtin")
-        || (filter === "builtin" && skill.source === "builtin")
-        || (filter === "used" && usageCount > 0)
-        || (filter === "unused" && usageCount === 0);
+        || (filter === "erkai" && isErkai(skill))
+        || (filter === "stock" && !isErkai(skill))
+        || (filter === "enabled" && skill.enabled)
+        || (filter === "disabled" && !skill.enabled);
 
       if (!matchedFilter) {
         return false;
@@ -299,7 +235,7 @@ export function SkillPoolPanel() {
         .filter(Boolean)
         .some((value) => value.toLowerCase().includes(keyword));
     });
-  }, [filter, search, skills, usageMap]);
+  }, [filter, search, skills]);
 
   useEffect(() => {
     if (!filteredSkills.length) {
@@ -317,13 +253,6 @@ export function SkillPoolPanel() {
     [selectedSkillName, skills],
   );
 
-  const selectedUsages = selectedSkill ? usageMap[selectedSkill.name] || [] : [];
-  const selectedTargetUsage = selectedUsages.find((usage) => usage.agentId === targetAgentId) || null;
-  const builtinCount = useMemo(
-    () => skills.filter((skill) => skill.source === "builtin").length,
-    [skills],
-  );
-
   const openCreateModal = () => {
     setModalMode("create");
     setEditingSkill(null);
@@ -331,26 +260,11 @@ export function SkillPoolPanel() {
     setIsModalOpen(true);
   };
 
-  const openEditModal = (skill: PoolSkillInfo) => {
+  const openEditModal = (skill: WorkspaceSkillInfo) => {
     setModalMode("edit");
     setEditingSkill(skill);
     setForm({
       name: skill.name,
-      content: skill.content || EMPTY_SKILL_CONTENT,
-      tagsText: (skill.tags || []).join(", "),
-      configText: formatJson(skill.config),
-    });
-    setIsModalOpen(true);
-  };
-
-  const openForkModal = (skill: PoolSkillInfo) => {
-    setModalMode("fork");
-    setEditingSkill(skill);
-    setForm({
-      name: buildCopyName(
-        skill.name,
-        skills.map((item) => item.name),
-      ),
       content: skill.content || EMPTY_SKILL_CONTENT,
       tagsText: (skill.tags || []).join(", "),
       configText: formatJson(skill.config),
@@ -377,45 +291,45 @@ export function SkillPoolPanel() {
     setNotice(null);
     try {
       setLoading(true);
-      await skillsApi.refreshPoolSkills();
+      await skillsApi.refreshAgentSkills(agentId);
       await loadData();
-      setNotice({ type: "success", message: "技能池已刷新" });
+      setNotice({ type: "success", message: "技能列表已刷新" });
     } catch (error) {
       setNotice({
         type: "error",
-        message: describeError(error, "技能池刷新失败"),
+        message: describeError(error, "技能列表刷新失败"),
       });
     } finally {
       setLoading(false);
     }
   };
 
-  const handleDelete = async (skill: PoolSkillInfo) => {
-    if (skill.protected || skill.source === "builtin") {
-      setNotice({
-        type: "error",
-        message: "内置技能不支持直接删除，可先复制为自定义技能后再维护",
-      });
-      return;
-    }
-
-    if (!window.confirm(`确认删除技能“${skill.name}”吗？`)) {
-      return;
-    }
-
-    try {
-      await skillsApi.deletePoolSkill(skill.name);
-      setNotice({ type: "success", message: `已删除技能：${skill.name}` });
-      if (selectedSkillName === skill.name) {
-        setSelectedSkillName(null);
+  // After an import, tag every freshly-appeared skill with ERKAI_TAG, then reload.
+  const importThenTagErkai = async (doImport: () => Promise<unknown>) => {
+    const prev = new Set(skills.map((s) => s.name));
+    await doImport();
+    let after = await skillsApi.listAgentSkills(agentId);
+    setSkills(after);
+    const fresh = after.filter((s) => !prev.has(s.name)).map((s) => s.name);
+    let tagWarned = false;
+    for (const name of fresh) {
+      try {
+        await skillsApi.updateAgentSkillTags(agentId, name, [ERKAI_TAG]);
+      } catch {
+        tagWarned = true;
       }
-      await loadData();
-    } catch (error) {
+    }
+    if (fresh.length) {
+      after = await skillsApi.listAgentSkills(agentId);
+      setSkills(after);
+    }
+    if (tagWarned) {
       setNotice({
         type: "error",
-        message: describeError(error, "删除技能失败"),
+        message: "技能已导入，但部分「二开」标签写入失败，可在详情页手动补。",
       });
     }
+    return fresh;
   };
 
   const handleSubmit = async () => {
@@ -432,37 +346,50 @@ export function SkillPoolPanel() {
 
     try {
       setSaving(true);
-      let finalName = nextName;
       const config = parseJsonObject(form.configText, "技能配置");
-      const tags = parseTags(form.tagsText);
+      const formTags = parseTags(form.tagsText);
+      let finalName = nextName;
 
       if (modalMode === "edit" && editingSkill) {
-        const result = await skillsApi.savePoolSkill({
+        const result = await skillsApi.saveAgentSkill(agentId, {
           name: nextName,
-          content: form.content.trim(),
           sourceName: editingSkill.name,
+          content: form.content.trim(),
           config,
         });
         finalName = result.name || nextName;
+        try {
+          await skillsApi.updateAgentSkillTags(agentId, finalName, formTags);
+        } catch (error) {
+          resetModalState();
+          await loadData();
+          setSelectedSkillName(finalName);
+          setNotice({
+            type: "error",
+            message: `技能已保存，但标签同步失败：${describeError(error, "未知错误")}`,
+          });
+          return;
+        }
       } else {
-        await skillsApi.createPoolSkill({
+        const result = await skillsApi.createAgentSkill(agentId, {
           name: nextName,
           content: form.content.trim(),
           config,
         });
-      }
-
-      try {
-        await skillsApi.updatePoolSkillTags(finalName, tags);
-      } catch (error) {
-        resetModalState();
-        await loadData();
-        setSelectedSkillName(finalName);
-        setNotice({
-          type: "error",
-          message: `技能主体已保存，但标签同步失败：${describeError(error, "未知错误")}`,
-        });
-        return;
+        finalName = result.name || nextName;
+        const tags = Array.from(new Set([...formTags, ERKAI_TAG]));
+        try {
+          await skillsApi.updateAgentSkillTags(agentId, finalName, tags);
+        } catch (error) {
+          resetModalState();
+          await loadData();
+          setSelectedSkillName(finalName);
+          setNotice({
+            type: "error",
+            message: `技能已保存，但标签同步失败：${describeError(error, "未知错误")}`,
+          });
+          return;
+        }
       }
 
       resetModalState();
@@ -472,14 +399,17 @@ export function SkillPoolPanel() {
         type: "success",
         message:
           modalMode === "create"
-            ? `已新增技能：${finalName}`
-            : modalMode === "fork"
-              ? `已复制技能：${finalName}`
-              : `已更新技能：${finalName}`,
+            ? `已新增技能：${finalName}（已标记为二开）`
+            : `已更新技能：${finalName}`,
       });
     } catch (error) {
       if (error instanceof SkillScanError) {
         setScanError(error.payload);
+      } else if (error instanceof SkillConflictError) {
+        setNotice({
+          type: "error",
+          message: `技能名冲突：${error.conflicts.join(", ") || "已存在同名技能"}，请改名后重试`,
+        });
       } else {
         setNotice({
           type: "error",
@@ -514,14 +444,16 @@ export function SkillPoolPanel() {
     setUploadError("");
     try {
       setSaving(true);
-      const result = await skillsApi.uploadSkillZipToPool(uploadFile, {
-        targetName: uploadTargetName,
+      let importResult: SkillImportResult | undefined;
+      await importThenTagErkai(async () => {
+        importResult = await skillsApi.uploadSkillZipToAgent(agentId, uploadFile, {
+          targetName: uploadTargetName,
+        });
       });
       setUploadModalOpen(false);
-      await loadData();
       setNotice({
         type: "success",
-        message: `已导入 ${result.count} 个技能到技能池`,
+        message: `已导入 ${importResult?.count ?? 0} 个技能到「智观 AI」（已标记为二开）`,
       });
     } catch (error) {
       if (error instanceof SkillScanError) {
@@ -529,7 +461,7 @@ export function SkillPoolPanel() {
         setScanError(error.payload);
       } else if (error instanceof SkillConflictError) {
         setUploadError(
-          `压缩包中的技能与现有技能冲突：${error.conflicts.join(", ") || "已存在同名技能"}。可填写「重命名为」后重试，或先删除同名技能。`,
+          `技能名冲突：${error.conflicts.join(", ") || "已存在同名技能"}。可填写「重命名为」后重试。`,
         );
       } else {
         setUploadError(describeError(error, "上传技能失败"));
@@ -539,12 +471,13 @@ export function SkillPoolPanel() {
     }
   };
 
-  // ---- Import: from hub URL ----
+  // ---- Import: from hub URL (async polling) ----
   const openHubModal = () => {
     setHubUrl("");
     setHubVersion("");
     setHubTargetName("");
     setHubError("");
+    setHubInstall(null);
     setHubModalOpen(true);
   };
 
@@ -555,6 +488,39 @@ export function SkillPoolPanel() {
     setHubModalOpen(false);
   };
 
+  const pollHubInstall = async (taskId: string): Promise<string | null> => {
+    for (let i = 0; i < 60; i++) {
+      await new Promise((r) => setTimeout(r, 1500));
+      let task: HubInstallTask;
+      try {
+        task = await skillsApi.getHubInstallStatus(taskId);
+      } catch (e) {
+        setHubError(describeError(e, "查询导入进度失败"));
+        return null;
+      }
+      setHubInstall({ taskId, status: task.status });
+      if (task.status === "completed") {
+        const r = task.result as { name?: string } | null;
+        return (r && typeof r.name === "string" && r.name) || "";
+      }
+      if (task.status === "failed") {
+        const r = task.result as SkillScanErrorPayload | { type?: string } | null;
+        if (r && typeof r === "object" && (r as { type?: string }).type === "security_scan_failed") {
+          setScanError(r as SkillScanErrorPayload);
+        } else {
+          setHubError(task.error || "导入失败");
+        }
+        return null;
+      }
+      if (task.status === "cancelled") {
+        setHubError("导入已取消");
+        return null;
+      }
+    }
+    setHubError("导入超时，请稍后在面板「刷新」查看");
+    return null;
+  };
+
   const handleHubSubmit = async () => {
     if (!hubUrl.trim()) {
       setHubError("请填写技能链接");
@@ -563,152 +529,72 @@ export function SkillPoolPanel() {
     setHubError("");
     try {
       setSaving(true);
-      const result = await skillsApi.importSkillFromHub({
+      const prev = new Set(skills.map((s) => s.name));
+      const task = await skillsApi.startHubInstallToAgent(agentId, {
         bundleUrl: hubUrl,
         version: hubVersion,
         targetName: hubTargetName,
       });
-      setHubModalOpen(false);
+      setHubInstall({ taskId: task.task_id, status: task.status });
+      const installedName = await pollHubInstall(task.task_id);
+      if (installedName === null) {
+        return;
+      }
+
       await loadData();
-      setSelectedSkillName(result.name);
-      setNotice({
-        type: "success",
-        message: `已从链接导入技能：${result.name}`,
-      });
+      const after = await skillsApi.listAgentSkills(agentId);
+      setSkills(after);
+      const candidates = after.filter((s) => !prev.has(s.name)).map((s) => s.name);
+      const names = installedName ? [installedName] : candidates;
+      let tagWarned = false;
+      for (const name of names) {
+        try {
+          await skillsApi.updateAgentSkillTags(agentId, name, [ERKAI_TAG]);
+        } catch {
+          tagWarned = true;
+        }
+      }
+      setSkills(await skillsApi.listAgentSkills(agentId));
+
+      setHubModalOpen(false);
+      const display = installedName || candidates[0] || "技能";
+      setSelectedSkillName(installedName || candidates[0] || null);
+      if (tagWarned) {
+        setNotice({
+          type: "error",
+          message: `已从链接导入技能：${display}，但部分「二开」标签写入失败，可在详情页手动补。`,
+        });
+      } else {
+        setNotice({
+          type: "success",
+          message: `已从链接导入技能：${display}（已标记为二开）`,
+        });
+      }
     } catch (error) {
       if (error instanceof SkillScanError) {
         setHubModalOpen(false);
         setScanError(error.payload);
-      } else if (error instanceof SkillConflictError) {
-        setHubError(
-          `技能名冲突：${error.conflicts.join(", ") || "已存在同名技能"}。可填写「重命名为」后重试。`,
-        );
       } else {
         setHubError(describeError(error, "从链接导入失败"));
       }
     } finally {
       setSaving(false);
+      setHubInstall(null);
     }
   };
 
-  // ---- Import: builtin skills ----
-  const openBuiltinModal = async () => {
-    setBuiltinModalOpen(true);
-    setBuiltinError("");
-    setBuiltinLoading(true);
+  // ---- Enable / disable on the gateway agent ----
+  const handleEnable = async (skill: WorkspaceSkillInfo) => {
+    if (!window.confirm(`在「智观 AI」启用技能「${skill.name}」？`)) {
+      return;
+    }
+    setBusySkill(skill.name);
     try {
-      const sources = await skillsApi.listBuiltinSources();
-      setBuiltinSources(sources);
-      const selection: Record<string, BuiltinSelection> = {};
-      for (const source of sources) {
-        selection[source.name] = {
-          selected: false,
-          language: source.current_language || source.available_languages?.[0] || "",
-        };
-      }
-      setBuiltinSelection(selection);
-    } catch (error) {
-      setBuiltinError(describeError(error, "内置技能列表加载失败"));
-    } finally {
-      setBuiltinLoading(false);
-    }
-  };
-
-  const closeBuiltinModal = () => {
-    if (saving) {
-      return;
-    }
-    setBuiltinModalOpen(false);
-  };
-
-  const toggleBuiltinSelection = (name: string) => {
-    setBuiltinSelection((current) => ({
-      ...current,
-      [name]: {
-        selected: !current[name]?.selected,
-        language: current[name]?.language || "",
-      },
-    }));
-  };
-
-  const setBuiltinLanguage = (name: string, language: string) => {
-    setBuiltinSelection((current) => ({
-      ...current,
-      [name]: {
-        selected: current[name]?.selected ?? false,
-        language,
-      },
-    }));
-  };
-
-  const runBuiltinImport = async (overwriteConflicts: boolean) => {
-    const imports = Object.entries(builtinSelection)
-      .filter(([, value]) => value.selected)
-      .map(([name, value]) => ({ skill_name: name, language: value.language || "" }));
-
-    if (!imports.length) {
-      setBuiltinError("请至少勾选一个内置技能");
-      return;
-    }
-    setBuiltinError("");
-    try {
-      setSaving(true);
-      const result = await skillsApi.importBuiltinSkills({ imports, overwriteConflicts });
-      setBuiltinModalOpen(false);
-      await loadData();
-      const addedCount = result.added?.length ?? 0;
-      const skippedCount = result.skipped?.length ?? 0;
-      setNotice({
-        type: "success",
-        message: `已导入 ${addedCount} 个内置技能${skippedCount ? `，跳过 ${skippedCount} 个已存在` : ""}`,
-      });
-    } catch (error) {
-      if (error instanceof SkillScanError) {
-        setBuiltinModalOpen(false);
-        setScanError(error.payload);
-      } else if (error instanceof SkillConflictError) {
-        const conflicts = error.conflicts.join(", ") || "已存在同名技能";
-        if (window.confirm(`以下内置技能与现有技能冲突：${conflicts}\n是否覆盖导入？`)) {
-          await runBuiltinImport(true);
-          return;
-        }
-        setBuiltinError(`已取消：存在冲突技能（${conflicts}）`);
-      } else {
-        setBuiltinError(describeError(error, "导入内置技能失败"));
-      }
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  // ---- Assign pool skill to the gateway agent ----
-  const handleAssign = async (skill: PoolSkillInfo) => {
-    if (!targetAgentId) {
-      setNotice({ type: "error", message: "未找到目标数字员工工作区" });
-      return;
-    }
-    const usages = usageMap[skill.name] || [];
-    const alreadyInWorkspace = usages.some((usage) => usage.agentId === targetAgentId);
-    const confirmText = alreadyInWorkspace
-      ? `在「${targetAgentName}」启用技能「${skill.name}」？`
-      : `将技能「${skill.name}」下发到「${targetAgentName}」并启用？`;
-    if (!window.confirm(confirmText)) {
-      return;
-    }
-    try {
-      setAssigningSkill(skill.name);
-      if (!alreadyInWorkspace) {
-        await skillsApi.downloadPoolSkill({
-          skillName: skill.name,
-          workspaceId: targetAgentId,
-          overwrite: false,
-        });
-      }
-      await skillsApi.enableWorkspaceSkill(skill.name, targetAgentId);
+      await skillsApi.enableWorkspaceSkill(skill.name, agentId);
       await loadData();
       setNotice({
         type: "success",
-        message: `技能「${skill.name}」已在「${targetAgentName}」启用（约 1–2 秒后生效）`,
+        message: `技能「${skill.name}」已在「智观 AI」启用（约 1–2 秒生效）`,
       });
     } catch (error) {
       if (error instanceof SkillScanError) {
@@ -716,28 +602,25 @@ export function SkillPoolPanel() {
       } else {
         setNotice({
           type: "error",
-          message: describeError(error, "下发并启用技能失败"),
+          message: describeError(error, "启用技能失败"),
         });
       }
     } finally {
-      setAssigningSkill(null);
+      setBusySkill(null);
     }
   };
 
-  const handleUnassign = async (skill: PoolSkillInfo) => {
-    if (!targetAgentId) {
+  const handleDisable = async (skill: WorkspaceSkillInfo) => {
+    if (!window.confirm(`在「智观 AI」停用技能「${skill.name}」？`)) {
       return;
     }
-    if (!window.confirm(`在「${targetAgentName}」停用技能「${skill.name}」？`)) {
-      return;
-    }
+    setBusySkill(skill.name);
     try {
-      setAssigningSkill(skill.name);
-      await skillsApi.disableWorkspaceSkill(skill.name, targetAgentId);
+      await skillsApi.disableWorkspaceSkill(skill.name, agentId);
       await loadData();
       setNotice({
         type: "success",
-        message: `已在「${targetAgentName}」停用技能「${skill.name}」`,
+        message: `已在「智观 AI」停用技能「${skill.name}」`,
       });
     } catch (error) {
       setNotice({
@@ -745,22 +628,66 @@ export function SkillPoolPanel() {
         message: describeError(error, "停用技能失败"),
       });
     } finally {
-      setAssigningSkill(null);
+      setBusySkill(null);
     }
   };
 
-  const selectedBuiltinCount = Object.values(builtinSelection).filter((value) => value.selected).length;
+  // ---- Delete ----
+  const handleDelete = async (skill: WorkspaceSkillInfo) => {
+    if (!window.confirm(`确认删除技能「${skill.name}」吗？删除前会先停用。`)) {
+      return;
+    }
+    setBusySkill(skill.name);
+    try {
+      await skillsApi.deleteAgentSkill(agentId, skill.name);
+      if (selectedSkillName === skill.name) {
+        setSelectedSkillName(null);
+      }
+      await loadData();
+      setNotice({ type: "success", message: `已删除技能：${skill.name}` });
+    } catch (error) {
+      setNotice({
+        type: "error",
+        message: describeError(error, "删除技能失败（若仍启用请先停用）"),
+      });
+    } finally {
+      setBusySkill(null);
+    }
+  };
+
+  // ---- Toggle 二开 tag (detail side card) ----
+  const handleToggleErkai = async (skill: WorkspaceSkillInfo) => {
+    const cur = skill.tags || [];
+    const has = cur.includes(ERKAI_TAG);
+    const next = has ? cur.filter((t) => t !== ERKAI_TAG) : [...cur, ERKAI_TAG];
+    setBusySkill(skill.name);
+    try {
+      await skillsApi.updateAgentSkillTags(agentId, skill.name, next);
+      await loadData();
+      setNotice({
+        type: "success",
+        message: has ? `已取消「${skill.name}」的二开标记` : `已将「${skill.name}」标记为二开`,
+      });
+    } catch (e) {
+      setNotice({
+        type: "error",
+        message: describeError(e, "更新标签失败"),
+      });
+    } finally {
+      setBusySkill(null);
+    }
+  };
 
   return (
     <div className="skill-pool-panel">
       <div className="portal-model-page-header">
         <div className="portal-model-page-title">
-          技能池 <small>运维技能库</small>
+          技能 <small>智观 AI 的能力</small>
         </div>
         <div className="portal-model-page-actions">
           <button type="button" className="portal-model-btn" onClick={openCreateModal}>
             <i className="fas fa-plus" />
-            新增技能
+            新建技能
           </button>
           <div
             ref={importMenuRef}
@@ -797,16 +724,6 @@ export function SkillPoolPanel() {
                   <i className="fas fa-link" />
                   从链接导入
                 </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setImportMenuOpen(false);
-                    void openBuiltinModal();
-                  }}
-                >
-                  <i className="fas fa-cubes" />
-                  导入内置技能
-                </button>
               </div>
             ) : null}
           </div>
@@ -819,10 +736,10 @@ export function SkillPoolPanel() {
 
       <div className="skill-pool-content">
         <div className="portal-model-scope-bar skill-pool-scope-bar">
-          <span>管理范围：全局技能池</span>
+          <span>管理范围：智观 AI（对外入口）的技能</span>
           <span>技能总数：{skills.length}</span>
-          <span>内置技能：{builtinCount}</span>
-          <span>下发目标：{targetAgentName}</span>
+          <span>其中二开：{erkaiCount}</span>
+          <span>已启用：{enabledCount}</span>
         </div>
 
         <div className="skill-pool-toolbar">
@@ -837,10 +754,10 @@ export function SkillPoolPanel() {
           <div className="skill-pool-filter-group">
             {[
               ["all", "全部"],
-              ["custom", "自定义"],
-              ["builtin", "内置"],
-              ["used", "已引用"],
-              ["unused", "未引用"],
+              ["erkai", "二开"],
+              ["stock", "出厂"],
+              ["enabled", "已启用"],
+              ["disabled", "未启用"],
             ].map(([value, label]) => (
               <button
                 key={value}
@@ -863,16 +780,12 @@ export function SkillPoolPanel() {
           <div className="skill-pool-empty">
             <div className="skill-pool-loading">
               <i className="ri-loader-4-line ri-spin" />
-              正在加载技能池...
+              正在加载技能...
             </div>
           </div>
         ) : filteredSkills.length ? (
           <div className="skill-pool-grid">
             {filteredSkills.map((skill) => {
-              const usageCount = usageMap[skill.name]?.length || 0;
-              const enabledOnTarget = (usageMap[skill.name] || []).some(
-                (usage) => usage.agentId === targetAgentId && usage.enabled,
-              );
               const isSelected = selectedSkillName === skill.name;
               return (
                 <article
@@ -887,15 +800,16 @@ export function SkillPoolPanel() {
                         <div className="skill-pool-card-title-row">
                           <h4>{skill.name}</h4>
                           <div className="skill-pool-card-badges">
-                            <span className={`skill-pool-badge ${skill.source === "builtin" ? "builtin" : "custom"}`}>
-                              {getSkillSourceLabel(skill)}
-                            </span>
-                            {skill.protected ? (
-                              <span className="skill-pool-badge protected">受保护</span>
-                            ) : null}
-                            {enabledOnTarget ? (
+                            {isErkai(skill) ? (
+                              <span className="skill-pool-badge erkai">二开</span>
+                            ) : (
+                              <span className="skill-pool-badge stock">出厂</span>
+                            )}
+                            {skill.enabled ? (
                               <span className="skill-pool-badge enabled">已启用</span>
-                            ) : null}
+                            ) : (
+                              <span className="skill-pool-badge">已停用</span>
+                            )}
                           </div>
                         </div>
                         <p>{skill.description || "未填写技能描述"}</p>
@@ -909,8 +823,8 @@ export function SkillPoolPanel() {
                       <strong>{skill.version_text || "未标注"}</strong>
                     </div>
                     <div className="skill-pool-card-kv">
-                      <span>工作区引用</span>
-                      <strong>{usageCount ? `${usageCount} 个工作区` : "暂未下发"}</strong>
+                      <span>状态</span>
+                      <strong>{skill.enabled ? "已启用" : "已停用"}</strong>
                     </div>
                     <div className="skill-pool-card-kv">
                       <span>更新时间</span>
@@ -948,14 +862,10 @@ export function SkillPoolPanel() {
                       className="portal-model-btn secondary compact"
                       onClick={(event) => {
                         event.stopPropagation();
-                        if (skill.protected || skill.source === "builtin") {
-                          openForkModal(skill);
-                        } else {
-                          openEditModal(skill);
-                        }
+                        openEditModal(skill);
                      }}
                     >
-                      {skill.protected || skill.source === "builtin" ? "复制" : "编辑"}
+                      编辑
                     </button>
                   </div>
                 </article>
@@ -966,7 +876,7 @@ export function SkillPoolPanel() {
           <div className="skill-pool-empty">
             <i className="fas fa-bolt" />
             <strong>还没有匹配的技能</strong>
-            <span>可以新建自定义技能，或通过「导入技能」上传压缩包 / 链接 / 内置技能。</span>
+            <span>可以新建自定义技能，或通过「导入技能」上传压缩包 / 从链接导入。</span>
           </div>
         )}
 
@@ -982,62 +892,60 @@ export function SkillPoolPanel() {
                   </div>
                 </div>
                 <div className="skill-pool-detail-meta">
-                  <span className={`skill-pool-badge ${selectedSkill.source === "builtin" ? "builtin" : "custom"}`}>
-                    {getSkillSourceLabel(selectedSkill)}
-                  </span>
+                  {isErkai(selectedSkill) ? (
+                    <span className="skill-pool-badge erkai">二开</span>
+                  ) : (
+                    <span className="skill-pool-badge stock">出厂</span>
+                  )}
                   <span className="skill-pool-badge info">版本 {selectedSkill.version_text || "未标注"}</span>
-                  {selectedSkill.sync_status ? (
-                    <span className="skill-pool-badge info">同步 {selectedSkill.sync_status}</span>
-                  ) : null}
                   <span className="skill-pool-badge info">
                     更新于 {formatLastUpdated(selectedSkill.last_updated)}
                   </span>
+                  {selectedSkill.enabled ? (
+                    <span className="skill-pool-badge enabled">已启用</span>
+                  ) : (
+                    <span className="skill-pool-badge">已停用</span>
+                  )}
                 </div>
               </div>
 
               <div className="skill-pool-detail-actions">
-                {selectedTargetUsage?.enabled ? (
+                {selectedSkill.enabled ? (
                   <button
                     type="button"
                     className="portal-model-btn secondary danger"
-                    disabled={assigningSkill === selectedSkill.name}
-                    onClick={() => void handleUnassign(selectedSkill)}
+                    disabled={busySkill === selectedSkill.name}
+                    onClick={() => void handleDisable(selectedSkill)}
                   >
-                    <i className={`fas ${assigningSkill === selectedSkill.name ? "fa-spinner fa-spin" : "fa-circle-stop"}`} />
-                    在「{targetAgentName}」停用
+                    <i className={`fas ${busySkill === selectedSkill.name ? "fa-spinner fa-spin" : "fa-circle-stop"}`} />
+                    在「智观 AI」停用
                   </button>
                 ) : (
                   <button
                     type="button"
                     className="portal-model-btn success"
-                    disabled={assigningSkill === selectedSkill.name}
-                    onClick={() => void handleAssign(selectedSkill)}
+                    disabled={busySkill === selectedSkill.name}
+                    onClick={() => void handleEnable(selectedSkill)}
                   >
-                    <i className={`fas ${assigningSkill === selectedSkill.name ? "fa-spinner fa-spin" : "fa-circle-play"}`} />
-                    {selectedTargetUsage ? `在「${targetAgentName}」启用` : `下发到「${targetAgentName}」并启用`}
+                    <i className={`fas ${busySkill === selectedSkill.name ? "fa-spinner fa-spin" : "fa-circle-play"}`} />
+                    在「智观 AI」启用
                   </button>
                 )}
                 <button
                   type="button"
                   className="portal-model-btn secondary"
-                  onClick={() => {
-                    if (selectedSkill.protected || selectedSkill.source === "builtin") {
-                      openForkModal(selectedSkill);
-                    } else {
-                      openEditModal(selectedSkill);
-                    }
-                  }}
+                  onClick={() => openEditModal(selectedSkill)}
                 >
                   <i className="fas fa-pen" />
-                  {selectedSkill.protected || selectedSkill.source === "builtin" ? "复制为自定义技能" : "编辑技能"}
+                  编辑技能
                 </button>
                 <button
                   type="button"
                   className="portal-model-btn secondary danger"
-                  disabled={selectedSkill.protected || selectedSkill.source === "builtin"}
+                  disabled={busySkill === selectedSkill.name}
                   onClick={() => void handleDelete(selectedSkill)}
                 >
-                  <i className="fas fa-trash" />
+                  <i className={`fas ${busySkill === selectedSkill.name ? "fa-spinner fa-spin" : "fa-trash"}`} />
                   删除
                 </button>
               </div>
@@ -1068,6 +976,30 @@ export function SkillPoolPanel() {
               <aside className="skill-pool-side-column">
                 <div className="skill-pool-side-card">
                   <div className="skill-pool-section-header">
+                    <h4>二开标记</h4>
+                    <span>{isErkai(selectedSkill) ? "二开" : "出厂"}</span>
+                  </div>
+                  <div className="skill-pool-tag-toggle">
+                    <button
+                      type="button"
+                      className={
+                        isErkai(selectedSkill)
+                          ? "portal-model-btn secondary compact"
+                          : "portal-model-btn success compact"
+                      }
+                      disabled={busySkill === selectedSkill.name}
+                      onClick={() => void handleToggleErkai(selectedSkill)}
+                    >
+                      {isErkai(selectedSkill) ? "取消二开" : "标为二开"}
+                    </button>
+                  </div>
+                  <div className="skill-pool-card-hint">
+                    二开 = 通过本面板导入 / 新建的定制技能；出厂 = 随系统部署。识别有误可在此手动纠正。
+                  </div>
+                </div>
+
+                <div className="skill-pool-side-card">
+                  <div className="skill-pool-section-header">
                     <h4>技能配置</h4>
                     <span>{Object.keys(selectedSkill.config || {}).length} 项</span>
                   </div>
@@ -1080,24 +1012,17 @@ export function SkillPoolPanel() {
 
                 <div className="skill-pool-side-card">
                   <div className="skill-pool-section-header">
-                    <h4>下发与启用</h4>
-                    <span>{targetAgentName}</span>
+                    <h4>启用状态</h4>
+                    <span>智观 AI</span>
                   </div>
                   <div className="skill-pool-assign-row">
-                    <span>
-                      当前状态：
-                      {selectedTargetUsage
-                        ? selectedTargetUsage.enabled
-                          ? "已下发并启用"
-                          : "已下发，未启用"
-                        : "未下发到该数字员工"}
-                    </span>
-                    {selectedTargetUsage?.enabled ? (
+                    <span>当前状态：{selectedSkill.enabled ? "已启用" : "已停用"}</span>
+                    {selectedSkill.enabled ? (
                       <button
                         type="button"
                         className="portal-model-btn secondary danger compact"
-                        disabled={assigningSkill === selectedSkill.name}
-                        onClick={() => void handleUnassign(selectedSkill)}
+                        disabled={busySkill === selectedSkill.name}
+                        onClick={() => void handleDisable(selectedSkill)}
                       >
                         停用
                       </button>
@@ -1105,43 +1030,14 @@ export function SkillPoolPanel() {
                       <button
                         type="button"
                         className="portal-model-btn success compact"
-                        disabled={assigningSkill === selectedSkill.name}
-                        onClick={() => void handleAssign(selectedSkill)}
+                        disabled={busySkill === selectedSkill.name}
+                        onClick={() => void handleEnable(selectedSkill)}
                       >
-                        {selectedTargetUsage ? "启用" : "下发并启用"}
+                        启用
                       </button>
                     )}
                   </div>
-                  <div className="skill-pool-card-hint">
-                    下发后约 1–2 秒生效；如需更细粒度地分配到不同数字员工，可在后续版本扩展。
-                  </div>
-                </div>
-
-                <div className="skill-pool-side-card">
-                  <div className="skill-pool-section-header">
-                    <h4>工作区引用</h4>
-                    <span>{selectedUsages.length} 个</span>
-                  </div>
-                  {selectedUsages.length ? (
-                    <div className="skill-pool-workspace-list">
-                      {selectedUsages.map((usage) => (
-                        <div key={`${selectedSkill.name}-${usage.agentId}`} className="skill-pool-workspace-item">
-                          <div>
-                            <strong>{usage.agentName}</strong>
-                            <small>{usage.agentId}</small>
-                          </div>
-                          <div className="skill-pool-workspace-meta">
-                            <span className={usage.enabled ? "online" : "offline"}>
-                              {usage.enabled ? "已启用" : "未启用"}
-                            </span>
-                            <small>{usage.channels.join(", ")}</small>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="skill-pool-placeholder">当前还没有下发到任何工作区</div>
-                  )}
+                  <div className="skill-pool-card-hint">启停后约 1–2 秒生效。</div>
                 </div>
               </aside>
             </div>
@@ -1155,15 +1051,9 @@ export function SkillPoolPanel() {
           <div className="skill-pool-modal" onClick={(event) => event.stopPropagation()}>
             <div className="skill-pool-modal-header">
               <div>
-                <h3>
-                  {modalMode === "create"
-                    ? "新增技能"
-                    : modalMode === "fork"
-                      ? "复制为自定义技能"
-                      : "编辑技能"}
-                </h3>
+                <h3>{modalMode === "create" ? "新增技能" : "编辑技能"}</h3>
                 <p>
-                  当前采用原生 SKILL.md 格式，技能池为全局共享能力中心。
+                  作用于「智观 AI」（对外入口）的技能；保存后约 1–2 秒生效。新建的技能会自动标记为二开。
                 </p>
               </div>
               <button type="button" className="skill-pool-modal-close" onClick={closeModal}>
@@ -1221,7 +1111,7 @@ export function SkillPoolPanel() {
                 onClick={() => void handleSubmit()}
               >
                 <i className={`fas ${saving ? "fa-spinner fa-spin" : "fa-floppy-disk"}`} />
-                {modalMode === "create" ? "创建技能" : modalMode === "fork" ? "保存副本" : "保存修改"}
+                {modalMode === "create" ? "创建技能" : "保存修改"}
               </button>
             </div>
           </div>
@@ -1234,7 +1124,9 @@ export function SkillPoolPanel() {
             <div className="skill-pool-modal-header">
               <div>
                 <h3>上传技能压缩包</h3>
-                <p>选择一个符合 SKILL.md 规范的 .zip 包，导入到全局技能池（最大 100MB）。</p>
+                <p>
+                  导入到「智观 AI」的技能，会先做网管领域校验与安全扫描，导入后自动标记为二开（最大 100MB）。
+                </p>
               </div>
               <button type="button" className="skill-pool-modal-close" onClick={closeUploadModal}>
                 <i className="fas fa-xmark" />
@@ -1286,7 +1178,9 @@ export function SkillPoolPanel() {
             <div className="skill-pool-modal-header">
               <div>
                 <h3>从链接导入技能</h3>
-                <p>支持技能 Hub / 仓库的发布链接，导入后会落入全局技能池。</p>
+                <p>
+                  支持技能 Hub / 仓库的发布链接；导入到「智观 AI」的技能，会先做领域校验与安全扫描，导入后自动标记为二开。
+                </p>
               </div>
               <button type="button" className="skill-pool-modal-close" onClick={closeHubModal}>
                 <i className="fas fa-xmark" />
@@ -1323,6 +1217,12 @@ export function SkillPoolPanel() {
               </label>
             </div>
             {hubError ? <div className="skill-pool-notice error">{hubError}</div> : null}
+            {hubInstall ? (
+              <div className="skill-pool-hub-progress">
+                <i className="ri-loader-4-line ri-spin" />
+                导入中…（{hubInstall.status}）
+              </div>
+            ) : null}
 
             <div className="skill-pool-form-actions">
               <button type="button" className="portal-model-btn secondary" onClick={closeHubModal}>
@@ -1336,88 +1236,6 @@ export function SkillPoolPanel() {
               >
                 <i className={`fas ${saving ? "fa-spinner fa-spin" : "fa-cloud-arrow-down"}`} />
                 {saving ? "导入中..." : "导入"}
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
-
-      {builtinModalOpen ? (
-        <div className="skill-pool-modal-backdrop" onClick={closeBuiltinModal}>
-          <div className="skill-pool-modal" onClick={(event) => event.stopPropagation()}>
-            <div className="skill-pool-modal-header">
-              <div>
-                <h3>导入内置技能</h3>
-                <p>从随系统发布的内置技能库中挑选，导入到全局技能池后即可下发使用。</p>
-              </div>
-              <button type="button" className="skill-pool-modal-close" onClick={closeBuiltinModal}>
-                <i className="fas fa-xmark" />
-              </button>
-            </div>
-
-            {builtinLoading ? (
-              <div className="skill-pool-loading">
-                <i className="ri-loader-4-line ri-spin" />
-                正在加载内置技能列表...
-              </div>
-            ) : builtinSources.length ? (
-              <div className="skill-pool-builtin-list">
-                {builtinSources.map((source) => {
-                  const selection = builtinSelection[source.name];
-                  const languages = source.available_languages || [];
-                  return (
-                    <label key={source.name} className="skill-pool-builtin-item">
-                      <input
-                        type="checkbox"
-                        checked={Boolean(selection?.selected)}
-                        onChange={() => toggleBuiltinSelection(source.name)}
-                      />
-                      <div className="skill-pool-builtin-copy">
-                        <strong>{source.name}</strong>
-                        <span>{source.description || "无描述"}</span>
-                        <small>
-                          {source.version_text ? `版本 ${source.version_text}` : "版本未标注"}
-                          {source.status ? ` · ${source.status}` : ""}
-                        </small>
-                      </div>
-                      {languages.length > 1 ? (
-                        <select
-                          value={selection?.language || languages[0]}
-                          onClick={(event) => event.stopPropagation()}
-                          onChange={(event) => setBuiltinLanguage(source.name, event.target.value)}
-                        >
-                          {languages.map((language) => (
-                            <option key={language} value={language}>
-                              {language}
-                            </option>
-                          ))}
-                        </select>
-                      ) : languages.length === 1 ? (
-                        <span className="skill-pool-builtin-lang">{languages[0]}</span>
-                      ) : null}
-                    </label>
-                  );
-                })}
-              </div>
-            ) : (
-              <div className="skill-pool-placeholder">没有可导入的内置技能</div>
-            )}
-
-            {builtinError ? <div className="skill-pool-notice error">{builtinError}</div> : null}
-
-            <div className="skill-pool-form-actions">
-              <span className="skill-pool-builtin-count">已选 {selectedBuiltinCount} 个</span>
-              <button type="button" className="portal-model-btn secondary" onClick={closeBuiltinModal}>
-                取消
-              </button>
-              <button
-                type="button"
-                className="portal-model-btn success"
-                disabled={saving || builtinLoading || selectedBuiltinCount === 0}
-                onClick={() => void runBuiltinImport(false)}
-              >
-                <i className={`fas ${saving ? "fa-spinner fa-spin" : "fa-download"}`} />
-                {saving ? "导入中..." : "导入所选"}
               </button>
             </div>
           </div>
