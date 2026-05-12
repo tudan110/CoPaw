@@ -1,0 +1,31 @@
+{
+  "schema_version": "workspace-skill-manifest.v1",
+  "version": 1,
+  "skills": {
+    "fde-onboarding": {
+      "enabled": true,
+      "channels": [
+        "all"
+      ],
+      "source": "customized",
+      "metadata": {
+        "name": "fde-onboarding",
+        "description": "FDE 交付助手的元技能：把客户需求与系统现状翻译成可上线的数字员工业务技能。访谈澄清 → 交付方案 → 按 skill_scaffold 生成技能(SKILL.md + runtime/router + playbooks + tool_adapters，按 protocols 返回 portal-action/echarts) → 自检(域审查 dry-run + 示例运行 + 待确认项) → 把产物暂存到本工作区 staged/，交人工在 Portal『交付工作台』确认安装。",
+        "version_text": "",
+        "commit_text": "",
+        "source": "customized",
+        "protected": false,
+        "requirements": {
+          "require_bins": [],
+          "require_envs": []
+        },
+        "updated_at": "2026-05-12T00:00:00.000000Z"
+      },
+      "requirements": {
+        "require_bins": [],
+        "require_envs": []
+      },
+      "updated_at": "2026-05-12T00:00:00.000000Z"
+    }
+  }
+}

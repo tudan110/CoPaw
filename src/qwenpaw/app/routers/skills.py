@@ -198,6 +198,9 @@ class CreateSkillRequest(BaseModel):
     content: str
     references: dict[str, Any] | None = None
     scripts: dict[str, Any] | None = None
+    # Extra files written at the skill root (e.g. a ``runtime/`` package, an
+    # ``.env.example``). Mirrors ``SkillService.create_skill``'s ``extra_files``.
+    extra_files: dict[str, Any] | None = None
     config: dict[str, Any] | None = None
     enable: bool = True
 
@@ -769,6 +772,7 @@ async def create_skill(
             content=body.content,
             references=body.references,
             scripts=body.scripts,
+            extra_files=body.extra_files,
             config=body.config,
             enable=body.enable,
         )

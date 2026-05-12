@@ -221,6 +221,7 @@ export function AdvancedModelEntry({
   isOpsExpertActive,
   isMcpActive,
   isSkillPoolActive,
+  isFdeWorkbenchActive,
   isKnowledgeBaseActive,
   isInspirationActive,
   isCliActive,
@@ -231,6 +232,7 @@ export function AdvancedModelEntry({
   onOpenOpsExpert,
   onOpenMcp,
   onOpenSkillPool,
+  onOpenFdeWorkbench,
   onOpenKnowledgeBase,
   onOpenInspiration,
   onOpenCli,
@@ -244,6 +246,7 @@ export function AdvancedModelEntry({
   isOpsExpertActive?: boolean;
   isMcpActive?: boolean;
   isSkillPoolActive?: boolean;
+  isFdeWorkbenchActive?: boolean;
   isKnowledgeBaseActive?: boolean;
   isInspirationActive?: boolean;
   isCliActive?: boolean;
@@ -254,6 +257,7 @@ export function AdvancedModelEntry({
   onOpenOpsExpert: () => void;
   onOpenMcp: () => void;
   onOpenSkillPool: () => void;
+  onOpenFdeWorkbench: () => void;
   onOpenKnowledgeBase: () => void;
   onOpenInspiration: () => void;
   onOpenCli: () => void;
@@ -340,6 +344,19 @@ export function AdvancedModelEntry({
           <div className="sidebar-advanced-item-name">技能池</div>
           <div className="sidebar-advanced-item-desc">全局运维技能库</div>
           <div className="sidebar-advanced-item-meta">搜索 / 新增 / 编辑 / 删除</div>
+        </button>
+        <button
+          className={isFdeWorkbenchActive ? "sidebar-advanced-item active" : "sidebar-advanced-item"}
+          onClick={onOpenFdeWorkbench}
+        >
+          <div className="sidebar-advanced-item-icon">
+            <span role="img" aria-label="fde-workbench">
+              🛠️
+            </span>
+          </div>
+          <div className="sidebar-advanced-item-name">交付工作台</div>
+          <div className="sidebar-advanced-item-desc">FDE 把需求变成技能</div>
+          <div className="sidebar-advanced-item-meta">访谈 / 生成 / 自检 / 安装</div>
         </button>
         <button
           className={isKnowledgeBaseActive ? "sidebar-advanced-item active" : "sidebar-advanced-item"}

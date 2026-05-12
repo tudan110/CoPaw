@@ -52,6 +52,12 @@ from qwenpaw.extensions.integrations.alarm_workorders.query_alarm_workorders imp
 )
 from qwenpaw.extensions.integrations.portal_real_alarms import query_portal_real_alarms
 from qwenpaw.extensions.integrations import knowledge_base
+from qwenpaw.extensions.api import fde_workbench_service
+from qwenpaw.extensions.api.fde_workbench_models import (
+    FdeGenerateRequest,
+    FdeInstallRequest,
+    FdeProbeRequest,
+)
 from qwenpaw.app.agent_context import get_agent_for_request
 from qwenpaw.app.channels.base import ContentType, TextContent
 
@@ -2477,6 +2483,140 @@ async def portal_mcp_import(request: Request, body: _PortalMcpImportRequest):
         "name": (c.name or client_key),
         "domain_category": verdict.category,
     }
+
+
+# ---------------------------------------------------------------------------
+# FDE delivery workbench (Forward Deployed Engineer assistant)
+#
+# The ``fde`` agent (a dedicated digital employee) interviews delivery
+# engineers in chat and scaffolds business skills into its own workspace's
+# ``staged/`` dir. These endpoints let the Portal panel read those staged
+# bundles, re-run self-checks, sandbox-probe them, and discard them. The
+# actual install into a business agent's workspace is **not** done here —
+# the panel calls the existing ``POST /api/skills`` (with ``X-Agent-Id``,
+# which runs the security scan) after a human confirms.
+# ---------------------------------------------------------------------------
+def _fde_error_response(exc: Exception) -> JSONResponse:
+    return JSONResponse(
+        status_code=400,
+        content={"reason": "fde_workbench_error", "detail": str(exc)},
+    )
+
+
+# Every FDE service call shells out to ``fde_tools.py`` (and some of those runs
+# import qwenpaw / scan the skill / probe it), which is blocking and can take a
+# few seconds. Run them on a worker thread so the FastAPI event loop — which
+# also serves the portal's status polling — never stalls behind one.
+@router.get("/fde/workspace")
+async def fde_workspace_info():
+    try:
+        return await asyncio.to_thread(fde_workbench_service.workbench_info)
+    except fde_workbench_service.FdeWorkbenchError as exc:
+        return _fde_error_response(exc)
+
+
+@router.get("/fde/staged")
+async def fde_list_staged():
+    try:
+        return await asyncio.to_thread(
+            fde_workbench_service.list_staged_skills,
+        )
+    except fde_workbench_service.FdeWorkbenchError as exc:
+        return _fde_error_response(exc)
+
+
+@router.post("/fde/generate")
+async def fde_generate(body: FdeGenerateRequest):
+    try:
+        return await asyncio.to_thread(
+            lambda: fde_workbench_service.generate_skill(
+                name=body.name,
+                target_workspace=body.target_workspace,
+                brief=body.brief,
+            ),
+        )
+    except fde_workbench_service.FdeWorkbenchError as exc:
+        return _fde_error_response(exc)
+
+
+@router.get("/fde/staged/{skill_name}")
+async def fde_show_staged(skill_name: str):
+    try:
+        return await asyncio.to_thread(
+            fde_workbench_service.show_staged_skill, skill_name,
+        )
+    except fde_workbench_service.FdeWorkbenchError as exc:
+        return _fde_error_response(exc)
+
+
+@router.post("/fde/staged/{skill_name}/selfcheck")
+async def fde_selfcheck_staged(skill_name: str):
+    try:
+        return await asyncio.to_thread(
+            fde_workbench_service.selfcheck_staged_skill, skill_name,
+        )
+    except fde_workbench_service.FdeWorkbenchError as exc:
+        return _fde_error_response(exc)
+
+
+@router.post("/fde/staged/{skill_name}/probe")
+async def fde_probe_staged(
+    skill_name: str,
+    body: FdeProbeRequest | None = None,
+):
+    context = body.context if body else {}
+    try:
+        return await asyncio.to_thread(
+            lambda: fde_workbench_service.probe_staged_skill(
+                skill_name, context=context,
+            ),
+        )
+    except fde_workbench_service.FdeWorkbenchError as exc:
+        return _fde_error_response(exc)
+
+
+@router.post("/fde/staged/{skill_name}/install")
+async def fde_install_staged(
+    request: Request,
+    skill_name: str,
+    body: FdeInstallRequest | None = None,
+):
+    """Human-confirmed install of a staged skill into a business workspace.
+
+    Goes through ``SkillService.create_skill`` (which runs the security scan),
+    tags it ``二开``, leaves it enabled, then schedules the target agent's
+    reload — same end state as installing via the skill panel. An optional
+    ``target_workspace`` redirects it to a different existing agent (e.g. one
+    the operator just created).
+    """
+    target_override = (body.target_workspace if body else "") or None
+    try:
+        result = await asyncio.to_thread(
+            lambda: fde_workbench_service.install_staged_skill(
+                skill_name, target_override=target_override,
+            ),
+        )
+    except fde_workbench_service.FdeWorkbenchError as exc:
+        return _fde_error_response(exc)
+    target_agent = result.get("target_workspace")
+    if target_agent:
+        try:
+            from qwenpaw.app.utils import schedule_agent_reload
+
+            schedule_agent_reload(request, str(target_agent))
+        except Exception:  # noqa: BLE001 - reload is best-effort
+            pass
+    return result
+
+
+@router.delete("/fde/staged/{skill_name}")
+async def fde_discard_staged(skill_name: str):
+    try:
+        return await asyncio.to_thread(
+            fde_workbench_service.discard_staged_skill, skill_name,
+        )
+    except fde_workbench_service.FdeWorkbenchError as exc:
+        return _fde_error_response(exc)
 
 
 def register_app_routes(fastapi_app) -> None:

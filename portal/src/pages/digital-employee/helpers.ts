@@ -7,7 +7,7 @@ export const PORTAL_FAULT_WORKORDER_MARKER = "# PORTAL FAULT WORKORDER MODE";
 export const PORTAL_ALARM_ANALYST_CARD_MARKER = "# PORTAL ALARM ANALYST CARD MODE";
 export const PORTAL_INSPECTION_CARD_MARKER = "# PORTAL INSPECTION CARD MODE";
 export const PORTAL_VIEW_OPTIONS = ["chat", "overview", "dashboard", "tasks"] as const;
-export const PORTAL_ADVANCED_PANEL_OPTIONS = ["model-config", "settings", "token-usage", "ops-expert", "mcp", "skill-pool", "knowledge-base", "inspiration", "cli", "resource-import"] as const;
+export const PORTAL_ADVANCED_PANEL_OPTIONS = ["model-config", "settings", "token-usage", "ops-expert", "mcp", "skill-pool", "fde-workbench", "knowledge-base", "inspiration", "cli", "resource-import"] as const;
 export const PORTAL_ROUTE_SECTION_OPTIONS = [
   "overview",
   "dashboard",
@@ -18,6 +18,7 @@ export const PORTAL_ROUTE_SECTION_OPTIONS = [
   "ops-expert",
   "mcp",
   "skill-pool",
+  "fde-workbench",
   "knowledge-base",
   "inspiration",
   "cli",
