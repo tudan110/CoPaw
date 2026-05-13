@@ -506,6 +506,19 @@
   border-radius: 999px;
   background: rgba(59, 130, 246, 0.1);
 }
+.fde-cc-session {
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--fde-ink-3);
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--fde-line);
+  background: var(--fde-surface-2, rgba(99, 116, 160, 0.06));
+}
 .fde-cc-toolbar-spacer {
   flex: 1;
 }
@@ -1135,6 +1148,109 @@ textarea.fde-field {
   background: rgba(239, 68, 68, 0.08);
   border-color: var(--fde-bad);
 }
+/* ---------- "已交付技能" cross-agent list ---------- */
+.fde-installed-card {
+  cursor: default;
+}
+.fde-installed-card:hover {
+  background: var(--fde-surface);
+}
+.fde-installed-agent-id {
+  font-family:
+    ui-monospace,
+    SF Mono,
+    Menlo,
+    Consolas,
+    monospace;
+  font-size: 11px;
+  color: var(--fde-ink-3);
+  margin-left: 6px;
+}
+.fde-installed-desc {
+  font-size: 11.5px;
+  color: var(--fde-ink-3);
+  line-height: 1.5;
+  margin-top: 4px;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.fde-btn--warn {
+  border-color: rgba(234, 179, 8, 0.45);
+  color: #92400e;
+  background: rgba(254, 243, 199, 0.45);
+}
+.fde-btn--warn:hover:not(:disabled) {
+  background: rgba(254, 215, 134, 0.55);
+  border-color: #d97706;
+}
+
+/* ---------- .env credentials card (per-staged-skill form) ---------- */
+.fde-env-card {
+  margin: 14px 16px 0;
+  border-radius: 12px;
+  border: 1px solid var(--fde-line);
+  background:
+    linear-gradient(
+      180deg,
+      rgba(59, 130, 246, 0.04),
+      transparent 50%
+    ),
+    var(--fde-surface);
+  padding: 12px 14px 10px;
+}
+.fde-env-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+.fde-env-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--fde-ink);
+}
+.fde-env-sub {
+  font-size: 11.5px;
+  color: var(--fde-ink-3);
+  line-height: 1.55;
+}
+.fde-env-sub code {
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: rgba(99, 116, 160, 0.08);
+  font-size: 11px;
+}
+.fde-env-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 0;
+  border-top: 1px dashed rgba(99, 116, 160, 0.18);
+}
+.fde-env-row:first-of-type {
+  border-top: none;
+}
+.fde-env-key {
+  font-family:
+    ui-monospace,
+    SF Mono,
+    Menlo,
+    Consolas,
+    monospace;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--fde-ink);
+}
+.fde-env-hint {
+  font-size: 11.5px;
+  color: var(--fde-ink-3);
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
 
 /* ---------- selfcheck banner ---------- */
 .fde-selfcheck {
@@ -1368,4 +1484,25 @@ textarea.fde-field {
   .fde-step:first-child {
     border-top: 0;
   }
+}
+
+.fde-installed-actions {
+  margin-top: 6px;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.fde-installed-actions {
+  margin-top: 6px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+.fde-link-btn--danger {
+  color: #b91c1c;
+  border-color: rgba(239, 68, 68, 0.35);
+}
+.fde-link-btn--danger:hover:not(:disabled) {
+  background: rgba(239, 68, 68, 0.08);
+  border-color: var(--fde-bad);
 }

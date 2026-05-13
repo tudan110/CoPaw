@@ -57,6 +57,8 @@ from qwenpaw.extensions.integrations.portal_real_alarms import query_portal_real
 from qwenpaw.extensions.integrations import knowledge_base
 from qwenpaw.extensions.api import fde_workbench_service
 from qwenpaw.extensions.api.fde_workbench_models import (
+    FdeCopyInstalledRequest,
+    FdeEnvWriteRequest,
     FdeGenerateRequest,
     FdeInstallRequest,
     FdeProbeRequest,
@@ -2594,10 +2596,19 @@ async def fde_install_staged(
     the operator just created).
     """
     target_override = (body.target_workspace if body else "") or None
+    skip_domain_check = bool(body.skip_domain_check) if body else False
+    env_values = body.env_values if body else None
+    mirror_to_gateway = (
+        bool(body.mirror_to_gateway) if body is not None else True
+    )
     try:
         result = await asyncio.to_thread(
             lambda: fde_workbench_service.install_staged_skill(
-                skill_name, target_override=target_override,
+                skill_name,
+                target_override=target_override,
+                skip_domain_check=skip_domain_check,
+                env_values=env_values,
+                mirror_to_gateway=mirror_to_gateway,
             ),
         )
     except fde_workbench_service.FdeWorkbenchError as exc:
@@ -2610,6 +2621,14 @@ async def fde_install_staged(
             schedule_agent_reload(request, str(target_agent))
         except Exception:  # noqa: BLE001 - reload is best-effort
             pass
+    mirror = result.get("gateway_mirror") or {}
+    if mirror.get("mirrored"):
+        try:
+            from qwenpaw.app.utils import schedule_agent_reload
+
+            schedule_agent_reload(request, str(mirror.get("gateway_agent")))
+        except Exception:  # noqa: BLE001
+            pass
     return result
 
 
@@ -2618,6 +2637,154 @@ async def fde_discard_staged(skill_name: str):
     try:
         return await asyncio.to_thread(
             fde_workbench_service.discard_staged_skill, skill_name,
+        )
+    except fde_workbench_service.FdeWorkbenchError as exc:
+        return _fde_error_response(exc)
+
+
+@router.get(
+    "/fde/installed",
+    summary="List FDE-installed (二开) skills across all business agents",
+)
+async def fde_list_installed():
+    """Cross-agent view: every skill tagged ``二开`` in any workspace.
+
+    The upstream skill-pool panel is scoped to the gateway agent only, so
+    FDE-installed skills in other agents are invisible there. This feeds
+    the workbench's own "已交付技能" view.
+    """
+    try:
+        return await asyncio.to_thread(
+            fde_workbench_service.list_installed_erkai_skills,
+        )
+    except fde_workbench_service.FdeWorkbenchError as exc:
+        return _fde_error_response(exc)
+
+
+# --- installed-skill .env configuration -----------------------------------
+# Lets operators fill credentials from the panel after install instead of
+# SSH'ing to ``~/.qwenpaw/workspaces/<agent>/skills/<skill>/.env``.
+
+@router.get(
+    "/fde/installed/{target_workspace}/{skill_name}/env",
+    summary="Read .env.example schema + current .env values for a "
+    "FDE-installed skill",
+)
+async def fde_read_installed_env(target_workspace: str, skill_name: str):
+    try:
+        return await asyncio.to_thread(
+            fde_workbench_service.read_skill_env_state,
+            target_workspace,
+            skill_name,
+        )
+    except fde_workbench_service.FdeWorkbenchError as exc:
+        return _fde_error_response(exc)
+
+
+@router.post(
+    "/fde/installed/{source_agent}/{skill_name}/copy",
+    summary="Copy (or move) an installed 二开 skill to another agent",
+)
+async def fde_copy_installed(
+    request: Request,
+    source_agent: str,
+    skill_name: str,
+    body: FdeCopyInstalledRequest,
+):
+    """Cross-agent migration for FDE-installed skills.
+
+    Fix path for "FDE put the skill in the wrong workspace, so gateway's
+    routing never reaches it": the operator picks the correct destination
+    from the panel and clicks 复制/迁移. Backend reads the source files,
+    re-runs ``SkillService.create_skill`` against the target (security scan
+    included), tags it ``二开``, and optionally deletes the source.
+    """
+    try:
+        result = await asyncio.to_thread(
+            lambda: fde_workbench_service.copy_installed_skill(
+                source_agent=source_agent,
+                skill_name=skill_name,
+                target_workspace=body.target_workspace,
+                remove_source=body.remove_source,
+                skip_domain_check=body.skip_domain_check,
+            ),
+        )
+    except fde_workbench_service.FdeWorkbenchError as exc:
+        return _fde_error_response(exc)
+    target_agent = result.get("target_workspace")
+    if target_agent:
+        try:
+            from qwenpaw.app.utils import schedule_agent_reload
+
+            schedule_agent_reload(request, str(target_agent))
+        except Exception:  # noqa: BLE001 - reload is best-effort
+            pass
+    if body.remove_source and result.get("removed_source"):
+        try:
+            from qwenpaw.app.utils import schedule_agent_reload
+
+            schedule_agent_reload(request, source_agent)
+        except Exception:  # noqa: BLE001
+            pass
+    mirror = result.get("gateway_mirror") or {}
+    if mirror.get("mirrored"):
+        try:
+            from qwenpaw.app.utils import schedule_agent_reload
+
+            schedule_agent_reload(request, str(mirror.get("gateway_agent")))
+        except Exception:  # noqa: BLE001
+            pass
+    return result
+
+
+@router.delete(
+    "/fde/installed/{target_workspace}/{skill_name}",
+    summary="Delete an FDE-installed skill (+ its gateway mirror, if any)",
+)
+async def fde_delete_installed(
+    request: Request,
+    target_workspace: str,
+    skill_name: str,
+):
+    """Remove an installed 二开 skill from its agent (and the gateway mirror
+    by default). Disables before deleting since SkillService refuses to
+    delete an enabled skill."""
+    try:
+        result = await asyncio.to_thread(
+            lambda: fde_workbench_service.delete_installed_skill(
+                target_workspace=target_workspace,
+                skill_name=skill_name,
+            ),
+        )
+    except fde_workbench_service.FdeWorkbenchError as exc:
+        return _fde_error_response(exc)
+    try:
+        from qwenpaw.app.utils import schedule_agent_reload
+
+        schedule_agent_reload(request, target_workspace)
+        if result.get("gateway_mirror_removed"):
+            schedule_agent_reload(
+                request, fde_workbench_service.GATEWAY_AGENT_ID,
+            )
+    except Exception:  # noqa: BLE001 - reload is best-effort
+        pass
+    return result
+
+
+@router.put("/fde/installed/{target_workspace}/{skill_name}/env")
+async def fde_write_installed_env(
+    target_workspace: str,
+    skill_name: str,
+    body: FdeEnvWriteRequest,
+):
+    """Write/update the installed skill's ``.env`` (mode 0600)."""
+    try:
+        return await asyncio.to_thread(
+            lambda: fde_workbench_service.write_skill_env(
+                target_workspace=target_workspace,
+                skill_name=skill_name,
+                values=body.values,
+            ),
         )
     except fde_workbench_service.FdeWorkbenchError as exc:
         return _fde_error_response(exc)

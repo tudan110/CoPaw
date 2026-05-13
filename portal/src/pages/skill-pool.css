@@ -883,3 +883,114 @@
 .skill-pool-tag-toggle {
   margin-top: 8px;
 }
+
+/* ---------- "已交付到其他业务智能体的二开技能" (FDE cross-agent) ---------- */
+.skill-pool-erkai-elsewhere {
+  margin-top: 18px;
+  padding: 14px 16px;
+  border: 1px solid var(--portal-border, #e2e8f0);
+  border-radius: 12px;
+  background: var(--portal-surface-2, #f8fafc);
+}
+.skill-pool-erkai-elsewhere-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+.skill-pool-erkai-elsewhere-head h3 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.skill-pool-erkai-elsewhere-head p {
+  margin: 4px 0 0;
+  font-size: 12.5px;
+  color: var(--portal-muted, #64748b);
+  line-height: 1.6;
+}
+.skill-pool-erkai-count {
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  background: rgba(59, 130, 246, 0.12);
+  color: #2563eb;
+}
+.skill-pool-link {
+  border: none;
+  background: transparent;
+  color: #2563eb;
+  cursor: pointer;
+  padding: 0;
+  font: inherit;
+}
+.skill-pool-link:hover {
+  text-decoration: underline;
+}
+.skill-pool-erkai-empty {
+  padding: 14px;
+  font-size: 12.5px;
+  color: var(--portal-muted, #64748b);
+  text-align: center;
+}
+.skill-pool-erkai-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 10px;
+}
+.skill-pool-erkai-card {
+  padding: 10px 12px;
+  border: 1px solid var(--portal-border, #e2e8f0);
+  border-radius: 10px;
+  background: #fff;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.skill-pool-erkai-card-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.skill-pool-erkai-card-name {
+  font-size: 13px;
+  font-weight: 700;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.skill-pool-erkai-card-owner {
+  font-size: 11.5px;
+  color: var(--portal-muted, #64748b);
+}
+.skill-pool-erkai-card-id {
+  margin-left: 4px;
+  font-family: ui-monospace, SF Mono, Menlo, Consolas, monospace;
+  font-size: 10.5px;
+  opacity: 0.75;
+}
+.skill-pool-erkai-card-desc {
+  margin: 0;
+  font-size: 11.5px;
+  color: var(--portal-muted, #64748b);
+  line-height: 1.5;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+/* 跨工作区（FDE 装到 gateway 之外的业务智能体里）来的技能在主列表里的标识 */
+.skill-pool-badge.foreign {
+  background: rgba(99, 102, 241, 0.12);
+  color: #4f46e5;
+  border: 1px solid rgba(99, 102, 241, 0.3);
+}
