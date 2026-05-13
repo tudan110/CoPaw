@@ -162,7 +162,29 @@ fi
 
 # 构建前端（如果需要）
 CONSOLE_DIST="$SCRIPT_DIR/console/dist"
+CONSOLE_PACKAGE_DIR="$SCRIPT_DIR/src/qwenpaw/console"
 NEED_BUILD=false
+
+sync_console_assets() {
+    src_dir="$1"
+    dest_dir="$2"
+
+    if [ ! -d "$src_dir" ] || [ ! -f "$src_dir/index.html" ]; then
+        echo "[4.5/5] 跳过前端产物同步（未找到 $src_dir/index.html）"
+        return
+    fi
+
+    echo "[4.5/5] 同步前端产物到 $dest_dir ..."
+    mkdir -p "$dest_dir"
+
+    if command -v rsync >/dev/null 2>&1; then
+        rsync -a --delete "$src_dir/" "$dest_dir/"
+    else
+        rm -rf "$dest_dir"
+        mkdir -p "$dest_dir"
+        cp -R "$src_dir/." "$dest_dir/"
+    fi
+}
 
 if [ "$REBUILD_FRONTEND" = true ]; then
     NEED_BUILD=true
@@ -192,6 +214,8 @@ if [ "$NEED_BUILD" = true ]; then
         echo "如需前端界面，请手动安装 Node.js 并运行: cd console && npm ci && npm run build"
     fi
 fi
+
+sync_console_assets "$CONSOLE_DIST" "$CONSOLE_PACKAGE_DIR"
 
 # 初始化配置（如果需要）
 CONFIG_FILE="$WORKING_DIR/config.json"
