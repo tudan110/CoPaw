@@ -848,7 +848,7 @@ export function getChatSidebarActivities(employeeId: string): ChatSidebarActivit
 export const PORTAL_HOME_EMPLOYEE: DigitalEmployee = {
   id: PORTAL_HOME_ID,
   name: portalAppTitle,
-  desc: "portal 对外统一入口",
+  desc: "统一入口",
   icon: "fa-comments",
   tasks: 0,
   success: "100%",
