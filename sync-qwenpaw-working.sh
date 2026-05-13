@@ -32,6 +32,7 @@ sync_workspace_skills_to_pool() {
     local skill_dir=""
     local skill_name=""
     local target_skill_dir=""
+    local ordered_workspaces=()
 
     mkdir -p "$pool_dir"
     if [ ! -d "$workspaces_dir" ]; then
@@ -41,8 +42,16 @@ sync_workspace_skills_to_pool() {
     seen_file="$(mktemp)"
     trap 'rm -f "$seen_file"' RETURN
 
+    if [ -d "$workspaces_dir/gateway" ]; then
+        ordered_workspaces+=("$workspaces_dir/gateway")
+    fi
     for workspace_dir in "$workspaces_dir"/*; do
         [ -d "$workspace_dir" ] || continue
+        [ "$workspace_dir" = "$workspaces_dir/gateway" ] && continue
+        ordered_workspaces+=("$workspace_dir")
+    done
+
+    for workspace_dir in "${ordered_workspaces[@]}"; do
         skills_dir="$workspace_dir/skills"
         [ -d "$skills_dir" ] || continue
 
@@ -98,7 +107,7 @@ usage() {
   - 源里有、目标里没有的文件: 直接拷贝过去
   - 两边都有的文件: 以源为准，按内容（checksum）比较后覆盖更新
   - 目标里有、源里没有的文件: 默认保留，加 --delete 才会清理
-  - 同步到 skill_pool 时，同名 skill 只保留一份，后续重复项直接跳过
+  - 同步到 skill_pool 时，gateway 工作区优先；同名 skill 只保留一份，后续重复项直接跳过
 
 参数:
   --delete     删除目标目录中源目录不存在的文件，执行严格镜像

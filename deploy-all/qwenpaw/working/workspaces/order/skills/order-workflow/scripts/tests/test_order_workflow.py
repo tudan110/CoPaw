@@ -317,13 +317,13 @@ class OrderWorkflowTests(unittest.TestCase):
         with mock.patch.dict(
             "os.environ",
             {
-                "INOE_API_BASE_URL": "http://192.168.130.51:30081/prod-api",
+                "INOE_API_BASE_URL": "http://192.168.130.51:30080",
                 "INOE_API_TOKEN": "inoe-token",
             },
             clear=True,
         ):
             config = OrderWorkflowConfig.from_env()
-        self.assertEqual(config.base_url, "http://192.168.130.51:30081/prod-api")
+        self.assertEqual(config.base_url, "http://192.168.130.51:30080")
         self.assertEqual(config.authorization, "inoe-token")
 
     def test_normalize_create_payload_accepts_lightweight_form_fields(self) -> None:
