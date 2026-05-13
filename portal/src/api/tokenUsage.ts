@@ -17,9 +17,15 @@ export interface TokenUsageSummary {
   total_prompt_tokens: number;
   total_completion_tokens: number;
   total_calls: number;
-  by_model: Record<string, TokenUsageStats>;
-  by_provider: Record<string, TokenUsageStats>;
   by_date: Record<string, TokenUsageStats>;
+  by_model?: Record<string, TokenUsageStats>;
+  by_provider?: Record<string, TokenUsageStats>;
+}
+
+export interface TokenUsageDetailRecord extends TokenUsageStats {
+  date: string;
+  provider_id: string;
+  model: string;
 }
 
 export interface GetTokenUsageParams {
@@ -84,6 +90,10 @@ async function requestTokenUsage<T>(path: string): Promise<T> {
 }
 
 export const tokenUsageApi = {
+  getTokenUsageSummary: (params: GetTokenUsageParams) =>
+    requestTokenUsage<TokenUsageSummary>(`/token-usage${buildQuery(params)}`),
+  getTokenUsageDetails: (params: GetTokenUsageParams) =>
+    requestTokenUsage<TokenUsageDetailRecord[]>(`/token-usage/details${buildQuery(params)}`),
   getTokenUsage: (params: GetTokenUsageParams) =>
     requestTokenUsage<TokenUsageSummary>(`/token-usage${buildQuery(params)}`),
 };

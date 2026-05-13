@@ -8526,6 +8526,17 @@
   margin-bottom: 14px;
 }
 
+.portal-digital-employee .token-usage-trend-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  margin-bottom: 14px;
+}
+
+.portal-digital-employee .token-usage-trend-grid .token-usage-chart-card {
+  margin-bottom: 0;
+}
+
 .portal-digital-employee .token-usage-card-head {
   display: flex;
   align-items: flex-start;
@@ -8669,6 +8680,10 @@
 @container (max-width: 1080px) {
   .portal-digital-employee .token-usage-stats-row {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .portal-digital-employee .token-usage-trend-grid {
+    grid-template-columns: 1fr;
   }
 
   .portal-digital-employee .token-usage-detail-grid {

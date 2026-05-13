@@ -3,6 +3,7 @@ import ReactECharts from "echarts-for-react";
 import * as echarts from "echarts";
 import {
   tokenUsageApi,
+  type TokenUsageDetailRecord,
   type TokenUsageStats,
   type TokenUsageSummary,
 } from "../../api/tokenUsage";
@@ -71,6 +72,33 @@ function formatDateLabel(value: string) {
   return `${month}/${day}`;
 }
 
+function buildDateRange(startDate: string, endDate: string) {
+  if (!startDate || !endDate) {
+    return [];
+  }
+
+  const dates: string[] = [];
+  const current = new Date(`${startDate}T00:00:00`);
+  const last = new Date(`${endDate}T00:00:00`);
+
+  while (current <= last) {
+    dates.push(formatDateInput(current));
+    current.setDate(current.getDate() + 1);
+  }
+
+  return dates;
+}
+
+function formatTokenAxisLabel(value: number) {
+  if (value >= 1_000_000) {
+    return `${(value / 1_000_000).toFixed(1)}M`;
+  }
+  if (value >= 1_000) {
+    return `${Math.round(value / 1_000)}K`;
+  }
+  return String(value);
+}
+
 function totalTokens(stats: TokenUsageStats) {
   return stats.prompt_tokens + stats.completion_tokens;
 }
@@ -83,6 +111,7 @@ export function TokenUsagePanel({
   const [startDate, setStartDate] = useState(defaultRange.startDate);
   const [endDate, setEndDate] = useState(defaultRange.endDate);
   const [summary, setSummary] = useState<TokenUsageSummary | null>(null);
+  const [details, setDetails] = useState<TokenUsageDetailRecord[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -92,17 +121,25 @@ export function TokenUsagePanel({
     setError("");
 
     try {
-      const nextSummary = await tokenUsageApi.getTokenUsage({
-        start_date: range.startDate,
-        end_date: range.endDate,
-      });
+      const [nextSummary, nextDetails] = await Promise.all([
+        tokenUsageApi.getTokenUsageSummary({
+          start_date: range.startDate,
+          end_date: range.endDate,
+        }),
+        tokenUsageApi.getTokenUsageDetails({
+          start_date: range.startDate,
+          end_date: range.endDate,
+        }),
+      ]);
       setSummary(nextSummary);
+      setDetails(nextDetails);
       setStartDate(range.startDate);
       setEndDate(range.endDate);
     } catch (fetchError) {
       console.error("Failed to load token usage summary:", fetchError);
       setError(fetchError instanceof Error ? fetchError.message : "Token 统计加载失败");
       setSummary(null);
+      setDetails([]);
     } finally {
       setLoading(false);
     }
@@ -122,14 +159,37 @@ export function TokenUsagePanel({
   }, [defaultRange.endDate, defaultRange.startDate, loadTokenUsage]);
 
   const byModelRows = useMemo<TokenUsageModelRow[]>(() => {
-    return Object.entries(summary?.by_model || {})
-      .map(([key, stats]) => ({
-        ...stats,
+    const grouped = new Map<string, TokenUsageModelRow>();
+
+    for (const record of details) {
+      const providerId = record.provider_id || "默认";
+      const modelId = record.model || "unknown";
+      const key = `${providerId}:${modelId}`;
+      const current = grouped.get(key);
+
+      if (current) {
+        current.prompt_tokens += record.prompt_tokens;
+        current.completion_tokens += record.completion_tokens;
+        current.call_count += record.call_count;
+        current.total_tokens += totalTokens(record);
+        continue;
+      }
+
+      grouped.set(key, {
         key,
-        total_tokens: totalTokens(stats),
-      }))
-      .sort((left, right) => right.total_tokens - left.total_tokens || right.call_count - left.call_count);
-  }, [summary?.by_model]);
+        provider_id: record.provider_id || "默认",
+        model: modelId,
+        prompt_tokens: record.prompt_tokens,
+        completion_tokens: record.completion_tokens,
+        call_count: record.call_count,
+        total_tokens: totalTokens(record),
+      });
+    }
+
+    return [...grouped.values()].sort(
+      (left, right) => right.total_tokens - left.total_tokens || right.call_count - left.call_count,
+    );
+  }, [details]);
 
   const byDateRowsAsc = useMemo<TokenUsageDateRow[]>(() => {
     return Object.entries(summary?.by_date || {})
@@ -144,20 +204,88 @@ export function TokenUsagePanel({
 
   const byDateRowsDesc = useMemo(() => [...byDateRowsAsc].reverse(), [byDateRowsAsc]);
 
+  const normalizedRange = useMemo(
+    () => normalizeDateRange(startDate, endDate),
+    [endDate, startDate],
+  );
+
+  const allDatesAsc = useMemo(
+    () => buildDateRange(normalizedRange.startDate, normalizedRange.endDate),
+    [normalizedRange.endDate, normalizedRange.startDate],
+  );
+
   const byProviderRows = useMemo<TokenUsageProviderRow[]>(() => {
-    return Object.entries(summary?.by_provider || {})
-      .map(([providerId, stats]) => ({
-        ...stats,
-        key: providerId || "default",
-        total_tokens: totalTokens(stats),
-      }))
-      .sort((left, right) => right.total_tokens - left.total_tokens || right.call_count - left.call_count);
-  }, [summary?.by_provider]);
+    const grouped = new Map<string, TokenUsageProviderRow>();
+
+    for (const record of details) {
+      const providerId = record.provider_id || "默认";
+      const current = grouped.get(providerId);
+
+      if (current) {
+        current.prompt_tokens += record.prompt_tokens;
+        current.completion_tokens += record.completion_tokens;
+        current.call_count += record.call_count;
+        current.total_tokens += totalTokens(record);
+        continue;
+      }
+
+      grouped.set(providerId, {
+        key: providerId,
+        provider_id: providerId,
+        prompt_tokens: record.prompt_tokens,
+        completion_tokens: record.completion_tokens,
+        call_count: record.call_count,
+        total_tokens: totalTokens(record),
+      });
+    }
+
+    return [...grouped.values()].sort(
+      (left, right) => right.total_tokens - left.total_tokens || right.call_count - left.call_count,
+    );
+  }, [details]);
 
   const totalTokenCount = useMemo(
     () => (summary?.total_prompt_tokens || 0) + (summary?.total_completion_tokens || 0),
     [summary?.total_completion_tokens, summary?.total_prompt_tokens],
   );
+
+  const byDateStatsMap = useMemo(() => {
+    const map = new Map<string, TokenUsageStats>();
+    for (const [date, stats] of Object.entries(summary?.by_date || {})) {
+      map.set(date, stats);
+    }
+    return map;
+  }, [summary?.by_date]);
+
+  const byDateModelMap = useMemo(() => {
+    const map = new Map<string, Map<string, TokenUsageStats>>();
+
+    for (const record of details) {
+      const providerId = record.provider_id || "默认";
+      const modelId = record.model || "unknown";
+      const modelKey = `${providerId}:${modelId}`;
+      const dayMap = map.get(record.date) || new Map<string, TokenUsageStats>();
+      const existing = dayMap.get(modelKey);
+
+      if (existing) {
+        existing.prompt_tokens += record.prompt_tokens;
+        existing.completion_tokens += record.completion_tokens;
+        existing.call_count += record.call_count;
+      } else {
+        dayMap.set(modelKey, {
+          provider_id: providerId,
+          model: modelId,
+          prompt_tokens: record.prompt_tokens,
+          completion_tokens: record.completion_tokens,
+          call_count: record.call_count,
+        });
+      }
+
+      map.set(record.date, dayMap);
+    }
+
+    return map;
+  }, [details]);
 
   const statCards = useMemo(
     () => [
@@ -193,8 +321,9 @@ export function TokenUsagePanel({
     [byModelRows.length, byProviderRows.length, summary?.total_calls, summary?.total_completion_tokens, summary?.total_prompt_tokens, totalTokenCount],
   );
 
-  const chartOption = useMemo(() => {
+  const tokenTrendOption = useMemo(() => {
     const isDark = pageTheme === "dark";
+
     return {
       backgroundColor: "transparent",
       animationDuration: 400,
@@ -222,7 +351,7 @@ export function TokenUsagePanel({
       },
       xAxis: {
         type: "category",
-        data: byDateRowsAsc.map((row) => formatDateLabel(row.date)),
+        data: allDatesAsc.map((date) => formatDateLabel(date)),
         axisLine: {
           lineStyle: {
             color: "rgba(79, 110, 247, 0.15)",
@@ -259,7 +388,7 @@ export function TokenUsagePanel({
               { offset: 1, color: "rgba(79, 110, 247, 0.45)" },
             ]),
           },
-          data: byDateRowsAsc.map((row) => row.prompt_tokens),
+          data: allDatesAsc.map((date) => byDateStatsMap.get(date)?.prompt_tokens || 0),
         },
         {
           name: "输出 Token",
@@ -273,11 +402,197 @@ export function TokenUsagePanel({
               { offset: 1, color: "rgba(167, 139, 250, 0.42)" },
             ]),
           },
-          data: byDateRowsAsc.map((row) => row.completion_tokens),
+          data: allDatesAsc.map((date) => byDateStatsMap.get(date)?.completion_tokens || 0),
         },
       ],
     };
-  }, [byDateRowsAsc, pageTheme]);
+  }, [allDatesAsc, byDateStatsMap, pageTheme]);
+
+  const modelTrendOption = useMemo(() => {
+    const isDark = pageTheme === "dark";
+    const legendColor = isDark ? "#cbd5e1" : "#475569";
+
+    return {
+      backgroundColor: "transparent",
+      animationDuration: 400,
+      tooltip: {
+        trigger: "axis",
+        axisPointer: {
+          type: "line",
+        },
+        backgroundColor: isDark ? "rgba(20, 27, 45, 0.96)" : "rgba(255, 255, 255, 0.96)",
+        borderColor: "rgba(79, 110, 247, 0.25)",
+        textStyle: {
+          color: isDark ? "#e2e8f0" : "#1e293b",
+          fontSize: 12,
+        },
+        formatter: (params: Array<{ axisValue: string; seriesName: string; data: number; color: string }>) => {
+          const lines = params
+            .map((item) => `${item.seriesName}：${formatNumber(item.data || 0)}`)
+            .join("<br/>");
+          return `${params[0]?.axisValue || ""}<br/>${lines}`;
+        },
+      },
+      legend: {
+        type: "scroll",
+        top: 0,
+        left: 0,
+        right: 0,
+        textStyle: {
+          color: legendColor,
+          fontSize: 12,
+        },
+      },
+      grid: {
+        left: 54,
+        right: 18,
+        top: 56,
+        bottom: 30,
+      },
+      xAxis: {
+        type: "category",
+        data: allDatesAsc.map((date) => formatDateLabel(date)),
+        boundaryGap: false,
+        axisLine: {
+          lineStyle: {
+            color: "rgba(79, 110, 247, 0.15)",
+          },
+        },
+        axisLabel: {
+          color: isDark ? "#94a3b8" : "#94a3b8",
+          fontSize: 11,
+        },
+      },
+      yAxis: {
+        type: "value",
+        axisLine: { show: false },
+        splitLine: {
+          lineStyle: {
+            color: isDark ? "rgba(79, 110, 247, 0.1)" : "rgba(79, 110, 247, 0.08)",
+          },
+        },
+        axisLabel: {
+          color: isDark ? "#94a3b8" : "#94a3b8",
+          formatter: (value: number) => formatTokenAxisLabel(value),
+        },
+      },
+      series: byModelRows.map((row) => ({
+        name: row.key,
+        type: "line",
+        smooth: true,
+        showSymbol: false,
+        symbol: "circle",
+        symbolSize: 6,
+        lineStyle: {
+          width: 3,
+        },
+        emphasis: {
+          focus: "series",
+        },
+        data: allDatesAsc.map(
+          (date) => byDateModelMap.get(date)?.get(row.key)?.prompt_tokens || 0,
+        ),
+      })),
+    };
+  }, [allDatesAsc, byDateModelMap, byModelRows, pageTheme]);
+
+  const tokenTypeTrendOption = useMemo(() => {
+    const isDark = pageTheme === "dark";
+
+    return {
+      backgroundColor: "transparent",
+      animationDuration: 400,
+      color: ["#4f6ef7", "#14b8c4", "#f97316"],
+      tooltip: {
+        trigger: "axis",
+        axisPointer: {
+          type: "line",
+        },
+        backgroundColor: isDark ? "rgba(20, 27, 45, 0.96)" : "rgba(255, 255, 255, 0.96)",
+        borderColor: "rgba(79, 110, 247, 0.25)",
+        textStyle: {
+          color: isDark ? "#e2e8f0" : "#1e293b",
+          fontSize: 12,
+        },
+        formatter: (params: Array<{ axisValue: string; seriesName: string; data: number }>) => {
+          const lines = params
+            .map((item) => `${item.seriesName}：${formatNumber(item.data || 0)}`)
+            .join("<br/>");
+          return `${params[0]?.axisValue || ""}<br/>${lines}`;
+        },
+      },
+      legend: {
+        top: 0,
+        left: 0,
+        textStyle: {
+          color: isDark ? "#cbd5e1" : "#475569",
+          fontSize: 12,
+        },
+      },
+      grid: {
+        left: 54,
+        right: 18,
+        top: 56,
+        bottom: 30,
+      },
+      xAxis: {
+        type: "category",
+        data: allDatesAsc.map((date) => formatDateLabel(date)),
+        boundaryGap: false,
+        axisLine: {
+          lineStyle: {
+            color: "rgba(79, 110, 247, 0.15)",
+          },
+        },
+        axisLabel: {
+          color: isDark ? "#94a3b8" : "#94a3b8",
+          fontSize: 11,
+        },
+      },
+      yAxis: {
+        type: "value",
+        axisLine: { show: false },
+        splitLine: {
+          lineStyle: {
+            color: isDark ? "rgba(79, 110, 247, 0.1)" : "rgba(79, 110, 247, 0.08)",
+          },
+        },
+        axisLabel: {
+          color: isDark ? "#94a3b8" : "#94a3b8",
+          formatter: (value: number) => formatTokenAxisLabel(value),
+        },
+      },
+      series: [
+        {
+          name: "Prompt Tokens",
+          type: "line",
+          smooth: true,
+          showSymbol: false,
+          lineStyle: { width: 3 },
+          data: allDatesAsc.map((date) => byDateStatsMap.get(date)?.prompt_tokens || 0),
+        },
+        {
+          name: "Completion Tokens",
+          type: "line",
+          smooth: true,
+          showSymbol: false,
+          lineStyle: { width: 3 },
+          data: allDatesAsc.map((date) => byDateStatsMap.get(date)?.completion_tokens || 0),
+        },
+        {
+          name: "Total Tokens",
+          type: "line",
+          smooth: true,
+          showSymbol: false,
+          lineStyle: { width: 3 },
+          data: allDatesAsc.map((date) => {
+            const stats = byDateStatsMap.get(date);
+            return stats ? totalTokens(stats) : 0;
+          }),
+        },
+      ],
+    };
+  }, [allDatesAsc, byDateStatsMap, pageTheme]);
 
   const hasData = Boolean(summary && summary.total_calls > 0);
 
@@ -373,13 +688,47 @@ export function TokenUsagePanel({
               </div>
               <ReactECharts
                 echarts={echarts}
-                option={chartOption}
+                option={tokenTrendOption}
                 style={{ height: 320, width: "100%" }}
                 opts={{ renderer: "canvas" }}
                 notMerge={true}
                 lazyUpdate={true}
               />
             </section>
+
+            <div className="token-usage-trend-grid">
+              <section className="token-usage-chart-card">
+                <div className="token-usage-card-head">
+                  <div>
+                    <h4>模型用量趋势</h4>
+                  </div>
+                </div>
+                <ReactECharts
+                  echarts={echarts}
+                  option={modelTrendOption}
+                  style={{ height: 320, width: "100%" }}
+                  opts={{ renderer: "canvas" }}
+                  notMerge={true}
+                  lazyUpdate={true}
+                />
+              </section>
+
+              <section className="token-usage-chart-card">
+                <div className="token-usage-card-head">
+                  <div>
+                    <h4>Token 类型趋势</h4>
+                  </div>
+                </div>
+                <ReactECharts
+                  echarts={echarts}
+                  option={tokenTypeTrendOption}
+                  style={{ height: 320, width: "100%" }}
+                  opts={{ renderer: "canvas" }}
+                  notMerge={true}
+                  lazyUpdate={true}
+                />
+              </section>
+            </div>
 
             <div className="token-usage-detail-grid">
               <section className="token-usage-table-card token-usage-table-card-wide">
