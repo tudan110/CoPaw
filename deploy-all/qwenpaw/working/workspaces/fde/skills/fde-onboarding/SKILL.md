@@ -41,15 +41,19 @@ description: FDE 交付助手的元技能 —— 把客户/运营方的需求与
 
 | 子命令 | 作用 |
 | --- | --- |
+| `list-agents` | 看一眼已有哪些业务智能体（决定复用还是新建） |
+| `create-agent --id X [--name Y] [--description D] [--provider P --model M]` | 建一个新的业务智能体的空壳（workspace + config profile + agent.json） |
 | `scaffold --name N --target-workspace W [--brief-file F]` | 从骨架生成 staged 技能 + 自检 |
 | `selfcheck --skill-dir D` | 安全扫描 dry-run + 领域审查 + 语法 + 待确认项 |
 | `probe --skill-dir D [--context-file F]` | 沙箱里跑一遍生成技能的 `diagnose` |
 | `list-staged` / `show-staged --name N` | 列出 / 查看 staged 技能（文件树+内容） |
 | `discard --name N` | 删掉一个 staged 技能 |
 
+> 顺手提一下安装兜底：用户在面板上点「确认安装到 \<X\>」时，如果 X 还不存在，后端会**自动先用 X 当 id 建一个空壳再装**，所以即便你忘了在 blueprint 阶段建，一次点击也不会卡住。但建出来的 name 会跟 id 同名，描述会写"由 FDE 自动创建"——能在 blueprint 阶段就建好、起个像样的名字，体验更整齐。
+
 ## 硬约束
 
-- 只写 fde 工作区（尤其 `staged/`）。**不要** `create_skill` 到别的工作区，**不要**直接改其它工作区目录。
+- 能写两类东西：① fde 工作区（尤其 `staged/`，技能产物）；② 通过 `create-agent` **建业务智能体的空壳**。不可以：**直接 `create_skill` 到别的工作区**、**直接改其它工作区里已有文件**——那是面板「确认安装」点击之后才发生的。
 - 生成的 skill 必须过 `skill_scanner` + `domain_guard`（网管域）。自检过不了 = 不交付。
 - 凭证（token/密码/AK SK）不进生成的 `SKILL.md`/脚本/`skill.json`。
 - 拿不准的接口字段，**问对方或让对方贴样例**，不编造。

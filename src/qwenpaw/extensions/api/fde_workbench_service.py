@@ -21,6 +21,13 @@ _STAGED_INTERNAL_FILES = {"_fde_meta.json", "GENERATION.md"}
 ERKAI_TAG = "二开"
 
 FDE_AGENT_ID = "fde"
+# Portal "对外入口" agent. Skills mirrored here are reachable from the
+# portal main chat box directly. Configurable for deployments that
+# rename the entry agent (mirrors the frontend's portalBranding).
+GATEWAY_AGENT_ID = os.environ.get(
+    "QWENPAW_PORTAL_GATEWAY_AGENT_ID",
+    "",
+).strip() or "gateway"
 FDE_ONBOARDING_SKILL = "fde-onboarding"
 FDE_TOOLS_TIMEOUT_SECONDS = int(
     os.environ.get("QWENPAW_FDE_TOOLS_TIMEOUT", "60") or "60"
@@ -243,6 +250,645 @@ def _resolve_workspace_dir(agent_id: str) -> Path:
     return Path(getattr(ref, "workspace_dir", "")).expanduser()
 
 
+_INSTALLED_SKILL_SAFE_NAME_RE = re.compile(r"^[a-zA-Z0-9._-]+$")
+
+
+def parse_env_example(text: str) -> list[dict[str, str]]:
+    """Parse a ``.env.example`` file into a list of fields for a form UI.
+
+    Each entry is ``{key, default, hint}`` where ``hint`` is the concatenation
+    of consecutive ``#`` comments immediately preceding the ``KEY=value``
+    line. Lines that don't look like ``KEY=...`` are skipped (but their
+    comments are still associated with the next real key).
+    """
+    fields: list[dict[str, str]] = []
+    pending: list[str] = []
+    for raw_line in (text or "").splitlines():
+        line = raw_line.rstrip()
+        stripped = line.strip()
+        if not stripped:
+            pending = []
+            continue
+        if stripped.startswith("#"):
+            pending.append(stripped.lstrip("#").strip())
+            continue
+        if "=" not in stripped:
+            pending = []
+            continue
+        key, _, default = stripped.partition("=")
+        key = key.strip()
+        default = default.strip().strip('"').strip("'")
+        if not key:
+            pending = []
+            continue
+        fields.append(
+            {
+                "key": key,
+                "default": default,
+                "hint": "\n".join(pending).strip(),
+            }
+        )
+        pending = []
+    return fields
+
+
+def _parse_env_values(text: str) -> dict[str, str]:
+    values: dict[str, str] = {}
+    for raw_line in (text or "").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, val = line.partition("=")
+        values[key.strip()] = val.strip().strip('"').strip("'")
+    return values
+
+
+def _installed_skill_dir(target_workspace: str, skill_name: str) -> Path:
+    target_workspace = (target_workspace or "").strip()
+    if not target_workspace:
+        raise FdeWorkbenchError("缺少目标业务智能体")
+    name = (skill_name or "").strip()
+    if not _INSTALLED_SKILL_SAFE_NAME_RE.match(name):
+        raise FdeWorkbenchError(f"非法技能名：{skill_name}")
+    workspace_dir = _resolve_workspace_dir(target_workspace)
+    skill_dir = workspace_dir / "skills" / name
+    if not skill_dir.is_dir():
+        raise FdeWorkbenchError(
+            f"业务智能体 {target_workspace} 的工作区里找不到技能 {name}"
+        )
+    return skill_dir
+
+
+def read_skill_env_state(
+    target_workspace: str,
+    skill_name: str,
+) -> dict[str, Any]:
+    """Return the env schema (from .env.example) + current values (.env)."""
+    skill_dir = _installed_skill_dir(target_workspace, skill_name)
+    example = skill_dir / ".env.example"
+    env_path = skill_dir / ".env"
+    schema = []
+    if example.is_file():
+        try:
+            schema = parse_env_example(
+                example.read_text(encoding="utf-8"),
+            )
+        except OSError:
+            schema = []
+    values: dict[str, str] = {}
+    if env_path.is_file():
+        try:
+            values = _parse_env_values(env_path.read_text(encoding="utf-8"))
+        except OSError:
+            values = {}
+    return {
+        "target_workspace": target_workspace,
+        "skill_name": skill_name,
+        "skill_dir": str(skill_dir),
+        "schema": schema,
+        "values": values,
+        "has_env": env_path.is_file(),
+        "has_example": example.is_file(),
+    }
+
+
+def write_skill_env(
+    *,
+    target_workspace: str,
+    skill_name: str,
+    values: dict[str, Any] | None,
+) -> dict[str, Any]:
+    """Write/update ``.env`` in the installed skill dir.
+
+    Existing keys not present in ``values`` are preserved; values present
+    are overwritten. Empty-string values delete the key. Sets mode 0600
+    so credentials aren't world-readable.
+    """
+    skill_dir = _installed_skill_dir(target_workspace, skill_name)
+    env_path = skill_dir / ".env"
+    current: dict[str, str] = {}
+    if env_path.is_file():
+        try:
+            current = _parse_env_values(env_path.read_text(encoding="utf-8"))
+        except OSError:
+            current = {}
+    incoming = dict(values or {})
+    for key, val in incoming.items():
+        key = str(key).strip()
+        if not key:
+            continue
+        text = "" if val is None else str(val)
+        if text == "":
+            current.pop(key, None)
+        else:
+            current[key] = text
+    lines = [
+        "# 由 Portal 交付工作台写入。包含敏感凭证，请妥善保护。",
+        "",
+    ] + [f"{k}={v}" for k, v in current.items()]
+    body = "\n".join(lines) + "\n"
+    env_path.write_text(body, encoding="utf-8")
+    try:
+        os.chmod(env_path, 0o600)
+    except OSError:
+        pass
+    return {
+        "target_workspace": target_workspace,
+        "skill_name": skill_name,
+        "skill_dir": str(skill_dir),
+        "keys": sorted(current.keys()),
+        "wrote_count": len(current),
+    }
+
+
+def _parse_skill_frontmatter(text: str) -> tuple[str, str]:
+    """Best-effort YAML frontmatter parse → (name, description)."""
+    if not text or not text.lstrip().startswith("---"):
+        return "", ""
+    stripped = text.lstrip()
+    end = stripped.find("\n---", 3)
+    if end == -1:
+        return "", ""
+    block = stripped[3:end].strip()
+    try:
+        import yaml
+
+        data = yaml.safe_load(block) or {}
+    except Exception:  # noqa: BLE001 - defensive
+        return "", ""
+    if not isinstance(data, dict):
+        return "", ""
+    return (
+        str(data.get("name") or "").strip(),
+        str(data.get("description") or "").strip(),
+    )
+
+
+def prefill_domain_allow_for_staged(
+    skill_dir: Path,
+    *,
+    source: str = "fde-manual-override",
+    reason: str = "FDE 交付工作台手动确认（领域审核服务暂不可用）",
+) -> bool:
+    """Pre-warm ``domain_guard``'s in-memory verdict cache with an
+    ``allow`` for the staged skill's content digest.
+
+    Used when the install path's ``skill_scanner`` would otherwise refuse
+    to import the skill because the domain LLM is unreachable: the
+    operator has reviewed the code in the panel, so we let them override
+    that one check (and only that one — ``skill_scanner`` still runs and
+    can block on real security findings). Returns ``True`` when a
+    verdict was inserted into the cache.
+    """
+    skill_md = skill_dir / "SKILL.md"
+    if not skill_md.is_file():
+        return False
+    try:
+        content = skill_md.read_text(encoding="utf-8")
+    except OSError:
+        return False
+    fm_name, fm_desc = _parse_skill_frontmatter(content)
+    skill_name = fm_name or skill_dir.name
+    try:
+        from qwenpaw.extensions.api.domain_guard import (
+            DomainVerdict,
+            _cache_put,
+            _content_digest,
+        )
+    except Exception:  # noqa: BLE001 - defensive
+        return False
+    digest = _content_digest("skill", skill_name, fm_desc, content, {})
+    verdict = DomainVerdict(
+        relevant=True,
+        confidence=1.0,
+        category="人工确认",
+        reason=reason,
+        decision="allow",
+        source=source,
+    )
+    try:
+        _cache_put(digest, verdict)
+    except Exception:  # noqa: BLE001 - defensive
+        return False
+    return True
+
+
+def copy_installed_skill(
+    *,
+    source_agent: str,
+    skill_name: str,
+    target_workspace: str,
+    auto_create_target: bool = True,
+    skip_domain_check: bool = False,
+    remove_source: bool = False,
+    mirror_to_gateway: bool = True,
+) -> dict[str, Any]:
+    """Copy (or move) an already-installed 二开 skill to another business
+    agent. Used to fix "FDE put it in the wrong workspace, so the gateway's
+    routing never reaches it" — operator picks the right destination from
+    the panel without going back through FDE chat + regenerate.
+
+    Reads the source skill's on-disk files directly (no staged dir needed),
+    re-runs the install path against the target (which includes the real
+    security scan + 二开 tag). When ``remove_source`` is True, the source
+    skill is deleted after a successful install (move semantics; otherwise
+    the skill lives in both workspaces).
+    """
+    source_agent = (source_agent or "").strip()
+    if not source_agent:
+        raise FdeWorkbenchError("缺少源业务智能体")
+    target_workspace = (target_workspace or "").strip()
+    if not target_workspace:
+        raise FdeWorkbenchError("缺少目标业务智能体")
+    if target_workspace == source_agent:
+        raise FdeWorkbenchError(
+            "目标和来源是同一个业务智能体，不需要复制",
+        )
+    skill_name = _validate_skill_name(skill_name)
+
+    source_dir = _installed_skill_dir(source_agent, skill_name)
+    bundle = _read_staged_bundle(source_dir)
+
+    target_created = False
+    if auto_create_target and not _target_agent_exists(target_workspace):
+        create_business_agent(
+            agent_id=target_workspace,
+            name=target_workspace,
+            description=(
+                f"由 FDE 交付工作台在复制 `{skill_name}` 时自动创建"
+            ),
+            active_model=_pick_default_active_model(),
+        )
+        target_created = True
+    target_dir = _resolve_workspace_dir(target_workspace)
+    if skip_domain_check:
+        prefill_domain_allow_for_staged(source_dir)
+
+    from qwenpaw.agents.skill_system import SkillService
+    from qwenpaw.security.skill_scanner import SkillScanError
+
+    service = SkillService(target_dir)
+    try:
+        created = service.create_skill(
+            name=skill_name,
+            content=bundle["content"],
+            references=bundle["references"],
+            scripts=bundle["scripts"],
+            extra_files=bundle["extra_files"],
+            config={},
+            enable=True,
+        )
+    except SkillScanError as exc:
+        raise FdeWorkbenchError(
+            f"复制时安全扫描未通过：{exc}",
+        ) from exc
+    except Exception as exc:  # noqa: BLE001 - normalize for the panel
+        raise FdeWorkbenchError(f"复制失败：{exc}") from exc
+    if not created:
+        raise FdeWorkbenchError(
+            f"目标工作区已存在同名技能：{skill_name}"
+            "（在技能面板里先处理掉）",
+        )
+    try:
+        service.set_skill_tags(created, [ERKAI_TAG])
+    except Exception:  # noqa: BLE001 - tag is best-effort
+        pass
+
+    removed = False
+    remove_error: str | None = None
+    if remove_source:
+        try:
+            from qwenpaw.agents.skill_system import SkillService as _SS
+
+            source_workspace_dir = _resolve_workspace_dir(source_agent)
+            source_service = _SS(source_workspace_dir)
+            # ``delete_skill`` refuses while the skill is enabled — disable
+            # first, then delete. The skill is already live in the target so
+            # leaving the source enabled for a moment longer is fine.
+            try:
+                source_service.disable_skill(skill_name)
+            except Exception:  # noqa: BLE001 - delete will surface a real error
+                pass
+            ok = source_service.delete_skill(skill_name)
+            if not ok:
+                raise FdeWorkbenchError(
+                    "源工作区拒绝删除（可能仍处于启用状态或权限不足）",
+                )
+            removed = True
+        except FdeWorkbenchError as exc:
+            remove_error = str(exc)
+        except Exception as exc:  # noqa: BLE001 - normalize
+            remove_error = str(exc)
+    mirror_status: dict[str, Any] = {
+        "mirrored": False,
+        "gateway_agent": GATEWAY_AGENT_ID,
+        "skipped_reason": (
+            "目标本身就是 gateway" if target_workspace == GATEWAY_AGENT_ID
+            else None
+        ),
+    }
+    if mirror_to_gateway and target_workspace != GATEWAY_AGENT_ID:
+        mirror_status = _try_mirror_to_gateway(created, bundle)
+
+    result: dict[str, Any] = {
+        "copied": True,
+        "name": created,
+        "source_agent": source_agent,
+        "target_workspace": target_workspace,
+        "target_created": target_created,
+        "removed_source": removed,
+        "tag": ERKAI_TAG,
+        "gateway_mirror": mirror_status,
+    }
+    if remove_error:
+        result["remove_error"] = remove_error
+    return result
+
+
+def delete_installed_skill(
+    *,
+    target_workspace: str,
+    skill_name: str,
+    also_remove_gateway_mirror: bool = True,
+) -> dict[str, Any]:
+    """Delete an FDE-installed skill from a business agent's workspace.
+
+    ``delete_skill`` upstream refuses while the skill is enabled, so we
+    ``disable_skill`` first then delete. When ``also_remove_gateway_mirror``
+    (default) is True and the same-named skill is also present in the
+    gateway workspace (the mirror this service writes on every install),
+    it gets cleaned up too — otherwise you'd be leaving an orphan copy
+    of code behind that the operator can no longer reach from this view.
+    """
+    target_workspace = (target_workspace or "").strip()
+    if not target_workspace:
+        raise FdeWorkbenchError("缺少目标业务智能体")
+    skill_name = _validate_skill_name(skill_name)
+
+    # Make sure the skill actually exists in the named workspace before we
+    # start touching anything (raises FdeWorkbenchError if not).
+    _ = _installed_skill_dir(target_workspace, skill_name)
+
+    from qwenpaw.agents.skill_system import SkillService
+
+    workspace_dir = _resolve_workspace_dir(target_workspace)
+    service = SkillService(workspace_dir)
+    try:
+        service.disable_skill(skill_name)
+    except Exception:  # noqa: BLE001 - delete will report the real error
+        pass
+    try:
+        ok = service.delete_skill(skill_name)
+    except Exception as exc:  # noqa: BLE001
+        raise FdeWorkbenchError(f"删除失败：{exc}") from exc
+    if not ok:
+        raise FdeWorkbenchError(
+            "源工作区拒绝删除（可能仍处于启用状态或权限不足）",
+        )
+
+    gateway_removed = False
+    gateway_skip: str | None = None
+    if (
+        also_remove_gateway_mirror
+        and target_workspace != GATEWAY_AGENT_ID
+        and _target_agent_exists(GATEWAY_AGENT_ID)
+    ):
+        try:
+            gateway_dir = _resolve_workspace_dir(GATEWAY_AGENT_ID)
+            gw_skill_dir = gateway_dir / "skills" / skill_name
+            if gw_skill_dir.is_dir():
+                gw_service = SkillService(gateway_dir)
+                try:
+                    gw_service.disable_skill(skill_name)
+                except Exception:  # noqa: BLE001
+                    pass
+                if gw_service.delete_skill(skill_name):
+                    gateway_removed = True
+                else:
+                    gateway_skip = "gateway 拒绝删除镜像（可能权限不足）"
+            else:
+                gateway_skip = "gateway 没有同名镜像，无需清理"
+        except FdeWorkbenchError as exc:
+            gateway_skip = f"gateway 镜像清理失败：{exc}"
+        except Exception as exc:  # noqa: BLE001
+            gateway_skip = f"gateway 镜像清理失败：{exc}"
+
+    return {
+        "deleted": True,
+        "target_workspace": target_workspace,
+        "skill_name": skill_name,
+        "gateway_mirror_removed": gateway_removed,
+        "gateway_mirror_skipped_reason": gateway_skip,
+    }
+
+
+def list_installed_erkai_skills() -> dict[str, Any]:
+    """List skills tagged ``二开`` across every configured business agent.
+
+    This is what the FDE workbench panel's "已交付技能" view reads: the
+    upstream skill pool panel is scoped to the gateway agent only, so
+    skills FDE installs into other agents wouldn't show up there. Reads
+    each agent's ``skill.json`` manifest directly — no side effects.
+    """
+    from qwenpaw.config.config import load_agent_config
+    from qwenpaw.config.utils import load_config
+
+    config = load_config()
+    profiles = getattr(config.agents, "profiles", {}) or {}
+    out: list[dict[str, Any]] = []
+    for agent_id, ref in profiles.items():
+        if agent_id == FDE_AGENT_ID:
+            continue  # FDE workspace doesn't host business skills
+        workspace_dir = Path(
+            getattr(ref, "workspace_dir", ""),
+        ).expanduser()
+        manifest_path = workspace_dir / "skill.json"
+        if not manifest_path.is_file():
+            continue
+        try:
+            manifest = json.loads(manifest_path.read_text("utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        agent_name = agent_id
+        try:
+            agent_cfg = load_agent_config(agent_id)
+            agent_name = getattr(agent_cfg, "name", "") or agent_id
+        except Exception:  # noqa: BLE001 - best-effort
+            pass
+        for skill_name, entry in (manifest.get("skills") or {}).items():
+            tags = entry.get("tags") or []
+            if ERKAI_TAG not in tags:
+                continue
+            metadata = entry.get("metadata") or {}
+            out.append(
+                {
+                    "agent_id": agent_id,
+                    "agent_name": agent_name,
+                    "skill_name": skill_name,
+                    "enabled": bool(entry.get("enabled", False)),
+                    "description": str(metadata.get("description") or "")[
+                        :240
+                    ],
+                    "updated_at": str(
+                        entry.get("updated_at")
+                        or metadata.get("updated_at")
+                        or "",
+                    ),
+                    "tags": [str(t) for t in tags],
+                }
+            )
+    out.sort(key=lambda s: (s["agent_id"], s["skill_name"]))
+    return {"count": len(out), "skills": out}
+
+
+def _target_agent_exists(agent_id: str) -> bool:
+    """Lightweight existence check (no error on missing)."""
+    from qwenpaw.config.utils import load_config
+
+    config = load_config()
+    profiles = getattr(config.agents, "profiles", {}) or {}
+    return agent_id in profiles
+
+
+def _pick_default_active_model() -> dict[str, Any] | None:
+    """Reuse fde's (else the default agent's) active model as a sensible
+    default when auto-creating a business agent: matches what's already
+    working in the deployment, no manual provider/model setup needed.
+    """
+    from qwenpaw.config.config import load_agent_config
+    from qwenpaw.config.utils import load_config
+
+    config = load_config()
+    profiles = getattr(config.agents, "profiles", {}) or {}
+    for candidate in (FDE_AGENT_ID, "default"):
+        if candidate not in profiles:
+            continue
+        try:
+            agent_cfg = load_agent_config(candidate)
+        except Exception:  # noqa: BLE001 - best-effort
+            continue
+        am = getattr(agent_cfg, "active_model", None)
+        provider_id = getattr(am, "provider_id", "") if am else ""
+        model = getattr(am, "model", "") if am else ""
+        if provider_id and model:
+            return {"provider_id": provider_id, "model": model}
+    return None
+
+
+def create_business_agent(
+    *,
+    agent_id: str,
+    name: str | None = None,
+    description: str = "",
+    active_model: dict[str, Any] | None = None,
+    language: str | None = None,
+) -> dict[str, Any]:
+    """Create a new business agent (workspace + config profile + agent.json).
+
+    Mirrors what ``POST /api/agents`` does but is callable from anywhere
+    — the FDE chat agent's ``fde_tools.py create-agent`` shell tool, the
+    install endpoint's auto-create branch, and tests. Raises
+    ``FdeWorkbenchError`` if the id is invalid or already exists; callers
+    that want a no-op on conflict should check ``_target_agent_exists``
+    first.
+    """
+    from qwenpaw.agents.utils import normalize_agent_language
+    from qwenpaw.config.config import (
+        AgentProfileConfig,
+        AgentProfileRef,
+        ChannelConfig,
+        HeartbeatConfig,
+        MCPConfig,
+        ModelSlotConfig,
+        ToolsConfig,
+        save_agent_config,
+        validate_agent_id,
+    )
+    from qwenpaw.config.utils import load_config, save_config
+    from qwenpaw.constant import WORKING_DIR
+    from qwenpaw.app.routers.agents import (
+        _initialize_agent_workspace,
+        _normalized_agent_order,
+    )
+
+    norm_id = str(agent_id or "").strip()
+    if not norm_id:
+        raise FdeWorkbenchError("缺少业务智能体 id")
+
+    config = load_config()
+    existing_ids = set(config.agents.profiles.keys())
+    try:
+        validate_agent_id(norm_id, existing_ids)
+    except ValueError as exc:
+        raise FdeWorkbenchError(str(exc)) from exc
+
+    norm_name = (name or "").strip() or norm_id
+    workspace_dir = Path(
+        f"{WORKING_DIR}/workspaces/{norm_id}",
+    ).expanduser()
+    workspace_dir.mkdir(parents=True, exist_ok=True)
+
+    norm_lang = normalize_agent_language(
+        language or getattr(config.agents, "language", None) or "zh",
+    )
+
+    model_slot = None
+    if active_model:
+        provider_id = str(active_model.get("provider_id") or "").strip()
+        model_name = str(active_model.get("model") or "").strip()
+        if provider_id and model_name:
+            model_slot = ModelSlotConfig(
+                provider_id=provider_id,
+                model=model_name,
+            )
+
+    agent_config = AgentProfileConfig(
+        id=norm_id,
+        name=norm_name,
+        description=description or "",
+        workspace_dir=str(workspace_dir),
+        language=norm_lang,
+        channels=ChannelConfig(),
+        mcp=MCPConfig(),
+        heartbeat=HeartbeatConfig(),
+        tools=ToolsConfig(),
+        active_model=model_slot,
+    )
+
+    _initialize_agent_workspace(
+        workspace_dir,
+        skill_names=[],
+        language=norm_lang,
+    )
+
+    agent_ref = AgentProfileRef(
+        id=norm_id,
+        workspace_dir=str(workspace_dir),
+        enabled=True,
+    )
+    config.agents.profiles[norm_id] = agent_ref
+    config.agents.agent_order = _normalized_agent_order(config)
+    save_config(config)
+    save_agent_config(norm_id, agent_config)
+
+    return {
+        "id": norm_id,
+        "name": norm_name,
+        "description": description or "",
+        "workspace_dir": str(workspace_dir),
+        "language": norm_lang,
+        "active_model": (
+            {
+                "provider_id": model_slot.provider_id,
+                "model": model_slot.model,
+            }
+            if model_slot
+            else None
+        ),
+        "enabled": True,
+    }
+
+
 def _tree_insert(tree: dict[str, Any], parts: list[str], content: str) -> None:
     node = tree
     for part in parts[:-1]:
@@ -296,19 +942,117 @@ def _read_staged_bundle(skill_dir: Path) -> dict[str, Any]:
     }
 
 
+def _try_mirror_to_gateway(
+    skill_name: str,
+    bundle: dict[str, Any],
+    *,
+    env_values: dict[str, str] | None = None,
+) -> dict[str, Any]:
+    """Best-effort: install ``skill_name`` into the gateway workspace too,
+    so portal-entry chats can call it directly without delegating.
+
+    Returns a small status dict instead of raising — mirror failure must
+    never block the primary install. Skips silently when gateway isn't
+    configured, doesn't exist, or already has the same-named skill.
+    """
+    status: dict[str, Any] = {
+        "mirrored": False,
+        "gateway_agent": GATEWAY_AGENT_ID,
+        "skipped_reason": None,
+    }
+    if not _target_agent_exists(GATEWAY_AGENT_ID):
+        status["skipped_reason"] = (
+            f"gateway 智能体 `{GATEWAY_AGENT_ID}` 未配置，跳过镜像"
+        )
+        return status
+    try:
+        gateway_dir = _resolve_workspace_dir(GATEWAY_AGENT_ID)
+    except FdeWorkbenchError as exc:
+        status["skipped_reason"] = f"gateway 工作区不可用：{exc}"
+        return status
+
+    from qwenpaw.agents.skill_system import SkillService
+    from qwenpaw.security.skill_scanner import SkillScanError
+
+    service = SkillService(gateway_dir)
+    try:
+        created = service.create_skill(
+            name=skill_name,
+            content=bundle["content"],
+            references=bundle["references"],
+            scripts=bundle["scripts"],
+            extra_files=bundle["extra_files"],
+            config={},
+            enable=True,
+        )
+    except SkillScanError as exc:
+        status["skipped_reason"] = f"gateway 镜像安全扫描未通过：{exc}"
+        return status
+    except Exception as exc:  # noqa: BLE001 - best-effort
+        status["skipped_reason"] = f"gateway 镜像失败：{exc}"
+        return status
+    if not created:
+        status["skipped_reason"] = (
+            f"gateway 已经有同名技能 `{skill_name}`，不覆盖"
+        )
+        return status
+    try:
+        service.set_skill_tags(created, [ERKAI_TAG])
+    except Exception:  # noqa: BLE001
+        pass
+    if env_values:
+        try:
+            write_skill_env(
+                target_workspace=GATEWAY_AGENT_ID,
+                skill_name=created,
+                values=env_values,
+            )
+        except FdeWorkbenchError:
+            pass
+    status["mirrored"] = True
+    return status
+
+
 def install_staged_skill(
     name: str,
     *,
     target_override: str | None = None,
+    auto_create_target: bool = True,
+    skip_domain_check: bool = False,
+    env_values: dict[str, str] | None = None,
+    mirror_to_gateway: bool = True,
 ) -> dict[str, Any]:
     """Install a staged skill into a business agent's workspace.
 
     By default it goes to the agent recorded in ``_fde_meta.json``;
     ``target_override`` redirects it to any existing agent (e.g. one the
-    operator just created). Runs the real security scan via
-    ``SkillService.create_skill`` (a ``SkillScanError`` surfaces as an
-    ``FdeWorkbenchError``), tags it ``二开``, leaves it enabled. The caller
-    (route handler) schedules the target agent's reload.
+    operator just created). When ``auto_create_target`` (default), if the
+    target business agent doesn't exist yet it is created on the fly with
+    sensible defaults — the human "confirm install" click thus atomically
+    covers both "建 agent" and "装 skill" instead of forcing a separate
+    manual step. Runs the real security scan via ``SkillService.create_skill``
+    (a ``SkillScanError`` surfaces as an ``FdeWorkbenchError``), tags it
+    ``二开``, leaves it enabled. The caller (route handler) schedules the
+    target agent's reload.
+
+    ``skip_domain_check`` is an operator-confirmed override for the
+    "领域审核服务不可用" case: it pre-warms ``domain_guard``'s verdict
+    cache with an ``allow`` for this exact SKILL.md content so the install
+    path's own security scan skips the unreachable-LLM check. Other
+    skill-scanner findings (real security issues) still block.
+
+    ``env_values``: keys/values to write into ``.env`` in the installed
+    skill dir (operator-supplied credentials from the panel form, so they
+    never have to SSH in to edit files). Values containing ``\\n`` /
+    quotes are written without escaping — keep them plain.
+
+    ``mirror_to_gateway`` (default ``True``): after the primary install,
+    also install a copy into the gateway agent's workspace so portal-entry
+    chats can trigger the skill directly without depending on gateway's
+    delegation rules knowing about the target agent. Best-effort — if
+    gateway isn't configured / scan fails / a same-named skill is already
+    there, the primary install still succeeds. Skipped automatically when
+    the primary target *is* gateway.
     """
     name = _validate_skill_name(name)
     skill_dir = fde_staged_dir() / name
@@ -332,9 +1076,25 @@ def install_staged_skill(
         )
 
     bundle = _read_staged_bundle(skill_dir)
+
+    target_created = False
+    if auto_create_target and not _target_agent_exists(target_workspace):
+        create_business_agent(
+            agent_id=target_workspace,
+            name=target_workspace,
+            description=(
+                f"由 FDE 交付工作台在安装 `{name}` 时自动创建"
+            ),
+            active_model=_pick_default_active_model(),
+        )
+        target_created = True
     target_dir = _resolve_workspace_dir(target_workspace)
 
-    from qwenpaw.agents.skills_manager import SkillService
+    domain_override_applied = False
+    if skip_domain_check:
+        domain_override_applied = prefill_domain_allow_for_staged(skill_dir)
+
+    from qwenpaw.agents.skill_system import SkillService
     from qwenpaw.security.skill_scanner import SkillScanError
 
     service = SkillService(target_dir)
@@ -363,10 +1123,44 @@ def install_staged_skill(
         service.set_skill_tags(created, [ERKAI_TAG])
     except Exception:  # noqa: BLE001 - tag is best-effort
         pass
-    return {
+    env_written: list[str] = []
+    env_error: str | None = None
+    if env_values:
+        try:
+            env_written = write_skill_env(
+                target_workspace=target_workspace,
+                skill_name=created,
+                values=env_values,
+            )["keys"]
+        except FdeWorkbenchError as exc:
+            env_error = str(exc)
+
+    mirror_status: dict[str, Any] = {
+        "mirrored": False,
+        "gateway_agent": GATEWAY_AGENT_ID,
+        "skipped_reason": (
+            "目标本身就是 gateway" if target_workspace == GATEWAY_AGENT_ID
+            else None
+        ),
+    }
+    if mirror_to_gateway and target_workspace != GATEWAY_AGENT_ID:
+        mirror_status = _try_mirror_to_gateway(
+            created,
+            bundle,
+            env_values=env_values,
+        )
+
+    result: dict[str, Any] = {
         "installed": True,
         "name": created,
         "target_workspace": target_workspace,
+        "target_created": target_created,
+        "domain_override_applied": domain_override_applied,
+        "env_written": env_written,
         "files": bundle["files"],
         "tag": ERKAI_TAG,
+        "gateway_mirror": mirror_status,
     }
+    if env_error:
+        result["env_error"] = env_error
+    return result

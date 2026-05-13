@@ -6,12 +6,14 @@
 
 子命令::
 
-  scaffold   --name N --target-workspace W [--brief-file F] [--out-dir D] [--json]
-  selfcheck  --skill-dir D [--json]
-  list-staged [--staged-dir D] [--json]
-  show-staged --name N [--staged-dir D] [--max-bytes 20000] [--json]
-  probe      --skill-dir D [--context-file F] [--json]
-  discard    --name N [--staged-dir D] [--yes]
+  scaffold     --name N --target-workspace W [--brief-file F] [--out-dir D] [--json]
+  selfcheck    --skill-dir D [--json]
+  list-staged  [--staged-dir D] [--json]
+  show-staged  --name N [--staged-dir D] [--max-bytes 20000] [--json]
+  probe        --skill-dir D [--context-file F] [--json]
+  discard      --name N [--staged-dir D] [--yes]
+  create-agent --id X [--name Y] [--description D] [--provider P --model M] [--json]
+  list-agents  [--json]
 
 staged 目录默认是 fde 工作区下的 `staged/`（也可用环境变量
 `QWENPAW_FDE_STAGED_DIR` 覆盖）。
@@ -230,6 +232,92 @@ def cmd_probe(args) -> int:
     return 0 if payload.get("ok") else 1
 
 
+def cmd_create_agent(args) -> int:
+    """Create a new business agent (workspace + config profile).
+
+    Goes through ``fde_workbench_service.create_business_agent`` so the
+    auto-create-on-install path and this one stay in lockstep.
+    """
+    from qwenpaw.extensions.api import fde_workbench_service as svc
+
+    active_model = None
+    if args.provider or args.model:
+        active_model = {
+            "provider_id": args.provider or "",
+            "model": args.model or "",
+        }
+    try:
+        info = svc.create_business_agent(
+            agent_id=args.id,
+            name=args.name or args.id,
+            description=args.description or "",
+            active_model=active_model,
+        )
+    except svc.FdeWorkbenchError as exc:
+        _emit(
+            {"error": str(exc)},
+            as_json=args.json,
+            human=f"⛔ 建业务智能体失败：{exc}",
+        )
+        return 1
+    am = info.get("active_model") or {}
+    human = (
+        f"✅ 已创建业务智能体 `{info['id']}`（{info['name']}）\n"
+        f"   workspace_dir: {info['workspace_dir']}\n"
+        + (
+            f"   active_model:  {am.get('provider_id', '')}/"
+            f"{am.get('model', '')}\n"
+            if am
+            else "   active_model:  (未设置——继承默认或后续在面板里设)\n"
+        )
+        + "  下一步：把 staged 技能装到这个工作区，"
+        "或者由 FDE 继续生成技能。"
+    )
+    _emit(info, as_json=args.json, human=human)
+    return 0
+
+
+def cmd_list_agents(args) -> int:
+    """List configured business agents (for FDE to decide reuse vs create)."""
+    from qwenpaw.config.utils import load_config
+
+    config = load_config()
+    profiles = getattr(config.agents, "profiles", {}) or {}
+    order = list(getattr(config.agents, "agent_order", []) or [])
+    agents = []
+    for agent_id in order:
+        ref = profiles.get(agent_id)
+        if ref is None:
+            continue
+        agents.append(
+            {
+                "id": agent_id,
+                "workspace_dir": getattr(ref, "workspace_dir", ""),
+                "enabled": getattr(ref, "enabled", True),
+            }
+        )
+    # any profiles missing from agent_order get appended
+    for agent_id, ref in profiles.items():
+        if agent_id in order:
+            continue
+        agents.append(
+            {
+                "id": agent_id,
+                "workspace_dir": getattr(ref, "workspace_dir", ""),
+                "enabled": getattr(ref, "enabled", True),
+            }
+        )
+    payload = {"count": len(agents), "agents": agents}
+    human = "已配置的业务智能体：\n" + "\n".join(
+        f"  - {a['id']}"
+        + ("" if a["enabled"] else "  (停用)")
+        + f"  → {a['workspace_dir']}"
+        for a in agents
+    ) if agents else "还没有配置任何业务智能体。"
+    _emit(payload, as_json=args.json, human=human)
+    return 0
+
+
 def cmd_discard(args) -> int:
     staged_dir = Path(args.staged_dir).expanduser() if args.staged_dir else _default_staged_dir()
     name = normalize_skill_name(args.name)
@@ -280,6 +368,25 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--staged-dir")
     p.add_argument("--yes", action="store_true")
     p.set_defaults(func=cmd_discard)
+
+    p = sub.add_parser(
+        "create-agent",
+        parents=[common],
+        help="创建一个新的业务智能体（workspace + config profile + agent.json）",
+    )
+    p.add_argument("--id", required=True, help="业务智能体 id（小写字母/数字/-/_）")
+    p.add_argument("--name", help="人读名（默认与 --id 同）")
+    p.add_argument("--description", default="")
+    p.add_argument("--provider", help="active_model.provider_id（默认继承 fde / default agent 的）")
+    p.add_argument("--model", help="active_model.model")
+    p.set_defaults(func=cmd_create_agent)
+
+    p = sub.add_parser(
+        "list-agents",
+        parents=[common],
+        help="列出已配置的业务智能体（FDE 决定复用还是新建时用）",
+    )
+    p.set_defaults(func=cmd_list_agents)
     return parser
 
 

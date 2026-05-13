@@ -173,14 +173,42 @@ export function FdeConsoleChat({
   const [historyChats, setHistoryChats] = useState<HistoryChat[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyError, setHistoryError] = useState<string | null>(null);
+  const [currentChatId, setCurrentChatId] = useState<string | null>(null);
+  const [currentChatName, setCurrentChatName] = useState<string>("");
 
   const chatIdRef = useRef<string | null>(null);
   const sessionIdRef = useRef<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const metaRef = useRef<Map<string, string>>(new Map());
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  const statusTimerRef = useRef<number | null>(null);
   const onTurnCompleteRef = useRef(onTurnComplete);
   onTurnCompleteRef.current = onTurnComplete;
+
+  const flashStatus = useCallback((label: string) => {
+    if (statusTimerRef.current) {
+      window.clearTimeout(statusTimerRef.current);
+    }
+    setStatusLabel(label);
+    statusTimerRef.current = window.setTimeout(() => {
+      setStatusLabel("");
+      statusTimerRef.current = null;
+    }, 2600);
+  }, []);
+
+  const adoptChat = useCallback(
+    (id: string | null, name?: string, sessionId?: string | null) => {
+      chatIdRef.current = id;
+      if (sessionId !== undefined) {
+        sessionIdRef.current = sessionId;
+      } else if (!id) {
+        sessionIdRef.current = null;
+      }
+      setCurrentChatId(id);
+      setCurrentChatName(name || "");
+    },
+    [],
+  );
 
   useLayoutEffect(() => {
     const el = scrollRef.current;
@@ -192,6 +220,9 @@ export function FdeConsoleChat({
   useEffect(
     () => () => {
       abortRef.current?.abort();
+      if (statusTimerRef.current) {
+        window.clearTimeout(statusTimerRef.current);
+      }
     },
     [],
   );
@@ -237,6 +268,10 @@ export function FdeConsoleChat({
     if (overrideText === undefined) {
       setInput("");
     }
+    if (statusTimerRef.current) {
+      window.clearTimeout(statusTimerRef.current);
+      statusTimerRef.current = null;
+    }
     metaRef.current = new Map();
     const assistantId = nextId("a");
     setTurns((prev) => [
@@ -261,15 +296,15 @@ export function FdeConsoleChat({
         session_id: sessionIdRef.current || "",
       };
       if (!chat.id || !chat.session_id) {
+        const name = text.slice(0, 40) || "FDE 交付会话";
         const created = (await createChat(agentId, {
-          name: text.slice(0, 40) || "FDE 交付会话",
+          name,
           session_id: nextId("portal-fde"),
           user_id: USER_ID,
           channel: CHANNEL,
-        })) as { id: string; session_id: string };
+        })) as { id: string; session_id: string; name?: string };
         chat = { id: created.id, session_id: created.session_id };
-        chatIdRef.current = chat.id;
-        sessionIdRef.current = chat.session_id;
+        adoptChat(chat.id, created.name || name, chat.session_id);
       }
 
       await streamChat(
@@ -365,7 +400,7 @@ export function FdeConsoleChat({
       );
       onTurnCompleteRef.current?.();
     }
-  }, [input, streaming, agentId, patchLastAssistant, upsertSegment]);
+  }, [input, streaming, agentId, patchLastAssistant, upsertSegment, adoptChat]);
 
   const stop = useCallback(() => {
     abortRef.current?.abort();
@@ -376,16 +411,15 @@ export function FdeConsoleChat({
   }, [agentId]);
 
   const reset = useCallback(() => {
-    if (streaming) {
-      return;
-    }
-    chatIdRef.current = null;
-    sessionIdRef.current = null;
+    abortRef.current?.abort();
+    abortRef.current = null;
+    setStreaming(false);
+    adoptChat(null);
     metaRef.current = new Map();
     setTurns([]);
-    setStatusLabel("");
     setHistoryOpen(false);
-  }, [streaming]);
+    flashStatus("已开始新会话");
+  }, [adoptChat, flashStatus]);
 
   const openHistory = useCallback(async () => {
     setHistoryOpen(true);
@@ -415,24 +449,54 @@ export function FdeConsoleChat({
   }, [agentId]);
 
   const loadHistoryChat = useCallback(
-    async (chatId: string) => {
-      if (streaming) {
-        return;
-      }
+    async (chat: HistoryChat) => {
+      // Allow switching even mid-stream: drop the running stream first.
+      abortRef.current?.abort();
+      abortRef.current = null;
+      setStreaming(false);
       setHistoryOpen(false);
+      if (statusTimerRef.current) {
+        window.clearTimeout(statusTimerRef.current);
+        statusTimerRef.current = null;
+      }
       setStatusLabel("载入历史会话…");
+      // Adopt eagerly from the list entry so a follow-up message reuses this
+      // chat even if the history fetch is slow / fails.
+      adoptChat(chat.id, chat.name, chat.session_id || null);
+      metaRef.current = new Map();
       try {
-        const history = (await getChatHistory(agentId, chatId)) as {
+        const history = (await getChatHistory(agentId, chat.id)) as {
           messages?: unknown;
           session_id?: string;
           sessionId?: string;
         };
-        chatIdRef.current = chatId;
-        sessionIdRef.current = String(
-          history.session_id || history.sessionId || "",
+        const sid = String(
+          chat.session_id || history.session_id || history.sessionId || "",
         );
-        metaRef.current = new Map();
-        setTurns(normalizeFdeHistory(history.messages));
+        if (sid) {
+          sessionIdRef.current = sid;
+        }
+        const loaded = normalizeFdeHistory(history.messages);
+        if (loaded.length) {
+          setTurns(loaded);
+          flashStatus(`已载入「${chat.name || "历史会话"}」`);
+        } else {
+          setTurns([
+            {
+              id: nextId("a"),
+              role: "assistant",
+              segments: [
+                {
+                  msgId: nextId("s"),
+                  text: "这个会话还没有留下消息记录，直接在下面继续发消息即可。",
+                },
+              ],
+              trace: [],
+              status: "done",
+            },
+          ]);
+          flashStatus(`已载入「${chat.name || "历史会话"}」（空会话）`);
+        }
       } catch (error) {
         const msg =
           error instanceof Error ? error.message : "载入历史会话失败";
@@ -446,11 +510,10 @@ export function FdeConsoleChat({
             error: msg,
           },
         ]);
-      } finally {
         setStatusLabel("");
       }
     },
-    [agentId, streaming],
+    [agentId, adoptChat, flashStatus],
   );
 
   const retryLast = useCallback(() => {
@@ -493,6 +556,11 @@ export function FdeConsoleChat({
           <span className="fde-live-dot" aria-hidden />
           {agentName}
         </span>
+        {currentChatName ? (
+          <span className="fde-cc-session" title="当前会话">
+            {currentChatName}
+          </span>
+        ) : null}
         {statusLabel ? (
           <span className="fde-cc-status">{statusLabel}</span>
         ) : null}
@@ -501,8 +569,9 @@ export function FdeConsoleChat({
           <button
             type="button"
             className="fde-link-btn"
-            onClick={() => (historyOpen ? setHistoryOpen(false) : void openHistory())}
-            disabled={streaming}
+            onClick={() =>
+              historyOpen ? setHistoryOpen(false) : void openHistory()
+            }
           >
             历史
           </button>
@@ -529,15 +598,17 @@ export function FdeConsoleChat({
                         type="button"
                         key={c.id}
                         className={`fde-cc-history-item${
-                          chatIdRef.current === c.id ? " is-current" : ""
+                          currentChatId === c.id ? " is-current" : ""
                         }`}
-                        onClick={() => void loadHistoryChat(c.id)}
+                        onClick={() => void loadHistoryChat(c)}
                       >
                         <span className="fde-cc-history-name">
                           {c.name || "未命名会话"}
                         </span>
                         <span className="fde-cc-history-time">
-                          {formatChatTime(c.updated_at || c.created_at)}
+                          {currentChatId === c.id
+                            ? "当前会话"
+                            : formatChatTime(c.updated_at || c.created_at)}
                         </span>
                       </button>
                     ))}
@@ -551,7 +622,7 @@ export function FdeConsoleChat({
           type="button"
           className="fde-link-btn"
           onClick={reset}
-          disabled={streaming || turns.length === 0}
+          disabled={!streaming && turns.length === 0 && !currentChatId}
         >
           新会话
         </button>

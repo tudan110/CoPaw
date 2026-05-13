@@ -152,12 +152,64 @@ export interface FdeProbeResult {
   error?: string;
 }
 
+export interface FdeGatewayMirror {
+  mirrored: boolean;
+  gateway_agent: string;
+  skipped_reason?: string | null;
+}
+
 export interface FdeInstallResult {
   installed: boolean;
   name: string;
   target_workspace: string;
+  // true when the install path auto-created the target agent because it
+  // didn't exist yet (one-click delivery).
+  target_created?: boolean;
+  // true when the domain_guard verdict cache was pre-warmed because the
+  // operator clicked "强制安装(领域审核暂不可用)".
+  domain_override_applied?: boolean;
+  // .env keys that got written into the installed skill dir.
+  env_written?: string[];
+  // surfaced when the skill landed but writing .env failed (e.g. perms).
+  env_error?: string;
+  // 'true' when the skill was also installed into the gateway workspace
+  // (so portal entry can trigger it). Skipped silently when target *is*
+  // gateway or gateway already has same-named skill.
+  gateway_mirror?: FdeGatewayMirror;
   files: string[];
   tag: string;
+}
+
+export interface FdeEnvField {
+  key: string;
+  default: string;
+  // multi-line hint pulled from the leading # comments in .env.example
+  hint: string;
+}
+
+export interface FdeInstalledSkill {
+  agent_id: string;
+  agent_name: string;
+  skill_name: string;
+  enabled: boolean;
+  description: string;
+  updated_at: string;
+  tags: string[];
+}
+
+export interface FdeInstalledListResult {
+  count: number;
+  skills: FdeInstalledSkill[];
+}
+
+export interface FdeEnvState {
+  target_workspace: string;
+  skill_name: string;
+  skill_dir: string;
+  schema: FdeEnvField[];
+  values: Record<string, string>;
+  has_env: boolean;
+  has_example: boolean;
 }
 
 export interface FdeBrief {
@@ -175,6 +227,36 @@ export const fdeApi = {
   getWorkbenchInfo: () => requestFde<FdeWorkbenchInfo>("/workspace"),
 
   listStaged: () => requestFde<FdeStagedListResult>("/staged"),
+
+  listInstalled: () => requestFde<FdeInstalledListResult>("/installed"),
+
+  copyInstalled: (
+    sourceAgent: string,
+    skillName: string,
+    targetWorkspace: string,
+    opts?: { removeSource?: boolean; skipDomainCheck?: boolean },
+  ) =>
+    requestFde<{
+      copied: boolean;
+      name: string;
+      source_agent: string;
+      target_workspace: string;
+      target_created: boolean;
+      removed_source: boolean;
+      remove_error?: string;
+      tag: string;
+    }>(
+      `/installed/${encodeURIComponent(sourceAgent)}/${encodeURIComponent(skillName)}/copy`,
+      {
+        method: "POST",
+        body: JSON.stringify({
+          target_workspace: targetWorkspace,
+          remove_source: !!opts?.removeSource,
+          skip_domain_check: !!opts?.skipDomainCheck,
+        }),
+      },
+      HEAVY_TIMEOUT_MS,
+    ),
 
   showStaged: (skillName: string) =>
     requestFde<FdeStagedDetail>(
@@ -218,16 +300,68 @@ export const fdeApi = {
       HEAVY_TIMEOUT_MS,
     ),
 
-  installStaged: (skillName: string, targetWorkspace?: string) =>
-    requestFde<FdeInstallResult>(
+  installStaged: (
+    skillName: string,
+    targetWorkspace?: string,
+    opts?: {
+      skipDomainCheck?: boolean;
+      envValues?: Record<string, string>;
+    },
+  ) => {
+    const body: Record<string, unknown> = {};
+    if (targetWorkspace) body.target_workspace = targetWorkspace;
+    if (opts?.skipDomainCheck) body.skip_domain_check = true;
+    if (opts?.envValues && Object.keys(opts.envValues).length > 0) {
+      body.env_values = opts.envValues;
+    }
+    return requestFde<FdeInstallResult>(
       `/staged/${encodeURIComponent(skillName)}/install`,
       {
         method: "POST",
-        body: JSON.stringify(
-          targetWorkspace ? { target_workspace: targetWorkspace } : {},
-        ),
+        body: JSON.stringify(body),
       },
       HEAVY_TIMEOUT_MS,
+    );
+  },
+
+  deleteInstalled: (targetWorkspace: string, skillName: string) =>
+    requestFde<{
+      deleted: boolean;
+      target_workspace: string;
+      skill_name: string;
+      gateway_mirror_removed: boolean;
+      gateway_mirror_skipped_reason: string | null;
+    }>(
+      `/installed/${encodeURIComponent(targetWorkspace)}/${encodeURIComponent(skillName)}`,
+      { method: "DELETE" },
+    ),
+
+  readInstalledEnv: (targetWorkspace: string, skillName: string) =>
+    requestFde<FdeEnvState>(
+      `/installed/${encodeURIComponent(targetWorkspace)}/${encodeURIComponent(skillName)}/env`,
+    ),
+
+  writeInstalledEnv: (
+    targetWorkspace: string,
+    skillName: string,
+    values: Record<string, string>,
+  ) =>
+    requestFde<{
+      target_workspace: string;
+      skill_name: string;
+      skill_dir: string;
+      keys: string[];
+      wrote_count: number;
+    }>(
+      `/installed/${encodeURIComponent(targetWorkspace)}/${encodeURIComponent(skillName)}/env`,
+      {
+        method: "PUT",
+        body: JSON.stringify({
+          target_workspace: targetWorkspace,
+          skill_name: skillName,
+          values,
+        }),
+      },
     ),
 
   discardStaged: (skillName: string) =>
