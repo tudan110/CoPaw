@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import unittest
+import json
 from pathlib import Path
 import sys
+import tempfile
 from urllib.parse import parse_qs, urlparse
 from unittest import mock
 
@@ -23,6 +25,45 @@ from runtime.formatters import (
 
 
 class OrderWorkflowTests(unittest.TestCase):
+    def test_order_workflow_config_prefers_workspace_notification_settings(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            settings_file = Path(tmp_dir) / "extensions" / "notifications" / "settings.json"
+            settings_file.parent.mkdir(parents=True, exist_ok=True)
+            settings_file.write_text(
+                json.dumps(
+                    {
+                        "notification_channels": {
+                            "order_workflow": {
+                                "push_url": "http://settings.example.com/push",
+                                "dingtalk_webhook_url": "",
+                                "dingtalk_secret": "",
+                                "feishu_webhook_url": "",
+                                "feishu_secret": "",
+                                "timeout_seconds": 17,
+                                "mention_all": False,
+                            }
+                        }
+                    }
+                ),
+                "utf-8",
+            )
+
+            with mock.patch.dict(
+                "os.environ",
+                {
+                    "QWENPAW_WORKING_DIR": tmp_dir,
+                    "ORDER_CREATE_NOTIFY_PUSH_URL": "http://env.example.com/push",
+                    "ORDER_CREATE_NOTIFY_TIMEOUT_SECONDS": "8",
+                    "ORDER_CREATE_NOTIFY_MENTION_ALL": "true",
+                },
+                clear=False,
+            ):
+                config = OrderWorkflowConfig.from_env()
+
+        self.assertEqual(config.create_notify_push_url, "http://settings.example.com/push")
+        self.assertEqual(config.create_notify_timeout_seconds, 17)
+        self.assertFalse(config.create_notify_mention_all)
+
     def test_build_list_params_uses_documented_query_keys(self) -> None:
         params = OrderWorkflowClient._build_list_params(
             page_num=2,
@@ -418,7 +459,6 @@ class OrderWorkflowTests(unittest.TestCase):
                 base_url="http://example.com",
                 authorization="token",
                 create_notify_dingtalk_webhook_url="https://oapi.dingtalk.com/robot/send?access_token=test",
-                create_notify_dingtalk_keyword="工单",
                 create_notify_mention_all=True,
             )
         )
@@ -435,7 +475,7 @@ class OrderWorkflowTests(unittest.TestCase):
         payload = client._build_dingtalk_create_notify_payload(context)
         self.assertEqual(payload["msgtype"], "text")
         self.assertTrue(payload["at"]["isAtAll"])
-        self.assertTrue(payload["text"]["content"].startswith("工单\n"))
+        self.assertTrue(payload["text"]["content"].startswith("【工单创建通知】"))
         self.assertIn("摘要：", payload["text"]["content"])
         self.assertIn("taskId：task-1", payload["text"]["content"])
 

@@ -272,7 +272,6 @@ def test_app_notification_payload_mentions_all_when_enabled():
     "os.environ",
     {
         "ORDER_CREATE_NOTIFY_DINGTALK_WEBHOOK_URL": "https://oapi.dingtalk.com/robot/send?access_token=test",
-        "ORDER_CREATE_NOTIFY_DINGTALK_KEYWORD": "工单",
         "ORDER_CREATE_NOTIFY_MENTION_ALL": "true",
     },
     clear=False,
@@ -302,7 +301,7 @@ def test_dingtalk_notification_payload_mentions_all_when_enabled():
 
     assert payload["msgtype"] == "markdown"
     assert payload["at"]["isAtAll"] is True
-    assert payload["markdown"]["text"].startswith("工单\n")
+    assert payload["markdown"]["text"].startswith("**AI创建处置工单**")
     assert "- **taskId**：task-1" in payload["markdown"]["text"]
 
 
@@ -468,6 +467,43 @@ def test_create_manual_workorder_supports_multi_channel_success():
 
     assert result["notification"]["status"] == "sent"
     assert len(result["notification"]["channels"]) == 3
+
+
+def test_create_manual_workorder_prefers_workspace_notification_settings(tmp_path):
+    settings_file = tmp_path / "extensions" / "notifications" / "settings.json"
+    settings_file.parent.mkdir(parents=True, exist_ok=True)
+    settings_file.write_text(
+        json.dumps(
+            {
+                "notification_channels": {
+                    "alarm_analyst": {
+                        "push_url": "http://settings.example.com/push",
+                        "dingtalk_webhook_url": "",
+                        "dingtalk_secret": "",
+                        "feishu_webhook_url": "",
+                        "feishu_secret": "",
+                        "timeout_seconds": 13,
+                        "mention_all": False,
+                    }
+                }
+            }
+        ),
+        "utf-8",
+    )
+
+    with patch.dict(
+        "os.environ",
+        {
+            "QWENPAW_WORKING_DIR": str(tmp_path),
+            "ORDER_CREATE_NOTIFY_PUSH_URL": "http://env.example.com/push",
+            "ORDER_CREATE_NOTIFY_MENTION_ALL": "true",
+            "ORDER_CREATE_NOTIFY_TIMEOUT_SECONDS": "8",
+        },
+        clear=False,
+    ):
+        assert WORKORDER_MODULE._get_notify_env("PUSH_URL") == "http://settings.example.com/push"
+        assert WORKORDER_MODULE._get_notify_timeout() == 13
+        assert WORKORDER_MODULE._get_notify_mention_all() is False
 
 
 def test_format_markdown_result_contains_ai_marker():

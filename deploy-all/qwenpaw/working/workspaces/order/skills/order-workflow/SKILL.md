@@ -23,7 +23,7 @@ description: 传统工单系统中的处置类工单技能。适用于查看今�
 
 ## 配置
 
-配置优先从本技能目录的 `.env` 读取，也支持同名环境变量：
+接口配置优先从本技能目录的 `.env` 读取；通知推送配置优先从 Portal「高级功能 → 设置 → 通知」读取，未设置时再回退到 `.env` 或同名环境变量：
 
 ```bash
 ORDER_API_BASE_URL=http://192.168.130.51:30081
@@ -40,6 +40,7 @@ ORDER_EXTRA_HEADERS={}
 - `ORDER_AUTHORIZATION` 对应接口文档中的 `Authorization` 请求头。
 - `ORDER_SERIAL_NO` 可留空，脚本会自动生成。
 - `ORDER_EXTRA_HEADERS` 用 JSON 传额外请求头。
+- 建单通知会优先读取工作空间 `extensions/notifications/settings.json` 里的 `order_workflow` 配置；只有未配置时才回退 `ORDER_CREATE_NOTIFY_*`。
 
 不要在回答中泄露 token、cookie 或请求头明文。
 

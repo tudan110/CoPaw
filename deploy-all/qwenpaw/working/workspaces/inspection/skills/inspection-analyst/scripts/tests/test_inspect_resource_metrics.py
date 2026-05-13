@@ -363,7 +363,6 @@ def test_app_notification_payload_uses_plain_text_content():
     "os.environ",
     {
         "INSPECTION_NOTIFY_DINGTALK_WEBHOOK_URL": "https://oapi.dingtalk.com/robot/send?access_token=test",
-        "INSPECTION_NOTIFY_DINGTALK_KEYWORD": "巡检",
         "INSPECTION_NOTIFY_MENTION_ALL": "true",
     },
     clear=False,
@@ -396,7 +395,7 @@ def test_dingtalk_notification_payload_uses_markdown_message():
 
     assert payload["msgtype"] == "markdown"
     assert payload["at"]["isAtAll"] is True
-    assert payload["markdown"]["text"].startswith("巡检\n")
+    assert payload["markdown"]["text"].startswith("**AI巡检结果**")
     assert "- **巡检对象**：核心数据库" in payload["markdown"]["text"]
     assert "- **整体状态**：正常" in payload["markdown"]["text"]
     assert "活跃线程数（mysql_active_threads）：12" in payload["markdown"]["text"]

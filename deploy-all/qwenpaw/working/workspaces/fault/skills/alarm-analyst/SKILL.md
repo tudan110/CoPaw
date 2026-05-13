@@ -245,7 +245,7 @@ cd skills/alarm-analyst && python scripts/get_metric_definitions.py --metric-typ
 
 ## 六、指标接口配置
 
-本 skill 需要独立使用自己目录下的 `.env`，不要回退或复用其他 skill 的环境文件。
+本 skill 仍然独立使用自己目录下的 `.env` 保存指标接口配置；建单通知推送优先读取 Portal「高级功能 → 设置 → 通知」中的 `alarm-analyst 建单推送` 配置，未设置时再回退到 `.env` 或同名环境变量。
 
 当前指标定义接口的 base URL 放在：
 
@@ -261,7 +261,6 @@ ALARM_ANALYST_METRIC_PAGE_SIZE=20
 ORDER_CREATE_NOTIFY_PUSH_URL=
 ORDER_CREATE_NOTIFY_DINGTALK_WEBHOOK_URL=
 ORDER_CREATE_NOTIFY_DINGTALK_SECRET=
-ORDER_CREATE_NOTIFY_DINGTALK_KEYWORD=
 ORDER_CREATE_NOTIFY_FEISHU_WEBHOOK_URL=
 ORDER_CREATE_NOTIFY_FEISHU_SECRET=
 ORDER_CREATE_NOTIFY_TIMEOUT_SECONDS=8
@@ -272,7 +271,7 @@ ORDER_CREATE_NOTIFY_MENTION_ALL=true
 
 - `.env` 中至少要有 `INOE_API_BASE_URL` 和 `INOE_API_TOKEN`
 - `INOE_API_TOKEN` 沿用实时告警系统同类接口的 JWT 鉴权方式
-- 如果要在建单后自动推送通知，可继续配置 `ORDER_CREATE_NOTIFY_*` 这一组通知变量
+- 如果要在建单后自动推送通知，优先在 Portal「高级功能 → 设置 → 通知」里维护；`ORDER_CREATE_NOTIFY_*` 仍保留为兼容回退配置
 - `ORDER_CREATE_NOTIFY_PUSH_URL` 是应用推送接口地址，可对接量子密信 `/api/push/{token}`
 - `ORDER_CREATE_NOTIFY_DINGTALK_SECRET` / `ORDER_CREATE_NOTIFY_FEISHU_SECRET` 用于机器人签名校验
 - 当前通知推送展示约定：

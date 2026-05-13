@@ -175,7 +175,6 @@ INSPECTION_METRIC_PAGE_SIZE=100
 INSPECTION_NOTIFY_PUSH_URL=
 INSPECTION_NOTIFY_DINGTALK_WEBHOOK_URL=
 INSPECTION_NOTIFY_DINGTALK_SECRET=
-INSPECTION_NOTIFY_DINGTALK_KEYWORD=
 INSPECTION_NOTIFY_FEISHU_WEBHOOK_URL=
 INSPECTION_NOTIFY_FEISHU_SECRET=
 INSPECTION_NOTIFY_TIMEOUT_SECONDS=8
@@ -185,6 +184,7 @@ INSPECTION_NOTIFY_MENTION_ALL=true
 规则：
 
 - 必须使用 `INOE_API_BASE_URL` 与 `INOE_API_TOKEN`
+- 通知推送配置优先读取 Portal「高级功能 → 设置 → 通知」中的 `inspection` 配置；只有未设置时才回退 `INSPECTION_NOTIFY_*` / `ORDER_CREATE_NOTIFY_*`
 - `getMetricDefinitions` 与 `getMetricData` 共用同一个 base URL
 - 巡检指标判定时，优先查询 `/resource/inspection/config/list` 获取该指标对应的阈值规则
 - `operator` 不是直接可读文案，必须再查询 `/admin/dict/data/list?dictType=verification_rules_new` 做字典解码

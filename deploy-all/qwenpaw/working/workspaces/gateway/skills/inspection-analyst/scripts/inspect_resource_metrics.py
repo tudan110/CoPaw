@@ -62,6 +62,34 @@ def _load_skill_env() -> None:
 _load_skill_env()
 
 
+def _load_notification_setting_helpers():
+    current_path = Path(__file__).resolve()
+    for parent in current_path.parents:
+        helper_dir = parent / "extensions" / "notifications"
+        if helper_dir.is_dir() and (parent / "workspaces").is_dir():
+            if str(helper_dir) not in sys.path:
+                sys.path.insert(0, str(helper_dir))
+            from notification_settings import (
+                resolve_notification_bool,
+                resolve_notification_int,
+                resolve_notification_text,
+            )
+
+            return (
+                resolve_notification_bool,
+                resolve_notification_int,
+                resolve_notification_text,
+            )
+    raise RuntimeError("无法定位 working/extensions/notifications/notification_settings.py")
+
+
+(
+    _RESOLVE_NOTIFICATION_BOOL,
+    _RESOLVE_NOTIFICATION_INT,
+    _RESOLVE_NOTIFICATION_TEXT,
+) = _load_notification_setting_helpers()
+
+
 def _skill_root() -> Path:
     return Path(__file__).resolve().parents[1]
 
@@ -224,19 +252,77 @@ def _get_json_with_fallback(
 
 
 def _get_notify_env(name: str) -> str:
+    setting_key_map = {
+        "PUSH_URL": (
+            "push_url",
+            ["INSPECTION_NOTIFY_PUSH_URL", "ORDER_CREATE_NOTIFY_PUSH_URL"],
+        ),
+        "DINGTALK_WEBHOOK_URL": (
+            "dingtalk_webhook_url",
+            [
+                "INSPECTION_NOTIFY_DINGTALK_WEBHOOK_URL",
+                "ORDER_CREATE_NOTIFY_DINGTALK_WEBHOOK_URL",
+            ],
+        ),
+        "DINGTALK_SECRET": (
+            "dingtalk_secret",
+            [
+                "INSPECTION_NOTIFY_DINGTALK_SECRET",
+                "ORDER_CREATE_NOTIFY_DINGTALK_SECRET",
+            ],
+        ),
+        "FEISHU_WEBHOOK_URL": (
+            "feishu_webhook_url",
+            [
+                "INSPECTION_NOTIFY_FEISHU_WEBHOOK_URL",
+                "ORDER_CREATE_NOTIFY_FEISHU_WEBHOOK_URL",
+            ],
+        ),
+        "FEISHU_SECRET": (
+            "feishu_secret",
+            [
+                "INSPECTION_NOTIFY_FEISHU_SECRET",
+                "ORDER_CREATE_NOTIFY_FEISHU_SECRET",
+            ],
+        ),
+    }
+    if name not in setting_key_map:
+        return ""
+    setting_key, env_keys = setting_key_map[name]
     return _safe_str(
-        os.getenv(f"INSPECTION_NOTIFY_{name}")
-        or os.getenv(f"ORDER_CREATE_NOTIFY_{name}")
+        _RESOLVE_NOTIFICATION_TEXT(
+            "inspection",
+            setting_key,
+            env_keys=env_keys,
+            start_path=Path(__file__).resolve(),
+        )
     )
 
 
 def _get_notify_timeout() -> int:
-    raw = _get_notify_env("TIMEOUT_SECONDS")
-    return int(raw) if raw else DEFAULT_NOTIFY_TIMEOUT_SECONDS
+    return _RESOLVE_NOTIFICATION_INT(
+        "inspection",
+        "timeout_seconds",
+        env_keys=[
+            "INSPECTION_NOTIFY_TIMEOUT_SECONDS",
+            "ORDER_CREATE_NOTIFY_TIMEOUT_SECONDS",
+        ],
+        start_path=Path(__file__).resolve(),
+        default=DEFAULT_NOTIFY_TIMEOUT_SECONDS,
+    )
 
 
 def _get_notify_mention_all() -> bool:
-    return (_get_notify_env("MENTION_ALL") or "false").lower() in {"1", "true", "yes"}
+    return _RESOLVE_NOTIFICATION_BOOL(
+        "inspection",
+        "mention_all",
+        env_keys=[
+            "INSPECTION_NOTIFY_MENTION_ALL",
+            "ORDER_CREATE_NOTIFY_MENTION_ALL",
+        ],
+        start_path=Path(__file__).resolve(),
+        default=False,
+    )
 
 
 def _build_metric_data_batch_request(
@@ -751,16 +837,11 @@ def _build_app_notify_payload(context: dict[str, Any]) -> dict[str, Any]:
 
 
 def _build_dingtalk_notify_payload(context: dict[str, Any]) -> dict[str, Any]:
-    markdown_lines: list[str] = []
-    keyword = _get_notify_env("DINGTALK_KEYWORD")
-    if keyword:
-        markdown_lines.extend([keyword, ""])
-    markdown_lines.extend(_build_notification_markdown_lines(context))
     payload: dict[str, Any] = {
         "msgtype": "markdown",
         "markdown": {
             "title": _safe_str(context.get("inspection_object")) or "AI巡检结果",
-            "text": "\n".join(markdown_lines),
+            "text": "\n".join(_build_notification_markdown_lines(context)),
         },
     }
     if _get_notify_mention_all():
