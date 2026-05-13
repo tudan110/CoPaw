@@ -36,6 +36,9 @@ from qwenpaw.extensions.api.natural_language_customization_api import (
 from qwenpaw.extensions.api.notification_settings_api import (
     router as notification_settings_router,
 )
+from qwenpaw.extensions.api.qiming_openai_adapter import (
+    router as qiming_openai_adapter_router,
+)
 from qwenpaw.config.utils import load_config
 from qwenpaw.extensions.api.fault_manual_workorder_models import (
     ManualWorkorderCloseNotificationRequest,
@@ -70,6 +73,7 @@ from qwenpaw.app.channels.base import ContentType, TextContent
 router = APIRouter(prefix="/api/portal", tags=["portal"])
 router.include_router(nl_customization_router)
 router.include_router(notification_settings_router)
+router.include_router(qiming_openai_adapter_router)
 app = FastAPI(title="Portal Backend")
 FAULT_DISPOSAL_SCRIPT_TIMEOUT_SECONDS = 45
 PORTAL_REAL_ALARM_ROUTE_DEFAULT_LIMIT = 20
