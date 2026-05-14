@@ -777,6 +777,7 @@ export function FdeWorkbenchPanel() {
               className="fde-link-btn"
               onClick={() => void loadInfo({ manual: true })}
             >
+              <i className="fas fa-rotate-right" />
               重试
             </button>
           </div>
@@ -839,6 +840,9 @@ export function FdeWorkbenchPanel() {
               className="fde-link-btn"
               onClick={() => setChatOpen((prev) => !prev)}
             >
+              <i
+                className={`fas ${chatOpen ? "fa-chevron-up" : "fa-chevron-down"}`}
+              />
               {chatOpen ? "收起" : "展开"}
             </button>
           </div>
@@ -872,6 +876,11 @@ export function FdeWorkbenchPanel() {
                 onClick={() => void loadStaged()}
                 disabled={loading}
               >
+                <i
+                  className={`fas ${
+                    loading ? "fa-spinner fa-spin" : "fa-arrows-rotate"
+                  }`}
+                />
                 {loading ? "加载…" : "刷新"}
               </button>
             </div>
@@ -927,6 +936,13 @@ export function FdeWorkbenchPanel() {
                 disabled={installedLoading}
                 title="跨智能体扫描所有带「二开」标签的技能 —— FDE 装出去的都在这里"
               >
+                <i
+                  className={`fas ${
+                    installedLoading
+                      ? "fa-spinner fa-spin"
+                      : "fa-arrows-rotate"
+                  }`}
+                />
                 {installedLoading ? "扫描…" : "刷新"}
               </button>
             </div>
@@ -976,9 +992,16 @@ export function FdeWorkbenchPanel() {
                           "把它迁到正确的业务智能体（如 order / gateway / query）就能被触发"
                         }
                       >
+                        <i
+                          className={`fas ${
+                            busy === `migrate-${it.skill_name}`
+                              ? "fa-spinner fa-spin"
+                              : "fa-arrow-right-arrow-left"
+                          }`}
+                        />
                         {busy === `migrate-${it.skill_name}`
                           ? "迁移中…"
-                          : "迁移到其他智能体…"}
+                          : "迁移"}
                       </button>
                       <button
                         type="button"
@@ -989,6 +1012,13 @@ export function FdeWorkbenchPanel() {
                         }
                         title="从该业务智能体（以及 gateway 镜像）删掉这个技能"
                       >
+                        <i
+                          className={`fas ${
+                            busy === `delete-${it.agent_id}-${it.skill_name}`
+                              ? "fa-spinner fa-spin"
+                              : "fa-trash"
+                          }`}
+                        />
                         {busy === `delete-${it.agent_id}-${it.skill_name}`
                           ? "删除中…"
                           : "删除"}
@@ -1039,6 +1069,11 @@ export function FdeWorkbenchPanel() {
                 onClick={() => void handleGenerate()}
                 disabled={busy === "generate" || !available}
               >
+                <i
+                  className={`fas ${
+                    busy === "generate" ? "fa-spinner fa-spin" : "fa-wand-magic-sparkles"
+                  }`}
+                />
                 {busy === "generate" ? "生成中…" : "生成骨架"}
               </button>
             </div>
@@ -1116,64 +1151,101 @@ export function FdeWorkbenchPanel() {
                   </div>
                 ) : null}
                 <div className="fde-action-bar">
-                  <button
-                    type="button"
-                    className="fde-btn fde-btn--ghost"
-                    onClick={() => void handleSelfcheck()}
-                    disabled={busy === "selfcheck"}
-                  >
-                    {busy === "selfcheck" ? "自检中…" : "重新自检"}
-                  </button>
-                  <button
-                    type="button"
-                    className="fde-btn fde-btn--ghost"
-                    onClick={() => void handleProbe()}
-                    disabled={busy === "probe"}
-                  >
-                    {busy === "probe" ? "试跑中…" : "沙箱试跑 diagnose"}
-                  </button>
-                  <button
-                    type="button"
-                    className="fde-btn fde-btn--primary"
-                    onClick={() => void handleInstall()}
-                    disabled={
-                      busy === "install" ||
-                      busy === "install-force" ||
-                      !detail.selfcheck?.ready_for_review
-                    }
-                    title={
-                      detail.selfcheck?.ready_for_review
-                        ? undefined
-                        : "自检未通过，先修正"
-                    }
-                  >
-                    {busy === "install"
-                      ? "安装中…"
-                      : `确认安装到 ${installTarget || targetWorkspace || "?"}`}
-                  </button>
-                  {domainBlocked ? (
+                  <div className="fde-action-bar-group">
                     <button
                       type="button"
-                      className="fde-btn fde-btn--warn"
-                      onClick={() => void handleForceInstall()}
+                      className="fde-btn fde-btn--ghost"
+                      onClick={() => void handleSelfcheck()}
+                      disabled={busy === "selfcheck"}
+                    >
+                      <i
+                        className={`fas ${
+                          busy === "selfcheck"
+                            ? "fa-spinner fa-spin"
+                            : "fa-shield-halved"
+                        }`}
+                      />
+                      {busy === "selfcheck" ? "自检中…" : "重新自检"}
+                    </button>
+                    <button
+                      type="button"
+                      className="fde-btn fde-btn--ghost"
+                      onClick={() => void handleProbe()}
+                      disabled={busy === "probe"}
+                    >
+                      <i
+                        className={`fas ${
+                          busy === "probe" ? "fa-spinner fa-spin" : "fa-play"
+                        }`}
+                      />
+                      {busy === "probe" ? "试跑中…" : "沙箱试跑 diagnose"}
+                    </button>
+                  </div>
+                  <span className="fde-action-bar-divider" aria-hidden />
+                  <div className="fde-action-bar-group">
+                    <button
+                      type="button"
+                      className="fde-btn fde-btn--primary"
+                      onClick={() => void handleInstall()}
                       disabled={
-                        busy === "install" || busy === "install-force"
+                        busy === "install" ||
+                        busy === "install-force" ||
+                        !detail.selfcheck?.ready_for_review
                       }
                       title={
-                        "领域审核服务暂时不可用。代码已审，强制跳过该项检查继续安装。"
+                        detail.selfcheck?.ready_for_review
+                          ? undefined
+                          : "自检未通过，先修正"
                       }
                     >
-                      {busy === "install-force"
-                        ? "强制安装中…"
-                        : "强制安装（领域审核暂不可用）"}
+                      <i
+                        className={`fas ${
+                          busy === "install"
+                            ? "fa-spinner fa-spin"
+                            : "fa-circle-check"
+                        }`}
+                      />
+                      {busy === "install"
+                        ? "安装中…"
+                        : `确认安装到 ${installTarget || targetWorkspace || "?"}`}
                     </button>
-                  ) : null}
+                    {domainBlocked ? (
+                      <button
+                        type="button"
+                        className="fde-btn fde-btn--warn"
+                        onClick={() => void handleForceInstall()}
+                        disabled={
+                          busy === "install" || busy === "install-force"
+                        }
+                        title={
+                          "领域审核服务暂时不可用。代码已审，强制跳过该项检查继续安装。"
+                        }
+                      >
+                        <i
+                          className={`fas ${
+                            busy === "install-force"
+                              ? "fa-spinner fa-spin"
+                              : "fa-triangle-exclamation"
+                          }`}
+                        />
+                        {busy === "install-force"
+                          ? "强制安装中…"
+                          : "强制安装（领域审核暂不可用）"}
+                      </button>
+                    ) : null}
+                  </div>
+                  <span className="fde-action-bar-spacer" aria-hidden />
                   <button
                     type="button"
                     className="fde-btn fde-btn--danger"
                     onClick={() => void handleDiscard()}
                     disabled={busy === "discard"}
                   >
+                    <i
+                      className={`fas ${
+                        busy === "discard" ? "fa-spinner fa-spin" : "fa-trash"
+                      }`}
+                    />
                     丢弃
                   </button>
                 </div>
