@@ -275,13 +275,15 @@ export function SettingsPanel() {
   return (
     <div className="model-config-page settings-page">
       <div className="model-config-body">
-        <div className="model-config-scroll">
+        <div className="model-config-static">
           <div className="portal-model-page-header">
             <div className="portal-model-page-title">
               设置 <small>偏好与默认行为</small>
             </div>
           </div>
+        </div>
 
+        <div className="model-config-scroll">
           <div className="settings-layout">
             <aside className="portal-advanced-config-panel settings-tab-panel">
               <div className="settings-tab-panel-title">设置分类</div>
