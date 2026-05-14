@@ -137,6 +137,8 @@ RUN qwenpaw init --defaults --accept-security
 
 # Copy working directory data to backup (for PVC init on first start)
 COPY deploy-all/qwenpaw/data/qwenpaw/ /app/.working.backup/
+# Overlay repo-managed extensions into backup working dir
+COPY deploy-all/qwenpaw/working/extensions /app/.working.backup/extensions
 # Copy workspace skills into the backup workspace
 COPY deploy-all/qwenpaw/working/workspaces/query/skills /app/.working.backup/workspaces/query/skills
 COPY deploy-all/qwenpaw/working/workspaces/resource/skills /app/.working.backup/workspaces/resource/skills

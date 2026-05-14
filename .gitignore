@@ -124,6 +124,7 @@ portal/package-lock.json
 
 # 智能体本地初始化数据
 deploy-all/qwenpaw/data/
+deploy-all/qwenpaw/data_bak/
 
 # 敏感知识库目录
 /knowledge/
