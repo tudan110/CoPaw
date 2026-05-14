@@ -145,6 +145,12 @@ export function SkillPoolPanel() {
   // 的技能因为不属于 gateway 而在「技能池」里彻底隐形。
   const [erkaiElsewhere, setErkaiElsewhere] = useState<FdeInstalledSkill[]>([]);
   const [erkaiElsewhereLoading, setErkaiElsewhereLoading] = useState(false);
+  // listInstalled 只回 metadata（name/description/tags），但 portal 要在卡片
+  // 上渲染 emoji、底部要显示真实 SKILL.md、点「编辑」要进真实内容 —— 这些
+  // 都得按 X-Agent-Id: <foreign> 调一次 /skills 才有。按 agentId 分桶缓存。
+  const [foreignDetailsByAgent, setForeignDetailsByAgent] = useState<
+    Record<string, WorkspaceSkillInfo[]>
+  >({});
 
   const [skills, setSkills] = useState<WorkspaceSkillInfo[]>([]);
   const [loading, setLoading] = useState(true);
@@ -156,6 +162,9 @@ export function SkillPoolPanel() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [modalMode, setModalMode] = useState<ModalMode>("create");
   const [editingSkill, setEditingSkill] = useState<WorkspaceSkillInfo | null>(null);
+  // 当前编辑/保存目标 agent ——「编辑」一条 foreign 二开技能时要把保存调用
+  // 打到它所属的业务工作区，而不是 gateway。create 走 gateway。
+  const [editTargetAgent, setEditTargetAgent] = useState<string>(agentId);
   const [form, setForm] = useState<SkillFormState>(EMPTY_FORM);
 
   // Import + per-skill busy state
@@ -214,6 +223,38 @@ export function SkillPoolPanel() {
     void loadErkaiElsewhere();
   }, [loadData, loadErkaiElsewhere]);
 
+  // 拿到 erkaiElsewhere 后，按所属 agent 去 /skills 拉真实详情（含 SKILL.md
+  // 内容 / emoji / version 等），缓存到 foreignDetailsByAgent。失败也不抛，
+  // 卡片上只是 fallback 到 listInstalled 的精简字段而已。
+  useEffect(() => {
+    const agentIds = Array.from(
+      new Set(erkaiElsewhere.map((s) => s.agent_id).filter(Boolean)),
+    );
+    if (!agentIds.length) {
+      setForeignDetailsByAgent({});
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      const buckets: Record<string, WorkspaceSkillInfo[]> = {};
+      await Promise.all(
+        agentIds.map(async (fid) => {
+          try {
+            buckets[fid] = await skillsApi.listAgentSkills(fid);
+          } catch {
+            buckets[fid] = [];
+          }
+        }),
+      );
+      if (!cancelled) {
+        setForeignDetailsByAgent(buckets);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [erkaiElsewhere]);
+
   useEffect(() => {
     if (!importMenuOpen) {
       return;
@@ -234,6 +275,14 @@ export function SkillPoolPanel() {
   // 如需替换，请通过「新建技能」或「导入技能」走二开流程。
   const isStockLocked = (s: WorkspaceSkillInfo) => !isErkai(s);
   const STOCK_LOCK_HINT = "「出厂」技能为只读，不可编辑、删除或修改标签";
+  // Foreign（FDE 装到 gateway 以外业务工作区）的技能：所有改写都要拐到
+  // 它真正所属的 X-Agent-Id，否则会写到 gateway 然后落空。
+  const getForeignId = (s: WorkspaceSkillInfo): string | undefined =>
+    (s as WorkspaceSkillInfo & { _foreignAgentId?: string })._foreignAgentId;
+  const getForeignName = (s: WorkspaceSkillInfo): string | undefined =>
+    (s as WorkspaceSkillInfo & { _foreignAgentName?: string })._foreignAgentName;
+  const resolveSkillAgentId = (s: WorkspaceSkillInfo) =>
+    getForeignId(s) || agentId;
 
   // Merge cross-agent FDE 二开 skills (gone-rogue installs that for some
   // reason aren't mirrored into gateway) into the main display list so
@@ -249,23 +298,42 @@ export function SkillPoolPanel() {
       if (known.has(s.skill_name)) {
         continue;
       }
+      // 优先用按 X-Agent-Id 拉到的真实 WorkspaceSkillInfo（含 SKILL.md
+      // 内容 / emoji / version_text），仅在尚未加载到时才退到精简快照。
+      const real = (foreignDetailsByAgent[s.agent_id] || []).find(
+        (item) => item.name === s.skill_name,
+      );
+      const merged: WorkspaceSkillInfo = real
+        ? {
+            ...real,
+            // 把 listInstalled 已经知道的字段补一层兜底，避免 real 这条
+            // 某次拉失败后 description / tags / enabled 显示为空。
+            description: real.description || s.description || "",
+            tags: Array.from(
+              new Set([...(real.tags || []), ...(s.tags || []), ERKAI_TAG]),
+            ),
+            enabled: real.enabled,
+            last_updated: real.last_updated || s.updated_at || "",
+          }
+        : {
+            name: s.skill_name,
+            description: s.description || "",
+            emoji: "",
+            version_text: "",
+            content: "",
+            references: {},
+            scripts: {},
+            source: "customized",
+            tags: Array.from(new Set([...(s.tags || []), ERKAI_TAG])),
+            config: {},
+            last_updated: s.updated_at || "",
+            enabled: s.enabled,
+            channels: [],
+          };
       adapted.push({
-        name: s.skill_name,
-        description: s.description || "",
-        emoji: "",
-        version_text: "",
-        content: "",
-        references: {},
-        scripts: {},
-        source: "customized",
-        tags: Array.from(new Set([...(s.tags || []), ERKAI_TAG])),
-        config: {},
-        last_updated: s.updated_at || "",
-        enabled: s.enabled,
-        channels: [],
-        // marker — read by the card to render an "所属 X" pill and to
-        // disable the 编辑 button (it would try to write to gateway,
-        // not the actual owner).
+        ...merged,
+        // marker —— 卡片读它来渲染「所属 X」徽章；编辑/启停/删除分支
+        // 也据此把 X-Agent-Id 切到真正的归属业务工作区。
         // eslint-disable-next-line @typescript-eslint/naming-convention
         _foreignAgentId: s.agent_id,
         // eslint-disable-next-line @typescript-eslint/naming-convention
@@ -276,7 +344,7 @@ export function SkillPoolPanel() {
       });
     }
     return [...skills, ...adapted];
-  }, [skills, erkaiElsewhere]);
+  }, [skills, erkaiElsewhere, foreignDetailsByAgent]);
 
   const erkaiCount = useMemo(
     () => displaySkills.filter(isErkai).length,
@@ -338,13 +406,14 @@ export function SkillPoolPanel() {
     if (saving) {
       return;
     }
+    setEditTargetAgent(agentId); // 新建一律落到 gateway 的工作区
     setModalMode("create");
     setEditingSkill(null);
     setForm(EMPTY_FORM);
     setIsModalOpen(true);
   };
 
-  const openEditModal = (skill: WorkspaceSkillInfo) => {
+  const openEditModal = async (skill: WorkspaceSkillInfo) => {
     if (isStockLocked(skill)) {
       setNotice({
         type: "error",
@@ -353,13 +422,45 @@ export function SkillPoolPanel() {
       setSelectedSkillName(skill.name);
       return;
     }
+    const targetAgent = resolveSkillAgentId(skill);
+
+    // foreign 二开技能：listInstalled 没给 content/config，调一次 /skills 拿
+    // 真实 SKILL.md。再退一步地：fetch 失败也别让用户看到「name: new_skill」
+    // 那个模板兜底，直接报错挡住，省得用户存进去把真技能洗成空壳。
+    let realContent = skill.content;
+    let realConfig = skill.config;
+    if (getForeignId(skill) && (!realContent || !realContent.trim())) {
+      try {
+        const foreignList = await skillsApi.listAgentSkills(targetAgent);
+        const real = foreignList.find((item) => item.name === skill.name);
+        if (real) {
+          realContent = real.content;
+          realConfig = real.config;
+        }
+      } catch (error) {
+        setNotice({
+          type: "error",
+          message: `加载「${skill.name}」内容失败：${describeError(error, "网络错误")}`,
+        });
+        return;
+      }
+      if (!realContent || !realContent.trim()) {
+        setNotice({
+          type: "error",
+          message: `无法读取「${skill.name}」的 SKILL.md 内容，先到「FDE 交付工作台」检查它在 ${getForeignName(skill) || targetAgent} 工作区的实际文件。`,
+        });
+        return;
+      }
+    }
+
+    setEditTargetAgent(targetAgent);
     setModalMode("edit");
     setEditingSkill(skill);
     setForm({
       name: skill.name,
-      content: skill.content || EMPTY_SKILL_CONTENT,
+      content: realContent || EMPTY_SKILL_CONTENT,
       tagsText: (skill.tags || []).join(", "),
-      configText: formatJson(skill.config),
+      configText: formatJson(realConfig),
     });
     setIsModalOpen(true);
   };
@@ -445,8 +546,11 @@ export function SkillPoolPanel() {
       const formTags = parseTags(form.tagsText);
       let finalName = nextName;
 
+      // 默认 gateway；编辑 foreign 二开技能时已经在 openEditModal 里把
+      // editTargetAgent 指向真实归属，确保保存写到对的 workspace。
+      const writeAgent = editTargetAgent || agentId;
       if (modalMode === "edit" && editingSkill) {
-        const result = await skillsApi.saveAgentSkill(agentId, {
+        const result = await skillsApi.saveAgentSkill(writeAgent, {
           name: nextName,
           sourceName: editingSkill.name,
           content: form.content.trim(),
@@ -454,10 +558,13 @@ export function SkillPoolPanel() {
         });
         finalName = result.name || nextName;
         try {
-          await skillsApi.updateAgentSkillTags(agentId, finalName, formTags);
+          await skillsApi.updateAgentSkillTags(writeAgent, finalName, formTags);
         } catch (error) {
           resetModalState();
           await loadData();
+          if (writeAgent !== agentId) {
+            void loadErkaiElsewhere();
+          }
           setSelectedSkillName(finalName);
           setNotice({
             type: "error",
@@ -466,7 +573,7 @@ export function SkillPoolPanel() {
           return;
         }
       } else {
-        const result = await skillsApi.createAgentSkill(agentId, {
+        const result = await skillsApi.createAgentSkill(writeAgent, {
           name: nextName,
           content: form.content.trim(),
           config,
@@ -474,10 +581,13 @@ export function SkillPoolPanel() {
         finalName = result.name || nextName;
         const tags = Array.from(new Set([...formTags, ERKAI_TAG]));
         try {
-          await skillsApi.updateAgentSkillTags(agentId, finalName, tags);
+          await skillsApi.updateAgentSkillTags(writeAgent, finalName, tags);
         } catch (error) {
           resetModalState();
           await loadData();
+          if (writeAgent !== agentId) {
+            void loadErkaiElsewhere();
+          }
           setSelectedSkillName(finalName);
           setNotice({
             type: "error",
@@ -489,6 +599,11 @@ export function SkillPoolPanel() {
 
       resetModalState();
       await loadData();
+      if (writeAgent !== agentId) {
+        // foreign 改完得重抓一次跨智能体清单，否则面板上的内容预览
+        // 还停留在改之前的快照。
+        void loadErkaiElsewhere();
+      }
       setSelectedSkillName(finalName);
       setNotice({
         type: "success",
@@ -700,18 +815,28 @@ export function SkillPoolPanel() {
     }
   };
 
-  // ---- Enable / disable on the gateway agent ----
+  // ---- Enable / disable -------------------------------------------------
+  // foreign 二开技能装在别的业务工作区里，启停 / 删除都得走它真正的
+  // X-Agent-Id，不然只是在 gateway 这边 noop。
+  const describeAgent = (skill: WorkspaceSkillInfo) =>
+    getForeignName(skill) || getForeignId(skill) || "智观 AI";
+
   const handleEnable = async (skill: WorkspaceSkillInfo) => {
-    if (!window.confirm(`在「智观 AI」启用技能「${skill.name}」？`)) {
+    const target = resolveSkillAgentId(skill);
+    const where = describeAgent(skill);
+    if (!window.confirm(`在「${where}」启用技能「${skill.name}」？`)) {
       return;
     }
     setBusySkill(skill.name);
     try {
-      await skillsApi.enableWorkspaceSkill(skill.name, agentId);
+      await skillsApi.enableWorkspaceSkill(skill.name, target);
       await loadData();
+      if (target !== agentId) {
+        void loadErkaiElsewhere();
+      }
       setNotice({
         type: "success",
-        message: `技能「${skill.name}」已在「智观 AI」启用（约 1–2 秒生效）`,
+        message: `技能「${skill.name}」已在「${where}」启用（约 1–2 秒生效）`,
       });
     } catch (error) {
       if (error instanceof SkillScanError) {
@@ -728,16 +853,21 @@ export function SkillPoolPanel() {
   };
 
   const handleDisable = async (skill: WorkspaceSkillInfo) => {
-    if (!window.confirm(`在「智观 AI」停用技能「${skill.name}」？`)) {
+    const target = resolveSkillAgentId(skill);
+    const where = describeAgent(skill);
+    if (!window.confirm(`在「${where}」停用技能「${skill.name}」？`)) {
       return;
     }
     setBusySkill(skill.name);
     try {
-      await skillsApi.disableWorkspaceSkill(skill.name, agentId);
+      await skillsApi.disableWorkspaceSkill(skill.name, target);
       await loadData();
+      if (target !== agentId) {
+        void loadErkaiElsewhere();
+      }
       setNotice({
         type: "success",
-        message: `已在「智观 AI」停用技能「${skill.name}」`,
+        message: `已在「${where}」停用技能「${skill.name}」`,
       });
     } catch (error) {
       setNotice({
@@ -759,16 +889,25 @@ export function SkillPoolPanel() {
       setSelectedSkillName(skill.name);
       return;
     }
-    if (!window.confirm(`确认删除技能「${skill.name}」吗？删除前会先停用。`)) {
+    const target = resolveSkillAgentId(skill);
+    const where = describeAgent(skill);
+    if (
+      !window.confirm(
+        `确认从「${where}」删除技能「${skill.name}」吗？删除前会先停用。`,
+      )
+    ) {
       return;
     }
     setBusySkill(skill.name);
     try {
-      await skillsApi.deleteAgentSkill(agentId, skill.name);
+      await skillsApi.deleteAgentSkill(target, skill.name);
       if (selectedSkillName === skill.name) {
         setSelectedSkillName(null);
       }
       await loadData();
+      if (target !== agentId) {
+        void loadErkaiElsewhere();
+      }
       setNotice({ type: "success", message: `已删除技能：${skill.name}` });
     } catch (error) {
       setNotice({
@@ -793,10 +932,14 @@ export function SkillPoolPanel() {
       return;
     }
     const next = cur.filter((t) => t !== ERKAI_TAG);
+    const target = resolveSkillAgentId(skill);
     setBusySkill(skill.name);
     try {
-      await skillsApi.updateAgentSkillTags(agentId, skill.name, next);
+      await skillsApi.updateAgentSkillTags(target, skill.name, next);
       await loadData();
+      if (target !== agentId) {
+        void loadErkaiElsewhere();
+      }
       setNotice({
         type: "success",
         message: has ? `已取消「${skill.name}」的二开标记` : `已将「${skill.name}」标记为二开`,
@@ -1004,6 +1147,24 @@ export function SkillPoolPanel() {
                       >
                         详情
                       </button>
+                      <button
+                        type="button"
+                        className="portal-model-btn secondary compact"
+                        disabled={isStockLocked(skill)}
+                        title={
+                          isStockLocked(skill)
+                            ? STOCK_LOCK_HINT
+                            : foreignId
+                              ? `保存会写到「${foreignName || foreignId}」工作区，不是 gateway`
+                              : undefined
+                        }
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          void openEditModal(skill);
+                        }}
+                      >
+                        编辑
+                      </button>
                       {foreignId ? (
                         <button
                           type="button"
@@ -1014,24 +1175,11 @@ export function SkillPoolPanel() {
                               buildPortalSectionPath("fde-workbench"),
                             );
                           }}
-                          title="这条技能装在其他业务智能体，编辑请去 FDE 交付工作台"
+                          title="去 FDE 交付工作台查看 staged 状态、自检报告或重新生成"
                         >
-                          去交付工作台
+                          去工作台
                         </button>
-                      ) : (
-                        <button
-                          type="button"
-                          className="portal-model-btn secondary compact"
-                          disabled={isStockLocked(skill)}
-                          title={isStockLocked(skill) ? STOCK_LOCK_HINT : undefined}
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            openEditModal(skill);
-                          }}
-                        >
-                          编辑
-                        </button>
-                      )}
+                      ) : null}
                     </div>
                   </article>
                 );
@@ -1083,7 +1231,7 @@ export function SkillPoolPanel() {
                       onClick={() => void handleDisable(selectedSkill)}
                     >
                       <i className={`fas ${busySkill === selectedSkill.name ? "fa-spinner fa-spin" : "fa-circle-stop"}`} />
-                      在「智观 AI」停用
+                      在「{describeAgent(selectedSkill)}」停用
                     </button>
                   ) : (
                     <button
@@ -1093,15 +1241,21 @@ export function SkillPoolPanel() {
                       onClick={() => void handleEnable(selectedSkill)}
                     >
                       <i className={`fas ${busySkill === selectedSkill.name ? "fa-spinner fa-spin" : "fa-circle-play"}`} />
-                      在「智观 AI」启用
+                      在「{describeAgent(selectedSkill)}」启用
                     </button>
                   )}
                   <button
                     type="button"
                     className="portal-model-btn secondary"
                     disabled={isStockLocked(selectedSkill)}
-                    title={isStockLocked(selectedSkill) ? STOCK_LOCK_HINT : undefined}
-                    onClick={() => openEditModal(selectedSkill)}
+                    title={
+                      isStockLocked(selectedSkill)
+                        ? STOCK_LOCK_HINT
+                        : getForeignId(selectedSkill)
+                          ? `保存会写到「${describeAgent(selectedSkill)}」工作区，不是 gateway`
+                          : undefined
+                    }
+                    onClick={() => void openEditModal(selectedSkill)}
                   >
                     <i className="fas fa-pen" />
                     编辑技能
@@ -1189,7 +1343,7 @@ export function SkillPoolPanel() {
                   <div className="skill-pool-side-card">
                     <div className="skill-pool-section-header">
                       <h4>启用状态</h4>
-                      <span>智观 AI</span>
+                      <span>{describeAgent(selectedSkill)}</span>
                     </div>
                     <div className="skill-pool-assign-row">
                       <span>当前状态：{selectedSkill.enabled ? "已启用" : "已停用"}</span>
@@ -1230,7 +1384,9 @@ export function SkillPoolPanel() {
               <div>
                 <h3>{modalMode === "create" ? "新增技能" : "编辑技能"}</h3>
                 <p>
-                  作用于「智观 AI」（对外入口）的技能；保存后约 1–2 秒生效。新建的技能会自动标记为二开。
+                  {modalMode === "edit" && editingSkill && getForeignId(editingSkill)
+                    ? `保存会写入「${describeAgent(editingSkill)}」工作区（${editTargetAgent}），不是 gateway。生效约 1–2 秒。`
+                    : "作用于「智观 AI」（对外入口）的技能；保存后约 1–2 秒生效。新建的技能会自动标记为二开。"}
                 </p>
               </div>
               <button type="button" className="skill-pool-modal-close" onClick={closeModal}>
