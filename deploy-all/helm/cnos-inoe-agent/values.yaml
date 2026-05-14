@@ -78,6 +78,14 @@ qwenpaw:
     KNOWLEDGE_BASE_TOP_K: "3"
     KNOWLEDGE_BASE_LLM_RERANK_INPUT_K: "15"
 
+    # 启明大模型 OpenAI 风格适配层（测试时请使用本地覆盖文件或 Secret 注入真实密钥）
+    QWENPAW_QIMING_BASE_URL: "http://10.130.154.233:30000"
+    QWENPAW_QIMING_COMPLETIONS_PATH: "/serviceAgent/rest/wsc/completions"
+    QWENPAW_QIMING_APP_ID: "0a2d65e4b7a76f9ab1c7190033139a49"
+    QWENPAW_QIMING_APP_KEY: "d2c22dc2fc0cd2e87af202659f2667d5"
+    QWENPAW_QIMING_BEARER_TOKEN: "gpustack_01458892ad42fc78_b6c9a74b9184402112ed477fa6ee7130"
+    QWENPAW_QIMING_MODELS: "qiming25_72b_fc"
+
   # 资源限制
   resources:
     requests:
