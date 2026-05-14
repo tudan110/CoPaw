@@ -196,9 +196,164 @@ function AlarmWorkorderCard({ workorder, onAction }: any) {
   );
 }
 
+const COPAW_API_BASE_URL = (
+  (import.meta as any).env?.VITE_COPAW_API_BASE_URL || "/copaw-api/api"
+).replace(/\/$/, "");
+
+/**
+ * Skill 作者通常写绝对路径 `/api/files/preview/...`（qwenpaw 后端视角）。
+ * 经 nginx 时 Portal 这边的实际入口是 `/copaw-api/api/...`，这里统一兜底。
+ * 已经是 http(s):// 或带 portal/copaw 前缀的链接保持原样。
+ */
+function resolveActionDownloadUrl(rawUrl: unknown): string {
+  const url = String(rawUrl || "").trim();
+  if (!url) {
+    return "";
+  }
+  if (/^(?:https?:)?\/\//i.test(url)) {
+    return url;
+  }
+  if (url.startsWith("/copaw-api/") || url.startsWith("/portal-api/")) {
+    return url;
+  }
+  if (url.startsWith("/api/")) {
+    return `${COPAW_API_BASE_URL}${url.slice(4)}`;
+  }
+  return url;
+}
+
+function isDownloadAction(action: any): boolean {
+  const t = String(action?.type || "").toLowerCase();
+  return t === "export.download" || t.startsWith("download.") || t === "download";
+}
+
+function isKillSlowSqlAction(action: any): boolean {
+  const t = String(action?.type || "").toLowerCase();
+  if (t === "kill-slow-sql" || t === "kill_slow_sql") {
+    return true;
+  }
+  // Legacy / inferred actions: 无 type 但带慢 SQL 处置专属字段。
+  return !t && Boolean(action?.sqlId || action?.sessionId);
+}
+
+function formatActionFileSize(bytes: unknown): string {
+  const n = typeof bytes === "number" ? bytes : Number(bytes);
+  if (!Number.isFinite(n) || n <= 0) {
+    return "";
+  }
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  if (n < 1024 * 1024 * 1024) return `${(n / 1024 / 1024).toFixed(1)} MB`;
+  return `${(n / 1024 / 1024 / 1024).toFixed(2)} GB`;
+}
+
+function DownloadActionCard({ action }: { action: any }) {
+  const resolvedUrl = resolveActionDownloadUrl(action?.downloadUrl || action?.url);
+  const fileName =
+    String(action?.fileName || action?.filename || "").trim() ||
+    (resolvedUrl ? resolvedUrl.split("/").pop() || "" : "");
+  const recordCount = Number(action?.recordCount);
+  const sizeText = formatActionFileSize(action?.fileSize ?? action?.size);
+  const formatText = String(action?.exportFormat || action?.format || "").trim();
+  const statusText =
+    action?.status === "success"
+      ? "已下载"
+      : action?.status === "running"
+      ? "下载中"
+      : "待下载";
+  const disabled = !resolvedUrl;
+  return (
+    <div className="disposal-operation-card download-action-card">
+      <div className="disposal-operation-header">
+        <div>
+          <h4>{action?.title || "下载导出文件"}</h4>
+          {action?.summary ? <p>{action.summary}</p> : null}
+        </div>
+        <span className={`disposal-operation-status ${action?.status || "ready"}`}>
+          {statusText}
+        </span>
+      </div>
+      <div className="disposal-operation-meta">
+        {fileName ? (
+          <div>
+            <span>文件名</span>
+            <strong>{fileName}</strong>
+          </div>
+        ) : null}
+        {Number.isFinite(recordCount) && recordCount > 0 ? (
+          <div>
+            <span>记录数</span>
+            <strong>{recordCount.toLocaleString("zh-CN")}</strong>
+          </div>
+        ) : null}
+        {formatText ? (
+          <div>
+            <span>格式</span>
+            <strong>{formatText.toUpperCase()}</strong>
+          </div>
+        ) : null}
+        {sizeText ? (
+          <div>
+            <span>大小</span>
+            <strong>{sizeText}</strong>
+          </div>
+        ) : null}
+      </div>
+      <div className="disposal-operation-actions">
+        <a
+          className="alarm-workorder-action primary"
+          href={resolvedUrl || "#"}
+          download={fileName || true}
+          target="_blank"
+          rel="noopener noreferrer"
+          aria-disabled={disabled}
+          onClick={(event) => {
+            if (disabled) {
+              event.preventDefault();
+            }
+          }}
+        >
+          <i className="fas fa-download" />{" "}
+          {disabled ? "下载链接缺失" : "下载文件"}
+        </a>
+      </div>
+    </div>
+  );
+}
+
+function GenericActionCard({ action }: { action: any }) {
+  const title = String(action?.title || "").trim();
+  const summary = String(action?.summary || "").trim();
+  if (!title && !summary) {
+    return null;
+  }
+  return (
+    <div className="disposal-operation-card generic-action-card">
+      <div className="disposal-operation-header">
+        <div>
+          <h4>{title || action?.type || "Portal 动作"}</h4>
+          {summary ? <p>{summary}</p> : null}
+        </div>
+        <span className="disposal-operation-status ready">
+          {action?.type ? String(action.type) : "未知动作"}
+        </span>
+      </div>
+    </div>
+  );
+}
+
 export function DisposalOperationCard({ action, onExecute }: any) {
   if (!action) {
     return null;
+  }
+
+  if (isDownloadAction(action)) {
+    return <DownloadActionCard action={action} />;
+  }
+
+  if (!isKillSlowSqlAction(action)) {
+    // 未知 type：兜底渲染，避免被当成"杀掉慢SQL"误显示
+    return <GenericActionCard action={action} />;
   }
 
   const statusText =
