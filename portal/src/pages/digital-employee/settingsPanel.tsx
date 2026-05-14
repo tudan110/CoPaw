@@ -459,7 +459,7 @@ export function SettingsPanel() {
                                       event.target.value,
                                     );
                                   }}
-                                  placeholder="http://gateway:8080/api/push/your-token"
+                                  placeholder="http://ip:port/api/push/your-token"
                                 />
                                 <small>消息中心 `/api/push/{'{token}'}` 应用推送接口。</small>
                               </div>

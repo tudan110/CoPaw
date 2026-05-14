@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
@@ -11,7 +12,9 @@ import {
   skillsApi,
   type WorkspaceSkillInfo,
 } from "../../api/skills";
+import { fdeApi, type FdeInstalledSkill } from "../../api/fde";
 import { portalGatewayAgentId } from "../../config/portalBranding";
+import { buildPortalSectionPath } from "./helpers";
 import "../skill-pool.css";
 
 const ERKAI_TAG = "二开";
@@ -135,6 +138,13 @@ function describeError(error: unknown, fallback: string) {
 
 export function SkillPoolPanel() {
   const agentId = portalGatewayAgentId;
+  const navigate = useNavigate();
+
+  // 跨智能体的「二开」技能（FDE 装到 gateway 以外的业务智能体里的）。
+  // 上面那块只看 gateway 的 skills.json；这块兜底其他智能体，避免 FDE 交付
+  // 的技能因为不属于 gateway 而在「技能池」里彻底隐形。
+  const [erkaiElsewhere, setErkaiElsewhere] = useState<FdeInstalledSkill[]>([]);
+  const [erkaiElsewhereLoading, setErkaiElsewhereLoading] = useState(false);
 
   const [skills, setSkills] = useState<WorkspaceSkillInfo[]>([]);
   const [loading, setLoading] = useState(true);
@@ -183,9 +193,26 @@ export function SkillPoolPanel() {
     }
   }, [agentId]);
 
+  const loadErkaiElsewhere = useCallback(async () => {
+    setErkaiElsewhereLoading(true);
+    try {
+      const res = await fdeApi.listInstalled();
+      // 主列表已经覆盖 gateway 的二开技能，这里只显示"装到其他业务智能体"的。
+      setErkaiElsewhere(
+        (res.skills || []).filter((s) => s.agent_id !== agentId),
+      );
+    } catch {
+      // 软失败：FDE 工作台不可用时不要把整个技能池面板挂掉
+      setErkaiElsewhere([]);
+    } finally {
+      setErkaiElsewhereLoading(false);
+    }
+  }, [agentId]);
+
   useEffect(() => {
     void loadData();
-  }, [loadData]);
+    void loadErkaiElsewhere();
+  }, [loadData, loadErkaiElsewhere]);
 
   useEffect(() => {
     if (!importMenuOpen) {
@@ -204,13 +231,62 @@ export function SkillPoolPanel() {
 
   const isErkai = (s: WorkspaceSkillInfo) => (s.tags || []).includes(ERKAI_TAG);
 
-  const erkaiCount = useMemo(() => skills.filter(isErkai).length, [skills]);
-  const enabledCount = useMemo(() => skills.filter((s) => s.enabled).length, [skills]);
+  // Merge cross-agent FDE 二开 skills (gone-rogue installs that for some
+  // reason aren't mirrored into gateway) into the main display list so
+  // operators only need one place to see "the whole pool". Same-named
+  // gateway skills win — they're the canonical, fully-manageable copy.
+  // Foreign rows carry the underscore-prefixed marker so the card can
+  // show "所属 X" and disable management actions that wouldn't reach
+  // their workspace.
+  const displaySkills = useMemo<WorkspaceSkillInfo[]>(() => {
+    const known = new Set(skills.map((s) => s.name));
+    const adapted: WorkspaceSkillInfo[] = [];
+    for (const s of erkaiElsewhere) {
+      if (known.has(s.skill_name)) {
+        continue;
+      }
+      adapted.push({
+        name: s.skill_name,
+        description: s.description || "",
+        emoji: "",
+        version_text: "",
+        content: "",
+        references: {},
+        scripts: {},
+        source: "customized",
+        tags: Array.from(new Set([...(s.tags || []), ERKAI_TAG])),
+        config: {},
+        last_updated: s.updated_at || "",
+        enabled: s.enabled,
+        channels: [],
+        // marker — read by the card to render an "所属 X" pill and to
+        // disable the 编辑 button (it would try to write to gateway,
+        // not the actual owner).
+        // eslint-disable-next-line @typescript-eslint/naming-convention
+        _foreignAgentId: s.agent_id,
+        // eslint-disable-next-line @typescript-eslint/naming-convention
+        _foreignAgentName: s.agent_name,
+      } as WorkspaceSkillInfo & {
+        _foreignAgentId: string;
+        _foreignAgentName: string;
+      });
+    }
+    return [...skills, ...adapted];
+  }, [skills, erkaiElsewhere]);
+
+  const erkaiCount = useMemo(
+    () => displaySkills.filter(isErkai).length,
+    [displaySkills],
+  );
+  const enabledCount = useMemo(
+    () => displaySkills.filter((s) => s.enabled).length,
+    [displaySkills],
+  );
 
   const filteredSkills = useMemo(() => {
     const keyword = search.trim().toLowerCase();
 
-    return skills.filter((skill) => {
+    return displaySkills.filter((skill) => {
       const matchedFilter =
         filter === "all"
         || (filter === "erkai" && isErkai(skill))
@@ -235,7 +311,7 @@ export function SkillPoolPanel() {
         .filter(Boolean)
         .some((value) => value.toLowerCase().includes(keyword));
     });
-  }, [filter, search, skills]);
+  }, [filter, search, displaySkills]);
 
   useEffect(() => {
     if (!filteredSkills.length) {
@@ -249,8 +325,9 @@ export function SkillPoolPanel() {
   }, [filteredSkills, selectedSkillName]);
 
   const selectedSkill = useMemo(
-    () => skills.find((skill) => skill.name === selectedSkillName) || null,
-    [selectedSkillName, skills],
+    () =>
+      displaySkills.find((skill) => skill.name === selectedSkillName) || null,
+    [selectedSkillName, displaySkills],
   );
 
   const openCreateModal = () => {
@@ -815,6 +892,12 @@ export function SkillPoolPanel() {
             <div className="skill-pool-grid">
               {filteredSkills.map((skill) => {
                 const isSelected = selectedSkillName === skill.name;
+                const foreignId = (skill as WorkspaceSkillInfo & {
+                  _foreignAgentId?: string;
+                })._foreignAgentId;
+                const foreignName = (skill as WorkspaceSkillInfo & {
+                  _foreignAgentName?: string;
+                })._foreignAgentName;
                 return (
                   <article
                     key={skill.name}
@@ -838,6 +921,14 @@ export function SkillPoolPanel() {
                               ) : (
                                 <span className="skill-pool-badge">已停用</span>
                               )}
+                              {foreignId ? (
+                                <span
+                                  className="skill-pool-badge foreign"
+                                  title={`这条技能装在业务智能体 ${foreignId} 的工作区，本面板只能查看；管理请去 FDE 交付工作台`}
+                                >
+                                  所属 {foreignName || foreignId}
+                                </span>
+                              ) : null}
                             </div>
                           </div>
                           <p>{skill.description || "未填写技能描述"}</p>
@@ -885,16 +976,32 @@ export function SkillPoolPanel() {
                       >
                         详情
                       </button>
-                      <button
-                        type="button"
-                        className="portal-model-btn secondary compact"
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          openEditModal(skill);
-                        }}
-                      >
-                        编辑
-                      </button>
+                      {foreignId ? (
+                        <button
+                          type="button"
+                          className="portal-model-btn secondary compact"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            navigate(
+                              buildPortalSectionPath("fde-workbench"),
+                            );
+                          }}
+                          title="这条技能装在其他业务智能体，编辑请去 FDE 交付工作台"
+                        >
+                          去交付工作台
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          className="portal-model-btn secondary compact"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            openEditModal(skill);
+                          }}
+                        >
+                          编辑
+                        </button>
+                      )}
                     </div>
                   </article>
                 );
@@ -1072,6 +1179,7 @@ export function SkillPoolPanel() {
             </section>
           ) : null}
         </div>
+
       </div>
 
       {isModalOpen ? (
