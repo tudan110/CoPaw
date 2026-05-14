@@ -29,11 +29,53 @@ const TERMINAL_STATUSES = new Set([
   "canceled",
   "stopped",
 ]);
+const STORAGE_PREFIX = "fde-cc-active";
 
 let segSeq = 0;
 function nextId(prefix: string): string {
   segSeq += 1;
   return `${prefix}-${Date.now().toString(36)}-${segSeq}`;
+}
+
+type Persisted = {
+  chatId: string;
+  sessionId: string;
+  name?: string;
+  lastActive: number;
+};
+
+function persistedStorageKey(agentId: string): string {
+  return `${STORAGE_PREFIX}::${agentId}::${USER_ID}::${CHANNEL}`;
+}
+
+function readPersisted(agentId: string): Persisted | null {
+  try {
+    const raw = window.localStorage.getItem(persistedStorageKey(agentId));
+    if (!raw) return null;
+    const obj = JSON.parse(raw) as Partial<Persisted>;
+    if (!obj?.chatId || !obj?.sessionId) return null;
+    return {
+      chatId: String(obj.chatId),
+      sessionId: String(obj.sessionId),
+      name: obj.name ? String(obj.name) : undefined,
+      lastActive: Number(obj.lastActive) || Date.now(),
+    };
+  } catch {
+    return null;
+  }
+}
+
+function writePersisted(agentId: string, value: Persisted | null): void {
+  try {
+    const key = persistedStorageKey(agentId);
+    if (value) {
+      window.localStorage.setItem(key, JSON.stringify(value));
+    } else {
+      window.localStorage.removeItem(key);
+    }
+  } catch {
+    // localStorage may be unavailable (private mode / quota) — soft-fail
+  }
 }
 
 type AssistantSegment = { msgId: string; text: string };
@@ -206,8 +248,20 @@ export function FdeConsoleChat({
       }
       setCurrentChatId(id);
       setCurrentChatName(name || "");
+      // Persist so the user can leave the panel / refresh the tab and resume
+      // from this conversation later. Cleared on `reset`.
+      if (id && sessionIdRef.current) {
+        writePersisted(agentId, {
+          chatId: id,
+          sessionId: sessionIdRef.current,
+          name: name || undefined,
+          lastActive: Date.now(),
+        });
+      } else if (!id) {
+        writePersisted(agentId, null);
+      }
     },
-    [],
+    [agentId],
   );
 
   useLayoutEffect(() => {
@@ -259,6 +313,223 @@ export function FdeConsoleChat({
     },
     [patchLastAssistant],
   );
+
+  // Shared SSE event dispatcher — used by both `send` (new turn) and
+  // `tryReconnect` (attach to a backend run that's still going after the
+  // user left & came back). Keeping it in one place avoids "send works but
+  // reconnect renders nothing" divergence the next time event shapes change.
+  const handleStreamEvent = useCallback(
+    (event: Record<string, any>) => {
+      const obj = String(event.object || "");
+      if (obj === "message" && event.id && event.role) {
+        metaRef.current.set(String(event.id), String(event.type || ""));
+        if (event.role === "assistant") {
+          if (event.type === "message") {
+            setStatusLabel("");
+          } else if (event.type === "reasoning") {
+            setStatusLabel("思考中…");
+          } else if (event.type === "plugin_call") {
+            setStatusLabel("调用工具…");
+          }
+        }
+      }
+      if (obj === "response" && event.status) {
+        setStatusLabel(
+          TERMINAL_STATUSES.has(String(event.status)) ? "" : "运行中…",
+        );
+      }
+      if (
+        obj === "message" &&
+        event.role === "assistant" &&
+        (event.type === "plugin_call" ||
+          event.type === "plugin_call_output") &&
+        event.status === "completed"
+      ) {
+        const name = toolNameFromEvent(event);
+        patchLastAssistant((t) =>
+          t.trace.includes(name) ? t : { ...t, trace: [...t.trace, name] },
+        );
+        return;
+      }
+      if (
+        obj === "message" &&
+        event.role === "assistant" &&
+        event.type === "message" &&
+        event.status === "completed" &&
+        event.id
+      ) {
+        const finalText = extractCopawMessageText(event);
+        if (finalText) {
+          upsertSegment(String(event.id), () => finalText);
+        }
+        return;
+      }
+      if (obj === "content" && event.type === "text" && event.msg_id) {
+        const kind = metaRef.current.get(String(event.msg_id));
+        if (kind === "reasoning") {
+          return;
+        }
+        const delta = String(event.text || "");
+        if (!delta) {
+          return;
+        }
+        upsertSegment(String(event.msg_id), (cur) =>
+          mergeStreamingText(cur, delta),
+        );
+      }
+    },
+    [patchLastAssistant, upsertSegment],
+  );
+
+  // Attach to a still-running backend chat run. Returns whether any events
+  // were received — `false` means the task was already finished server-side
+  // (the SSE stream closes immediately with nothing in it).
+  const tryReconnect = useCallback(
+    async (
+      sessionId: string,
+      _chatId: string,
+      { silent }: { silent?: boolean } = {},
+    ): Promise<{ attached: boolean }> => {
+      if (streaming || !sessionId) {
+        return { attached: false };
+      }
+      const controller = new AbortController();
+      abortRef.current = controller;
+      setStreaming(true);
+      setStatusLabel(silent ? "重连后台任务…" : "重连中…");
+      // Make sure events have a running assistant turn to attach to. If the
+      // history already ends with an assistant turn (common when we just
+      // loaded it), reuse it; otherwise add a placeholder.
+      setTurns((prev) => {
+        if (prev.length === 0) {
+          return [
+            {
+              id: nextId("a"),
+              role: "assistant",
+              segments: [],
+              trace: [],
+              status: "running",
+            },
+          ];
+        }
+        const last = prev[prev.length - 1];
+        if (isAssistant(last)) {
+          if (last.status === "running") {
+            return prev;
+          }
+          const next = prev.slice();
+          next[prev.length - 1] = { ...last, status: "running" };
+          return next;
+        }
+        return [
+          ...prev,
+          {
+            id: nextId("a"),
+            role: "assistant",
+            segments: [],
+            trace: [],
+            status: "running",
+          },
+        ];
+      });
+      let attached = false;
+      try {
+        await streamChat(
+          agentId,
+          {
+            reconnect: true,
+            session_id: sessionId,
+            user_id: USER_ID,
+            channel: CHANNEL,
+            stream: true,
+          } as Record<string, unknown>,
+          {
+            signal: controller.signal,
+            onEvent: (event) => {
+              attached = true;
+              handleStreamEvent(event);
+            },
+          },
+        );
+      } catch (error) {
+        // Reconnect failure isn't always an error — task may have ended just
+        // before we attached. Only surface if we actually saw events flowing.
+        if (attached) {
+          const msg =
+            error instanceof Error
+              ? error.message
+              : "重连失败，请稍后重试";
+          patchLastAssistant((t) => ({ ...t, status: "error", error: msg }));
+        }
+      } finally {
+        setStreaming(false);
+        setStatusLabel("");
+        abortRef.current = null;
+        patchLastAssistant((t) =>
+          t.status === "running" ? { ...t, status: "done" } : t,
+        );
+        onTurnCompleteRef.current?.();
+      }
+      return { attached };
+    },
+    [agentId, streaming, handleStreamEvent, patchLastAssistant],
+  );
+
+  const handleReconnectClick = useCallback(() => {
+    const sid = sessionIdRef.current;
+    const cid = chatIdRef.current;
+    if (!sid || !cid || streaming) {
+      return;
+    }
+    void tryReconnect(sid, cid);
+  }, [streaming, tryReconnect]);
+
+  // On mount, see if there's a persisted in-flight chat for this agent.
+  // If so, repaint past turns from history and try to attach to any
+  // still-running backend task. This is what makes the panel "leavable":
+  // the SSE socket can drop on unmount, but the run keeps going server-side
+  // (see qwenpaw/app/routers/console.py — `Run continues in background
+  // after disconnect. Reconnect with body.reconnect=true.`).
+  const autoReconnectRef = useRef(false);
+  useEffect(() => {
+    if (autoReconnectRef.current) {
+      return;
+    }
+    autoReconnectRef.current = true;
+    const persisted = readPersisted(agentId);
+    if (!persisted) {
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      adoptChat(persisted.chatId, persisted.name, persisted.sessionId);
+      try {
+        const history = (await getChatHistory(agentId, persisted.chatId)) as {
+          messages?: unknown;
+        };
+        if (cancelled) return;
+        const loaded = normalizeFdeHistory(history.messages);
+        if (loaded.length) {
+          setTurns(loaded);
+        }
+      } catch {
+        // The chat may have been deleted server-side; drop the stale pointer
+        // so we don't keep failing on every mount.
+        if (cancelled) return;
+        adoptChat(null);
+        return;
+      }
+      if (cancelled) return;
+      // Either resumes the live stream (if backend run is still going) or
+      // closes immediately (if it already finished while we were away).
+      void tryReconnect(persisted.sessionId, persisted.chatId, {
+        silent: true,
+      });
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [agentId, adoptChat, tryReconnect]);
 
   const send = useCallback(async (overrideText?: string) => {
     const text = (overrideText ?? input).trim();
@@ -324,67 +595,7 @@ export function FdeConsoleChat({
         },
         {
           signal: controller.signal,
-          onEvent: (event) => {
-            const obj = String(event.object || "");
-            if (obj === "message" && event.id && event.role) {
-              metaRef.current.set(String(event.id), String(event.type || ""));
-              if (event.role === "assistant") {
-                if (event.type === "message") {
-                  setStatusLabel("");
-                } else if (event.type === "reasoning") {
-                  setStatusLabel("思考中…");
-                } else if (event.type === "plugin_call") {
-                  setStatusLabel("调用工具…");
-                }
-              }
-            }
-            if (obj === "response" && event.status) {
-              setStatusLabel(
-                TERMINAL_STATUSES.has(String(event.status)) ? "" : "运行中…",
-              );
-            }
-            if (
-              obj === "message" &&
-              event.role === "assistant" &&
-              (event.type === "plugin_call" ||
-                event.type === "plugin_call_output") &&
-              event.status === "completed"
-            ) {
-              const name = toolNameFromEvent(event);
-              patchLastAssistant((t) =>
-                t.trace.includes(name)
-                  ? t
-                  : { ...t, trace: [...t.trace, name] },
-              );
-              return;
-            }
-            if (
-              obj === "message" &&
-              event.role === "assistant" &&
-              event.type === "message" &&
-              event.status === "completed" &&
-              event.id
-            ) {
-              const finalText = extractCopawMessageText(event);
-              if (finalText) {
-                upsertSegment(String(event.id), () => finalText);
-              }
-              return;
-            }
-            if (obj === "content" && event.type === "text" && event.msg_id) {
-              const kind = metaRef.current.get(String(event.msg_id));
-              if (kind === "reasoning") {
-                return;
-              }
-              const delta = String(event.text || "");
-              if (!delta) {
-                return;
-              }
-              upsertSegment(String(event.msg_id), (cur) =>
-                mergeStreamingText(cur, delta),
-              );
-            }
-          },
+          onEvent: handleStreamEvent,
         },
       );
     } catch (error) {
@@ -400,7 +611,14 @@ export function FdeConsoleChat({
       );
       onTurnCompleteRef.current?.();
     }
-  }, [input, streaming, agentId, patchLastAssistant, upsertSegment, adoptChat]);
+  }, [
+    input,
+    streaming,
+    agentId,
+    patchLastAssistant,
+    adoptChat,
+    handleStreamEvent,
+  ]);
 
   const stop = useCallback(() => {
     abortRef.current?.abort();
@@ -475,6 +693,15 @@ export function FdeConsoleChat({
         );
         if (sid) {
           sessionIdRef.current = sid;
+          // adoptChat above already persisted with whatever session_id we had
+          // up front (possibly empty); re-persist now that we've resolved the
+          // real one so a later auto-reconnect can attach.
+          writePersisted(agentId, {
+            chatId: chat.id,
+            sessionId: sid,
+            name: chat.name || undefined,
+            lastActive: Date.now(),
+          });
         }
         const loaded = normalizeFdeHistory(history.messages);
         if (loaded.length) {
@@ -564,7 +791,27 @@ export function FdeConsoleChat({
         {statusLabel ? (
           <span className="fde-cc-status">{statusLabel}</span>
         ) : null}
+        {streaming ? (
+          <span
+            className="fde-cc-bg-pill"
+            title="任务在 qwenpaw 后端持续运行，离开本面板或刷新页面再回来都能续上"
+          >
+            <i className="fas fa-cloud" />
+            后台运行
+          </span>
+        ) : null}
         <div className="fde-cc-toolbar-spacer" />
+        {currentChatId && !streaming ? (
+          <button
+            type="button"
+            className="fde-link-btn"
+            onClick={handleReconnectClick}
+            title="重新连到当前会话的后端任务（如果还在运行就续上事件流；已结束则无副作用）"
+          >
+            <i className="fas fa-plug-circle-bolt" />
+            重连
+          </button>
+        ) : null}
         <div className="fde-cc-history-wrap">
           <button
             type="button"
@@ -573,6 +820,7 @@ export function FdeConsoleChat({
               historyOpen ? setHistoryOpen(false) : void openHistory()
             }
           >
+            <i className="fas fa-clock-rotate-left" />
             历史
           </button>
           {historyOpen ? (
@@ -624,9 +872,20 @@ export function FdeConsoleChat({
           onClick={reset}
           disabled={!streaming && turns.length === 0 && !currentChatId}
         >
+          <i className="fas fa-plus" />
           新会话
         </button>
       </div>
+
+      {streaming ? (
+        <div className="fde-cc-bg-banner" role="status">
+          <i className="fas fa-cloud" />
+          <span>
+            任务正在后端运行，可以离开本面板做别的事；回到这里会自动重连。
+            想中断点右下角「停止」即可。
+          </span>
+        </div>
+      ) : null}
 
       <div className="fde-cc-stream" ref={scrollRef}>
         {turns.length === 0 ? (
@@ -741,6 +1000,7 @@ export function FdeConsoleChat({
             className="fde-btn fde-btn--danger fde-cc-send"
             onClick={stop}
           >
+            <i className="fas fa-stop" />
             停止
           </button>
         ) : (
@@ -750,6 +1010,7 @@ export function FdeConsoleChat({
             onClick={() => void send()}
             disabled={!input.trim()}
           >
+            <i className="fas fa-paper-plane" />
             发送
           </button>
         )}

@@ -417,30 +417,58 @@
 }
 /* compact "soft" buttons used in section / chat toolbars */
 .fde-link-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   border: 1px solid var(--fde-line);
-  background: var(--bg-light, #f8fafc);
+  background: var(--fde-surface);
   cursor: pointer;
   font-size: 12px;
   font-weight: 600;
   color: var(--fde-ink-2);
-  padding: 5px 12px;
+  padding: 6px 12px;
   border-radius: 8px;
   line-height: 1.2;
+  box-shadow: 0 1px 0 rgba(15, 23, 42, 0.02);
   transition:
     border-color 0.15s ease,
     color 0.15s ease,
     background 0.15s ease,
+    box-shadow 0.15s ease,
     transform 0.12s ease;
+}
+.fde-link-btn > i {
+  font-size: 11px;
+  line-height: 1;
+  color: var(--fde-ink-3);
+  transition: color 0.15s ease;
 }
 .fde-link-btn:hover:not(:disabled) {
   border-color: var(--fde-accent);
   color: var(--fde-accent);
-  background: rgba(59, 130, 246, 0.07);
+  background: rgba(59, 130, 246, 0.06);
   transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.12);
+}
+.fde-link-btn:hover:not(:disabled) > i {
+  color: var(--fde-accent);
+}
+.fde-link-btn:focus-visible {
+  outline: 2px solid rgba(59, 130, 246, 0.35);
+  outline-offset: 2px;
 }
 .fde-link-btn:disabled {
   opacity: 0.45;
   cursor: not-allowed;
+}
+/* Subtle "ghost" variant for very neutral utility — e.g. inline toggles */
+.fde-link-btn--quiet {
+  border-color: transparent;
+  background: transparent;
+}
+.fde-link-btn--quiet:hover:not(:disabled) {
+  border-color: var(--fde-line);
+  background: var(--bg-light, #f8fafc);
 }
 
 /* ---------- chat shell ---------- */
@@ -499,12 +527,62 @@
   color: var(--fde-ink);
 }
 .fde-cc-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   font-size: 11px;
   font-weight: 600;
   color: var(--fde-accent);
-  padding: 2px 8px;
+  padding: 3px 10px;
   border-radius: 999px;
   background: rgba(59, 130, 246, 0.1);
+  border: 1px solid rgba(59, 130, 246, 0.18);
+}
+.fde-cc-status::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--fde-accent);
+  animation: fdePulse 2.4s ease-in-out infinite;
+}
+.fde-cc-bg-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  color: #047857;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: rgba(16, 185, 129, 0.12);
+  border: 1px solid rgba(16, 185, 129, 0.28);
+}
+.fde-cc-bg-pill > i {
+  font-size: 10px;
+}
+.fde-cc-bg-banner {
+  margin: 10px 14px 0;
+  padding: 9px 12px;
+  border-radius: 10px;
+  border: 1px dashed rgba(16, 185, 129, 0.42);
+  background: rgba(16, 185, 129, 0.06);
+  color: #065f46;
+  font-size: 12px;
+  line-height: 1.55;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+.fde-cc-bg-banner > i {
+  margin-top: 2px;
+  color: #10b981;
+}
+.fde-cc-bg-banner-actions {
+  margin-left: auto;
+  display: inline-flex;
+  gap: 6px;
 }
 .fde-cc-session {
   max-width: 220px;
@@ -1103,14 +1181,21 @@ textarea.fde-field {
 
 /* ---------- buttons ---------- */
 .fde-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
   border: 1px solid var(--fde-line);
   background: var(--fde-surface);
-  color: var(--fde-ink-2);
-  border-radius: 9px;
-  padding: 7px 14px;
+  color: var(--fde-ink);
+  border-radius: 10px;
+  padding: 9px 16px;
   font-size: 13px;
   font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: 0.1px;
   cursor: pointer;
+  box-shadow: 0 1px 0 rgba(15, 23, 42, 0.03);
   transition:
     transform 0.14s ease,
     box-shadow 0.16s ease,
@@ -1118,35 +1203,82 @@ textarea.fde-field {
     border-color 0.16s ease,
     color 0.16s ease;
 }
+.fde-btn > i {
+  font-size: 12px;
+  line-height: 1;
+}
 .fde-btn:hover:not(:disabled) {
   transform: translateY(-1px);
+}
+.fde-btn:focus-visible {
+  outline: 2px solid rgba(59, 130, 246, 0.35);
+  outline-offset: 2px;
 }
 .fde-btn:disabled {
   opacity: 0.45;
   cursor: not-allowed;
+  transform: none;
+  box-shadow: 0 1px 0 rgba(15, 23, 42, 0.03);
+}
+.fde-btn--ghost {
+  color: var(--fde-ink-2);
+  background: var(--fde-surface);
 }
 .fde-btn--ghost:hover:not(:disabled) {
   border-color: var(--fde-accent);
   color: var(--fde-accent);
-  background: rgba(59, 130, 246, 0.07);
+  background: rgba(59, 130, 246, 0.06);
+  box-shadow: 0 4px 14px rgba(59, 130, 246, 0.12);
 }
 .fde-btn--primary {
   border-color: transparent;
   background: var(--fde-grad);
   color: #fff;
-  box-shadow: 0 4px 14px rgba(59, 130, 246, 0.3);
+  box-shadow:
+    0 4px 14px rgba(59, 130, 246, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.18);
 }
 .fde-btn--primary:hover:not(:disabled) {
-  box-shadow: 0 8px 22px rgba(59, 130, 246, 0.4);
+  box-shadow:
+    0 8px 24px rgba(59, 130, 246, 0.42),
+    inset 0 1px 0 rgba(255, 255, 255, 0.24);
+}
+.fde-btn--primary:focus-visible {
+  outline-color: rgba(255, 255, 255, 0.6);
 }
 .fde-btn--danger {
-  border-color: rgba(239, 68, 68, 0.35);
+  border-color: rgba(239, 68, 68, 0.32);
   color: #b91c1c;
   background: var(--fde-surface);
 }
 .fde-btn--danger:hover:not(:disabled) {
   background: rgba(239, 68, 68, 0.08);
   border-color: var(--fde-bad);
+  box-shadow: 0 4px 14px rgba(239, 68, 68, 0.15);
+}
+
+/* Action bar — groups buttons in audit vs execute zones with a subtle divider */
+.fde-action-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 12px 16px 0;
+}
+.fde-action-bar-group {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.fde-action-bar-divider {
+  width: 1px;
+  align-self: stretch;
+  margin: 4px 4px;
+  background: var(--fde-line);
+}
+.fde-action-bar-spacer {
+  flex: 1;
 }
 /* ---------- "已交付技能" cross-agent list ---------- */
 .fde-installed-card {
@@ -1305,13 +1437,7 @@ textarea.fde-field {
   margin: 2px 0;
 }
 
-/* ---------- action bar / terminal ---------- */
-.fde-action-bar {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  padding: 14px 16px 0;
-}
+/* ---------- terminal ---------- */
 .fde-terminal {
   margin: 14px 16px 16px;
   border-radius: 12px;
