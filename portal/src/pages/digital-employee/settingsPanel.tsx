@@ -282,12 +282,6 @@ export function SettingsPanel() {
             </div>
           </div>
 
-          <div className="portal-model-scope-bar settings-scope-bar">
-            <span>配置范围：浏览器偏好 + 当前工作空间</span>
-            <span>切换类型：使用顶部 Tab 分类管理</span>
-            <span>已支持：过程记录、诊断展示、通知推送地址</span>
-          </div>
-
           <div className="settings-layout">
             <aside className="portal-advanced-config-panel settings-tab-panel">
               <div className="settings-tab-panel-title">设置分类</div>
@@ -411,9 +405,6 @@ export function SettingsPanel() {
                           将巡检结果与自动建单结果直接推送到应用、钉钉和飞书。相关 skill
                           会优先读取这里的设置，未设置时再回退到原有 `.env` 配置。
                         </p>
-                      </div>
-                      <div className="settings-sync-badge">
-                        {notificationLoading ? "读取中..." : "当前工作空间"}
                       </div>
                     </div>
 
