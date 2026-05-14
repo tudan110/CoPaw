@@ -74,7 +74,29 @@ for ws in $(ls ~/.qwenpaw/workspaces/); do
 done
 ```
 
-### 4. 同步配置文件并替换路径
+### 4. 同步 extensions 目录（本地设置 + 仓库内置扩展）
+
+```bash
+# 先清理旧的 extensions 目录，避免遗留无效文件
+rm -rf deploy-all/qwenpaw/data/qwenpaw/extensions 2>/dev/null
+mkdir -p deploy-all/qwenpaw/data/qwenpaw/extensions
+
+# 先同步本地 extensions 运行数据（如通知 settings.json）
+if [ -d ~/.qwenpaw/extensions ]; then
+  rsync -a --exclude='.DS_Store' --exclude='__pycache__' --exclude='*.pyc' \
+    ~/.qwenpaw/extensions/ deploy-all/qwenpaw/data/qwenpaw/extensions/
+fi
+
+# 再覆盖仓库内置 extensions 代码（如 notification_settings.py）
+if [ -d deploy-all/qwenpaw/working/extensions ]; then
+  rsync -a --exclude='.DS_Store' --exclude='__pycache__' --exclude='*.pyc' \
+    deploy-all/qwenpaw/working/extensions/ deploy-all/qwenpaw/data/qwenpaw/extensions/
+fi
+```
+
+> **说明**：`deploy-all/qwenpaw/working/extensions` 里维护的是随仓库发布的扩展辅助代码；`~/.qwenpaw/extensions` 里可能还有运行时配置（例如通知设置）。打包镜像前应先同步本地数据，再覆盖仓库内置扩展。
+
+### 5. 同步配置文件并替换路径
 
 ```bash
 # 同步并更新 config.json
@@ -174,7 +196,7 @@ else
 fi
 ```
 
-### 5. 同步工作区其他文件
+### 6. 同步工作区其他文件
 
 ```bash
 for ws in $(ls ~/.qwenpaw/workspaces/); do
@@ -194,7 +216,7 @@ for ws in $(ls ~/.qwenpaw/workspaces/); do
 done
 ```
 
-### 6. 同步大模型配置目录 (qwenpaw.secret)
+### 7. 同步大模型配置目录 (qwenpaw.secret)
 
 ```bash
 # 同步 qwenpaw.secret 目录（包含大模型 Provider 配置）
@@ -206,7 +228,7 @@ rsync -a --exclude='.DS_Store' \
 
 > **说明**：`qwenpaw.secret` 目录包含大模型 API Key 等敏感配置，需要打包到镜像中，容器启动后会自动加载。请确保该目录中的 API Key 是有效的，或者在部署后通过环境变量覆盖。
 
-### 7. 清理运行时数据（不打包进镜像）
+### 8. 清理运行时数据（不打包进镜像）
 
 ```bash
 for ws in $(ls deploy-all/qwenpaw/data/qwenpaw/workspaces/); do
@@ -221,7 +243,7 @@ rm -f deploy-all/qwenpaw/data/qwenpaw/token_usage.json 2>/dev/null
 rm -f deploy-all/qwenpaw/data/qwenpaw/qwenpaw.log 2>/dev/null
 ```
 
-### 8. 清理 Python 缓存和系统文件
+### 9. 清理 Python 缓存和系统文件
 
 ```bash
 find deploy-all/qwenpaw/data/qwenpaw -type d \( -name ".venv" -o -name "__pycache__" -o -name "*.egg-info" \) -exec rm -rf {} + 2>/dev/null
@@ -229,7 +251,7 @@ find deploy-all/qwenpaw/data/qwenpaw -name "*.pyc" -delete 2>/dev/null
 find deploy-all/qwenpaw/data/qwenpaw -name ".DS_Store" -delete 2>/dev/null
 ```
 
-### 9. 敏感文件处理
+### 10. 敏感文件处理
 
 **注意**：`.env` 文件包含 API Token 等敏感信息，请根据实际情况决定是否保留。
 
@@ -314,6 +336,7 @@ DEPLOY_DIR="$DEPLOY_ROOT/qwenpaw"
 SECRET_DIR="$DEPLOY_ROOT/qwenpaw.secret"
 LOCAL_DIR="$HOME/.qwenpaw"
 LOCAL_SECRET_DIR="$HOME/.qwenpaw.secret"
+REPO_WORKING_DIR="$SCRIPT_DIR/deploy-all/qwenpaw/working"
 
 echo "这次同步的是什么环境？"
 echo "1) 4A"
@@ -396,7 +419,19 @@ for ws in $(ls "$LOCAL_DIR/workspaces/"); do
   [ -f "$LOCAL_DIR/workspaces/$ws/skill.json" ] && cp "$LOCAL_DIR/workspaces/$ws/skill.json" "workspaces/$ws/"
 done
 
-echo "=== Step 4: Sync config files and update paths ==="
+echo "=== Step 4: Sync extensions ==="
+rm -rf extensions 2>/dev/null || true
+mkdir -p extensions
+if [ -d "$LOCAL_DIR/extensions" ]; then
+  rsync -a --exclude='.DS_Store' --exclude='__pycache__' --exclude='*.pyc' \
+    "$LOCAL_DIR/extensions/" extensions/
+fi
+if [ -d "$REPO_WORKING_DIR/extensions" ]; then
+  rsync -a --exclude='.DS_Store' --exclude='__pycache__' --exclude='*.pyc' \
+    "$REPO_WORKING_DIR/extensions/" extensions/
+fi
+
+echo "=== Step 5: Sync config files and update paths ==="
 cp "$LOCAL_DIR/config.json" config.json
 sed -i '' 's|/Users/[^/]*/\.qwenpaw|/app/working|g' config.json
 sed -i '' 's|/Users/[^/]*/\.copaw|/app/working|g' config.json
@@ -416,34 +451,34 @@ done
 
 [ -f skill_pool/skill.json ] && sed -i '' 's|~/.qwenpaw|/app/working|g; s|~/.copaw|/app/working|g; s|/Users/[^/]*/\.qwenpaw|/app/working|g; s|/Users/[^/]*/\.copaw|/app/working|g' skill_pool/skill.json
 
-echo "=== Step 5: Sync workspace files ==="
+echo "=== Step 6: Sync workspace files ==="
 for ws in $(ls "$LOCAL_DIR/workspaces/"); do
   for f in AGENTS.md BOOTSTRAP.md HEARTBEAT.md MEMORY.md PROFILE.md SOUL.md chats.json jobs.json; do
     [ -f "$LOCAL_DIR/workspaces/$ws/$f" ] && cp "$LOCAL_DIR/workspaces/$ws/$f" "workspaces/$ws/"
   done
 done
 
-echo "=== Step 5.1: Replace service URLs by environment ($TARGET_ENV_NAME) ==="
+echo "=== Step 6.1: Replace service URLs by environment ($TARGET_ENV_NAME) ==="
 replace_service_urls "$DEPLOY_DIR"
 
-echo "=== Step 6: Sync qwenpaw.secret (model providers) ==="
+echo "=== Step 7: Sync qwenpaw.secret (model providers) ==="
 rm -rf "$SECRET_DIR" 2>/dev/null || true
 mkdir -p "$SECRET_DIR"
 rsync -a --exclude='.DS_Store' "$LOCAL_SECRET_DIR/" "$SECRET_DIR/"
 
-echo "=== Step 7: Clean runtime data ==="
+echo "=== Step 8: Clean runtime data ==="
 for ws in $(ls workspaces/); do
   rm -rf "workspaces/$ws/sessions" "workspaces/$ws/file_store" "workspaces/$ws/tool_result" 2>/dev/null || true
   rm -f "workspaces/$ws/chats.json" "workspaces/$ws/feishu_receive_ids.json" 2>/dev/null || true
 done
 rm -f token_usage.json qwenpaw.log 2>/dev/null || true
 
-echo "=== Step 8: Clean cache files ==="
+echo "=== Step 9: Clean cache files ==="
 find . -type d \( -name ".venv" -o -name "__pycache__" \) -exec rm -rf {} + 2>/dev/null || true
 find . -name "*.pyc" -delete 2>/dev/null || true
 find . -name ".DS_Store" -delete 2>/dev/null || true
 
-echo "=== Step 9: Handle .env files ==="
+echo "=== Step 10: Handle .env files ==="
 echo "Skills 目录下可能包含 .env 文件（如 real-alarm/.env 包含 API Token）"
 echo "是否保留 .env 文件？(Y/n)"
 read -r SYNC_ENV
@@ -463,6 +498,7 @@ du -sh .
 ```bash
 # 检查主目录结构
 ls deploy-all/qwenpaw/data/qwenpaw/
+ls deploy-all/qwenpaw/data/qwenpaw/extensions/notifications/
 ls deploy-all/qwenpaw/data/qwenpaw/workspaces/fault/
 ls deploy-all/qwenpaw/data/qwenpaw/skill_pool/
 
