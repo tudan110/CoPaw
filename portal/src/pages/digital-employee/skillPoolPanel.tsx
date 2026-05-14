@@ -230,6 +230,10 @@ export function SkillPoolPanel() {
   }, [importMenuOpen]);
 
   const isErkai = (s: WorkspaceSkillInfo) => (s.tags || []).includes(ERKAI_TAG);
+  // 出厂（无「二开」标签）的技能视为只读：编辑 / 删除 / 标签均不可改，只能查看。
+  // 如需替换，请通过「新建技能」或「导入技能」走二开流程。
+  const isStockLocked = (s: WorkspaceSkillInfo) => !isErkai(s);
+  const STOCK_LOCK_HINT = "「出厂」技能为只读，不可编辑、删除或修改标签";
 
   // Merge cross-agent FDE 二开 skills (gone-rogue installs that for some
   // reason aren't mirrored into gateway) into the main display list so
@@ -341,6 +345,14 @@ export function SkillPoolPanel() {
   };
 
   const openEditModal = (skill: WorkspaceSkillInfo) => {
+    if (isStockLocked(skill)) {
+      setNotice({
+        type: "error",
+        message: `「${skill.name}」是出厂技能，为只读，不可编辑。`,
+      });
+      setSelectedSkillName(skill.name);
+      return;
+    }
     setModalMode("edit");
     setEditingSkill(skill);
     setForm({
@@ -739,6 +751,14 @@ export function SkillPoolPanel() {
 
   // ---- Delete ----
   const handleDelete = async (skill: WorkspaceSkillInfo) => {
+    if (isStockLocked(skill)) {
+      setNotice({
+        type: "error",
+        message: `「${skill.name}」是出厂技能，为只读，不可删除。`,
+      });
+      setSelectedSkillName(skill.name);
+      return;
+    }
     if (!window.confirm(`确认删除技能「${skill.name}」吗？删除前会先停用。`)) {
       return;
     }
@@ -764,7 +784,15 @@ export function SkillPoolPanel() {
   const handleToggleErkai = async (skill: WorkspaceSkillInfo) => {
     const cur = skill.tags || [];
     const has = cur.includes(ERKAI_TAG);
-    const next = has ? cur.filter((t) => t !== ERKAI_TAG) : [...cur, ERKAI_TAG];
+    if (!has) {
+      // 出厂技能为只读。禁止通过本入口把出厂打成二开来绕过编辑锁。
+      setNotice({
+        type: "error",
+        message: `「${skill.name}」是出厂技能，为只读，不可修改标签。`,
+      });
+      return;
+    }
+    const next = cur.filter((t) => t !== ERKAI_TAG);
     setBusySkill(skill.name);
     try {
       await skillsApi.updateAgentSkillTags(agentId, skill.name, next);
@@ -994,6 +1022,8 @@ export function SkillPoolPanel() {
                         <button
                           type="button"
                           className="portal-model-btn secondary compact"
+                          disabled={isStockLocked(skill)}
+                          title={isStockLocked(skill) ? STOCK_LOCK_HINT : undefined}
                           onClick={(event) => {
                             event.stopPropagation();
                             openEditModal(skill);
@@ -1069,6 +1099,8 @@ export function SkillPoolPanel() {
                   <button
                     type="button"
                     className="portal-model-btn secondary"
+                    disabled={isStockLocked(selectedSkill)}
+                    title={isStockLocked(selectedSkill) ? STOCK_LOCK_HINT : undefined}
                     onClick={() => openEditModal(selectedSkill)}
                   >
                     <i className="fas fa-pen" />
@@ -1077,7 +1109,8 @@ export function SkillPoolPanel() {
                   <button
                     type="button"
                     className="portal-model-btn secondary danger"
-                    disabled={busySkill === selectedSkill.name}
+                    disabled={busySkill === selectedSkill.name || isStockLocked(selectedSkill)}
+                    title={isStockLocked(selectedSkill) ? STOCK_LOCK_HINT : undefined}
                     onClick={() => void handleDelete(selectedSkill)}
                   >
                     <i className={`fas ${busySkill === selectedSkill.name ? "fa-spinner fa-spin" : "fa-trash"}`} />
@@ -1122,14 +1155,22 @@ export function SkillPoolPanel() {
                             ? "portal-model-btn secondary compact"
                             : "portal-model-btn success compact"
                         }
-                        disabled={busySkill === selectedSkill.name}
+                        disabled={
+                          busySkill === selectedSkill.name
+                          || isStockLocked(selectedSkill)
+                        }
+                        title={
+                          isStockLocked(selectedSkill)
+                            ? STOCK_LOCK_HINT
+                            : undefined
+                        }
                         onClick={() => void handleToggleErkai(selectedSkill)}
                       >
                         {isErkai(selectedSkill) ? "取消二开" : "标为二开"}
                       </button>
                     </div>
                     <div className="skill-pool-card-hint">
-                      二开 = 通过本面板导入 / 新建的定制技能；出厂 = 随系统部署。识别有误可在此手动纠正。
+                      二开 = 通过本面板导入 / 新建的定制技能；出厂 = 随系统部署，为只读，不可编辑、删除或修改标签。如需替换，请通过「新建技能」或「导入技能」走二开流程。
                     </div>
                   </div>
 
