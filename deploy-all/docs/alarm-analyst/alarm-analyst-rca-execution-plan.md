@@ -81,7 +81,7 @@
 
 ### 目标
 
-确保 Portal 进入故障分析员时，`alarm-analyst` 能稳定拿到：
+确保 Portal 进入故障分析专家时，`alarm-analyst` 能稳定拿到：
 
 - `resId`
 - `eventTime`
@@ -196,7 +196,7 @@
 
 - Portal 点击告警后，走的是专用 `alarm_analyst_service`
 - 主应用中 `/api/portal/*` 不再 404
-- 故障分析员对话里展示的是完整聚合分析结果，而不是脚手架占位文案
+- 故障分析专家对话里展示的是完整聚合分析结果，而不是脚手架占位文案
 
 ---
 

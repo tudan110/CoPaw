@@ -58,7 +58,7 @@ function resolveInitialQuery(content: string) {
   if (!normalized || isKnowledgeBaseIntent(normalized)) {
     return "";
   }
-  return normalized.replace(/^@?知识专员\s*/u, "").trim();
+  return normalized.replace(/^@?(?:知识库助手|知识专员)\s*/u, "").trim();
 }
 
 function formatEvidence(evidence: KnowledgeEvidence, index: number) {

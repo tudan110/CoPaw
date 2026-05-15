@@ -224,7 +224,7 @@ const EVENTS: OverviewEvent[] = [
     employeeId: "query",
   },
   {
-    title: "巡检专员完成全量主机巡检",
+    title: "巡检专家完成全量主机巡检",
     time: "30分钟前",
     color: "#22c55e",
     iconClass: "fa-circle-check",

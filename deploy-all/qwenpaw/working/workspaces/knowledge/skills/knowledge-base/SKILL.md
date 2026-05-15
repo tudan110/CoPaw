@@ -5,7 +5,7 @@ description: 运维知识库能力。用于知识资料上传入库、手动沉�
 
 # Knowledge Base
 
-这是知识专员的主知识库能力，替代旧 demo `rag-skill`。
+这是知识库助手的主知识库能力，替代旧 demo `rag-skill`。
 
 ## 使用边界
 

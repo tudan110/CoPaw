@@ -880,7 +880,7 @@ def _build_synthesis_prompt(query: str, contexts: list[dict]) -> str:
         blocks.append(f"{header}\n{ctx['context']}")
     evidence_block = "\n\n".join(blocks)
     return (
-        "你是运维知识专员。仅基于下方知识库证据回答用户问题。"
+        "你是运维知识库助手。仅基于下方知识库证据回答用户问题。"
         "如证据不足以支撑明确结论，请直接说明，不要编造。\n\n"
         f"用户问题：{query}\n\n"
         f"知识库证据：\n{evidence_block}\n\n"

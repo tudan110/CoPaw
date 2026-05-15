@@ -73,7 +73,7 @@ GET /api/portal/employee-status
   "employees": [
     {
       "employeeId": "query",
-      "employeeName": "数据分析员",
+      "employeeName": "数据分析专家",
       "available": true,
       "status": "idle",
       "urgent": false,
@@ -91,7 +91,7 @@ GET /api/portal/employee-status
     },
     {
       "employeeId": "fault",
-      "employeeName": "故障分析员",
+      "employeeName": "故障分析专家",
       "available": true,
       "status": "idle",
       "urgent": true,
@@ -193,7 +193,7 @@ GET /api/portal/employee-status
 
 ## 当前告警来源说明
 
-目前只有 **故障分析员** (`fault`) 接入了真实告警源：
+目前只有 **故障分析专家** (`fault`) 接入了真实告警源：
 
 - 告警来源：`query_alarm_workorders()`
 - 判定方式：查询待处理告警/工单数量，数量大于 0 即认为是紧急任务

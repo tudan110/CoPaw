@@ -103,12 +103,12 @@ PORTAL_EMPLOYEE_STATUS_IDS = (
     "order",
 )
 PORTAL_EMPLOYEE_STATUS_NAMES = {
-    "query": "数据分析员",
-    "fault": "故障分析员",
-    "knowledge": "知识专员",
+    "query": "数据分析专家",
+    "fault": "故障分析专家",
+    "knowledge": "知识库助手",
     "resource": "资产管理员",
-    "inspection": "巡检专员",
-    "order": "工单调度员",
+    "inspection": "巡检专家",
+    "order": "工单处置员",
 }
 PORTAL_FAULT_ALERT_LIMIT = 20
 PORTAL_EMPLOYEE_STATUS_ALERT_COUNT_ENABLED = (

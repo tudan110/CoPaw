@@ -374,7 +374,7 @@ export function AdvancedModelEntry({
             <i className="fas fa-book-open" aria-label="knowledge-base" />
           </div>
           <div className="sidebar-advanced-item-name">知识库管理</div>
-          <div className="sidebar-advanced-item-desc">知识专员资料库</div>
+          <div className="sidebar-advanced-item-desc">知识库助手资料库</div>
           <div className="sidebar-advanced-item-meta">上传 / 检索 / 沉淀 / 索引</div>
         </button>
         <button
