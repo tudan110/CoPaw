@@ -18,18 +18,18 @@
 
 ## 同步步骤
 
-> **执行前必须先确认环境**：同步 `data` 目录前，先询问“这次同步的是什么环境？4A、大装置、生产环境，还是本地测试？”
+> **执行前必须先确认环境**：同步 `data` 目录前，先询问“这次同步的是什么环境？4A、北京环境、大装置、生产环境，还是本地测试？”
 >
 > data 目录中的服务地址按环境替换规则如下：
 >
-> | 原地址 | 4A 环境 | 大装置环境 | 生产环境 | 本地测试环境 |
-> |--------|---------|------------|----------|--------------|
-> | `http://172.28.75.4:30080` | `http://10.141.245.15:30080` | `http://172.28.75.4:30080` | `http://gateway:8080` | 不替换 |
-> | `http://192.168.130.51:30080` | `http://10.141.245.15:30080` | `http://172.28.75.4:30080` | `http://gateway:8080` | 不替换 |
-> | `http://192.168.130.51:30081` | `http://10.141.245.15:30081` | `http://172.28.75.4:30081` | 不替换 | 不替换 |
-> | `http://192.168.130.51:31089` | `http://10.141.245.15:31089` | `http://172.28.75.4:31089` | 不替换 | 不替换 |
-> | `http://192.168.130.51:30001` | `http://10.141.245.15:3000` | `http://172.28.75.4:3000` | 不替换 | 不替换 |
-> | `http://192.168.130.51:3101` | `http://10.141.245.15:3101` | `http://172.28.75.4:3101` | 不替换 | 不替换 |
+> | 原地址 | 4A 环境 | 北京环境 | 大装置环境 | 生产环境 | 本地测试环境 |
+> |--------|---------|----------|------------|----------|--------------|
+> | `http://172.28.75.4:30080` | `http://10.141.245.15:30080` | `http://10.3.39.246:30080` | `http://172.28.75.4:30080` | `http://gateway:8080` | 不替换 |
+> | `http://192.168.130.51:30080` | `http://10.141.245.15:30080` | `http://10.3.39.246:30080` | `http://172.28.75.4:30080` | `http://gateway:8080` | 不替换 |
+> | `http://192.168.130.51:30081` | `http://10.141.245.15:30081` | `http://10.3.39.246:30081` | `http://172.28.75.4:30081` | 不替换 | 不替换 |
+> | `http://192.168.130.51:31089` | `http://10.141.245.15:31089` | `http://10.3.39.246:31089` | `http://172.28.75.4:31089` | 不替换 | 不替换 |
+> | `http://192.168.130.51:30001` | `http://10.141.245.15:3000` | `http://10.3.39.246:3000` | `http://172.28.75.4:3000` | 不替换 | 不替换 |
+> | `http://192.168.130.51:3101` | `http://10.141.245.15:3101` | `http://10.3.39.246:3101` | `http://172.28.75.4:3101` | 不替换 | 不替换 |
 
 ### 1. 清理旧版目录和文件
 
@@ -141,9 +141,10 @@ fi
 ```bash
 echo "这次同步的是什么环境？"
 echo "1) 4A"
-echo "2) 大装置"
-echo "3) 生产环境"
-echo "4) 本地测试（不替换服务地址）"
+echo "2) 北京环境"
+echo "3) 大装置"
+echo "4) 生产环境"
+echo "5) 本地测试（不替换服务地址）"
 read -r TARGET_ENV
 
 case "$TARGET_ENV" in
@@ -152,17 +153,22 @@ case "$TARGET_ENV" in
     TARGET_ENV_NAME="4A"
     SHOULD_REPLACE_SERVICE_URLS=true
     ;;
-  2|大装置)
+  2|北京|北京环境|beijing|bj)
+    TARGET_HOST="10.3.39.246"
+    TARGET_ENV_NAME="北京环境"
+    SHOULD_REPLACE_SERVICE_URLS=true
+    ;;
+  3|大装置)
     TARGET_HOST="172.28.75.4"
     TARGET_ENV_NAME="大装置"
     SHOULD_REPLACE_SERVICE_URLS=true
     ;;
-  3|生产|生产环境|prod|production)
+  4|生产|生产环境|prod|production)
     TARGET_HOST=""
     TARGET_ENV_NAME="生产环境"
     SHOULD_REPLACE_SERVICE_URLS=true
     ;;
-  4|本地测试|local|本地)
+  5|本地测试|local|本地)
     TARGET_HOST=""
     TARGET_ENV_NAME="本地测试"
     SHOULD_REPLACE_SERVICE_URLS=false
@@ -340,9 +346,10 @@ REPO_WORKING_DIR="$SCRIPT_DIR/deploy-all/qwenpaw/working"
 
 echo "这次同步的是什么环境？"
 echo "1) 4A"
-echo "2) 大装置"
-echo "3) 生产环境"
-echo "4) 本地测试（不替换服务地址）"
+echo "2) 北京环境"
+echo "3) 大装置"
+echo "4) 生产环境"
+echo "5) 本地测试（不替换服务地址）"
 read -r TARGET_ENV
 
 case "$TARGET_ENV" in
@@ -351,17 +358,22 @@ case "$TARGET_ENV" in
     TARGET_ENV_NAME="4A"
     SHOULD_REPLACE_SERVICE_URLS=true
     ;;
-  2|大装置)
+  2|北京|北京环境|beijing|bj)
+    TARGET_HOST="10.3.39.246"
+    TARGET_ENV_NAME="北京环境"
+    SHOULD_REPLACE_SERVICE_URLS=true
+    ;;
+  3|大装置)
     TARGET_HOST="172.28.75.4"
     TARGET_ENV_NAME="大装置"
     SHOULD_REPLACE_SERVICE_URLS=true
     ;;
-  3|生产|生产环境|prod|production)
+  4|生产|生产环境|prod|production)
     TARGET_HOST=""
     TARGET_ENV_NAME="生产环境"
     SHOULD_REPLACE_SERVICE_URLS=true
     ;;
-  4|本地测试|local|本地)
+  5|本地测试|local|本地)
     TARGET_HOST=""
     TARGET_ENV_NAME="本地测试"
     SHOULD_REPLACE_SERVICE_URLS=false
