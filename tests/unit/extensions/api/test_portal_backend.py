@@ -32,6 +32,7 @@ class _FakeTaskTracker:
 class _FakeManager:
     def __init__(self, workspaces: dict[str, object]) -> None:
         self._workspaces = workspaces
+        self.agents = workspaces
 
     async def get_agent(self, agent_id: str):
         workspace = self._workspaces.get(agent_id)
@@ -110,14 +111,14 @@ async def test_collect_portal_employee_statuses_uses_runtime_and_alerts(
     by_id = {item["employeeId"]: item for item in statuses}
 
     assert by_id["query"]["available"] is True
-    assert by_id["query"]["employeeName"] == "数据分析员"
+    assert by_id["query"]["employeeName"] == "数据分析专家"
     assert by_id["query"]["status"] == "running"
     assert by_id["query"]["urgent"] is False
     assert by_id["query"]["currentJob"] == "正在处理 1 个对话任务"
     assert by_id["query"]["latestSessionTitle"] == "CPU 使用率分析"
 
     assert by_id["fault"]["available"] is True
-    assert by_id["fault"]["employeeName"] == "故障分析员"
+    assert by_id["fault"]["employeeName"] == "故障分析专家"
     assert by_id["fault"]["status"] == "idle"
     assert by_id["fault"]["urgent"] is True
     assert by_id["fault"]["alertCount"] == 2
@@ -160,7 +161,7 @@ def test_build_portal_employee_status_payload_prefers_recent_session_for_idle() 
     )
 
     assert payload["status"] == "idle"
-    assert payload["employeeName"] == "知识专员"
+    assert payload["employeeName"] == "知识库助手"
     assert payload["urgent"] is False
     assert payload["workStatus"] == "待机"
     assert payload["currentJob"] == "最近会话：Oracle 死锁方案"

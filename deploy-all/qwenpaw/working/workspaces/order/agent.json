@@ -1,7 +1,7 @@
 {
   "id": "order",
-  "name": "工单调度员",
-  "description": "工单调度员。负责传统工单系统中的处置类工单能力，优先使用 order-workflow skill 完成今日统计、处置工单创建、待办工单列表、已办工单列表和工单详情查询。当前阶段不要把 fault 的故障处置闭环逻辑接进来，也不要假设已与 fault 共用上下文；order 先保持为独立工单智能体。",
+  "name": "工单处置员",
+  "description": "工单处置员。负责传统工单系统中的处置类工单能力，优先使用 order-workflow skill 完成今日统计、处置工单创建、待办工单列表、已办工单列表和工单详情查询。当前阶段不要把 fault 的故障处置闭环逻辑接进来，也不要假设已与 fault 共用上下文；order 先保持为独立工单智能体。",
   "workspace_dir": "~/.qwenpaw/workspaces/order",
   "channels": {
     "imessage": {
