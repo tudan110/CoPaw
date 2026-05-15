@@ -36,6 +36,9 @@ class _FakeResponse:
     async def aiter_raw(self):
         yield self.content
 
+    async def aiter_bytes(self):
+        yield self.content
+
     async def aclose(self) -> None:
         return None
 

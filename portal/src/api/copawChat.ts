@@ -303,6 +303,31 @@ export async function streamChat(
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
+  let sawNonResponseEvent = false;
+
+  const dispatchEvent = (event: Record<string, any> | null) => {
+    if (!event) {
+      return;
+    }
+    if (String(event.object || "") !== "response") {
+      sawNonResponseEvent = true;
+    }
+    onEvent?.(event);
+  };
+
+  const dispatchResponseOutputFallback = (event: Record<string, any>) => {
+    if (
+      String(event?.object || "") !== "response"
+      || String(event?.status || "") !== "completed"
+      || sawNonResponseEvent
+      || !Array.isArray(event?.output)
+    ) {
+      return;
+    }
+    for (const item of event.output) {
+      dispatchEvent(item);
+    }
+  };
 
   try {
     while (true) {
@@ -325,7 +350,8 @@ export async function streamChat(
             extractErrorMessage(event.error) || "流式请求失败",
           );
         }
-        onEvent?.(event);
+        dispatchEvent(event);
+        dispatchResponseOutputFallback(event);
       }
     }
 
@@ -336,7 +362,8 @@ export async function streamChat(
           extractErrorMessage(finalEvent.error) || "流式请求失败",
         );
       }
-      onEvent?.(finalEvent);
+      dispatchEvent(finalEvent);
+      dispatchResponseOutputFallback(finalEvent);
     }
   } finally {
     releaseStreamAbort?.();

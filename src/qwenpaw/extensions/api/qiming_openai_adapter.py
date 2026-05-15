@@ -271,7 +271,7 @@ async def _proxy_streaming_completion(
 
     async def _iter_body():
         try:
-            async for chunk in response.aiter_raw():
+            async for chunk in response.aiter_bytes():
                 if chunk:
                     yield chunk
         finally:
