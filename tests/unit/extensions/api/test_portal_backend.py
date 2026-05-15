@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime, timezone
 from types import SimpleNamespace
 
@@ -46,6 +47,27 @@ def _make_request(manager: _FakeManager):
         app=SimpleNamespace(
             state=SimpleNamespace(multi_agent_manager=manager),
         )
+    )
+
+
+@pytest.fixture(autouse=True)
+def _reset_portal_alarm_runtime_state() -> None:
+    refresh_task = portal_backend.PORTAL_REAL_ALARM_REFRESH_TASK
+    if refresh_task is not None and not refresh_task.done():
+        refresh_task.cancel()
+    alert_task = portal_backend.PORTAL_STATUS_ALERT_COUNT_REFRESH_TASK
+    if alert_task is not None and not alert_task.done():
+        alert_task.cancel()
+
+    portal_backend.PORTAL_REAL_ALARM_REFRESH_TASK = None
+    portal_backend.PORTAL_REAL_ALARM_REFRESH_LIMIT = 0
+    portal_backend.PORTAL_REAL_ALARM_DEGRADED_UNTIL_MONOTONIC = 0.0
+    portal_backend.PORTAL_REAL_ALARM_PAYLOAD_CACHE.update(
+        {"payload": None, "limit": 0, "updated_at": 0.0}
+    )
+    portal_backend.PORTAL_STATUS_ALERT_COUNT_REFRESH_TASK = None
+    portal_backend.PORTAL_STATUS_ALERT_COUNT_CACHE.update(
+        {"value": 0, "updated_at": 0.0}
     )
 
 
@@ -101,7 +123,7 @@ async def test_collect_portal_employee_statuses_uses_runtime_and_alerts(
     monkeypatch.setattr(
         portal_backend,
         "_query_visible_portal_real_alarms",
-        lambda _limit: {"total": 2, "items": [{"id": "alarm-1"}, {"id": "alarm-2"}], "source": "mock"},
+        lambda _limit: {"total": 2, "items": [{"id": "alarm-1"}, {"id": "alarm-2"}], "source": "live"},
     )
 
     statuses = await portal_backend.collect_portal_employee_statuses(
@@ -131,7 +153,7 @@ async def test_collect_portal_employee_statuses_uses_runtime_and_alerts(
 
 
 @pytest.mark.asyncio
-async def test_get_employee_alert_count_prefers_live_visible_alarm_count(
+async def test_refresh_fault_alert_count_cache_prefers_live_visible_alarm_count(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setitem(portal_backend.PORTAL_STATUS_ALERT_COUNT_CACHE, "value", 16)
@@ -142,10 +164,28 @@ async def test_get_employee_alert_count_prefers_live_visible_alarm_count(
         lambda _limit: {"total": 3, "items": [{"id": "alarm-1"}, {"id": "alarm-2"}, {"id": "alarm-3"}]},
     )
 
-    count = await portal_backend._get_employee_alert_count("fault")
+    count = await portal_backend._refresh_fault_alert_count_cache()
 
     assert count == 3
     assert portal_backend.PORTAL_STATUS_ALERT_COUNT_CACHE["value"] == 3
+
+
+@pytest.mark.asyncio
+async def test_get_employee_alert_count_returns_cached_value_while_refresh_runs(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    refresh_task = asyncio.get_running_loop().create_future()
+    monkeypatch.setitem(portal_backend.PORTAL_STATUS_ALERT_COUNT_CACHE, "value", 7)
+    monkeypatch.setitem(portal_backend.PORTAL_STATUS_ALERT_COUNT_CACHE, "updated_at", 1.0)
+    monkeypatch.setattr(
+        portal_backend,
+        "_ensure_fault_alert_count_refresh",
+        lambda: refresh_task,
+    )
+
+    count = await portal_backend._get_employee_alert_count("fault")
+
+    assert count == 7
 
 
 def test_build_portal_employee_status_payload_prefers_recent_session_for_idle() -> None:
@@ -463,7 +503,7 @@ def test_real_alarms_route_returns_backend_payload(monkeypatch) -> None:
                     "visibleContent": "数据库锁异常（MySQL 10.43.150.186）",
                 }
             ],
-            "source": "mock",
+            "source": "live",
         },
     )
     monkeypatch.setattr(portal_backend, "filter_visible_alarms", lambda payload: payload)
@@ -472,7 +512,7 @@ def test_real_alarms_route_returns_backend_payload(monkeypatch) -> None:
 
     assert response.status_code == 200
     assert received["limit"] == 24
-    assert response.json()["source"] == "mock"
+    assert response.json()["source"] == "live"
     assert response.json()["items"][0]["employeeId"] == "fault"
     assert response.json()["items"][0]["resId"] == "3094"
 
@@ -635,18 +675,25 @@ def test_build_portal_inspection_payload_uses_runtime_text_content() -> None:
     assert "请帮我巡检一下数据库" in payload["content_parts"][0].text
 
 
-def test_real_alarms_route_returns_500_when_backend_query_fails(monkeypatch) -> None:
+def test_real_alarms_route_returns_fallback_payload_when_backend_query_fails(
+    monkeypatch,
+) -> None:
     client = TestClient(portal_backend.app)
 
     def _raise(limit: int) -> dict:
         raise RuntimeError("unexpected backend failure")
 
     monkeypatch.setattr(portal_backend, "_query_visible_portal_real_alarms", _raise)
+    monkeypatch.setattr(
+        portal_backend,
+        "_load_visible_portal_real_alarm_fallback_payload",
+        lambda limit: {"total": 0, "items": [], "source": "live"},
+    )
 
     response = client.get("/api/portal/real-alarms?limit=8")
 
-    assert response.status_code == 500
-    assert response.json()["detail"] == "RuntimeError: unexpected backend failure"
+    assert response.status_code == 200
+    assert response.json() == {"total": 0, "items": [], "source": "live"}
 
 
 def test_real_alarms_route_keeps_alarm_workorders_route_unchanged(
@@ -662,7 +709,7 @@ def test_real_alarms_route_keeps_alarm_workorders_route_unchanged(
     monkeypatch.setattr(
         portal_backend,
         "_query_visible_portal_real_alarms",
-        lambda limit: {"total": 1, "items": [{"id": "alarm-1"}], "source": "mock"},
+        lambda limit: {"total": 1, "items": [{"id": "alarm-1"}], "source": "live"},
     )
 
     workorders_response = client.get("/api/portal/alarm-workorders?limit=5")
@@ -707,10 +754,14 @@ async def test_auto_takeover_once_uses_auto_poll_source(
         "_get_portal_auto_takeover_runtime_app",
         lambda: runtime_app,
     )
+
+    async def fake_build(limit, trigger_body, *, allow_stale: bool = True):
+        return payload
+
     monkeypatch.setattr(
         portal_backend,
         "_build_portal_real_alarm_trigger_payload",
-        lambda limit, trigger_body: payload,
+        fake_build,
     )
 
     async def fake_ensure(request, alarms_payload, *, takeover_source: str = "manual-trigger"):
@@ -735,6 +786,43 @@ async def test_auto_takeover_once_uses_auto_poll_source(
     assert called["takeover_source"] == "auto-poll"
     assert summary["started"] == 1
     assert summary["alarmSource"] == "live"
+
+
+@pytest.mark.asyncio
+async def test_auto_takeover_once_skips_non_live_alarm_payload(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runtime_app = SimpleNamespace(state=SimpleNamespace(multi_agent_manager=object()))
+    called: dict[str, object] = {}
+
+    monkeypatch.setattr(
+        portal_backend,
+        "_get_portal_auto_takeover_runtime_app",
+        lambda: runtime_app,
+    )
+
+    async def fake_build(limit, trigger_body, *, allow_stale: bool = True):
+        return {"total": 2, "items": [{"id": "alarm-1"}], "source": "stale"}
+
+    async def fake_ensure(request, alarms_payload, *, takeover_source: str = "manual-trigger"):
+        called["request"] = request
+        called["payload"] = alarms_payload
+        return {"started": 1}
+
+    monkeypatch.setattr(
+        portal_backend,
+        "_build_portal_real_alarm_trigger_payload",
+        fake_build,
+    )
+    monkeypatch.setattr(portal_backend, "_ensure_portal_real_alarm_sessions", fake_ensure)
+
+    summary = await portal_backend._run_portal_real_alarm_auto_takeover_once()  # pylint: disable=protected-access
+
+    assert summary["ok"] is False
+    assert summary["reason"] == "alarm-source-unavailable"
+    assert summary["alarmSource"] == "stale"
+    assert summary["started"] == 0
+    assert called == {}
 
 
 def test_fault_disposal_history_normalizes_fault_scenario_result(

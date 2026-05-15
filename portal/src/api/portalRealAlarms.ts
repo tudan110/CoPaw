@@ -18,7 +18,7 @@ export interface PortalRealAlarmItem {
 export interface PortalRealAlarmListResponse {
   total: number;
   items: PortalRealAlarmItem[];
-  source: "live" | "mock";
+  source: "live";
 }
 
 export async function listPortalRealAlarms(

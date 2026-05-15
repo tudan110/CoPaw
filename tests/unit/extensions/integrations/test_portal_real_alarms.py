@@ -1,6 +1,5 @@
 import json
 from datetime import datetime, timezone
-from pathlib import Path
 
 import httpx
 
@@ -28,11 +27,6 @@ def test_query_portal_real_alarms_normalizes_live_rows(monkeypatch) -> None:
             ],
         },
     )
-    monkeypatch.setattr(
-        "qwenpaw.extensions.integrations.portal_real_alarms._load_mock_alarm_rows",
-        lambda: [],
-    )
-
     payload = query_portal_real_alarms(
         limit=10,
         now=datetime(2026, 4, 17, 1, 0, 0, tzinfo=timezone.utc),
@@ -68,11 +62,6 @@ def test_query_portal_real_alarms_uses_fallback_dispatch_for_camel_case_subtype(
             ],
         },
     )
-    monkeypatch.setattr(
-        "qwenpaw.extensions.integrations.portal_real_alarms._load_mock_alarm_rows",
-        lambda: [],
-    )
-
     payload = query_portal_real_alarms(limit=10)
 
     assert payload["source"] == "live"
@@ -100,11 +89,6 @@ def test_query_portal_real_alarms_omits_missing_device_sentinel_from_fallback_di
             ],
         },
     )
-    monkeypatch.setattr(
-        "qwenpaw.extensions.integrations.portal_real_alarms._load_mock_alarm_rows",
-        lambda: [],
-    )
-
     payload = query_portal_real_alarms(limit=10)
 
     assert payload["source"] == "live"
@@ -132,45 +116,24 @@ def test_query_portal_real_alarms_preserves_deadlock_dispatch_for_english_mysql_
             ],
         },
     )
-    monkeypatch.setattr(
-        "qwenpaw.extensions.integrations.portal_real_alarms._load_mock_alarm_rows",
-        lambda: [],
-    )
-
     payload = query_portal_real_alarms(limit=10)
 
     assert payload["source"] == "live"
     assert payload["items"][0]["dispatchContent"] == "mysql/死锁 + cmdb/新增/插入"
 
 
-def test_query_portal_real_alarms_falls_back_to_mock_when_live_rows_empty(monkeypatch) -> None:
+def test_query_portal_real_alarms_returns_empty_live_payload_when_live_rows_empty(monkeypatch) -> None:
     monkeypatch.setattr(
         "qwenpaw.extensions.integrations.portal_real_alarms._post_real_alarm_list",
         lambda *, limit, begin_time, end_time: {"code": 200, "total": 0, "rows": []},
     )
-    monkeypatch.setattr(
-        "qwenpaw.extensions.integrations.portal_real_alarms._load_mock_alarm_rows",
-        lambda: [
-            {
-                "alarmuniqueid": "mock-deadlock-1",
-                "alarmtitle": "数据库锁异常",
-                "alarmseverity": "1",
-                "alarmstatus": "1",
-                "eventtime": "2026-04-15 19:20:00",
-                "devName": "MySQL",
-                "manageIp": "10.43.150.186",
-            }
-        ],
-    )
 
     payload = query_portal_real_alarms(limit=10)
 
-    assert payload["source"] == "mock"
-    assert payload["total"] == 1
-    assert payload["items"][0]["visibleContent"] == "数据库锁异常（MySQL 10.43.150.186）"
+    assert payload == {"total": 0, "items": [], "source": "live"}
 
 
-def test_query_portal_real_alarms_falls_back_to_mock_on_request_failure(monkeypatch) -> None:
+def test_query_portal_real_alarms_returns_empty_live_payload_on_request_failure(monkeypatch) -> None:
     def _raise_request_error(*, limit, begin_time, end_time):
         raise RuntimeError("gateway unavailable")
 
@@ -178,65 +141,13 @@ def test_query_portal_real_alarms_falls_back_to_mock_on_request_failure(monkeypa
         "qwenpaw.extensions.integrations.portal_real_alarms._post_real_alarm_list",
         _raise_request_error,
     )
-    monkeypatch.setattr(
-        "qwenpaw.extensions.integrations.portal_real_alarms._load_mock_alarm_rows",
-        lambda: [
-            {
-                "alarmuniqueid": "mock-deadlock-2",
-                "alarmtitle": "数据库锁异常",
-                "alarmseverity": "1",
-                "alarmstatus": "1",
-                "eventtime": "2026-04-15 19:20:00",
-                "devName": "MySQL",
-                "manageIp": "10.43.150.186",
-            }
-        ],
-    )
 
     payload = query_portal_real_alarms(limit=10)
 
-    assert payload["source"] == "mock"
-    assert payload["total"] == 1
-    assert payload["items"][0]["id"] == "mock-deadlock-2"
+    assert payload == {"total": 0, "items": [], "source": "live"}
 
 
-def test_query_portal_real_alarms_filters_mock_fallback_to_deadlock_row(monkeypatch) -> None:
-    monkeypatch.setattr(
-        "qwenpaw.extensions.integrations.portal_real_alarms._post_real_alarm_list",
-        lambda *, limit, begin_time, end_time: {"code": 200, "total": 0, "rows": []},
-    )
-    monkeypatch.setattr(
-        "qwenpaw.extensions.integrations.portal_real_alarms._load_mock_alarm_rows",
-        lambda: [
-            {
-                "alarmuniqueid": "mock-non-deadlock-1",
-                "alarmtitle": "端口down",
-                "alarmseverity": "2",
-                "alarmstatus": "1",
-                "eventtime": "2026-04-15 19:10:00",
-                "devName": "交换机",
-                "manageIp": "10.43.150.100",
-            },
-            {
-                "alarmuniqueid": "mock-deadlock-1",
-                "alarmtitle": "数据库锁异常",
-                "alarmseverity": "1",
-                "alarmstatus": "1",
-                "eventtime": "2026-04-15 19:20:00",
-                "devName": "MySQL",
-                "manageIp": "10.43.150.186",
-            },
-        ],
-    )
-
-    payload = query_portal_real_alarms(limit=10)
-
-    assert payload["source"] == "mock"
-    assert payload["total"] == 1
-    assert [item["id"] for item in payload["items"]] == ["mock-deadlock-1"]
-
-
-def test_query_portal_real_alarms_returns_empty_mock_payload_when_filtered_mock_has_no_deadlock_row(
+def test_query_portal_real_alarms_returns_empty_live_payload_when_request_failure_has_no_fallback(
     monkeypatch,
 ) -> None:
     def _raise_request_error(*, limit, begin_time, end_time):
@@ -246,40 +157,9 @@ def test_query_portal_real_alarms_returns_empty_mock_payload_when_filtered_mock_
         "qwenpaw.extensions.integrations.portal_real_alarms._post_real_alarm_list",
         _raise_request_error,
     )
-    monkeypatch.setattr(
-        "qwenpaw.extensions.integrations.portal_real_alarms._load_mock_alarm_rows",
-        lambda: [
-            {
-                "alarmuniqueid": "mock-non-deadlock-2",
-                "alarmtitle": "CPU利用率过高",
-                "alarmseverity": "2",
-                "alarmstatus": "1",
-                "eventtime": "2026-04-15 19:25:00",
-                "devName": "k8s-node-01",
-                "manageIp": "10.0.0.8",
-            }
-        ],
-    )
-
     payload = query_portal_real_alarms(limit=10)
 
-    assert payload == {"total": 0, "items": [], "source": "mock"}
-
-
-def test_query_portal_real_alarms_returns_empty_mock_payload_when_mock_file_missing(monkeypatch) -> None:
-    monkeypatch.setattr(
-        "qwenpaw.extensions.integrations.portal_real_alarms._post_real_alarm_list",
-        lambda *, limit, begin_time, end_time: {"code": 200, "total": 0, "rows": []},
-    )
-    monkeypatch.setattr(
-        portal_real_alarms,
-        "MOCK_DATA_PATH",
-        Path(__file__).resolve().parent / "missing_mock_data.json",
-    )
-
-    payload = query_portal_real_alarms(limit=10)
-
-    assert payload == {"total": 0, "items": [], "source": "mock"}
+    assert payload == {"total": 0, "items": [], "source": "live"}
 
 
 def test_query_portal_real_alarms_sends_last_7_days_active_alarm_request(monkeypatch) -> None:
@@ -295,11 +175,6 @@ def test_query_portal_real_alarms_sends_last_7_days_active_alarm_request(monkeyp
         "qwenpaw.extensions.integrations.portal_real_alarms._post_real_alarm_list",
         _fake_post,
     )
-    monkeypatch.setattr(
-        "qwenpaw.extensions.integrations.portal_real_alarms._load_mock_alarm_rows",
-        lambda: [],
-    )
-
     query_portal_real_alarms(
         limit=5,
         now=datetime(2026, 4, 17, 1, 0, 0, tzinfo=timezone.utc),
@@ -346,11 +221,6 @@ def test_query_portal_real_alarms_posts_gateway_json_payload(monkeypatch) -> Non
         return original_client(*args, **kwargs)
 
     monkeypatch.setattr("qwenpaw.extensions.integrations.portal_real_alarms.httpx.Client", _client_factory)
-    monkeypatch.setattr(
-        "qwenpaw.extensions.integrations.portal_real_alarms._load_mock_alarm_rows",
-        lambda: [],
-    )
-
     payload = query_portal_real_alarms(
         limit=5,
         now=datetime(2026, 4, 17, 1, 0, 0, tzinfo=timezone.utc),
@@ -388,13 +258,8 @@ def test_query_portal_real_alarms_posts_bearer_header_from_config(monkeypatch) -
     monkeypatch.setenv("INOE_API_BASE_URL", "http://example.test")
     monkeypatch.setenv("INOE_API_TOKEN", "demo-token")
     monkeypatch.setattr("qwenpaw.extensions.integrations.portal_real_alarms.httpx.Client", _client_factory)
-    monkeypatch.setattr(
-        "qwenpaw.extensions.integrations.portal_real_alarms._load_mock_alarm_rows",
-        lambda: [],
-    )
-
     payload = query_portal_real_alarms(limit=3)
 
-    assert payload == {"total": 0, "items": [], "source": "mock"}
+    assert payload == {"total": 0, "items": [], "source": "live"}
     assert captured["url"] == "http://example.test/resource/realalarm/list"
     assert captured["authorization"] == "Bearer demo-token"
