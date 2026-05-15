@@ -62,7 +62,10 @@ from qwenpaw.extensions.portal_real_alarm_registry import (
 from qwenpaw.extensions.integrations.alarm_workorders.query_alarm_workorders import (
     query_alarm_workorders,
 )
-from qwenpaw.extensions.integrations.portal_real_alarms import query_portal_real_alarms
+from qwenpaw.extensions.integrations.portal_real_alarms import (
+    build_empty_portal_real_alarms_payload,
+    query_portal_real_alarms,
+)
 from qwenpaw.extensions.integrations import knowledge_base
 from qwenpaw.extensions.api import fde_workbench_service
 from qwenpaw.extensions.api.fde_workbench_models import (
@@ -84,6 +87,15 @@ app = FastAPI(title="Portal Backend")
 FAULT_DISPOSAL_SCRIPT_TIMEOUT_SECONDS = 45
 PORTAL_REAL_ALARM_ROUTE_DEFAULT_LIMIT = 20
 PORTAL_REAL_ALARM_ROUTE_FETCH_MULTIPLIER = 3
+PORTAL_REAL_ALARM_ROUTE_TIMEOUT_SECONDS = float(
+    os.getenv("QWENPAW_PORTAL_REAL_ALARM_ROUTE_TIMEOUT", "5").strip() or "5"
+)
+PORTAL_REAL_ALARM_CACHE_TTL_SECONDS = float(
+    os.getenv("QWENPAW_PORTAL_REAL_ALARM_CACHE_TTL", "30").strip() or "30"
+)
+PORTAL_REAL_ALARM_DEGRADED_COOLDOWN_SECONDS = float(
+    os.getenv("QWENPAW_PORTAL_REAL_ALARM_DEGRADED_COOLDOWN", "30").strip() or "30"
+)
 PORTAL_REAL_ALARM_AUTO_TAKEOVER_ENABLED = (
     os.getenv("QWENPAW_PORTAL_REAL_ALARM_AUTO_TAKEOVER_ENABLED", "true")
     .strip()
@@ -102,6 +114,14 @@ PORTAL_REAL_ALARM_MAX_ACTIVE_ANALYSES = max(
     int(os.getenv("QWENPAW_PORTAL_REAL_ALARM_MAX_ACTIVE_ANALYSES", "1").strip() or "1"),
 )
 PORTAL_REAL_ALARM_AUTO_TAKEOVER_TASK: asyncio.Task | None = None
+PORTAL_REAL_ALARM_REFRESH_TASK: asyncio.Task | None = None
+PORTAL_REAL_ALARM_REFRESH_LIMIT = 0
+PORTAL_REAL_ALARM_DEGRADED_UNTIL_MONOTONIC = 0.0
+PORTAL_REAL_ALARM_PAYLOAD_CACHE: dict[str, Any] = {
+    "payload": None,
+    "limit": 0,
+    "updated_at": 0.0,
+}
 PORTAL_EMPLOYEE_STATUS_IDS = (
     "query",
     "fault",
@@ -636,14 +656,21 @@ async def _ensure_portal_real_alarm_sessions(
     return result
 
 
-def _build_portal_real_alarm_trigger_payload(
+async def _build_portal_real_alarm_trigger_payload(
     limit: int,
     trigger_body: dict[str, Any] | None,
+    *,
+    allow_stale: bool = True,
 ) -> dict[str, Any]:
     body = trigger_body or {}
     alarms = body.get("alarms")
     if alarms is None:
-        return _query_visible_portal_real_alarms(limit)
+        return await _get_visible_portal_real_alarms(
+            limit,
+            timeout_seconds=PORTAL_REAL_ALARM_ROUTE_TIMEOUT_SECONDS,
+            require_fresh=True,
+            allow_stale=allow_stale,
+        )
     if not isinstance(alarms, list):
         raise HTTPException(status_code=400, detail="'alarms' must be a list")
     return filter_visible_alarms(
@@ -690,10 +717,23 @@ async def _run_portal_real_alarm_auto_takeover_once() -> dict[str, Any]:
             "sessions": [],
         }
 
-    alarms_payload = _build_portal_real_alarm_trigger_payload(
+    alarms_payload = await _build_portal_real_alarm_trigger_payload(
         PORTAL_REAL_ALARM_AUTO_TAKEOVER_LIMIT,
         None,
+        allow_stale=False,
     )
+    if alarms_payload.get("source") != "live":
+        return {
+            "ok": False,
+            "reason": "alarm-source-unavailable",
+            "alarmSource": alarms_payload.get("source") or "unknown",
+            "alarmTotal": 0,
+            "eligible": 0,
+            "created": 0,
+            "started": 0,
+            "skipped": 0,
+            "sessions": [],
+        }
     summary = await _ensure_portal_real_alarm_sessions(
         SimpleNamespace(app=runtime_app),
         alarms_payload,
@@ -980,12 +1020,10 @@ def _get_cached_fault_alert_count(*, require_fresh: bool) -> int | None:
 
 async def _refresh_fault_alert_count_cache() -> int:
     try:
-        result = await asyncio.wait_for(
-            asyncio.to_thread(
-                _query_visible_portal_real_alarms,
-                PORTAL_REAL_ALARM_ROUTE_DEFAULT_LIMIT,
-            ),
-            timeout=PORTAL_STATUS_ALERT_TIMEOUT_SECONDS,
+        result = await _get_visible_portal_real_alarms(
+            PORTAL_REAL_ALARM_ROUTE_DEFAULT_LIMIT,
+            timeout_seconds=PORTAL_STATUS_ALERT_TIMEOUT_SECONDS,
+            require_fresh=True,
         )
         items = result.get("items") or []
         count = int(result.get("total") or len(items))
@@ -1023,6 +1061,74 @@ def _normalize_portal_real_alarm_limit(limit: int) -> int:
         return PORTAL_REAL_ALARM_ROUTE_DEFAULT_LIMIT
 
 
+def _slice_portal_real_alarm_payload(
+    payload: dict[str, Any],
+    limit: int,
+) -> dict[str, Any]:
+    normalized_limit = _normalize_portal_real_alarm_limit(limit)
+    items = list(payload.get("items") or [])[:normalized_limit]
+    return {
+        **payload,
+        "items": items,
+        "total": len(items),
+    }
+
+
+def _get_cached_portal_real_alarm_payload(
+    limit: int,
+    *,
+    require_fresh: bool,
+) -> dict[str, Any] | None:
+    normalized_limit = _normalize_portal_real_alarm_limit(limit)
+    payload = PORTAL_REAL_ALARM_PAYLOAD_CACHE.get("payload")
+    updated_at = float(PORTAL_REAL_ALARM_PAYLOAD_CACHE.get("updated_at") or 0.0)
+    cached_limit = int(PORTAL_REAL_ALARM_PAYLOAD_CACHE.get("limit") or 0)
+    if not isinstance(payload, dict) or updated_at <= 0 or cached_limit < normalized_limit:
+        return None
+    if require_fresh and time.monotonic() - updated_at > PORTAL_REAL_ALARM_CACHE_TTL_SECONDS:
+        return None
+    return _slice_portal_real_alarm_payload(payload, normalized_limit)
+
+
+def _store_cached_portal_real_alarm_payload(
+    limit: int,
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    normalized_limit = _normalize_portal_real_alarm_limit(limit)
+    sliced_payload = _slice_portal_real_alarm_payload(payload, normalized_limit)
+    PORTAL_REAL_ALARM_PAYLOAD_CACHE.update(
+        {
+            "payload": sliced_payload,
+            "limit": normalized_limit,
+            "updated_at": time.monotonic(),
+        }
+    )
+    return sliced_payload
+
+
+def _enter_portal_real_alarm_degraded_mode(reason: str) -> None:
+    global PORTAL_REAL_ALARM_DEGRADED_UNTIL_MONOTONIC
+    PORTAL_REAL_ALARM_DEGRADED_UNTIL_MONOTONIC = max(
+        PORTAL_REAL_ALARM_DEGRADED_UNTIL_MONOTONIC,
+        time.monotonic() + max(0.0, PORTAL_REAL_ALARM_DEGRADED_COOLDOWN_SECONDS),
+    )
+    print(f"[WARN] portal real alarm backend degraded: {reason}")
+
+
+def _clear_portal_real_alarm_degraded_mode() -> None:
+    global PORTAL_REAL_ALARM_DEGRADED_UNTIL_MONOTONIC
+    PORTAL_REAL_ALARM_DEGRADED_UNTIL_MONOTONIC = 0.0
+
+
+def _portal_real_alarm_backend_is_degraded() -> bool:
+    return time.monotonic() < PORTAL_REAL_ALARM_DEGRADED_UNTIL_MONOTONIC
+
+
+def _load_visible_portal_real_alarm_fallback_payload(limit: int) -> dict[str, Any]:
+    normalized_limit = _normalize_portal_real_alarm_limit(limit)
+    return build_empty_portal_real_alarms_payload(normalized_limit)
+
+
 def _query_visible_portal_real_alarms(limit: int) -> dict[str, Any]:
     normalized_limit = _normalize_portal_real_alarm_limit(limit)
     raw_payload = query_portal_real_alarms(
@@ -1035,6 +1141,92 @@ def _query_visible_portal_real_alarms(limit: int) -> dict[str, Any]:
         "items": visible_items,
         "total": len(visible_items),
     }
+
+
+async def _refresh_portal_real_alarm_payload(limit: int) -> dict[str, Any]:
+    global PORTAL_REAL_ALARM_REFRESH_TASK
+    global PORTAL_REAL_ALARM_REFRESH_LIMIT
+
+    normalized_limit = _normalize_portal_real_alarm_limit(limit)
+    try:
+        payload = await asyncio.to_thread(_query_visible_portal_real_alarms, normalized_limit)
+        cached_payload = _store_cached_portal_real_alarm_payload(normalized_limit, payload)
+        if cached_payload.get("source") == "live":
+            _clear_portal_real_alarm_degraded_mode()
+        return cached_payload
+    finally:
+        current_task = asyncio.current_task()
+        if PORTAL_REAL_ALARM_REFRESH_TASK is current_task:
+            PORTAL_REAL_ALARM_REFRESH_TASK = None
+            PORTAL_REAL_ALARM_REFRESH_LIMIT = 0
+
+
+def _ensure_portal_real_alarm_refresh(limit: int) -> asyncio.Task:
+    global PORTAL_REAL_ALARM_REFRESH_TASK
+    global PORTAL_REAL_ALARM_REFRESH_LIMIT
+
+    normalized_limit = _normalize_portal_real_alarm_limit(limit)
+    task = PORTAL_REAL_ALARM_REFRESH_TASK
+    if task is not None and not task.done():
+        return task
+
+    task = asyncio.create_task(_refresh_portal_real_alarm_payload(normalized_limit))
+    PORTAL_REAL_ALARM_REFRESH_TASK = task
+    PORTAL_REAL_ALARM_REFRESH_LIMIT = normalized_limit
+    return task
+
+
+async def _get_visible_portal_real_alarms(
+    limit: int,
+    *,
+    timeout_seconds: float = PORTAL_REAL_ALARM_ROUTE_TIMEOUT_SECONDS,
+    require_fresh: bool = False,
+    allow_stale: bool = True,
+) -> dict[str, Any]:
+    normalized_limit = _normalize_portal_real_alarm_limit(limit)
+    fresh_cached = _get_cached_portal_real_alarm_payload(
+        normalized_limit,
+        require_fresh=True,
+    )
+    stale_cached = (
+        _get_cached_portal_real_alarm_payload(normalized_limit, require_fresh=False)
+        if allow_stale
+        else None
+    )
+
+    if fresh_cached is not None and not require_fresh:
+        return fresh_cached
+
+    if stale_cached is not None and not require_fresh:
+        if not _portal_real_alarm_backend_is_degraded():
+            _ensure_portal_real_alarm_refresh(normalized_limit)
+        return stale_cached
+
+    if _portal_real_alarm_backend_is_degraded():
+        return stale_cached or _load_visible_portal_real_alarm_fallback_payload(
+            normalized_limit
+        )
+
+    task = _ensure_portal_real_alarm_refresh(normalized_limit)
+    try:
+        payload = await asyncio.wait_for(
+            asyncio.shield(task),
+            timeout=max(0.1, float(timeout_seconds)),
+        )
+    except asyncio.TimeoutError:
+        _enter_portal_real_alarm_degraded_mode(
+            f"timeout after {float(timeout_seconds):.1f}s"
+        )
+        return stale_cached or _load_visible_portal_real_alarm_fallback_payload(
+            normalized_limit
+        )
+    except Exception as exc:
+        _enter_portal_real_alarm_degraded_mode(f"{type(exc).__name__}: {exc}")
+        return stale_cached or _load_visible_portal_real_alarm_fallback_payload(
+            normalized_limit
+        )
+
+    return _slice_portal_real_alarm_payload(payload, normalized_limit)
 
 
 def _build_portal_registry_status_from_verification(verification: dict[str, Any]) -> str:
@@ -1092,7 +1284,20 @@ async def _get_employee_alert_count(employee_id: str, *, include_alert_count: bo
     ):
         return 0
 
-    return await _refresh_fault_alert_count_cache()
+    cached = _get_cached_fault_alert_count(require_fresh=False)
+    if cached is not None:
+        if _get_cached_fault_alert_count(require_fresh=True) is None:
+            _ensure_fault_alert_count_refresh()
+        return cached
+
+    task = _ensure_fault_alert_count_refresh()
+    try:
+        return await asyncio.wait_for(
+            asyncio.shield(task),
+            timeout=max(0.1, PORTAL_STATUS_ALERT_FAST_TIMEOUT_SECONDS),
+        )
+    except Exception:
+        return int(PORTAL_STATUS_ALERT_COUNT_CACHE.get("value") or 0)
 
 
 async def collect_portal_employee_statuses(
@@ -1617,7 +1822,10 @@ async def get_real_alarms(
     limit: int = PORTAL_REAL_ALARM_ROUTE_DEFAULT_LIMIT,
 ):
     try:
-        return _query_visible_portal_real_alarms(limit)
+        return await _get_visible_portal_real_alarms(
+            limit,
+            timeout_seconds=PORTAL_REAL_ALARM_ROUTE_TIMEOUT_SECONDS,
+        )
     except Exception as exc:
         error_detail = f"{type(exc).__name__}: {str(exc)}"
         print(f"[ERROR] get_real_alarms failed: {error_detail}")
@@ -1638,7 +1846,7 @@ async def trigger_real_alarm_sessions(
                 detail="MultiAgentManager not initialized",
             )
 
-        alarms_payload = _build_portal_real_alarm_trigger_payload(limit, payload)
+        alarms_payload = await _build_portal_real_alarm_trigger_payload(limit, payload)
         summary = await _ensure_portal_real_alarm_sessions(
             request,
             alarms_payload,

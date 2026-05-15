@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-import json
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
 from typing import Any
 from urllib.parse import urljoin
 
@@ -15,17 +13,6 @@ REAL_ALARM_LIST_ENDPOINT = "/resource/realalarm/list"
 REAL_ALARM_TIMEOUT_SECONDS = 8.0
 DEFAULT_REAL_ALARM_LIMIT = 20
 MAX_REAL_ALARM_LIMIT = 50
-MOCK_DATA_PATH = (
-    Path(__file__).resolve().parents[4]
-    / "deploy-all"
-    / "qwenpaw"
-    / "working"
-    / "workspaces"
-    / "query"
-    / "skills"
-    / "real-alarm"
-    / "mock_data.json"
-)
 
 SEVERITY_TO_LEVEL = {
     "1": "critical",
@@ -73,26 +60,23 @@ def _format_dt(value: datetime) -> str:
     return value.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
 
 
-def _load_mock_alarm_rows() -> list[dict[str, Any]]:
-    if not MOCK_DATA_PATH.exists():
-        return []
-    payload = json.loads(MOCK_DATA_PATH.read_text(encoding="utf-8"))
-    return list(payload.get("rows") or [])
+def _build_real_alarm_payload(
+    rows: list[dict[str, Any]],
+    *,
+    limit: int,
+    source: str,
+) -> dict[str, Any]:
+    safe_limit = max(1, min(int(limit or DEFAULT_REAL_ALARM_LIMIT), MAX_REAL_ALARM_LIMIT))
+    items = [_normalize_alarm_row(row) for row in rows[:safe_limit]]
+    return {
+        "total": len(items),
+        "items": items,
+        "source": source,
+    }
 
 
-PORTAL_REAL_ALARM_MOCK_TITLE = "数据库锁异常"
-
-
-def _filter_portal_mock_alarm_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    return [
-        row
-        for row in rows
-        if str(row.get("alarmtitle") or "").strip() == PORTAL_REAL_ALARM_MOCK_TITLE
-    ]
-
-
-def _load_portal_mock_alarm_rows() -> list[dict[str, Any]]:
-    return _filter_portal_mock_alarm_rows(_load_mock_alarm_rows())
+def build_empty_portal_real_alarms_payload(limit: int) -> dict[str, Any]:
+    return _build_real_alarm_payload([], limit=limit, source="live")
 
 
 def _post_real_alarm_list(*, limit: int, begin_time: str, end_time: str) -> dict[str, Any]:
@@ -161,21 +145,9 @@ def query_portal_real_alarms(limit: int, now: datetime | None = None) -> dict[st
     begin_time = _format_dt(current_time - timedelta(days=7))
     end_time = _format_dt(current_time)
 
-    source = "live"
     try:
         result = _post_real_alarm_list(limit=safe_limit, begin_time=begin_time, end_time=end_time)
         rows = list(result.get("rows") or [])
     except Exception:
-        source = "mock"
-        rows = _load_portal_mock_alarm_rows()
-    else:
-        if not rows:
-            source = "mock"
-            rows = _load_portal_mock_alarm_rows()
-
-    items = [_normalize_alarm_row(row) for row in rows[:safe_limit]]
-    return {
-        "total": len(items),
-        "items": items,
-        "source": source,
-    }
+        return build_empty_portal_real_alarms_payload(safe_limit)
+    return _build_real_alarm_payload(rows, limit=safe_limit, source="live")
