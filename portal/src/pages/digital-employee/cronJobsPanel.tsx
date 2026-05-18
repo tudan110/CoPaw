@@ -758,6 +758,66 @@ const CronJobsTableSection = memo(function CronJobsTableSection({
   );
 });
 
+/* ---------- Custom Select (no search) ---------- */
+interface CronSelectOption {
+  value: string;
+  label: string;
+}
+
+interface CronSelectProps {
+  value: string;
+  options: CronSelectOption[];
+  onChange: (value: string) => void;
+}
+
+function CronSelect({ value, options, onChange }: CronSelectProps) {
+  const [open, setOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [open]);
+
+  const activeLabel = options.find((o) => o.value === value)?.label || value;
+
+  return (
+    <div className="cron-searchable-select" ref={containerRef}>
+      <button
+        type="button"
+        className={`cron-searchable-trigger ${open ? "active" : ""}`}
+        onClick={() => setOpen(!open)}
+      >
+        <span>{activeLabel}</span>
+        <i className={`fas fa-chevron-${open ? "up" : "down"}`} />
+      </button>
+      {open ? (
+        <div className="cron-searchable-panel">
+          <div className="cron-searchable-list">
+            {options.map((opt) => (
+              <button
+                key={opt.value}
+                type="button"
+                className={`cron-searchable-item ${opt.value === value ? "active" : ""}`}
+                onClick={() => { onChange(opt.value); setOpen(false); }}
+              >
+                <span>{opt.label}</span>
+                {opt.value === value ? <i className="fas fa-check" /> : null}
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 /* ---------- Searchable Select Component ---------- */
 interface CronSearchableSelectProps {
   value: string;
@@ -1023,10 +1083,14 @@ const CronJobModal = memo(function CronJobModal({ editingJob, submitting, dispat
 
           <label className="cron-jobs-field">
             {renderLabel("调度类型", { required: true })}
-            <select value={formState.scheduleType} onChange={(event) => updateForm("scheduleType", event.target.value as ScheduleType)}>
-              <option value="cron">周期调度（Cron 表达式）</option>
-              <option value="once">单次执行（指定时间）</option>
-            </select>
+            <CronSelect
+              value={formState.scheduleType}
+              options={[
+                { value: "cron", label: "周期调度（Cron 表达式）" },
+                { value: "once", label: "单次执行（指定时间）" },
+              ]}
+              onChange={(v) => updateForm("scheduleType", v as ScheduleType)}
+            />
           </label>
 
           {formState.scheduleType === "once" ? (
@@ -1071,9 +1135,11 @@ const CronJobModal = memo(function CronJobModal({ editingJob, submitting, dispat
                   </label>
                   <label className="cron-jobs-field">
                     {renderLabel("结束条件", { required: true })}
-                    <select value={formState.onceRepeatEndType} onChange={(event) => updateForm("onceRepeatEndType", event.target.value as RepeatEndType)}>
-                      {REPEAT_END_OPTIONS.map((opt) => <option key={opt.id} value={opt.id}>{opt.label}</option>)}
-                    </select>
+                    <CronSelect
+                      value={formState.onceRepeatEndType}
+                      options={REPEAT_END_OPTIONS.map((opt) => ({ value: opt.id, label: opt.label }))}
+                      onChange={(v) => updateForm("onceRepeatEndType", v as RepeatEndType)}
+                    />
                   </label>
                   {formState.onceRepeatEndType === "until" ? (
                     <label className="cron-jobs-field">
@@ -1103,12 +1169,16 @@ const CronJobModal = memo(function CronJobModal({ editingJob, submitting, dispat
             <>
               <label className="cron-jobs-field">
                 {renderLabel("Cron 周期", { required: true, tooltip: "定义任务执行时间" })}
-                <select value={formState.cronType} onChange={(event) => updateForm("cronType", event.target.value as CronType)}>
-                  <option value="hourly">每小时</option>
-                  <option value="daily">每天</option>
-                  <option value="weekly">每周</option>
-                  <option value="custom">自定义表达式</option>
-                </select>
+                <CronSelect
+                  value={formState.cronType}
+                  options={[
+                    { value: "hourly", label: "每小时" },
+                    { value: "daily", label: "每天" },
+                    { value: "weekly", label: "每周" },
+                    { value: "custom", label: "自定义表达式" },
+                  ]}
+                  onChange={(v) => updateForm("cronType", v as CronType)}
+                />
               </label>
               {(formState.cronType === "daily" || formState.cronType === "weekly") ? (
                 <div className="cron-jobs-form-grid two-columns">
@@ -1178,10 +1248,14 @@ const CronJobModal = memo(function CronJobModal({ editingJob, submitting, dispat
 
           <label className="cron-jobs-field">
             {renderLabel("任务类型", { required: true, tooltip: "选择 'text' 用于简单消息任务，选择 'agent' 用于复杂的智能体工作流。" })}
-            <select value={formState.taskType} onChange={(event) => updateForm("taskType", event.target.value as TaskType)}>
-              <option value="agent">Agent 提问</option>
-              <option value="text">固定消息</option>
-            </select>
+            <CronSelect
+              value={formState.taskType}
+              options={[
+                { value: "agent", label: "Agent 提问" },
+                { value: "text", label: "固定消息" },
+              ]}
+              onChange={(v) => updateForm("taskType", v as TaskType)}
+            />
           </label>
 
           <label className="cron-jobs-field">
@@ -1242,10 +1316,14 @@ const CronJobModal = memo(function CronJobModal({ editingJob, submitting, dispat
 
           <label className="cron-jobs-field">
             {renderLabel("发送模式", { tooltip: "选择 stream 获取实时响应，或选择 final 仅获取完整响应。" })}
-            <select value={formState.mode} onChange={(event) => updateForm("mode", event.target.value as DispatchMode)}>
-              <option value="final">仅最终结果</option>
-              <option value="stream">流式结果</option>
-            </select>
+            <CronSelect
+              value={formState.mode}
+              options={[
+                { value: "final", label: "仅最终结果" },
+                { value: "stream", label: "流式结果" },
+              ]}
+              onChange={(v) => updateForm("mode", v as DispatchMode)}
+            />
           </label>
 
           <label className="cron-jobs-field">
