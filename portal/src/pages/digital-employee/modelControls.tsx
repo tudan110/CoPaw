@@ -227,6 +227,7 @@ export function AdvancedModelEntry({
   isCliActive,
   isNlCustomizationActive,
   isAppMarketActive,
+  isTracesActive,
   onOpenNlCustomization,
   onOpenAppMarket,
   onOpenConfig,
@@ -240,6 +241,7 @@ export function AdvancedModelEntry({
   onOpenKnowledgeBase,
   onOpenInspiration,
   onOpenCli,
+  onOpenTraces,
 }: {
   activeModelLabel: string;
   activeProviderName: string;
@@ -256,6 +258,7 @@ export function AdvancedModelEntry({
   isCliActive?: boolean;
   isNlCustomizationActive?: boolean;
   isAppMarketActive?: boolean;
+  isTracesActive?: boolean;
   onOpenNlCustomization: () => void;
   onOpenAppMarket: () => void;
   onOpenConfig: () => void;
@@ -269,6 +272,7 @@ export function AdvancedModelEntry({
   onOpenKnowledgeBase: () => void;
   onOpenInspiration: () => void;
   onOpenCli: () => void;
+  onOpenTraces: () => void;
 }) {
   const [collapsed, setCollapsed] = useState(true);
 
@@ -389,6 +393,19 @@ export function AdvancedModelEntry({
           <div className="sidebar-advanced-item-name">Token统计</div>
           <div className="sidebar-advanced-item-desc">资源消耗分析</div>
           <div className="sidebar-advanced-item-meta">按模型 / 日期统计</div>
+        </button>
+        <button
+          className={isTracesActive ? "sidebar-advanced-item active" : "sidebar-advanced-item"}
+          onClick={onOpenTraces}
+        >
+          <div className="sidebar-advanced-item-icon">
+            <span role="img" aria-label="traces">
+              🔍
+            </span>
+          </div>
+          <div className="sidebar-advanced-item-name">追溯中心</div>
+          <div className="sidebar-advanced-item-desc">操作步骤全部留痕</div>
+          <div className="sidebar-advanced-item-meta">会话 / 工具 / 推理 / 异常</div>
         </button>
         <button
           className={isInspirationActive ? "sidebar-advanced-item active" : "sidebar-advanced-item"}
