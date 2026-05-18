@@ -764,6 +764,7 @@ const CronJobModal = memo(function CronJobModal({ editingJob, submitting, dispat
   );
   const [formError, setFormError] = useState("");
   const [visibleTooltip, setVisibleTooltip] = useState<string | null>(null);
+  const [tooltipPos, setTooltipPos] = useState<{ top: number; left: number }>({ top: 0, left: 0 });
 
   const renderLabel = (text: string, options?: { required?: boolean; tooltip?: string; tooltipId?: string }) => (
     <span className="cron-jobs-field-label">
@@ -772,12 +773,21 @@ const CronJobModal = memo(function CronJobModal({ editingJob, submitting, dispat
       {options?.tooltip ? (
         <span
           className="cron-jobs-tooltip-trigger"
-          onMouseEnter={() => setVisibleTooltip(options.tooltipId || text)}
+          onMouseEnter={(e) => {
+            const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+            setTooltipPos({ top: rect.top - 8, left: rect.left + rect.width / 2 });
+            setVisibleTooltip(options.tooltipId || text);
+          }}
           onMouseLeave={() => setVisibleTooltip(null)}
         >
           <i className="fas fa-circle-info" />
           {visibleTooltip === (options.tooltipId || text) ? (
-            <span className="cron-jobs-tooltip-bubble">{options.tooltip}</span>
+            <span
+              className="cron-jobs-tooltip-bubble"
+              style={{ top: tooltipPos.top, left: tooltipPos.left }}
+            >
+              {options.tooltip}
+            </span>
           ) : null}
         </span>
       ) : null}
