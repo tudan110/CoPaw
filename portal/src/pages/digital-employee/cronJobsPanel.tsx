@@ -745,7 +745,7 @@ const CronJobsTableSection = memo(function CronJobsTableSection({
                           onClick={() => onToggleSchedule(record)}
                           disabled={isBusy}
                         >
-                          {job.enabled === false ? "启用" : "停用"}
+                          {job.enabled === false ? "启用" : "禁用"}
                         </button>
                         <button
                           type="button"
@@ -1489,15 +1489,6 @@ export function CronJobsPanel() {
         };
       })
       .sort((left, right) => {
-        const leftTime = left.state.next_run_at
-          ? new Date(left.state.next_run_at).getTime()
-          : Number.MAX_SAFE_INTEGER;
-        const rightTime = right.state.next_run_at
-          ? new Date(right.state.next_run_at).getTime()
-          : Number.MAX_SAFE_INTEGER;
-        if (leftTime !== rightTime) {
-          return leftTime - rightTime;
-        }
         return left.job.name.localeCompare(right.job.name, "zh-CN");
       });
   }, [jobs, states]);
@@ -1587,7 +1578,7 @@ export function CronJobsPanel() {
       await runJobAction(job.id, () => cronJobsApi.replaceCronJob(job.id, payload, portalGatewayAgentId), `已启用任务"${job.name}"。`);
     } else {
       const payload = { ...job, enabled: false };
-      await runJobAction(job.id, () => cronJobsApi.replaceCronJob(job.id, payload, portalGatewayAgentId), `已停用任务"${job.name}"。`);
+      await runJobAction(job.id, () => cronJobsApi.replaceCronJob(job.id, payload, portalGatewayAgentId), `已禁用任务"${job.name}"。`);
     }
   }, [runJobAction]);
 
@@ -1670,7 +1661,6 @@ export function CronJobsPanel() {
           ))}
         </div>
 
-        {notice ? <div className="cron-jobs-notice success">{notice}</div> : null}
         {error ? <div className="cron-jobs-notice error">{error}</div> : null}
 
         <CronJobsTableSection
