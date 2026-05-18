@@ -226,13 +226,15 @@
   text-transform: uppercase;
   letter-spacing: 0.04em;
   background: rgba(248, 250, 252, 0.96);
+  white-space: nowrap;
 }
 
 .cron-jobs-table tbody td {
   padding: 16px 18px;
   border-top: 1px solid rgba(226, 232, 240, 0.8);
-  vertical-align: top;
+  vertical-align: middle;
   color: var(--text-primary);
+  white-space: nowrap;
 }
 
 .cron-jobs-name-cell,
