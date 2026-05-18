@@ -530,6 +530,157 @@
   border-top-color: rgba(15, 23, 42, 0.92);
 }
 
+/* ---------- Searchable Select ---------- */
+.cron-searchable-select {
+  position: relative;
+  width: 100%;
+}
+
+.cron-searchable-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 10px 14px;
+  border: 1.5px solid rgba(148, 163, 184, 0.28);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.72);
+  font-size: 14px;
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: border-color 0.2s, box-shadow 0.2s;
+  text-align: left;
+  gap: 8px;
+}
+
+.cron-searchable-trigger:hover {
+  border-color: rgba(37, 99, 235, 0.4);
+}
+
+.cron-searchable-trigger.active {
+  border-color: #2563eb;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+}
+
+.cron-searchable-trigger span {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 400;
+}
+
+.cron-searchable-trigger span.placeholder {
+  color: var(--text-tertiary, rgba(148, 163, 184, 0.7));
+}
+
+.cron-searchable-trigger i {
+  font-size: 12px;
+  color: var(--text-secondary);
+  flex-shrink: 0;
+}
+
+.cron-searchable-panel {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  z-index: 200;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 12px 40px rgba(15, 23, 42, 0.14);
+  overflow: hidden;
+  animation: cron-select-in 0.15s ease-out;
+}
+
+@keyframes cron-select-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.cron-searchable-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-bottom: 1px solid rgba(226, 232, 240, 0.6);
+}
+
+.cron-searchable-search i {
+  font-size: 13px;
+  color: var(--text-tertiary, rgba(148, 163, 184, 0.7));
+  flex-shrink: 0;
+}
+
+.cron-searchable-search input {
+  flex: 1;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-size: 14px;
+  color: var(--text-primary);
+}
+
+.cron-searchable-list {
+  max-height: 200px;
+  overflow-y: auto;
+  padding: 4px;
+}
+
+.cron-searchable-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 9px 12px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  font-size: 14px;
+  color: var(--text-primary);
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.12s;
+}
+
+.cron-searchable-item:hover {
+  background: rgba(37, 99, 235, 0.06);
+}
+
+.cron-searchable-item.active {
+  background: rgba(37, 99, 235, 0.08);
+  color: #2563eb;
+  font-weight: 500;
+}
+
+.cron-searchable-item i {
+  font-size: 13px;
+  color: #2563eb;
+}
+
+.cron-searchable-empty {
+  padding: 12px 14px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--text-tertiary, rgba(148, 163, 184, 0.7));
+}
+
+.cron-searchable-custom {
+  border: none;
+  background: rgba(37, 99, 235, 0.08);
+  color: #2563eb;
+  padding: 6px 14px;
+  border-radius: 8px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.cron-searchable-custom:hover {
+  background: rgba(37, 99, 235, 0.14);
+}
+
 .cron-jobs-form-grid input,
 .cron-jobs-form-grid textarea,
 .cron-jobs-form-grid select,

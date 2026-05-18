@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useMemo, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   cronJobsApi,
   type CronDispatchTargetItem,
@@ -758,6 +758,101 @@ const CronJobsTableSection = memo(function CronJobsTableSection({
   );
 });
 
+/* ---------- Searchable Select Component ---------- */
+interface CronSearchableSelectProps {
+  value: string;
+  options: string[];
+  placeholder?: string;
+  allowCustom?: boolean;
+  onChange: (value: string) => void;
+}
+
+function CronSearchableSelect({ value, options, placeholder, allowCustom = true, onChange }: CronSearchableSelectProps) {
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState("");
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setOpen(false);
+        setSearch("");
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [open]);
+
+  const filtered = useMemo(() => {
+    if (!search) return options;
+    const q = search.toLowerCase();
+    return options.filter((o) => o.toLowerCase().includes(q));
+  }, [options, search]);
+
+  const handleSelect = (v: string) => {
+    onChange(v);
+    setOpen(false);
+    setSearch("");
+  };
+
+  return (
+    <div className="cron-searchable-select" ref={containerRef}>
+      <button
+        type="button"
+        className={`cron-searchable-trigger ${open ? "active" : ""}`}
+        onClick={() => setOpen(!open)}
+      >
+        <span className={value ? "" : "placeholder"}>{value || placeholder || "请选择"}</span>
+        <i className={`fas fa-chevron-${open ? "up" : "down"}`} />
+      </button>
+      {open ? (
+        <div className="cron-searchable-panel">
+          <div className="cron-searchable-search">
+            <i className="fas fa-magnifying-glass" />
+            <input
+              autoFocus
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="搜索..."
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && allowCustom && search && !filtered.includes(search)) {
+                  handleSelect(search);
+                }
+              }}
+            />
+          </div>
+          <div className="cron-searchable-list">
+            {filtered.length === 0 ? (
+              <div className="cron-searchable-empty">
+                {allowCustom && search ? (
+                  <button type="button" className="cron-searchable-custom" onClick={() => handleSelect(search)}>
+                    使用 &quot;{search}&quot;
+                  </button>
+                ) : (
+                  <span>无匹配项</span>
+                )}
+              </div>
+            ) : (
+              filtered.map((opt) => (
+                <button
+                  key={opt}
+                  type="button"
+                  className={`cron-searchable-item ${opt === value ? "active" : ""}`}
+                  onClick={() => handleSelect(opt)}
+                >
+                  <span>{opt}</span>
+                  {opt === value ? <i className="fas fa-check" /> : null}
+                </button>
+              ))
+            )}
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 const CronJobModal = memo(function CronJobModal({ editingJob, submitting, dispatchTargets, dispatchChannels, onClose, onSubmit }: CronJobModalProps) {
   const [formState, setFormState] = useState<CronJobFormState>(() =>
     editingJob ? createFormStateFromJob(editingJob) : createDefaultFormState(),
@@ -1116,41 +1211,32 @@ const CronJobModal = memo(function CronJobModal({ editingJob, submitting, dispat
 
           <label className="cron-jobs-field">
             {renderLabel("投递通道", { required: true, tooltip: "响应将发送到的目标频道（例如：console、discord、dingtalk）。" })}
-            <input
+            <CronSearchableSelect
               value={formState.channel}
-              onChange={(event) => updateForm("channel", event.target.value)}
+              options={channelOptions}
               placeholder="console"
-              list="cron-channel-list"
+              onChange={(v) => updateForm("channel", v)}
             />
-            <datalist id="cron-channel-list">
-              {channelOptions.map((ch) => <option key={ch} value={ch} />)}
-            </datalist>
           </label>
 
           <div className="cron-jobs-form-grid two-columns">
             <label className="cron-jobs-field">
               {renderLabel("目标 user_id", { required: true, tooltip: "在目标频道中接收响应的用户 ID。" })}
-              <input
+              <CronSearchableSelect
                 value={formState.targetUser}
-                onChange={(event) => updateForm("targetUser", event.target.value)}
+                options={userOptions}
                 placeholder="admin"
-                list="cron-user-list"
+                onChange={(v) => updateForm("targetUser", v)}
               />
-              <datalist id="cron-user-list">
-                {userOptions.map((u) => <option key={u} value={u} />)}
-              </datalist>
             </label>
             <label className="cron-jobs-field">
               {renderLabel("目标 session_id", { required: true, tooltip: "在目标频道中传递响应的会话 ID。" })}
-              <input
+              <CronSearchableSelect
                 value={formState.targetSession}
-                onChange={(event) => updateForm("targetSession", event.target.value)}
+                options={sessionOptions}
                 placeholder="default"
-                list="cron-session-list"
+                onChange={(v) => updateForm("targetSession", v)}
               />
-              <datalist id="cron-session-list">
-                {sessionOptions.map((s) => <option key={s} value={s} />)}
-              </datalist>
             </label>
           </div>
 
