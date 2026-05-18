@@ -130,7 +130,7 @@
 
 .cron-jobs-stats {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 14px;
 }
 
@@ -165,6 +165,14 @@
 
 .cron-jobs-stat-card.accent-red strong {
   color: #dc2626;
+}
+
+.cron-jobs-stat-card.accent-blue strong {
+  color: #2563eb;
+}
+
+.cron-jobs-stat-card.accent-slate strong {
+  color: #64748b;
 }
 
 .cron-jobs-filter-chip {

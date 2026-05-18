@@ -1509,6 +1509,8 @@ export function CronJobsPanel() {
       total: jobRecords.length,
       enabled: jobRecords.filter((record) => record.status.key === "running").length,
       disabled: jobRecords.filter((record) => record.status.key === "stopped").length,
+      recurring: jobRecords.filter((record) => record.job.schedule?.type !== "once").length,
+      once: jobRecords.filter((record) => record.job.schedule?.type === "once").length,
     };
   }, [jobRecords]);
 
@@ -1646,6 +1648,14 @@ export function CronJobsPanel() {
           <article className="cron-jobs-stat-card accent-slate">
             <span>已禁用</span>
             <strong>{stats.disabled}</strong>
+          </article>
+          <article className="cron-jobs-stat-card accent-blue">
+            <span>循环任务</span>
+            <strong>{stats.recurring}</strong>
+          </article>
+          <article className="cron-jobs-stat-card accent-amber">
+            <span>日程任务</span>
+            <strong>{stats.once}</strong>
           </article>
         </div>
 
