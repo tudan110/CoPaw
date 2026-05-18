@@ -441,7 +441,7 @@
 .cron-jobs-field > span,
 .cron-jobs-field-label,
 .cron-jobs-section-card label span {
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
   color: var(--text-secondary);
 }
@@ -465,7 +465,7 @@
   margin-left: 4px;
   color: rgba(148, 163, 184, 0.7);
   cursor: help;
-  font-size: 12px;
+  font-size: 14px;
 }
 
 .cron-jobs-tooltip-trigger:hover {
