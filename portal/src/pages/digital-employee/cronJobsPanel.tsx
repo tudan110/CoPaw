@@ -98,78 +98,6 @@ const FILTER_OPTIONS: Array<{ id: JobFilter; label: string }> = [
   { id: "pending", label: "待执行" },
 ];
 
-const TASK_TYPE_OPTIONS: Array<{
-  id: TaskType;
-  label: string;
-  description: string;
-  icon: string;
-}> = [
-  {
-    id: "agent",
-    label: "Agent 提问",
-    description: "定时发起 AI 任务，适合总结、巡检和生成日报。",
-    icon: "fa-robot",
-  },
-  {
-    id: "text",
-    label: "固定消息",
-    description: "按计划发送固定文案，适合提醒、播报和通知。",
-    icon: "fa-comment",
-  },
-];
-
-const CRON_TYPE_OPTIONS: Array<{
-  id: CronType;
-  label: string;
-  description: string;
-  icon: string;
-}> = [
-  {
-    id: "hourly",
-    label: "每小时",
-    description: "高频同步或整点巡检。",
-    icon: "fa-clock",
-  },
-  {
-    id: "daily",
-    label: "每天",
-    description: "每天固定时刻自动执行。",
-    icon: "fa-calendar",
-  },
-  {
-    id: "weekly",
-    label: "每周",
-    description: "按星期批量执行固定任务。",
-    icon: "fa-calendar-week",
-  },
-  {
-    id: "custom",
-    label: "自定义",
-    description: "直接输入 Cron 表达式。",
-    icon: "fa-code",
-  },
-];
-
-const DISPATCH_MODE_OPTIONS: Array<{
-  id: DispatchMode;
-  label: string;
-  description: string;
-  icon: string;
-}> = [
-  {
-    id: "final",
-    label: "仅最终结果",
-    description: "适合摘要、报告和结构化回执。",
-    icon: "fa-flag-checkered",
-  },
-  {
-    id: "stream",
-    label: "流式结果",
-    description: "适合长任务过程实时输出。",
-    icon: "fa-bolt",
-  },
-];
-
 const ORDERED_DAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"] as const;
 const DAY_LABELS: Record<string, string> = {
   mon: "周一",
@@ -180,10 +108,6 @@ const DAY_LABELS: Record<string, string> = {
   sat: "周六",
   sun: "周日",
 };
-const SCHEDULE_TYPE_OPTIONS: Array<{ id: ScheduleType; label: string; description: string; icon: string }> = [
-  { id: "cron", label: "周期调度", description: "按 Cron 表达式重复执行。", icon: "fa-repeat" },
-  { id: "once", label: "单次执行", description: "指定时间执行一次，可选重复。", icon: "fa-calendar-check" },
-];
 const REPEAT_END_OPTIONS: Array<{ id: RepeatEndType; label: string }> = [
   { id: "never", label: "永不结束" },
   { id: "until", label: "截止日期" },
@@ -685,26 +609,6 @@ function formatTaskType(job: CronJobSpec) {
   return job.task_type === "text" ? "固定消息" : "Agent 提问";
 }
 
-function getTaskTypeMeta(taskType: TaskType) {
-  return TASK_TYPE_OPTIONS.find((option) => option.id === taskType) || TASK_TYPE_OPTIONS[0];
-}
-
-function getDispatchModeMeta(mode: DispatchMode) {
-  return DISPATCH_MODE_OPTIONS.find((option) => option.id === mode) || DISPATCH_MODE_OPTIONS[0];
-}
-
-function getSchedulePreview(form: CronJobFormState) {
-  return getCronSummary(
-    serializeCron({
-      type: form.cronType,
-      hour: form.hour,
-      minute: form.minute,
-      daysOfWeek: form.daysOfWeek,
-      rawCron: form.customCron,
-    }),
-  );
-}
-
 function formatTarget(job: CronJobSpec) {
   const channel = job.dispatch?.channel || "-";
   const targetUser = job.dispatch?.target?.user_id || "-";
@@ -854,73 +758,66 @@ const CronJobsTableSection = memo(function CronJobsTableSection({
   );
 });
 
-const CronJobModal = memo(function CronJobModal({ editingJob, submitting, onClose, onSubmit }: CronJobModalProps) {
+const CronJobModal = memo(function CronJobModal({ editingJob, submitting, dispatchTargets, dispatchChannels, onClose, onSubmit }: CronJobModalProps) {
   const [formState, setFormState] = useState<CronJobFormState>(() =>
     editingJob ? createFormStateFromJob(editingJob) : createDefaultFormState(),
   );
   const [formError, setFormError] = useState("");
 
-  const selectedTaskType = useMemo(() => getTaskTypeMeta(formState.taskType), [formState.taskType]);
-  const selectedDispatchMode = useMemo(() => getDispatchModeMeta(formState.mode), [formState.mode]);
-  const schedulePreview = useMemo(() => getSchedulePreview(formState), [formState.cronType, formState.hour, formState.minute, formState.daysOfWeek, formState.customCron]);
-  const deliveryPreview = useMemo(() => `${formState.channel || "console"} / ${formState.targetUser || "cron"} / ${formState.targetSession || "portal-cron"}`, [formState.channel, formState.targetUser, formState.targetSession]);
-  const cronExpression = useMemo(() => serializeCron({
-    type: formState.cronType,
-    hour: formState.hour,
-    minute: formState.minute,
-    daysOfWeek: formState.daysOfWeek,
-    rawCron: formState.customCron,
-  }), [formState.cronType, formState.hour, formState.minute, formState.daysOfWeek, formState.customCron]);
-
   const updateForm = useCallback(<K extends keyof CronJobFormState>(key: K, value: CronJobFormState[K]) => {
     setFormState((prev) => ({ ...prev, [key]: value }));
   }, []);
 
-  const validateForm = () => {
-    if (editingJob && !formState.id.trim()) {
-      return "任务 ID 异常。";
-    }
-    if (!formState.name.trim()) {
-      return "请输入任务名称。";
-    }
-    if (!formState.channel.trim()) {
-      return "请输入投递通道。";
-    }
-    if (!formState.targetUser.trim()) {
-      return "请输入目标 user_id。";
-    }
-    if (!formState.targetSession.trim()) {
-      return "请输入目标 session_id。";
-    }
-    if (!formState.content.trim()) {
-      return formState.taskType === "text" ? "请输入固定消息内容。" : "请输入发送给 Agent 的问题。";
-    }
-    if (!formState.timezone.trim()) {
-      return "请输入时区。";
-    }
-    if (formState.cronType === "weekly" && !formState.daysOfWeek.length) {
-      return "请选择至少一个执行星期。";
-    }
-    const cron = serializeCron({
-      type: formState.cronType,
-      hour: formState.hour,
-      minute: formState.minute,
-      daysOfWeek: formState.daysOfWeek,
-      rawCron: formState.customCron,
+  const channelOptions = useMemo(() => {
+    const set = new Set(dispatchChannels);
+    if (formState.channel.trim()) set.add(formState.channel.trim());
+    return [...set].sort();
+  }, [dispatchChannels, formState.channel]);
+
+  const userOptions = useMemo(() => {
+    const set = new Set<string>();
+    dispatchTargets.forEach((item) => {
+      if (!formState.channel || item.channel === formState.channel) set.add(item.user_id);
     });
-    if (!CRON_RE.test(cron)) {
-      return "Cron 表达式必须是 5 段格式，例如 0 9 * * *。";
+    if (formState.targetUser.trim()) set.add(formState.targetUser.trim());
+    return [...set].sort();
+  }, [dispatchTargets, formState.channel, formState.targetUser]);
+
+  const sessionOptions = useMemo(() => {
+    const set = new Set<string>();
+    dispatchTargets.forEach((item) => {
+      if ((!formState.channel || item.channel === formState.channel) && (!formState.targetUser || item.user_id === formState.targetUser)) {
+        set.add(item.session_id);
+      }
+    });
+    if (formState.targetSession.trim()) set.add(formState.targetSession.trim());
+    return [...set].sort();
+  }, [dispatchTargets, formState.channel, formState.targetUser, formState.targetSession]);
+
+  const validateForm = () => {
+    if (editingJob && !formState.id.trim()) return "任务 ID 异常。";
+    if (!formState.name.trim()) return "请输入任务名称。";
+    if (!formState.channel.trim()) return "请输入投递通道。";
+    if (!formState.targetUser.trim()) return "请输入目标 user_id。";
+    if (!formState.targetSession.trim()) return "请输入目标 session_id。";
+    if (formState.taskType === "text" && !formState.content.trim()) return "请输入固定消息内容。";
+    if (formState.taskType === "agent" && !formState.content.trim() && !formState.requestInputJson.trim()) return "请输入发送给 Agent 的问题或 Request Input。";
+    if (formState.scheduleType === "cron") {
+      if (!formState.timezone.trim()) return "请输入时区。";
+      if (formState.cronType === "weekly" && !formState.daysOfWeek.length) return "请选择至少一个执行星期。";
+      const cron = serializeCron({ type: formState.cronType, hour: formState.hour, minute: formState.minute, daysOfWeek: formState.daysOfWeek, rawCron: formState.customCron });
+      if (!CRON_RE.test(cron)) return "Cron 表达式必须是 5 段格式，例如 0 9 * * *。";
+    }
+    if (formState.scheduleType === "once" && !formState.onceRunAt) return "请选择执行时间。";
+    if (formState.requestInputJson.trim()) {
+      try { JSON.parse(formState.requestInputJson.trim()); } catch { return "Request Input 不是合法的 JSON 格式。"; }
     }
     return "";
   };
 
   const handleSubmit = async () => {
     const nextFormError = validateForm();
-    if (nextFormError) {
-      setFormError(nextFormError);
-      return;
-    }
-
+    if (nextFormError) { setFormError(nextFormError); return; }
     setFormError("");
     try {
       await onSubmit(buildPayloadFromForm(formState, editingJob), editingJob);
@@ -934,17 +831,7 @@ const CronJobModal = memo(function CronJobModal({ editingJob, submitting, onClos
       <div className="cron-jobs-modal" onClick={(event) => event.stopPropagation()}>
         <div className="cron-jobs-modal-header">
           <div className="cron-jobs-modal-heading">
-            <span className="cron-jobs-modal-eyebrow">
-              {editingJob ? "调整任务编排" : "创建自动化任务"}
-            </span>
             <h4>{editingJob ? "编辑定时任务" : "新增定时任务"}</h4>
-            <p>按调度计划、投递目标和运行参数分区配置，创建更清晰的自动化任务。</p>
-          </div>
-          <div className="cron-jobs-modal-head-badges">
-            <span className={`cron-jobs-head-badge ${formState.enabled ? "green" : "slate"}`}>
-              {formState.enabled ? "创建后生效" : "先保存为停用"}
-            </span>
-            <span className="cron-jobs-head-badge blue">{selectedTaskType.label}</span>
           </div>
           <button type="button" className="cron-jobs-modal-close" onClick={onClose}>
             <i className="fas fa-xmark" />
@@ -952,331 +839,317 @@ const CronJobModal = memo(function CronJobModal({ editingJob, submitting, onClos
         </div>
 
         <div className="cron-jobs-modal-body">
-          <section className="cron-jobs-modal-hero">
-            <div className="cron-jobs-modal-hero-copy">
-              <span>执行预览</span>
-              <strong>{schedulePreview}</strong>
-              <p>
-                将在 <b>{formState.timezone || "UTC"}</b> 时区下，通过 <b>{formState.channel || "console"}</b>
-                {" "}向 <b>{formState.targetUser || "cron"}</b> / <b>{formState.targetSession || "portal-cron"}</b>
-                {" "}投递 <b>{selectedTaskType.label}</b>。
-              </p>
-            </div>
-            <div className="cron-jobs-modal-hero-meta">
-              <span className="cron-jobs-hero-pill">{selectedDispatchMode.label}</span>
-              <span className="cron-jobs-hero-pill">{deliveryPreview}</span>
-              <span className={`cron-jobs-hero-pill ${formState.enabled ? "green" : "slate"}`}>
-                {formState.enabled ? "自动调度已开启" : "创建后不会自动执行"}
-              </span>
-            </div>
-          </section>
-
-          <div className={`cron-jobs-form-grid ${editingJob ? "three-columns" : "two-columns"}`}>
-            {editingJob ? (
-              <label className="cron-jobs-field">
-                <span>任务 ID</span>
-                <input
-                  value={formState.id}
-                  disabled
-                />
-                <small>任务创建后 ID 固定，编辑时仅展示不可修改。</small>
-              </label>
-            ) : null}
+          {editingJob ? (
             <label className="cron-jobs-field">
-              <span>任务名称</span>
-              <input
-                value={formState.name}
-                onChange={(event) => updateForm("name", event.target.value)}
-                placeholder="例如：每日巡检总结"
-              />
-              <small>建议使用业务语义明确的名称，方便筛选和排查。</small>
+              <span>任务 ID</span>
+              <input value={formState.id} disabled />
             </label>
-            <label className="cron-jobs-field">
-              <span>时区</span>
-              <input
-                value={formState.timezone}
-                onChange={(event) => updateForm("timezone", event.target.value)}
-                placeholder="Asia/Shanghai"
-              />
-              <small>使用 IANA 时区格式，例如 Asia/Shanghai、UTC。</small>
-            </label>
-          </div>
+          ) : null}
 
-          <div className="cron-jobs-form-grid two-columns compact">
-            <div className="cron-jobs-field">
-              <span>任务类型</span>
-              <div className="cron-jobs-choice-grid two-columns">
-                {TASK_TYPE_OPTIONS.map((option) => {
-                  const active = formState.taskType === option.id;
-                  return (
-                    <button
-                      key={option.id}
-                      type="button"
-                      className={active ? "cron-jobs-choice-btn active" : "cron-jobs-choice-btn"}
-                      onClick={() => updateForm("taskType", option.id)}
-                    >
-                      <span className="cron-jobs-choice-icon">
-                        <i className={`fas ${option.icon}`} />
-                      </span>
-                      <span className="cron-jobs-choice-copy">
-                        <strong>{option.label}</strong>
-                        <span>{option.description}</span>
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-            <div className="cron-jobs-field cron-jobs-checkbox-field">
-              <span>创建状态</span>
-              <button
-                type="button"
-                className={formState.enabled ? "cron-jobs-toggle-card active" : "cron-jobs-toggle-card"}
-                onClick={() => updateForm("enabled", !formState.enabled)}
-                aria-pressed={formState.enabled}
-              >
-                <span className="cron-jobs-toggle-main">
-                  <span className="cron-jobs-toggle-switch" />
-                  <span className="cron-jobs-toggle-copy">
-                    <strong>{formState.enabled ? "创建后立即生效" : "创建后暂不启用"}</strong>
-                    <small>
-                      {formState.enabled
-                        ? "任务保存后将立即进入调度队列。"
-                        : "任务会被保存，但需要手动启用后才会自动执行。"}
-                    </small>
-                  </span>
-                </span>
-                <em>{formState.enabled ? "已开启" : "未开启"}</em>
-              </button>
-            </div>
-          </div>
-
-          <div className="cron-jobs-section-card">
-            <div className="cron-jobs-section-head">
-              <h5>调度计划</h5>
-              <span>{cronExpression}</span>
-            </div>
-
-            <div className="cron-jobs-choice-grid four-columns">
-              {CRON_TYPE_OPTIONS.map((option) => {
-                const active = formState.cronType === option.id;
-                return (
-                  <button
-                    key={option.id}
-                    type="button"
-                    className={active ? "cron-jobs-choice-btn active" : "cron-jobs-choice-btn"}
-                    onClick={() => updateForm("cronType", option.id)}
-                  >
-                    <span className="cron-jobs-choice-icon">
-                      <i className={`fas ${option.icon}`} />
-                    </span>
-                    <span className="cron-jobs-choice-copy">
-                      <strong>{option.label}</strong>
-                      <span>{option.description}</span>
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-
-            <div className="cron-jobs-form-grid two-columns compact">
-              <label className="cron-jobs-field">
-                <span>分钟</span>
-                <input
-                  type="number"
-                  min={0}
-                  max={59}
-                  value={formState.minute}
-                  onChange={(event) => updateForm("minute", Number(event.target.value))}
-                  disabled={formState.cronType === "custom"}
-                />
-                <small>例如填 15，表示在每小时的 15 分执行。</small>
-              </label>
-              {formState.cronType === "daily" || formState.cronType === "weekly" ? (
-                <label className="cron-jobs-field">
-                  <span>小时</span>
-                  <input
-                    type="number"
-                    min={0}
-                    max={23}
-                    value={formState.hour}
-                    onChange={(event) => updateForm("hour", Number(event.target.value))}
-                  />
-                  <small>24 小时制，例如 9 表示上午 09:00。</small>
-                </label>
-              ) : (
-                <div className="cron-jobs-field cron-jobs-field-placeholder">
-                  <span>小时</span>
-                  <div className="cron-jobs-inline-note">
-                    {formState.cronType === "hourly"
-                      ? "每小时任务默认按整点或所填分钟执行，无需设置小时。"
-                      : "选择自定义后，可直接通过 Cron 表达式控制完整时间规则。"}
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {formState.cronType === "weekly" ? (
-              <div className="cron-jobs-field">
-                <span>执行星期</span>
-                <div className="cron-jobs-week-grid">
-                  {ORDERED_DAYS.map((day) => {
-                    const active = formState.daysOfWeek.includes(day);
-                    return (
-                      <button
-                        key={day}
-                        type="button"
-                        className={active ? "cron-jobs-week-btn active" : "cron-jobs-week-btn"}
-                        onClick={() =>
-                          updateForm(
-                            "daysOfWeek",
-                            active
-                              ? formState.daysOfWeek.filter((item) => item !== day)
-                              : [...formState.daysOfWeek, day],
-                          )
-                        }
-                      >
-                        {DAY_LABELS[day]}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            ) : null}
-
-            {formState.cronType === "custom" ? (
-              <label className="cron-jobs-field">
-                <span>Cron 表达式</span>
-                <input
-                  value={formState.customCron}
-                  onChange={(event) => updateForm("customCron", event.target.value)}
-                  placeholder="例如：0 9 * * 1-5"
-                />
-                <small>使用标准 5 段格式：分钟 小时 日 月 星期。</small>
-              </label>
-            ) : null}
-          </div>
-
-          <div className="cron-jobs-section-card">
-            <div className="cron-jobs-section-head">
-              <h5>投递目标</h5>
-              <span>与 dispatch 字段保持一致</span>
-            </div>
-
-            <div className="cron-jobs-form-grid two-columns">
-              <label className="cron-jobs-field">
-                <span>通道</span>
-                <input
-                  value={formState.channel}
-                  onChange={(event) => updateForm("channel", event.target.value)}
-                  placeholder="console / dingtalk / discord"
-                />
-                <small>决定任务结果发送到哪里，建议与实际接入通道名称保持一致。</small>
-              </label>
-              <div className="cron-jobs-field">
-                <span>发送模式</span>
-                <div className="cron-jobs-choice-grid two-columns">
-                  {DISPATCH_MODE_OPTIONS.map((option) => {
-                    const active = formState.mode === option.id;
-                    return (
-                      <button
-                        key={option.id}
-                        type="button"
-                        className={active ? "cron-jobs-choice-btn active" : "cron-jobs-choice-btn"}
-                        onClick={() => updateForm("mode", option.id)}
-                      >
-                        <span className="cron-jobs-choice-icon">
-                          <i className={`fas ${option.icon}`} />
-                        </span>
-                        <span className="cron-jobs-choice-copy">
-                          <strong>{option.label}</strong>
-                          <span>{option.description}</span>
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            </div>
-
-            <div className="cron-jobs-form-grid two-columns">
-              <label className="cron-jobs-field">
-                <span>目标 user_id</span>
-                <input
-                  value={formState.targetUser}
-                  onChange={(event) => updateForm("targetUser", event.target.value)}
-                  placeholder="例如：cron"
-                />
-                <small>用于归档和追踪任务来源，建议使用固定系统账号。</small>
-              </label>
-              <label className="cron-jobs-field">
-                <span>目标 session_id</span>
-                <input
-                  value={formState.targetSession}
-                  onChange={(event) => updateForm("targetSession", event.target.value)}
-                  placeholder="例如：portal-cron"
-                />
-                <small>同一类任务可复用一个会话，方便查看连续上下文。</small>
-              </label>
-            </div>
-          </div>
-
-          <label className="cron-jobs-field cron-jobs-content-field">
-            <span>{formState.taskType === "text" ? "固定消息内容" : "发送给 Agent 的问题"}</span>
-            <textarea
-              rows={6}
-              value={formState.content}
-              onChange={(event) => updateForm("content", event.target.value)}
-              placeholder={
-                formState.taskType === "text"
-                  ? "请输入任务执行时要发送的文本"
-                  : "请输入要定时发送给 Agent 的问题"
-              }
+          <label className="cron-jobs-field">
+            <span>任务名称</span>
+            <input
+              value={formState.name}
+              onChange={(event) => updateForm("name", event.target.value)}
+              placeholder="例如：每日巡检总结"
             />
-            <small>
-              {formState.taskType === "text"
-                ? "适合提醒、播报和固定通知内容。"
-                : "建议写清楚任务背景、目标和输出格式，结果会更稳定。"}
-            </small>
           </label>
 
-          <div className="cron-jobs-section-card">
-            <div className="cron-jobs-section-head">
-              <h5>运行参数</h5>
-              <span>对应 runtime 字段</span>
+          <div className="cron-jobs-form-grid two-columns">
+            <label className="cron-jobs-field">
+              <span>启用</span>
+              <div className="cron-jobs-switch-row">
+                <button
+                  type="button"
+                  className={`cron-jobs-switch ${formState.enabled ? "active" : ""}`}
+                  onClick={() => updateForm("enabled", !formState.enabled)}
+                  aria-pressed={formState.enabled}
+                >
+                  <span className="cron-jobs-switch-thumb" />
+                </button>
+                <span className="cron-jobs-switch-label">{formState.enabled ? "保存后立即生效" : "保存后暂不启用"}</span>
+              </div>
+            </label>
+            <label className="cron-jobs-field">
+              <span>结果存入收件箱</span>
+              <div className="cron-jobs-switch-row">
+                <button
+                  type="button"
+                  className={`cron-jobs-switch ${formState.saveResultToInbox ? "active" : ""}`}
+                  onClick={() => updateForm("saveResultToInbox", !formState.saveResultToInbox)}
+                  aria-pressed={formState.saveResultToInbox}
+                >
+                  <span className="cron-jobs-switch-thumb" />
+                </button>
+                <span className="cron-jobs-switch-label">{formState.saveResultToInbox ? "已开启" : "未开启"}</span>
+              </div>
+            </label>
+          </div>
+
+          <label className="cron-jobs-field">
+            <span>调度类型</span>
+            <select value={formState.scheduleType} onChange={(event) => updateForm("scheduleType", event.target.value as ScheduleType)}>
+              <option value="cron">周期调度（Cron 表达式）</option>
+              <option value="once">单次执行（指定时间）</option>
+            </select>
+          </label>
+
+          {formState.scheduleType === "once" ? (
+            <>
+              <label className="cron-jobs-field">
+                <span>执行时间</span>
+                <input
+                  type="datetime-local"
+                  value={formState.onceRunAt}
+                  onChange={(event) => updateForm("onceRunAt", event.target.value)}
+                />
+              </label>
+              <label className="cron-jobs-field">
+                <span>重复执行</span>
+                <div className="cron-jobs-switch-row">
+                  <button
+                    type="button"
+                    className={`cron-jobs-switch ${formState.onceRepeatEnabled ? "active" : ""}`}
+                    onClick={() => updateForm("onceRepeatEnabled", !formState.onceRepeatEnabled)}
+                    aria-pressed={formState.onceRepeatEnabled}
+                  >
+                    <span className="cron-jobs-switch-thumb" />
+                  </button>
+                  <span className="cron-jobs-switch-label">{formState.onceRepeatEnabled ? "已开启" : "未开启"}</span>
+                </div>
+              </label>
+              {formState.onceRepeatEnabled ? (
+                <>
+                  <label className="cron-jobs-field">
+                    <span>重复频率</span>
+                    <div className="cron-jobs-inline-row">
+                      <span>每</span>
+                      <input
+                        type="number"
+                        min={1}
+                        value={formState.onceRepeatEveryDays}
+                        onChange={(event) => updateForm("onceRepeatEveryDays", Math.max(1, Number(event.target.value)))}
+                        style={{ width: 80 }}
+                      />
+                      <span>天执行一次</span>
+                    </div>
+                  </label>
+                  <label className="cron-jobs-field">
+                    <span>结束条件</span>
+                    <select value={formState.onceRepeatEndType} onChange={(event) => updateForm("onceRepeatEndType", event.target.value as RepeatEndType)}>
+                      {REPEAT_END_OPTIONS.map((opt) => <option key={opt.id} value={opt.id}>{opt.label}</option>)}
+                    </select>
+                  </label>
+                  {formState.onceRepeatEndType === "until" ? (
+                    <label className="cron-jobs-field">
+                      <span>截止日期</span>
+                      <input
+                        type="datetime-local"
+                        value={formState.onceRepeatUntil}
+                        onChange={(event) => updateForm("onceRepeatUntil", event.target.value)}
+                      />
+                    </label>
+                  ) : null}
+                  {formState.onceRepeatEndType === "count" ? (
+                    <label className="cron-jobs-field">
+                      <span>执行次数</span>
+                      <input
+                        type="number"
+                        min={1}
+                        value={formState.onceRepeatCount}
+                        onChange={(event) => updateForm("onceRepeatCount", Math.max(1, Number(event.target.value)))}
+                      />
+                    </label>
+                  ) : null}
+                </>
+              ) : null}
+            </>
+          ) : (
+            <>
+              <label className="cron-jobs-field">
+                <span>Cron 周期</span>
+                <select value={formState.cronType} onChange={(event) => updateForm("cronType", event.target.value as CronType)}>
+                  <option value="hourly">每小时</option>
+                  <option value="daily">每天</option>
+                  <option value="weekly">每周</option>
+                  <option value="custom">自定义表达式</option>
+                </select>
+              </label>
+              {(formState.cronType === "daily" || formState.cronType === "weekly") ? (
+                <div className="cron-jobs-form-grid two-columns">
+                  <label className="cron-jobs-field">
+                    <span>小时</span>
+                    <input type="number" min={0} max={23} value={formState.hour} onChange={(event) => updateForm("hour", Number(event.target.value))} />
+                  </label>
+                  <label className="cron-jobs-field">
+                    <span>分钟</span>
+                    <input type="number" min={0} max={59} value={formState.minute} onChange={(event) => updateForm("minute", Number(event.target.value))} />
+                  </label>
+                </div>
+              ) : null}
+              {formState.cronType === "weekly" ? (
+                <div className="cron-jobs-field">
+                  <span>执行星期</span>
+                  <div className="cron-jobs-week-grid">
+                    {ORDERED_DAYS.map((day) => {
+                      const active = formState.daysOfWeek.includes(day);
+                      return (
+                        <button
+                          key={day}
+                          type="button"
+                          className={active ? "cron-jobs-week-btn active" : "cron-jobs-week-btn"}
+                          onClick={() =>
+                            updateForm("daysOfWeek", active ? formState.daysOfWeek.filter((item) => item !== day) : [...formState.daysOfWeek, day])
+                          }
+                        >
+                          {DAY_LABELS[day]}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ) : null}
+              {formState.cronType === "custom" ? (
+                <label className="cron-jobs-field">
+                  <span>Cron 表达式</span>
+                  <input
+                    value={formState.customCron}
+                    onChange={(event) => updateForm("customCron", event.target.value)}
+                    placeholder="0 9 * * *"
+                  />
+                  <small>标准 5 段格式：分钟 小时 日 月 星期。<a href="https://crontab.guru/" target="_blank" rel="noopener noreferrer">在线助手 →</a></small>
+                </label>
+              ) : null}
+            </>
+          )}
+
+          <label className="cron-jobs-field">
+            <span>时区</span>
+            <input
+              value={formState.timezone}
+              onChange={(event) => updateForm("timezone", event.target.value)}
+              placeholder="Asia/Shanghai"
+              list="cron-tz-list"
+            />
+            <datalist id="cron-tz-list">
+              <option value="Asia/Shanghai" />
+              <option value="Asia/Tokyo" />
+              <option value="America/New_York" />
+              <option value="America/Los_Angeles" />
+              <option value="Europe/London" />
+              <option value="UTC" />
+            </datalist>
+          </label>
+
+          <label className="cron-jobs-field">
+            <span>任务类型</span>
+            <select value={formState.taskType} onChange={(event) => updateForm("taskType", event.target.value as TaskType)}>
+              <option value="agent">Agent 提问</option>
+              <option value="text">固定消息</option>
+            </select>
+          </label>
+
+          <label className="cron-jobs-field">
+            <span>{formState.taskType === "text" ? "消息内容" : "发送给 Agent 的问题"}</span>
+            <textarea
+              rows={3}
+              value={formState.content}
+              onChange={(event) => updateForm("content", event.target.value)}
+              placeholder={formState.taskType === "text" ? "请输入任务执行时要发送的文本" : "请输入要定时发送给 Agent 的问题"}
+            />
+            <small>{formState.taskType === "text" ? "适合提醒、播报和固定通知内容。" : "建议写清楚任务背景、目标和输出格式。"}</small>
+          </label>
+
+          {formState.taskType === "agent" ? (
+            <label className="cron-jobs-field">
+              <span>Request Input（JSON）</span>
+              <textarea
+                rows={4}
+                value={formState.requestInputJson}
+                onChange={(event) => updateForm("requestInputJson", event.target.value)}
+                placeholder={'[{"role":"user","content":[{"text":"Hello","type":"text"}]}]'}
+                style={{ fontFamily: "monospace", fontSize: 12 }}
+              />
+              <small>可选。若填写，将覆盖上方的文本问题作为请求体，必须为合法 JSON。</small>
+            </label>
+          ) : null}
+
+          <label className="cron-jobs-field">
+            <span>投递通道</span>
+            <input
+              value={formState.channel}
+              onChange={(event) => updateForm("channel", event.target.value)}
+              placeholder="console"
+              list="cron-channel-list"
+            />
+            <datalist id="cron-channel-list">
+              {channelOptions.map((ch) => <option key={ch} value={ch} />)}
+            </datalist>
+          </label>
+
+          <div className="cron-jobs-form-grid two-columns">
+            <label className="cron-jobs-field">
+              <span>目标 user_id</span>
+              <input
+                value={formState.targetUser}
+                onChange={(event) => updateForm("targetUser", event.target.value)}
+                placeholder="admin"
+                list="cron-user-list"
+              />
+              <datalist id="cron-user-list">
+                {userOptions.map((u) => <option key={u} value={u} />)}
+              </datalist>
+            </label>
+            <label className="cron-jobs-field">
+              <span>目标 session_id</span>
+              <input
+                value={formState.targetSession}
+                onChange={(event) => updateForm("targetSession", event.target.value)}
+                placeholder="default"
+                list="cron-session-list"
+              />
+              <datalist id="cron-session-list">
+                {sessionOptions.map((s) => <option key={s} value={s} />)}
+              </datalist>
+            </label>
+          </div>
+
+          <label className="cron-jobs-field">
+            <span>发送模式</span>
+            <select value={formState.mode} onChange={(event) => updateForm("mode", event.target.value as DispatchMode)}>
+              <option value="final">仅最终结果</option>
+              <option value="stream">流式结果</option>
+            </select>
+          </label>
+
+          <label className="cron-jobs-field">
+            <span>共享会话</span>
+            <div className="cron-jobs-switch-row">
+              <button
+                type="button"
+                className={`cron-jobs-switch ${formState.shareSession ? "active" : ""}`}
+                onClick={() => updateForm("shareSession", !formState.shareSession)}
+                aria-pressed={formState.shareSession}
+              >
+                <span className="cron-jobs-switch-thumb" />
+              </button>
+              <span className="cron-jobs-switch-label">{formState.shareSession ? "复用同一会话上下文" : "每次执行使用独立会话"}</span>
             </div>
-            <div className="cron-jobs-form-grid three-columns compact">
-              <label className="cron-jobs-field">
-                <span>最大并发</span>
-                <input
-                  type="number"
-                  min={1}
-                  value={formState.maxConcurrency}
-                  onChange={(event) => updateForm("maxConcurrency", Number(event.target.value))}
-                />
-                <small>控制同一任务同时运行的实例数量上限。</small>
-              </label>
-              <label className="cron-jobs-field">
-                <span>超时秒数</span>
-                <input
-                  type="number"
-                  min={1}
-                  value={formState.timeoutSeconds}
-                  onChange={(event) => updateForm("timeoutSeconds", Number(event.target.value))}
-                />
-                <small>超过该时间仍未完成的任务会被视为超时。</small>
-              </label>
-              <label className="cron-jobs-field">
-                <span>补偿窗口</span>
-                <input
-                  type="number"
-                  min={0}
-                  value={formState.misfireGraceSeconds}
-                  onChange={(event) => updateForm("misfireGraceSeconds", Number(event.target.value))}
-                />
-                <small>错过调度点后的允许补执行窗口，单位为秒。</small>
-              </label>
-            </div>
+          </label>
+
+          <div className="cron-jobs-form-grid three-columns">
+            <label className="cron-jobs-field">
+              <span>最大并发</span>
+              <input type="number" min={1} value={formState.maxConcurrency} onChange={(event) => updateForm("maxConcurrency", Math.max(1, Number(event.target.value)))} />
+            </label>
+            <label className="cron-jobs-field">
+              <span>超时（秒）</span>
+              <input type="number" min={1} value={formState.timeoutSeconds} onChange={(event) => updateForm("timeoutSeconds", Math.max(1, Number(event.target.value)))} />
+            </label>
+            <label className="cron-jobs-field">
+              <span>补偿窗口（秒）</span>
+              <input type="number" min={0} value={formState.misfireGraceSeconds} onChange={(event) => updateForm("misfireGraceSeconds", Math.max(0, Number(event.target.value)))} />
+            </label>
           </div>
 
           {formError ? <div className="cron-jobs-form-error">{formError}</div> : null}
@@ -1312,6 +1185,8 @@ export function CronJobsPanel() {
   const [notice, setNotice] = useState("");
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingJob, setEditingJob] = useState<CronJobSpec | null>(null);
+  const [dispatchTargets, setDispatchTargets] = useState<CronDispatchTargetItem[]>([]);
+  const [dispatchChannels, setDispatchChannels] = useState<string[]>([]);
 
   useEffect(() => {
     if (!notice) {
@@ -1346,9 +1221,20 @@ export function CronJobsPanel() {
     }
   }, []);
 
+  const loadDispatchTargets = useCallback(async () => {
+    try {
+      const resp = await cronJobsApi.listDispatchTargets(portalGatewayAgentId);
+      setDispatchTargets(resp.items || []);
+      setDispatchChannels(resp.channels || []);
+    } catch {
+      // silently ignore – targets are optional for form assistance
+    }
+  }, []);
+
   useEffect(() => {
     void refreshJobs();
-  }, [refreshJobs]);
+    void loadDispatchTargets();
+  }, [refreshJobs, loadDispatchTargets]);
 
   const jobRecords = useMemo<JobRecord[]>(() => {
     return [...jobs]
@@ -1551,6 +1437,8 @@ export function CronJobsPanel() {
         <CronJobModal
           editingJob={editingJob}
           submitting={submitting}
+          dispatchTargets={dispatchTargets}
+          dispatchChannels={dispatchChannels}
           onClose={closeModal}
           onSubmit={handleSubmit}
         />
