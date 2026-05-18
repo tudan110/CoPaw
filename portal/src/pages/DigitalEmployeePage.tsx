@@ -152,6 +152,10 @@ const OpsExpertPanel = lazyNamed(
   () => import("./digital-employee/opsExpertPanel"),
   "OpsExpertPanel",
 );
+const TracesCenterPanel = lazyNamed(
+  () => import("./digital-employee/tracesCenterPanel"),
+  "TracesCenterPanel",
+);
 
 const panelLoadingFallback = (
   <div className="history-empty" style={{ minHeight: 280 }}>
@@ -216,6 +220,7 @@ export default function DigitalEmployeePage({
   const isResourceImportMode = activeAdvancedPanel === "resource-import";
   const isNlCustomizationMode = activeAdvancedPanel === "nl-customization";
   const isAppMarketMode = activeAdvancedPanel === "app-market";
+  const isTracesMode = activeAdvancedPanel === "traces";
   const isPortalHome = !selectedEmployee;
   const isPortalHomeChat = isPortalHome && currentView === "chat" && !activeAdvancedPanel;
   const isAlarmWorkbenchMode = Boolean(
@@ -1292,6 +1297,12 @@ export default function DigitalEmployeePage({
             isCliActive={isCliMode}
             isNlCustomizationActive={isNlCustomizationMode}
             isAppMarketActive={isAppMarketMode}
+            isTracesActive={isTracesMode}
+            onOpenTraces={() =>
+              updateCurrentEmployeeRoute({
+                panel: "traces",
+              })
+            }
             onOpenAppMarket={() =>
               updateCurrentEmployeeRoute({
                 panel: "app-market",
@@ -1339,7 +1350,7 @@ export default function DigitalEmployeePage({
 
         <div
           className={
-            isModelConfigMode || isSettingsMode || isTokenUsageMode || isOpsExpertMode || isMcpMode || isSkillPoolMode || isFdeWorkbenchMode || isKnowledgeBaseMode || isInspirationMode || isCliMode || isResourceImportMode || isNlCustomizationMode || isAppMarketMode
+            isModelConfigMode || isSettingsMode || isTokenUsageMode || isOpsExpertMode || isMcpMode || isSkillPoolMode || isFdeWorkbenchMode || isKnowledgeBaseMode || isInspirationMode || isCliMode || isResourceImportMode || isNlCustomizationMode || isAppMarketMode || isTracesMode
               ? `main-content advanced-page-mode${isKnowledgeBaseMode ? " knowledge-base-page-mode" : ""}`
               : currentView === "chat"
                 ? "main-content"
@@ -1446,6 +1457,8 @@ export default function DigitalEmployeePage({
             renderDeferredPanel(<NaturalLanguageCustomizationPanel />)
           ) : isAppMarketMode ? (
             renderDeferredPanel(<AppMarketPanel />)
+          ) : isTracesMode ? (
+            renderDeferredPanel(<TracesCenterPanel />)
           ) : isResourceImportMode ? (
             renderDeferredPanel(<ResourceImportPanel />)
           ) : (

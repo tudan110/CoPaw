@@ -90,6 +90,10 @@ export default function App() {
         path="/token-usage"
         element={renderDeferredPage(<DigitalEmployeePage forcedSection="token-usage" />)}
       />
+      <Route
+        path="/traces"
+        element={renderDeferredPage(<DigitalEmployeePage forcedSection="traces" />)}
+      />
       <Route path="/employee/:employeeId" element={renderDeferredPage(<DigitalEmployeePage />)} />
       <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

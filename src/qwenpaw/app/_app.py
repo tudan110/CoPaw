@@ -42,6 +42,7 @@ from .routers.agent_scoped import AgentContextMiddleware
 from .routers.approval import router as approval_router
 from .routers.voice import voice_router
 from ..extensions.api.portal_backend import router as portal_router
+from ..extensions.api.traces_backend import router as traces_router
 from ..extensions.api.delete_block_middleware import DeleteBlockMiddleware
 from ..envs import load_envs_into_environ
 from ..providers.provider_manager import ProviderManager
@@ -653,6 +654,8 @@ def get_doctor_runtime():
 app.include_router(api_router, prefix="/api")
 # Portal backend routes already include their own `/api/portal` prefix.
 app.include_router(portal_router)
+# Traceability center router: /api/portal/traces/*
+app.include_router(traces_router)
 
 # Approval router: /api/approval/approve, /api/approval/deny, etc.
 app.include_router(approval_router, prefix="/api")

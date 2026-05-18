@@ -13,6 +13,7 @@ from __future__ import annotations
 import asyncio
 import json as _json
 import logging
+import time as _time
 import uuid as _uuid
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -155,7 +156,7 @@ class ToolGuardMixin:
         ctx = getattr(self, "_request_context", None) or {}
         # TODO: remove this
         if ctx.get("_headless_tool_guard", "true").lower() == "false":
-            return await super()._acting(tool_call)  # type: ignore[misc]
+            return await self._traced_super_acting(tool_call)
 
         self._ensure_tool_guard()
 
@@ -173,7 +174,99 @@ class ToolGuardMixin:
         if action is not None:
             return await self._execute_guard_action(action, tool_call)
 
-        return await super()._acting(tool_call)  # type: ignore[misc]
+        return await self._traced_super_acting(tool_call)
+
+    # ------------------------------------------------------------------
+    # Traceability helpers
+    # ------------------------------------------------------------------
+
+    async def _emit_tool_trace(
+        self,
+        tool_call: dict[str, Any],
+        *,
+        outcome: str,
+        started_at: float,
+        result: Any = None,
+        error: str | None = None,
+        guard_result: Any = None,
+    ) -> None:
+        """Append a ``tool_call`` event to the session's trace file.
+
+        Never raises — tracing must not break tool execution.
+        """
+        ctx = getattr(self, "_request_context", None) or {}
+        session_id = str(ctx.get("session_id") or "")
+        if not session_id:
+            return
+        try:
+            # Local import to avoid hard dependency at module load time
+            # and to keep extensions package optional.
+            from qwenpaw.extensions.traceability import trace_store
+        except Exception:  # pylint: disable=broad-except
+            return
+
+        payload: dict[str, Any] = {
+            "tool_call_id": tool_call.get("id"),
+            "tool_name": str(tool_call.get("name") or ""),
+            "args": tool_call.get("input"),
+            "outcome": outcome,
+            "duration_ms": int((_time.time() - started_at) * 1000),
+        }
+        if result is not None:
+            payload["result"] = result
+        if error is not None:
+            payload["error"] = error
+        if guard_result is not None:
+            try:
+                sev = getattr(guard_result, "max_severity", None)
+                payload["guard"] = {
+                    "severity": sev.value if sev is not None else None,
+                    "findings_count": getattr(
+                        guard_result,
+                        "findings_count",
+                        None,
+                    ),
+                }
+            except Exception:  # pylint: disable=broad-except
+                pass
+
+        try:
+            await trace_store.record_event(
+                session_id,
+                "tool_call",
+                payload,
+                agent_id=str(ctx.get("agent_id") or "") or None,
+                user_id=str(ctx.get("user_id") or "") or None,
+                channel=str(ctx.get("channel") or "") or None,
+            )
+        except Exception as exc:  # pylint: disable=broad-except
+            logger.debug("tool trace emit failed: %s", exc)
+
+    async def _traced_super_acting(
+        self,
+        tool_call: dict[str, Any],
+    ) -> dict | None:
+        """Run ``super()._acting`` while capturing a trace event."""
+        started = _time.time()
+        try:
+            result = await super()._acting(  # type: ignore[misc]
+                tool_call,
+            )
+        except Exception as exc:
+            await self._emit_tool_trace(
+                tool_call,
+                outcome="error",
+                started_at=started,
+                error=f"{type(exc).__name__}: {exc}",
+            )
+            raise
+        await self._emit_tool_trace(
+            tool_call,
+            outcome="ok",
+            started_at=started,
+            result=result,
+        )
+        return result
 
     # pylint: disable=too-many-return-statements
     async def _decide_guard_action(
@@ -367,6 +460,12 @@ class ToolGuardMixin:
         guard_result=None,
     ) -> dict | None:
         """Auto-deny a tool call without offering approval."""
+        await self._emit_tool_trace(
+            tool_call,
+            outcome="auto_denied",
+            started_at=_time.time(),
+            guard_result=guard_result,
+        )
         from agentscope.message import ToolResultBlock
         from qwenpaw.security.tool_guard.approval import (
             format_findings_summary,
@@ -491,8 +590,8 @@ class ToolGuardMixin:
                 "Tool '%s' approved by user, executing...",
                 tool_name,
             )
-            # Execute the tool
-            return await super()._acting(tool_call)  # type: ignore[misc]
+            # Execute the tool (traced)
+            return await self._traced_super_acting(tool_call)
         elif decision == ApprovalDecision.DENIED:
             logger.info(
                 "Tool '%s' denied by user",
@@ -690,6 +789,12 @@ class ToolGuardMixin:
         guard_result,
     ) -> dict | None:
         """Handle user denial of tool execution."""
+        await self._emit_tool_trace(
+            tool_call,
+            outcome="denied",
+            started_at=_time.time(),
+            guard_result=guard_result,
+        )
         from agentscope.message import ToolResultBlock
         from qwenpaw.security.tool_guard.approval import (
             format_findings_summary,
@@ -735,6 +840,12 @@ class ToolGuardMixin:
         guard_result,
     ) -> dict | None:
         """Handle approval timeout (auto-deny)."""
+        await self._emit_tool_trace(
+            tool_call,
+            outcome="timeout",
+            started_at=_time.time(),
+            guard_result=guard_result,
+        )
         from agentscope.message import ToolResultBlock
         from qwenpaw.security.tool_guard.approval import (
             format_findings_summary,

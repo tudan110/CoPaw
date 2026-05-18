@@ -25,6 +25,7 @@ from .command_dispatch import (
     _is_command,
     run_command_path,
 )
+from ...extensions.traceability import trace_store as _trace_store
 from .query_error_dump import write_query_error_dump
 from .mission_dispatch import (
     maybe_handle_mission_command,
@@ -49,6 +50,63 @@ logger = logging.getLogger(__name__)
 
 
 _PRINT_END_SIGNAL = "[END]"
+
+
+def _safe_msg_text(msg: Any) -> str:
+    """Extract a plain-text preview from an agentscope ``Msg`` instance.
+
+    Tracing must never raise; on any failure, return an empty string.
+    """
+    try:
+        if hasattr(msg, "get_text_content"):
+            text = msg.get_text_content()
+            if isinstance(text, str):
+                return text
+        content = getattr(msg, "content", None)
+        if isinstance(content, str):
+            return content
+        if isinstance(content, list):
+            parts: list[str] = []
+            for block in content:
+                if isinstance(block, dict):
+                    if block.get("type") == "text":
+                        parts.append(str(block.get("text") or ""))
+            return "".join(parts)
+    except Exception:  # pylint: disable=broad-except
+        return ""
+    return ""
+
+
+def _safe_msg_role(msg: Any) -> str:
+    try:
+        return str(getattr(msg, "role", "") or "")
+    except Exception:  # pylint: disable=broad-except
+        return ""
+
+
+async def _emit_trace_safe(
+    session_id: str,
+    event_type: str,
+    payload: dict[str, Any] | None,
+    *,
+    agent_id: str | None = None,
+    user_id: str | None = None,
+    channel: str | None = None,
+    index_extra: dict[str, Any] | None = None,
+) -> None:
+    """Fire-and-forget trace emitter that never propagates errors."""
+    try:
+        await _trace_store.record_event(
+            session_id,
+            event_type,
+            payload,
+            agent_id=agent_id,
+            user_id=user_id,
+            channel=channel,
+            index_extra=index_extra,
+        )
+    except Exception:  # pylint: disable=broad-except
+        logger.debug("trace emit failed", exc_info=True)
 
 
 async def _cancel_streaming_agent_task(task: asyncio.Task) -> None:
@@ -274,6 +332,17 @@ class AgentRunner(Runner):
         )
         AgentRunner._rewrite_last_message_text(msgs, merged)
         logger.info("Skill invocation: %s", name)
+        # Best-effort: stash the skill name on the runner so the outer
+        # query_handler can emit a ``skill_trigger`` trace event with
+        # the active session_id available there.
+        try:
+            self._pending_skill_trigger = {  # type: ignore[attr-defined]
+                "name": name,
+                "display_name": display_name,
+                "input": user_input,
+            }
+        except Exception:  # pylint: disable=broad-except
+            pass
         return None
 
     @staticmethod
@@ -316,6 +385,23 @@ class AgentRunner(Runner):
         )
         query = _get_last_user_text(msgs)
         session_id = getattr(request, "session_id", "") or ""
+
+        # Traceability: record user-side input as the opening event of
+        # this turn so the timeline always starts with what the user said
+        # — even when the request is just a slash command.
+        if session_id and query:
+            await _emit_trace_safe(
+                session_id,
+                "user_message",
+                {"text": query},
+                agent_id=self.agent_id,
+                user_id=str(getattr(request, "user_id", "") or "") or None,
+                channel=str(getattr(request, "channel", "") or "") or None,
+                index_extra={
+                    "title": query,
+                    "preview": query,
+                },
+            )
 
         # Check if query is a command (including /approval)
         logger.debug(f"Query: {query!r}, is_command: {_is_command(query)}")
@@ -645,12 +731,38 @@ class AgentRunner(Runner):
 
             # Skill info (/<name> without input) is display-only
             if mission_info is None:
+                self._pending_skill_trigger = None
                 skill_response = self._maybe_inject_skill(
                     query,
                     msgs,
                     agent.toolkit.skills,
                 )
+                # Trace: skill rewritten the user input
+                pending = getattr(self, "_pending_skill_trigger", None)
+                if pending and session_id:
+                    await _emit_trace_safe(
+                        session_id,
+                        "skill_trigger",
+                        pending,
+                        agent_id=self.agent_id,
+                        user_id=user_id,
+                        channel=channel,
+                    )
+                self._pending_skill_trigger = None
                 if skill_response is not None:
+                    if session_id:
+                        await _emit_trace_safe(
+                            session_id,
+                            "agent_reply",
+                            {
+                                "text": _safe_msg_text(skill_response),
+                                "role": "assistant",
+                                "kind": "skill_info",
+                            },
+                            agent_id=self.agent_id,
+                            user_id=user_id,
+                            channel=channel,
+                        )
                     yield skill_response, True
                     return
 
@@ -722,6 +834,27 @@ class AgentRunner(Runner):
             # in the session state.
             agent.rebuild_sys_prompt()
 
+            async def _trace_yield(msg: Any, last: bool) -> None:
+                if not session_id or not last:
+                    return
+                text = _safe_msg_text(msg)
+                if not text:
+                    return
+                role = _safe_msg_role(msg) or "assistant"
+                # System messages (tool_result, denial banners, etc.)
+                # are already captured by the tool-guard trace events,
+                # so we record only what the assistant actually said.
+                if role != "assistant":
+                    return
+                await _emit_trace_safe(
+                    session_id,
+                    "agent_reply",
+                    {"text": text, "role": role},
+                    agent_id=self.agent_id,
+                    user_id=user_id,
+                    channel=channel,
+                )
+
             # --- Execution: Mission Mode (phased) or standard -----
             if mission_info is not None:
                 from ...agents.mission.mission_runner import (
@@ -744,6 +877,7 @@ class AgentRunner(Runner):
                         max_iterations=max_iters,
                         agent_id=self.agent_id,
                     ):
+                        await _trace_yield(msg, last)
                         yield msg, last
                 else:
                     async for msg, last in run_mission_phase2(
@@ -753,12 +887,14 @@ class AgentRunner(Runner):
                         max_iterations=max_iters,
                         agent_id=self.agent_id,
                     ):
+                        await _trace_yield(msg, last)
                         yield msg, last
             else:
                 async for msg, last in _stream_printing_messages_interruptible(
                     agents=[agent],
                     coroutine_task=agent(msgs),
                 ):
+                    await _trace_yield(msg, last)
                     yield msg, last
 
         except asyncio.CancelledError as exc:
@@ -795,6 +931,19 @@ class AgentRunner(Runner):
             model_name = None
             if agent and hasattr(agent, "model"):
                 model_name = getattr(agent.model, "model_name", None)
+
+            if session_id:
+                await _emit_trace_safe(
+                    session_id,
+                    "error",
+                    {
+                        "exception_type": type(e).__name__,
+                        "message": str(e)[:512],
+                    },
+                    agent_id=self.agent_id,
+                    user_id=str(getattr(request, "user_id", "") or "") or None,
+                    channel=str(getattr(request, "channel", "") or "") or None,
+                )
 
             converted = convert_model_exception(e, model_name)
 
