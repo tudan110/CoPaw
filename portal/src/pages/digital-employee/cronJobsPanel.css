@@ -362,7 +362,7 @@
 .cron-jobs-more-dropdown {
   display: none;
   position: absolute;
-  top: calc(100% + 4px);
+  bottom: calc(100% + 4px);
   right: 0;
   z-index: 100;
   min-width: 100px;
