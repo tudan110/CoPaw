@@ -7,9 +7,14 @@ const API_BASE_URL = (import.meta.env.VITE_COPAW_API_BASE_URL || DEFAULT_API_BAS
 );
 
 export interface CronJobSchedule {
-  type: "cron";
-  cron: string;
+  type: "cron" | "once";
+  cron?: string;
   timezone?: string;
+  run_at?: string;
+  repeat_every_days?: number;
+  repeat_end_type?: "never" | "until" | "count";
+  repeat_until?: string;
+  repeat_count?: number;
 }
 
 export interface CronJobTarget {
@@ -26,6 +31,7 @@ export interface CronJobDispatch {
 }
 
 export interface CronJobRuntime {
+  share_session?: boolean;
   max_concurrency?: number;
   timeout_seconds?: number;
   misfire_grace_seconds?: number;
@@ -42,6 +48,7 @@ export interface CronJobSpec {
   id: string;
   name: string;
   enabled?: boolean;
+  save_result_to_inbox?: boolean;
   schedule: CronJobSchedule;
   task_type?: "text" | "agent";
   text?: string;
@@ -56,6 +63,17 @@ export interface CronJobState {
   last_run_at?: string | null;
   last_status?: "success" | "error" | "running" | "skipped" | "cancelled" | null;
   last_error?: string | null;
+}
+
+export interface CronDispatchTargetItem {
+  channel: string;
+  user_id: string;
+  session_id: string;
+}
+
+export interface CronDispatchTargetsResponse {
+  channels: string[];
+  items: CronDispatchTargetItem[];
 }
 
 interface CopawRequestOptions {
@@ -186,4 +204,15 @@ export const cronJobsApi = {
       agentId,
       method: "POST",
     }),
+
+  listDispatchTargets: (agentId?: string, params?: { channel?: string; keyword?: string }) => {
+    const searchParams = new URLSearchParams();
+    if (params?.channel) searchParams.append("channel", params.channel);
+    if (params?.keyword) searchParams.append("keyword", params.keyword);
+    const query = searchParams.toString();
+    return requestCopaw<CronDispatchTargetsResponse>(
+      `/cron/dispatch-targets${query ? `?${query}` : ""}`,
+      { agentId },
+    );
+  },
 };

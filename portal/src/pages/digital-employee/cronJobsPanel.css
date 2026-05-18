@@ -199,7 +199,8 @@
 
 .cron-jobs-table-shell,
 .cron-jobs-section-card {
-  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
 }
 
 .cron-jobs-table-shell {
@@ -328,9 +329,7 @@
   position: fixed;
   inset: 0;
   z-index: 60;
-  background:
-    linear-gradient(90deg, rgba(15, 23, 42, 0.18) 0%, rgba(15, 23, 42, 0.28) 38%, rgba(15, 23, 42, 0.5) 100%);
-  backdrop-filter: blur(6px);
+  background: rgba(15, 23, 42, 0.38);
   display: flex;
   align-items: stretch;
   justify-content: flex-end;

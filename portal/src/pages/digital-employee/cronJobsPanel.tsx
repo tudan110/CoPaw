@@ -1,16 +1,20 @@
 import { memo, useCallback, useEffect, useMemo, useState } from "react";
 import {
   cronJobsApi,
+  type CronDispatchTargetItem,
   type CronJobRequest,
   type CronJobSpec,
   type CronJobState,
 } from "../../api/cronJobs";
+import { portalGatewayAgentId } from "../../config/portalBranding";
 import "./cronJobsPanel.css";
 
 type JobFilter = "all" | "running" | "stopped" | "pending";
 type CronType = "hourly" | "daily" | "weekly" | "custom";
 type TaskType = "agent" | "text";
 type DispatchMode = "final" | "stream";
+type ScheduleType = "cron" | "once";
+type RepeatEndType = "never" | "until" | "count";
 type DisplayStatusKey = "running" | "pending" | "stopped";
 type DisplayTone = "green" | "amber" | "red" | "slate";
 
@@ -26,18 +30,28 @@ type CronJobFormState = {
   id: string;
   name: string;
   enabled: boolean;
+  saveResultToInbox: boolean;
+  scheduleType: ScheduleType;
   taskType: TaskType;
   content: string;
+  requestInputJson: string;
   channel: string;
   targetUser: string;
   targetSession: string;
   mode: DispatchMode;
+  shareSession: boolean;
   timezone: string;
   cronType: CronType;
   hour: number;
   minute: number;
   daysOfWeek: string[];
   customCron: string;
+  onceRunAt: string;
+  onceRepeatEnabled: boolean;
+  onceRepeatEveryDays: number;
+  onceRepeatEndType: RepeatEndType;
+  onceRepeatUntil: string;
+  onceRepeatCount: number;
   maxConcurrency: number;
   timeoutSeconds: number;
   misfireGraceSeconds: number;
@@ -71,6 +85,8 @@ type CronJobsTableSectionProps = {
 type CronJobModalProps = {
   editingJob: CronJobSpec | null;
   submitting: boolean;
+  dispatchTargets: CronDispatchTargetItem[];
+  dispatchChannels: string[];
   onClose: () => void;
   onSubmit: (payload: CronJobSpec, editingJob: CronJobSpec | null) => Promise<void>;
 };
@@ -164,6 +180,15 @@ const DAY_LABELS: Record<string, string> = {
   sat: "周六",
   sun: "周日",
 };
+const SCHEDULE_TYPE_OPTIONS: Array<{ id: ScheduleType; label: string; description: string; icon: string }> = [
+  { id: "cron", label: "周期调度", description: "按 Cron 表达式重复执行。", icon: "fa-repeat" },
+  { id: "once", label: "单次执行", description: "指定时间执行一次，可选重复。", icon: "fa-calendar-check" },
+];
+const REPEAT_END_OPTIONS: Array<{ id: RepeatEndType; label: string }> = [
+  { id: "never", label: "永不结束" },
+  { id: "until", label: "截止日期" },
+  { id: "count", label: "执行次数" },
+];
 const INTEGER_RE = /^\d+$/;
 const CRON_RE = /^(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)$/;
 const DAY_NAME_SET = new Set(ORDERED_DAYS);
@@ -186,23 +211,39 @@ function getBrowserTimezone() {
   }
 }
 
+function getDefaultRunAt() {
+  const d = new Date(Date.now() + 3600_000);
+  d.setMinutes(0, 0, 0);
+  return d.toISOString().slice(0, 16);
+}
+
 function createDefaultFormState(): CronJobFormState {
   return {
     id: "",
     name: "",
-    enabled: true,
+    enabled: false,
+    saveResultToInbox: true,
+    scheduleType: "cron",
     taskType: "agent",
     content: "",
+    requestInputJson: "",
     channel: "console",
-    targetUser: "cron",
-    targetSession: "portal-cron",
+    targetUser: "",
+    targetSession: "",
     mode: "final",
+    shareSession: true,
     timezone: getBrowserTimezone(),
     cronType: "daily",
     hour: 9,
     minute: 0,
     daysOfWeek: ["mon"],
     customCron: "0 9 * * *",
+    onceRunAt: getDefaultRunAt(),
+    onceRepeatEnabled: false,
+    onceRepeatEveryDays: 1,
+    onceRepeatEndType: "never",
+    onceRepeatUntil: "",
+    onceRepeatCount: 2,
     maxConcurrency: 1,
     timeoutSeconds: 120,
     misfireGraceSeconds: 60,
@@ -451,23 +492,39 @@ function buildAgentRequest(
 }
 
 function createFormStateFromJob(job: CronJobSpec): CronJobFormState {
-  const schedule = parseCron(job.schedule?.cron || "0 9 * * *");
+  const isOnce = job.schedule?.type === "once";
+  const schedule = isOnce ? { type: "daily" as CronType, hour: 9, minute: 0 } : parseCron(job.schedule?.cron || "0 9 * * *");
+  const requestInput = job.request?.input;
+  let requestInputJson = "";
+  if (requestInput !== undefined && requestInput !== null) {
+    requestInputJson = typeof requestInput === "string" ? requestInput : JSON.stringify(requestInput, null, 2);
+  }
   return {
     id: job.id,
     name: job.name || "",
     enabled: job.enabled !== false,
+    saveResultToInbox: job.save_result_to_inbox !== false,
+    scheduleType: isOnce ? "once" : "cron",
     taskType: job.task_type === "text" ? "text" : "agent",
     content: job.task_type === "text" ? String(job.text || "") : extractPromptFromRequest(job.request),
+    requestInputJson,
     channel: job.dispatch?.channel || "console",
-    targetUser: job.dispatch?.target?.user_id || "cron",
-    targetSession: job.dispatch?.target?.session_id || "portal-cron",
+    targetUser: job.dispatch?.target?.user_id || "",
+    targetSession: job.dispatch?.target?.session_id || "",
     mode: job.dispatch?.mode === "stream" ? "stream" : "final",
+    shareSession: job.runtime?.share_session !== false,
     timezone: job.schedule?.timezone || getBrowserTimezone(),
     cronType: schedule.type,
     hour: schedule.hour ?? 9,
     minute: schedule.minute ?? 0,
     daysOfWeek: schedule.daysOfWeek || ["mon"],
     customCron: schedule.rawCron || job.schedule?.cron || "0 9 * * *",
+    onceRunAt: (job.schedule as any)?.run_at || getDefaultRunAt(),
+    onceRepeatEnabled: Boolean((job.schedule as any)?.repeat_every_days),
+    onceRepeatEveryDays: Number((job.schedule as any)?.repeat_every_days || 1),
+    onceRepeatEndType: (job.schedule as any)?.repeat_end_type || "never",
+    onceRepeatUntil: (job.schedule as any)?.repeat_until || "",
+    onceRepeatCount: Number((job.schedule as any)?.repeat_count || 2),
     maxConcurrency: Math.max(1, Number(job.runtime?.max_concurrency || 1)),
     timeoutSeconds: Math.max(1, Number(job.runtime?.timeout_seconds || 120)),
     misfireGraceSeconds: Math.max(0, Number(job.runtime?.misfire_grace_seconds || 60)),
@@ -475,32 +532,66 @@ function createFormStateFromJob(job: CronJobSpec): CronJobFormState {
 }
 
 function buildPayloadFromForm(form: CronJobFormState, sourceJob: CronJobSpec | null): CronJobSpec {
-  const cron = serializeCron({
-    type: form.cronType,
-    hour: form.hour,
-    minute: form.minute,
-    daysOfWeek: form.daysOfWeek,
-    rawCron: form.customCron,
-  });
   const content = form.content.trim();
   const targetUser = form.targetUser.trim();
   const targetSession = form.targetSession.trim();
+
+  let schedule: CronJobSpec["schedule"];
+  if (form.scheduleType === "once") {
+    schedule = {
+      type: "once",
+      run_at: form.onceRunAt,
+      timezone: form.timezone.trim() || "UTC",
+      ...(form.onceRepeatEnabled ? {
+        repeat_every_days: form.onceRepeatEveryDays,
+        repeat_end_type: form.onceRepeatEndType,
+        ...(form.onceRepeatEndType === "until" ? { repeat_until: form.onceRepeatUntil } : {}),
+        ...(form.onceRepeatEndType === "count" ? { repeat_count: form.onceRepeatCount } : {}),
+      } : {}),
+    };
+  } else {
+    const cron = serializeCron({
+      type: form.cronType,
+      hour: form.hour,
+      minute: form.minute,
+      daysOfWeek: form.daysOfWeek,
+      rawCron: form.customCron,
+    });
+    schedule = {
+      type: "cron",
+      cron,
+      timezone: form.timezone.trim() || "UTC",
+    };
+  }
+
+  let request: CronJobRequest | undefined;
+  if (form.taskType === "agent") {
+    if (form.requestInputJson.trim()) {
+      try {
+        const parsed = JSON.parse(form.requestInputJson.trim());
+        request = {
+          ...(sourceJob?.request || {}),
+          input: parsed,
+          user_id: targetUser,
+          session_id: targetSession,
+        };
+      } catch {
+        request = buildAgentRequest(content, targetUser, targetSession, sourceJob?.request);
+      }
+    } else {
+      request = buildAgentRequest(content, targetUser, targetSession, sourceJob?.request);
+    }
+  }
 
   return {
     id: sourceJob?.id || form.id || "",
     name: form.name.trim(),
     enabled: form.enabled,
-    schedule: {
-      type: "cron",
-      cron,
-      timezone: form.timezone.trim() || "UTC",
-    },
+    save_result_to_inbox: form.saveResultToInbox,
+    schedule,
     task_type: form.taskType,
     text: form.taskType === "text" ? content : undefined,
-    request:
-      form.taskType === "agent"
-        ? buildAgentRequest(content, targetUser, targetSession, sourceJob?.request)
-        : undefined,
+    request,
     dispatch: {
       type: "channel",
       channel: form.channel.trim(),
@@ -512,6 +603,7 @@ function buildPayloadFromForm(form: CronJobFormState, sourceJob: CronJobSpec | n
       meta: sourceJob?.dispatch?.meta || {},
     },
     runtime: {
+      share_session: form.shareSession,
       max_concurrency: Math.max(1, Number(form.maxConcurrency || 1)),
       timeout_seconds: Math.max(1, Number(form.timeoutSeconds || 120)),
       misfire_grace_seconds: Math.max(0, Number(form.misfireGraceSeconds || 60)),
@@ -762,24 +854,31 @@ const CronJobsTableSection = memo(function CronJobsTableSection({
   );
 });
 
-function CronJobModal({ editingJob, submitting, onClose, onSubmit }: CronJobModalProps) {
+const CronJobModal = memo(function CronJobModal({ editingJob, submitting, onClose, onSubmit }: CronJobModalProps) {
   const [formState, setFormState] = useState<CronJobFormState>(() =>
     editingJob ? createFormStateFromJob(editingJob) : createDefaultFormState(),
   );
   const [formError, setFormError] = useState("");
 
-  const selectedTaskType = getTaskTypeMeta(formState.taskType);
-  const selectedDispatchMode = getDispatchModeMeta(formState.mode);
-  const schedulePreview = getSchedulePreview(formState);
-  const deliveryPreview = `${formState.channel || "console"} / ${formState.targetUser || "cron"} / ${formState.targetSession || "portal-cron"}`;
+  const selectedTaskType = useMemo(() => getTaskTypeMeta(formState.taskType), [formState.taskType]);
+  const selectedDispatchMode = useMemo(() => getDispatchModeMeta(formState.mode), [formState.mode]);
+  const schedulePreview = useMemo(() => getSchedulePreview(formState), [formState.cronType, formState.hour, formState.minute, formState.daysOfWeek, formState.customCron]);
+  const deliveryPreview = useMemo(() => `${formState.channel || "console"} / ${formState.targetUser || "cron"} / ${formState.targetSession || "portal-cron"}`, [formState.channel, formState.targetUser, formState.targetSession]);
+  const cronExpression = useMemo(() => serializeCron({
+    type: formState.cronType,
+    hour: formState.hour,
+    minute: formState.minute,
+    daysOfWeek: formState.daysOfWeek,
+    rawCron: formState.customCron,
+  }), [formState.cronType, formState.hour, formState.minute, formState.daysOfWeek, formState.customCron]);
 
-  const updateForm = <K extends keyof CronJobFormState>(key: K, value: CronJobFormState[K]) => {
+  const updateForm = useCallback(<K extends keyof CronJobFormState>(key: K, value: CronJobFormState[K]) => {
     setFormState((prev) => ({ ...prev, [key]: value }));
-  };
+  }, []);
 
   const validateForm = () => {
-    if (!formState.id.trim()) {
-      return "请输入任务 ID。";
+    if (editingJob && !formState.id.trim()) {
+      return "任务 ID 异常。";
     }
     if (!formState.name.trim()) {
       return "请输入任务名称。";
@@ -872,17 +971,17 @@ function CronJobModal({ editingJob, submitting, onClose, onSubmit }: CronJobModa
             </div>
           </section>
 
-          <div className="cron-jobs-form-grid three-columns">
-            <label className="cron-jobs-field">
-              <span>任务 ID</span>
-              <input
-                value={formState.id}
-                onChange={(event) => updateForm("id", event.target.value)}
-                placeholder="例如：daily-report-job"
-                disabled={Boolean(editingJob)}
-              />
-              <small>{editingJob ? "任务创建后 ID 固定，编辑时仅展示不可修改。" : "建议使用稳定、可读的英文标识。"}</small>
-            </label>
+          <div className={`cron-jobs-form-grid ${editingJob ? "three-columns" : "two-columns"}`}>
+            {editingJob ? (
+              <label className="cron-jobs-field">
+                <span>任务 ID</span>
+                <input
+                  value={formState.id}
+                  disabled
+                />
+                <small>任务创建后 ID 固定，编辑时仅展示不可修改。</small>
+              </label>
+            ) : null}
             <label className="cron-jobs-field">
               <span>任务名称</span>
               <input
@@ -955,15 +1054,7 @@ function CronJobModal({ editingJob, submitting, onClose, onSubmit }: CronJobModa
           <div className="cron-jobs-section-card">
             <div className="cron-jobs-section-head">
               <h5>调度计划</h5>
-              <span>
-                {serializeCron({
-                  type: formState.cronType,
-                  hour: formState.hour,
-                  minute: formState.minute,
-                  daysOfWeek: formState.daysOfWeek,
-                  rawCron: formState.customCron,
-                })}
-              </span>
+              <span>{cronExpression}</span>
             </div>
 
             <div className="cron-jobs-choice-grid four-columns">
@@ -1208,7 +1299,7 @@ function CronJobModal({ editingJob, submitting, onClose, onSubmit }: CronJobModa
       </div>
     </div>
   );
-}
+});
 
 export function CronJobsPanel() {
   const [jobs, setJobs] = useState<CronJobSpec[]>([]);
@@ -1235,11 +1326,11 @@ export function CronJobsPanel() {
     setError("");
 
     try {
-      const nextJobs = await cronJobsApi.listCronJobs();
+      const nextJobs = await cronJobsApi.listCronJobs(portalGatewayAgentId);
       const stateEntries = await Promise.all(
         nextJobs.map(async (job) => {
           try {
-            const state = await cronJobsApi.getCronJobState(job.id);
+            const state = await cronJobsApi.getCronJobState(job.id, portalGatewayAgentId);
             return [job.id, state] as const;
           } catch {
             return [job.id, {}] as const;
@@ -1317,10 +1408,10 @@ export function CronJobsPanel() {
       setSubmitting(true);
       try {
         if (currentEditingJob) {
-          await cronJobsApi.replaceCronJob(currentEditingJob.id, payload);
+          await cronJobsApi.replaceCronJob(currentEditingJob.id, payload, portalGatewayAgentId);
           setNotice(`已更新任务“${payload.name}”。`);
         } else {
-          await cronJobsApi.createCronJob(payload);
+          await cronJobsApi.createCronJob(payload, portalGatewayAgentId);
           setNotice(`已创建任务“${payload.name}”。`);
         }
         closeModal();
@@ -1357,7 +1448,7 @@ export function CronJobsPanel() {
     if (!window.confirm(`确认删除定时任务“${job.name}”吗？`)) {
       return;
     }
-    await runJobAction(job.id, () => cronJobsApi.deleteCronJob(job.id), `已删除任务“${job.name}”。`);
+    await runJobAction(job.id, () => cronJobsApi.deleteCronJob(job.id, portalGatewayAgentId), `已删除任务"${job.name}"。`);
   }, [runJobAction]);
 
   const handleToggleSchedule = useCallback(async (record: JobRecord) => {
@@ -1365,22 +1456,22 @@ export function CronJobsPanel() {
 
     if (job.enabled === false) {
       const payload = { ...job, enabled: true };
-      await runJobAction(job.id, () => cronJobsApi.replaceCronJob(job.id, payload), `已启用任务“${job.name}”。`);
+      await runJobAction(job.id, () => cronJobsApi.replaceCronJob(job.id, payload, portalGatewayAgentId), `已启用任务"${job.name}"。`);
       return;
     }
 
     if (!state.next_run_at) {
-      await runJobAction(job.id, () => cronJobsApi.resumeCronJob(job.id), `已恢复任务“${job.name}”。`);
+      await runJobAction(job.id, () => cronJobsApi.resumeCronJob(job.id, portalGatewayAgentId), `已恢复任务"${job.name}"。`);
       return;
     }
 
-    await runJobAction(job.id, () => cronJobsApi.pauseCronJob(job.id), `已暂停任务“${job.name}”。`);
+    await runJobAction(job.id, () => cronJobsApi.pauseCronJob(job.id, portalGatewayAgentId), `已暂停任务"${job.name}"。`);
   }, [runJobAction]);
 
   const handleRunNow = useCallback((job: CronJobSpec) => {
     void runJobAction(
       job.id,
-      () => cronJobsApi.runCronJob(job.id),
+      () => cronJobsApi.runCronJob(job.id, portalGatewayAgentId),
       `已触发任务“${job.name}”立即执行。`,
     );
   }, [runJobAction]);
