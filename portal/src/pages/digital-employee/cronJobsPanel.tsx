@@ -775,7 +775,7 @@ const CronJobsTableSection = memo(function CronJobsTableSection({
                     <td>{job.dispatch?.channel || "-"}</td>
                     <td>{job.dispatch?.target?.user_id || "-"}</td>
                     <td>{job.dispatch?.target?.session_id || "-"}</td>
-                    <td>{job.dispatch?.mode || "-"}</td>
+                    <td>{job.dispatch?.mode === "stream" ? "流式结果" : job.dispatch?.mode === "final" ? "仅最终结果" : "-"}</td>
                     <td>{formatDateTime(state.next_run_at)}</td>
                     <td>{formatDateTime(state.last_run_at)}</td>
                     <td className="col-fixed-right">
