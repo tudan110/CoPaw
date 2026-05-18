@@ -543,7 +543,7 @@
   width: 100%;
   min-height: 50px;
   padding: 13px 15px;
-  border: 1px solid rgba(148, 163, 184, 0.24);
+  border: 1px solid rgba(148, 163, 184, 0.24) !important;
   border-radius: 16px;
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(248, 250, 252, 0.98));
   font-size: 14px;
@@ -558,11 +558,11 @@
 }
 
 .cron-searchable-trigger:hover {
-  border-color: rgba(37, 99, 235, 0.4);
+  border-color: rgba(37, 99, 235, 0.4) !important;
 }
 
 .cron-searchable-trigger.active {
-  border-color: #2563eb;
+  border-color: #2563eb !important;
   box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
 }
 
