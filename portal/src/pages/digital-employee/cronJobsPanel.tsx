@@ -1501,9 +1501,8 @@ export function CronJobsPanel() {
   const stats = useMemo(() => {
     return {
       total: jobRecords.length,
-      running: jobRecords.filter((record) => record.status.key === "running").length,
-      pending: jobRecords.filter((record) => record.status.key === "pending").length,
-      errors: jobRecords.filter((record) => record.status.isError).length,
+      enabled: jobRecords.filter((record) => record.status.key === "running").length,
+      disabled: jobRecords.filter((record) => record.status.key === "stopped").length,
     };
   }, [jobRecords]);
 
@@ -1635,16 +1634,12 @@ export function CronJobsPanel() {
             <strong>{stats.total}</strong>
           </article>
           <article className="cron-jobs-stat-card accent-green">
-            <span>运行中</span>
-            <strong>{stats.running}</strong>
+            <span>已启用</span>
+            <strong>{stats.enabled}</strong>
           </article>
-          <article className="cron-jobs-stat-card accent-amber">
-            <span>待首次执行</span>
-            <strong>{stats.pending}</strong>
-          </article>
-          <article className="cron-jobs-stat-card accent-red">
-            <span>最近失败</span>
-            <strong>{stats.errors}</strong>
+          <article className="cron-jobs-stat-card accent-slate">
+            <span>已禁用</span>
+            <strong>{stats.disabled}</strong>
           </article>
         </div>
 
