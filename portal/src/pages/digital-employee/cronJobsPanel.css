@@ -351,30 +351,24 @@
 }
 
 /* More menu */
-.cron-jobs-more-menu {
-  position: relative;
-}
-
-.cron-jobs-more-menu .more-trigger {
+.cron-jobs-action-btn.more-trigger {
   padding: 6px 10px;
 }
 
 .cron-jobs-more-dropdown {
   display: none;
-  position: absolute;
-  bottom: calc(100% + 4px);
-  right: 0;
-  z-index: 100;
+  position: fixed;
+  z-index: 9999;
   min-width: 100px;
   padding: 4px;
   border-radius: 12px;
   background: #fff;
   border: 1px solid rgba(148, 163, 184, 0.2);
   box-shadow: 0 8px 24px rgba(15, 23, 42, 0.12);
+  transform: translateX(-100%);
 }
 
-.cron-jobs-more-menu:hover .cron-jobs-more-dropdown,
-.cron-jobs-more-menu:focus-within .cron-jobs-more-dropdown {
+.cron-jobs-more-dropdown.visible {
   display: flex;
   flex-direction: column;
 }

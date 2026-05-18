@@ -686,6 +686,31 @@ const CronJobsTableSection = memo(function CronJobsTableSection({
   onDelete,
   onViewHistory,
 }: CronJobsTableSectionProps) {
+  const [moreMenuId, setMoreMenuId] = useState<string | null>(null);
+  const [moreMenuPos, setMoreMenuPos] = useState<{ top: number; left: number }>({ top: 0, left: 0 });
+  const moreMenuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!moreMenuId) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (moreMenuRef.current && !moreMenuRef.current.contains(e.target as Node)) {
+        setMoreMenuId(null);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [moreMenuId]);
+
+  const handleMoreClick = (jobId: string, e: React.MouseEvent<HTMLButtonElement>) => {
+    if (moreMenuId === jobId) {
+      setMoreMenuId(null);
+      return;
+    }
+    const rect = e.currentTarget.getBoundingClientRect();
+    setMoreMenuPos({ top: rect.bottom + 4, left: rect.right });
+    setMoreMenuId(jobId);
+  };
+
   return (
     <section className="cron-jobs-table-shell">
       {loading ? (
@@ -779,19 +804,14 @@ const CronJobsTableSection = memo(function CronJobsTableSection({
                         >
                           历史
                         </button>
-                        <div className="cron-jobs-more-menu">
-                          <button
-                            type="button"
-                            className="cron-jobs-action-btn more-trigger"
-                            disabled={isBusy}
-                          >
-                            <i className="fas fa-ellipsis" />
-                          </button>
-                          <div className="cron-jobs-more-dropdown">
-                            <button type="button" onClick={() => onEdit(job)} disabled={isBusy || job.enabled}>编辑</button>
-                            <button type="button" className="danger" onClick={() => onDelete(job)} disabled={isBusy || job.enabled}>删除</button>
-                          </div>
-                        </div>
+                        <button
+                          type="button"
+                          className="cron-jobs-action-btn more-trigger"
+                          disabled={isBusy}
+                          onClick={(e) => handleMoreClick(job.id, e)}
+                        >
+                          <i className="fas fa-ellipsis" />
+                        </button>
                       </div>
                     </td>
                   </tr>
@@ -799,6 +819,16 @@ const CronJobsTableSection = memo(function CronJobsTableSection({
               })}
             </tbody>
           </table>
+          {moreMenuId && (
+            <div
+              ref={moreMenuRef}
+              className="cron-jobs-more-dropdown visible"
+              style={{ top: moreMenuPos.top, left: moreMenuPos.left }}
+            >
+              <button type="button" onClick={() => { onEdit(filteredJobs.find(j => j.id === moreMenuId)!); setMoreMenuId(null); }} disabled={filteredJobs.find(j => j.id === moreMenuId)?.enabled}>编辑</button>
+              <button type="button" className="danger" onClick={() => { onDelete(filteredJobs.find(j => j.id === moreMenuId)!); setMoreMenuId(null); }} disabled={filteredJobs.find(j => j.id === moreMenuId)?.enabled}>删除</button>
+            </div>
+          )}
         </div>
       ) : (
         <div className="cron-jobs-empty-state">
