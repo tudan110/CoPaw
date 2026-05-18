@@ -10,13 +10,13 @@ import {
 import { portalGatewayAgentId } from "../../config/portalBranding";
 import "./cronJobsPanel.css";
 
-type JobFilter = "all" | "running" | "stopped" | "pending";
+type JobFilter = "all" | "running" | "stopped";
 type CronType = "hourly" | "daily" | "weekly" | "custom";
 type TaskType = "agent" | "text";
 type DispatchMode = "final" | "stream";
 type ScheduleType = "cron" | "once";
 type RepeatEndType = "never" | "until" | "count";
-type DisplayStatusKey = "running" | "pending" | "stopped";
+type DisplayStatusKey = "running" | "stopped";
 type DisplayTone = "green" | "amber" | "red" | "slate";
 
 type CronParts = {
@@ -95,9 +95,8 @@ type CronJobModalProps = {
 
 const FILTER_OPTIONS: Array<{ id: JobFilter; label: string }> = [
   { id: "all", label: "全部" },
-  { id: "running", label: "运行中" },
-  { id: "stopped", label: "已停止" },
-  { id: "pending", label: "待执行" },
+  { id: "running", label: "已启用" },
+  { id: "stopped", label: "已禁用" },
 ];
 
 const ORDERED_DAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"] as const;
@@ -587,56 +586,16 @@ function resolveDisplayStatus(job: CronJobSpec, state: CronJobState): DisplaySta
     return {
       key: "stopped",
       tone: "slate",
-      label: "已停用",
+      label: "已禁用",
       helper: "不会按照计划自动执行",
       isError: false,
-    };
-  }
-
-  if (state.last_status === "running") {
-    return {
-      key: "running",
-      tone: "green",
-      label: "执行中",
-      helper: "任务正在后台运行",
-      isError: false,
-    };
-  }
-
-  if (!state.last_run_at && state.next_run_at) {
-    return {
-      key: "pending",
-      tone: "amber",
-      label: "待首次执行",
-      helper: "已创建，等待首次调度",
-      isError: false,
-    };
-  }
-
-  if (!state.next_run_at) {
-    return {
-      key: "stopped",
-      tone: "slate",
-      label: "已暂停",
-      helper: "当前没有下一次调度时间",
-      isError: false,
-    };
-  }
-
-  if (state.last_status === "error") {
-    return {
-      key: "running",
-      tone: "red",
-      label: "最近失败",
-      helper: state.last_error || "上一次执行发生错误",
-      isError: true,
     };
   }
 
   return {
     key: "running",
     tone: "green",
-    label: "运行中",
+    label: "已启用",
     helper: "按计划继续调度",
     isError: false,
   };
