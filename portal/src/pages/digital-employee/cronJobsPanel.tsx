@@ -1419,6 +1419,7 @@ export function CronJobsPanel() {
   const [submitting, setSubmitting] = useState(false);
   const [actionJobId, setActionJobId] = useState("");
   const [filter, setFilter] = useState<JobFilter>("all");
+  const [scheduleFilter, setScheduleFilter] = useState<"all" | "cron" | "once">("all");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -1494,8 +1495,13 @@ export function CronJobsPanel() {
   }, [jobs, states]);
 
   const filteredJobs = useMemo(
-    () => jobRecords.filter((record) => matchesFilter(record, filter)),
-    [filter, jobRecords],
+    () => jobRecords.filter((record) => {
+      if (!matchesFilter(record, filter)) return false;
+      if (scheduleFilter === "cron") return record.job.schedule?.type !== "once";
+      if (scheduleFilter === "once") return record.job.schedule?.type === "once";
+      return true;
+    }),
+    [filter, scheduleFilter, jobRecords],
   );
 
   const stats = useMemo(() => {
@@ -1644,16 +1650,27 @@ export function CronJobsPanel() {
         </div>
 
         <div className="cron-jobs-filter-bar">
-          {FILTER_OPTIONS.map((option) => (
-            <button
-              key={option.id}
-              type="button"
-              className={filter === option.id ? "cron-jobs-filter-chip active" : "cron-jobs-filter-chip"}
-              onClick={() => setFilter(option.id)}
-            >
-              {option.label}
-            </button>
-          ))}
+          <div className="cron-jobs-filter-chips">
+            {FILTER_OPTIONS.map((option) => (
+              <button
+                key={option.id}
+                type="button"
+                className={filter === option.id ? "cron-jobs-filter-chip active" : "cron-jobs-filter-chip"}
+                onClick={() => setFilter(option.id)}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+          <CronSelect
+            value={scheduleFilter}
+            options={[
+              { value: "all", label: "全部调度类型" },
+              { value: "cron", label: "循环任务" },
+              { value: "once", label: "日程任务" },
+            ]}
+            onChange={(v) => setScheduleFilter(v as "all" | "cron" | "once")}
+          />
         </div>
 
         {error ? <div className="cron-jobs-notice error">{error}</div> : null}

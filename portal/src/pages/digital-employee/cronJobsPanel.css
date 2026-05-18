@@ -65,6 +65,13 @@
 .cron-jobs-filter-bar {
   display: flex;
   align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.cron-jobs-filter-chips {
+  display: flex;
+  align-items: center;
   gap: 10px;
 }
 
