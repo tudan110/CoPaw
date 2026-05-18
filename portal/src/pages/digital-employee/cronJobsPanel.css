@@ -333,21 +333,22 @@
   display: flex;
   align-items: stretch;
   justify-content: flex-end;
-  padding: 16px 18px 16px 72px;
+  padding: 0 0 0 72px;
 }
 
 .cron-jobs-modal {
   position: relative;
   width: min(600px, 100%);
-  height: calc(100vh - 32px);
-  max-height: 980px;
-  border-radius: 30px;
+  height: 100vh;
+  max-height: none;
+  border-radius: 0;
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  border: 1px solid rgba(148, 163, 184, 0.18);
+  border: none;
+  border-left: 1px solid rgba(148, 163, 184, 0.18);
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(248, 250, 252, 0.96));
-  box-shadow: 0 28px 90px rgba(15, 23, 42, 0.24);
+  box-shadow: -8px 0 40px rgba(15, 23, 42, 0.18);
 }
 
 .cron-jobs-modal::before {
