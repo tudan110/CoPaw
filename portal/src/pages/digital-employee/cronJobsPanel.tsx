@@ -116,6 +116,48 @@ const REPEAT_END_OPTIONS: Array<{ id: RepeatEndType; label: string }> = [
 const INTEGER_RE = /^\d+$/;
 const CRON_RE = /^(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)$/;
 const DAY_NAME_SET = new Set(ORDERED_DAYS);
+
+const TIMEZONE_LIST = [
+  "America/Los_Angeles",
+  "America/Denver",
+  "America/Chicago",
+  "America/New_York",
+  "America/Toronto",
+  "UTC",
+  "Europe/London",
+  "Europe/Paris",
+  "Europe/Berlin",
+  "Europe/Moscow",
+  "Asia/Dubai",
+  "Asia/Jakarta",
+  "Asia/Shanghai",
+  "Asia/Hong_Kong",
+  "Asia/Singapore",
+  "Asia/Tokyo",
+  "Asia/Seoul",
+  "Australia/Sydney",
+  "Australia/Melbourne",
+  "Pacific/Auckland",
+];
+
+function getTimezoneLabel(tz: string): string {
+  try {
+    const parts = new Intl.DateTimeFormat("zh-CN", { timeZone: tz, timeZoneName: "long" }).formatToParts(new Date());
+    const name = parts.find((p) => p.type === "timeZoneName")?.value || tz;
+    const offset = new Intl.DateTimeFormat("en", { timeZone: tz, timeZoneName: "shortOffset" }).formatToParts(new Date());
+    const gmt = offset.find((p) => p.type === "timeZoneName")?.value || "";
+    return `${name} (${gmt}, ${tz})`;
+  } catch {
+    return tz;
+  }
+}
+
+const TIMEZONE_OPTIONS: string[] = TIMEZONE_LIST.map((tz) => getTimezoneLabel(tz));
+const TIMEZONE_VALUE_MAP: Record<string, string> = {};
+TIMEZONE_LIST.forEach((tz, i) => { TIMEZONE_VALUE_MAP[TIMEZONE_OPTIONS[i]] = tz; });
+const TIMEZONE_LABEL_MAP: Record<string, string> = {};
+TIMEZONE_LIST.forEach((tz, i) => { TIMEZONE_LABEL_MAP[tz] = TIMEZONE_OPTIONS[i]; });
+
 const NUM_TO_NAME: Record<string, (typeof ORDERED_DAYS)[number]> = {
   "0": "sun",
   "1": "mon",
@@ -1230,20 +1272,13 @@ const CronJobModal = memo(function CronJobModal({ editingJob, submitting, dispat
 
           <label className="cron-jobs-field">
             {renderLabel("时区", { tooltip: "Cron 计划使用的时区。默认：UTC" })}
-            <input
-              value={formState.timezone}
-              onChange={(event) => updateForm("timezone", event.target.value)}
+            <CronSearchableSelect
+              value={TIMEZONE_LABEL_MAP[formState.timezone] || formState.timezone}
+              options={TIMEZONE_OPTIONS}
               placeholder="Asia/Shanghai"
-              list="cron-tz-list"
+              allowCustom={true}
+              onChange={(v) => updateForm("timezone", TIMEZONE_VALUE_MAP[v] || v)}
             />
-            <datalist id="cron-tz-list">
-              <option value="Asia/Shanghai" />
-              <option value="Asia/Tokyo" />
-              <option value="America/New_York" />
-              <option value="America/Los_Angeles" />
-              <option value="Europe/London" />
-              <option value="UTC" />
-            </datalist>
           </label>
 
           <label className="cron-jobs-field">
