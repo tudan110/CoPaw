@@ -763,6 +763,26 @@ const CronJobModal = memo(function CronJobModal({ editingJob, submitting, dispat
     editingJob ? createFormStateFromJob(editingJob) : createDefaultFormState(),
   );
   const [formError, setFormError] = useState("");
+  const [visibleTooltip, setVisibleTooltip] = useState<string | null>(null);
+
+  const renderLabel = (text: string, options?: { required?: boolean; tooltip?: string; tooltipId?: string }) => (
+    <span className="cron-jobs-field-label">
+      {text}
+      {options?.required ? <em className="cron-jobs-required">*</em> : null}
+      {options?.tooltip ? (
+        <span
+          className="cron-jobs-tooltip-trigger"
+          onMouseEnter={() => setVisibleTooltip(options.tooltipId || text)}
+          onMouseLeave={() => setVisibleTooltip(null)}
+        >
+          <i className="fas fa-circle-info" />
+          {visibleTooltip === (options.tooltipId || text) ? (
+            <span className="cron-jobs-tooltip-bubble">{options.tooltip}</span>
+          ) : null}
+        </span>
+      ) : null}
+    </span>
+  );
 
   const updateForm = useCallback(<K extends keyof CronJobFormState>(key: K, value: CronJobFormState[K]) => {
     setFormState((prev) => ({ ...prev, [key]: value }));
@@ -841,13 +861,13 @@ const CronJobModal = memo(function CronJobModal({ editingJob, submitting, dispat
         <div className="cron-jobs-modal-body">
           {editingJob ? (
             <label className="cron-jobs-field">
-              <span>任务 ID</span>
+              {renderLabel("任务 ID", { tooltip: "任务的唯一标识符（UUID）由系统在创建时自动分配，不可修改。" })}
               <input value={formState.id} disabled />
             </label>
           ) : null}
 
           <label className="cron-jobs-field">
-            <span>任务名称</span>
+            {renderLabel("任务名称", { required: true, tooltip: "任务的友好名称，便于识别。" })}
             <input
               value={formState.name}
               onChange={(event) => updateForm("name", event.target.value)}
@@ -857,7 +877,7 @@ const CronJobModal = memo(function CronJobModal({ editingJob, submitting, dispat
 
           <div className="cron-jobs-form-grid two-columns">
             <label className="cron-jobs-field">
-              <span>启用</span>
+              {renderLabel("启用")}
               <div className="cron-jobs-switch-row">
                 <button
                   type="button"
@@ -871,7 +891,7 @@ const CronJobModal = memo(function CronJobModal({ editingJob, submitting, dispat
               </div>
             </label>
             <label className="cron-jobs-field">
-              <span>结果存入收件箱</span>
+              {renderLabel("结果存入收件箱", { tooltip: "开启后，任务执行成功且投递成功时，会将结果写入收件箱；若投递失败，系统会自动兜底写入收件箱。" })}
               <div className="cron-jobs-switch-row">
                 <button
                   type="button"
@@ -887,7 +907,7 @@ const CronJobModal = memo(function CronJobModal({ editingJob, submitting, dispat
           </div>
 
           <label className="cron-jobs-field">
-            <span>调度类型</span>
+            {renderLabel("调度类型", { required: true })}
             <select value={formState.scheduleType} onChange={(event) => updateForm("scheduleType", event.target.value as ScheduleType)}>
               <option value="cron">周期调度（Cron 表达式）</option>
               <option value="once">单次执行（指定时间）</option>
@@ -897,7 +917,7 @@ const CronJobModal = memo(function CronJobModal({ editingJob, submitting, dispat
           {formState.scheduleType === "once" ? (
             <>
               <label className="cron-jobs-field">
-                <span>执行时间</span>
+                {renderLabel("执行时间", { required: true })}
                 <input
                   type="datetime-local"
                   value={formState.onceRunAt}
@@ -905,7 +925,7 @@ const CronJobModal = memo(function CronJobModal({ editingJob, submitting, dispat
                 />
               </label>
               <label className="cron-jobs-field">
-                <span>重复执行</span>
+                {renderLabel("重复执行", { tooltip: "从该开始时间按固定天数重复执行" })}
                 <div className="cron-jobs-switch-row">
                   <button
                     type="button"
@@ -921,7 +941,7 @@ const CronJobModal = memo(function CronJobModal({ editingJob, submitting, dispat
               {formState.onceRepeatEnabled ? (
                 <>
                   <label className="cron-jobs-field">
-                    <span>重复频率</span>
+                    {renderLabel("重复频率", { required: true })}
                     <div className="cron-jobs-inline-row">
                       <span>每</span>
                       <input
@@ -935,14 +955,14 @@ const CronJobModal = memo(function CronJobModal({ editingJob, submitting, dispat
                     </div>
                   </label>
                   <label className="cron-jobs-field">
-                    <span>结束条件</span>
+                    {renderLabel("结束条件", { required: true })}
                     <select value={formState.onceRepeatEndType} onChange={(event) => updateForm("onceRepeatEndType", event.target.value as RepeatEndType)}>
                       {REPEAT_END_OPTIONS.map((opt) => <option key={opt.id} value={opt.id}>{opt.label}</option>)}
                     </select>
                   </label>
                   {formState.onceRepeatEndType === "until" ? (
                     <label className="cron-jobs-field">
-                      <span>截止日期</span>
+                      {renderLabel("截止日期", { required: true })}
                       <input
                         type="datetime-local"
                         value={formState.onceRepeatUntil}
@@ -952,7 +972,7 @@ const CronJobModal = memo(function CronJobModal({ editingJob, submitting, dispat
                   ) : null}
                   {formState.onceRepeatEndType === "count" ? (
                     <label className="cron-jobs-field">
-                      <span>执行次数</span>
+                      {renderLabel("执行次数", { required: true })}
                       <input
                         type="number"
                         min={1}
@@ -967,7 +987,7 @@ const CronJobModal = memo(function CronJobModal({ editingJob, submitting, dispat
           ) : (
             <>
               <label className="cron-jobs-field">
-                <span>Cron 周期</span>
+                {renderLabel("Cron 周期", { required: true, tooltip: "定义任务执行时间" })}
                 <select value={formState.cronType} onChange={(event) => updateForm("cronType", event.target.value as CronType)}>
                   <option value="hourly">每小时</option>
                   <option value="daily">每天</option>
@@ -978,18 +998,18 @@ const CronJobModal = memo(function CronJobModal({ editingJob, submitting, dispat
               {(formState.cronType === "daily" || formState.cronType === "weekly") ? (
                 <div className="cron-jobs-form-grid two-columns">
                   <label className="cron-jobs-field">
-                    <span>小时</span>
+                    {renderLabel("小时", { required: true })}
                     <input type="number" min={0} max={23} value={formState.hour} onChange={(event) => updateForm("hour", Number(event.target.value))} />
                   </label>
                   <label className="cron-jobs-field">
-                    <span>分钟</span>
+                    {renderLabel("分钟", { required: true })}
                     <input type="number" min={0} max={59} value={formState.minute} onChange={(event) => updateForm("minute", Number(event.target.value))} />
                   </label>
                 </div>
               ) : null}
               {formState.cronType === "weekly" ? (
                 <div className="cron-jobs-field">
-                  <span>执行星期</span>
+                  {renderLabel("执行星期", { required: true })}
                   <div className="cron-jobs-week-grid">
                     {ORDERED_DAYS.map((day) => {
                       const active = formState.daysOfWeek.includes(day);
@@ -1011,7 +1031,7 @@ const CronJobModal = memo(function CronJobModal({ editingJob, submitting, dispat
               ) : null}
               {formState.cronType === "custom" ? (
                 <label className="cron-jobs-field">
-                  <span>Cron 表达式</span>
+                  {renderLabel("Cron 表达式", { required: true })}
                   <input
                     value={formState.customCron}
                     onChange={(event) => updateForm("customCron", event.target.value)}
@@ -1024,7 +1044,7 @@ const CronJobModal = memo(function CronJobModal({ editingJob, submitting, dispat
           )}
 
           <label className="cron-jobs-field">
-            <span>时区</span>
+            {renderLabel("时区", { tooltip: "Cron 计划使用的时区。默认：UTC" })}
             <input
               value={formState.timezone}
               onChange={(event) => updateForm("timezone", event.target.value)}
@@ -1042,7 +1062,7 @@ const CronJobModal = memo(function CronJobModal({ editingJob, submitting, dispat
           </label>
 
           <label className="cron-jobs-field">
-            <span>任务类型</span>
+            {renderLabel("任务类型", { required: true, tooltip: "选择 'text' 用于简单消息任务，选择 'agent' 用于复杂的智能体工作流。" })}
             <select value={formState.taskType} onChange={(event) => updateForm("taskType", event.target.value as TaskType)}>
               <option value="agent">Agent 提问</option>
               <option value="text">固定消息</option>
@@ -1050,7 +1070,7 @@ const CronJobModal = memo(function CronJobModal({ editingJob, submitting, dispat
           </label>
 
           <label className="cron-jobs-field">
-            <span>{formState.taskType === "text" ? "消息内容" : "发送给 Agent 的问题"}</span>
+            {renderLabel(formState.taskType === "text" ? "消息内容" : "发送给 Agent 的问题", { required: true, tooltip: formState.taskType === "text" ? "简单消息任务：此处为实际的消息正文，任务类型为 text 时必填。" : "发送给 Agent 的问题，任务类型为 agent 时必填（或填写下方 Request Input）。" })}
             <textarea
               rows={3}
               value={formState.content}
@@ -1062,7 +1082,7 @@ const CronJobModal = memo(function CronJobModal({ editingJob, submitting, dispat
 
           {formState.taskType === "agent" ? (
             <label className="cron-jobs-field">
-              <span>Request Input（JSON）</span>
+              {renderLabel("Request Input（JSON）", { tooltip: "JSON 格式的消息内容。这是智能体将接收和处理的内容。若填写将覆盖上方文本问题。" })}
               <textarea
                 rows={4}
                 value={formState.requestInputJson}
@@ -1075,7 +1095,7 @@ const CronJobModal = memo(function CronJobModal({ editingJob, submitting, dispat
           ) : null}
 
           <label className="cron-jobs-field">
-            <span>投递通道</span>
+            {renderLabel("投递通道", { required: true, tooltip: "响应将发送到的目标频道（例如：console、discord、dingtalk）。" })}
             <input
               value={formState.channel}
               onChange={(event) => updateForm("channel", event.target.value)}
@@ -1089,7 +1109,7 @@ const CronJobModal = memo(function CronJobModal({ editingJob, submitting, dispat
 
           <div className="cron-jobs-form-grid two-columns">
             <label className="cron-jobs-field">
-              <span>目标 user_id</span>
+              {renderLabel("目标 user_id", { required: true, tooltip: "在目标频道中接收响应的用户 ID。" })}
               <input
                 value={formState.targetUser}
                 onChange={(event) => updateForm("targetUser", event.target.value)}
@@ -1101,7 +1121,7 @@ const CronJobModal = memo(function CronJobModal({ editingJob, submitting, dispat
               </datalist>
             </label>
             <label className="cron-jobs-field">
-              <span>目标 session_id</span>
+              {renderLabel("目标 session_id", { required: true, tooltip: "在目标频道中传递响应的会话 ID。" })}
               <input
                 value={formState.targetSession}
                 onChange={(event) => updateForm("targetSession", event.target.value)}
@@ -1115,7 +1135,7 @@ const CronJobModal = memo(function CronJobModal({ editingJob, submitting, dispat
           </div>
 
           <label className="cron-jobs-field">
-            <span>发送模式</span>
+            {renderLabel("发送模式", { tooltip: "选择 stream 获取实时响应，或选择 final 仅获取完整响应。" })}
             <select value={formState.mode} onChange={(event) => updateForm("mode", event.target.value as DispatchMode)}>
               <option value="final">仅最终结果</option>
               <option value="stream">流式结果</option>
@@ -1123,7 +1143,7 @@ const CronJobModal = memo(function CronJobModal({ editingJob, submitting, dispat
           </label>
 
           <label className="cron-jobs-field">
-            <span>共享会话</span>
+            {renderLabel("共享会话", { tooltip: "开启时，与目标用户共用会话。关闭时，每次运行创建独立的会话上下文，互不影响。适用于不需要记忆历史的独立任务。" })}
             <div className="cron-jobs-switch-row">
               <button
                 type="button"
@@ -1139,15 +1159,15 @@ const CronJobModal = memo(function CronJobModal({ editingJob, submitting, dispat
 
           <div className="cron-jobs-form-grid three-columns">
             <label className="cron-jobs-field">
-              <span>最大并发</span>
+              {renderLabel("最大并发", { tooltip: "此任务可以同时运行的最大数量。默认：1" })}
               <input type="number" min={1} value={formState.maxConcurrency} onChange={(event) => updateForm("maxConcurrency", Math.max(1, Number(event.target.value)))} />
             </label>
             <label className="cron-jobs-field">
-              <span>超时（秒）</span>
+              {renderLabel("超时（秒）", { tooltip: "最大执行时间（秒）。超时将终止任务。" })}
               <input type="number" min={1} value={formState.timeoutSeconds} onChange={(event) => updateForm("timeoutSeconds", Math.max(1, Number(event.target.value)))} />
             </label>
             <label className="cron-jobs-field">
-              <span>补偿窗口（秒）</span>
+              {renderLabel("补偿窗口（秒）", { tooltip: "错过执行的宽限期。如果任务错过计划时间超过此时长，将不会执行。" })}
               <input type="number" min={0} value={formState.misfireGraceSeconds} onChange={(event) => updateForm("misfireGraceSeconds", Math.max(0, Number(event.target.value)))} />
             </label>
           </div>

@@ -439,10 +439,67 @@
 }
 
 .cron-jobs-field > span,
+.cron-jobs-field-label,
 .cron-jobs-section-card label span {
   font-size: 13px;
   font-weight: 600;
   color: var(--text-secondary);
+}
+
+.cron-jobs-field-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.cron-jobs-required {
+  color: #ef4444;
+  font-style: normal;
+  font-weight: 700;
+}
+
+.cron-jobs-tooltip-trigger {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  margin-left: 4px;
+  color: rgba(148, 163, 184, 0.7);
+  cursor: help;
+  font-size: 12px;
+}
+
+.cron-jobs-tooltip-trigger:hover {
+  color: #2563eb;
+}
+
+.cron-jobs-tooltip-bubble {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 8px);
+  transform: translateX(-50%);
+  min-width: 200px;
+  max-width: 320px;
+  padding: 10px 14px;
+  border-radius: 12px;
+  background: rgba(15, 23, 42, 0.92);
+  color: #f1f5f9;
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.6;
+  white-space: normal;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.24);
+  z-index: 100;
+  pointer-events: none;
+}
+
+.cron-jobs-tooltip-bubble::after {
+  content: "";
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 6px solid transparent;
+  border-top-color: rgba(15, 23, 42, 0.92);
 }
 
 .cron-jobs-form-grid input,
