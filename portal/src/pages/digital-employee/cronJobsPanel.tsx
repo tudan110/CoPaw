@@ -856,14 +856,24 @@ const CronJobModal = memo(function CronJobModal({ editingJob, submitting, dispat
     }
   };
 
+  const [closing, setClosing] = useState(false);
+
+  const handleClose = useCallback(() => {
+    setClosing(true);
+    setTimeout(() => {
+      setClosing(false);
+      onClose();
+    }, 250);
+  }, [onClose]);
+
   return (
-    <div className="cron-jobs-modal-backdrop" onClick={onClose}>
-      <div className="cron-jobs-modal" onClick={(event) => event.stopPropagation()}>
+    <div className={`cron-jobs-modal-backdrop ${closing ? "closing" : ""}`} onClick={handleClose}>
+      <div className={`cron-jobs-modal ${closing ? "closing" : ""}`} onClick={(event) => event.stopPropagation()}>
         <div className="cron-jobs-modal-header">
           <div className="cron-jobs-modal-heading">
             <h4>{editingJob ? "编辑定时任务" : "新增定时任务"}</h4>
           </div>
-          <button type="button" className="cron-jobs-modal-close" onClick={onClose}>
+          <button type="button" className="cron-jobs-modal-close" onClick={handleClose}>
             <i className="fas fa-xmark" />
           </button>
         </div>
