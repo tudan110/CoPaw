@@ -743,7 +743,7 @@ const CronJobsTableSection = memo(function CronJobsTableSection({
               {filteredJobs.map((record) => {
                 const { job, state, status } = record;
                 const isBusy = actionJobId === job.id;
-                const scheduleLabel = job.schedule?.type === "once" ? "单次执行" : "周期调度";
+                const scheduleLabel = job.schedule?.type === "once" ? "日程任务" : "循环任务";
                 const cronDisplay = job.schedule?.type === "once"
                   ? (job.schedule as any)?.run_at ? new Date((job.schedule as any).run_at).toLocaleString("zh-CN") : "-"
                   : getCronSummary(job.schedule?.cron || "") || job.schedule?.cron || "-";
@@ -1168,8 +1168,8 @@ const CronJobModal = memo(function CronJobModal({ editingJob, submitting, dispat
             <CronSelect
               value={formState.scheduleType}
               options={[
-                { value: "cron", label: "周期调度（Cron 表达式）" },
-                { value: "once", label: "单次执行（指定时间）" },
+                { value: "cron", label: "循环任务（周期调度）" },
+                { value: "once", label: "日程任务（单次执行）" },
               ]}
               onChange={(v) => updateForm("scheduleType", v as ScheduleType)}
             />
@@ -1621,20 +1621,15 @@ export function CronJobsPanel() {
   }, [runJobAction]);
 
   const handleToggleSchedule = useCallback(async (record: JobRecord) => {
-    const { job, state } = record;
+    const { job } = record;
 
     if (job.enabled === false) {
       const payload = { ...job, enabled: true };
       await runJobAction(job.id, () => cronJobsApi.replaceCronJob(job.id, payload, portalGatewayAgentId), `已启用任务"${job.name}"。`);
-      return;
+    } else {
+      const payload = { ...job, enabled: false };
+      await runJobAction(job.id, () => cronJobsApi.replaceCronJob(job.id, payload, portalGatewayAgentId), `已停用任务"${job.name}"。`);
     }
-
-    if (!state.next_run_at) {
-      await runJobAction(job.id, () => cronJobsApi.resumeCronJob(job.id, portalGatewayAgentId), `已恢复任务"${job.name}"。`);
-      return;
-    }
-
-    await runJobAction(job.id, () => cronJobsApi.pauseCronJob(job.id, portalGatewayAgentId), `已暂停任务"${job.name}"。`);
   }, [runJobAction]);
 
   const handleRunNow = useCallback((job: CronJobSpec) => {
