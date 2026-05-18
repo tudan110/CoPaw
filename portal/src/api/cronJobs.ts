@@ -65,6 +65,13 @@ export interface CronJobState {
   last_error?: string | null;
 }
 
+export interface CronJobExecutionRecord {
+  run_at: string;
+  status: "success" | "error" | "running" | "skipped" | "cancelled";
+  error?: string | null;
+  trigger?: "scheduled" | "manual";
+}
+
 export interface CronDispatchTargetItem {
   channel: string;
   user_id: string;
@@ -215,4 +222,9 @@ export const cronJobsApi = {
       { agentId },
     );
   },
+
+  getCronJobHistory: (jobId: string, agentId?: string) =>
+    requestCopaw<CronJobExecutionRecord[]>(`/cron/jobs/${encodeURIComponent(jobId)}/history`, {
+      agentId,
+    }),
 };
