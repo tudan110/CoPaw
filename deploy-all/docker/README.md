@@ -129,7 +129,7 @@ docker run -d \
   --name portal \
   --restart unless-stopped \
   --network qwenpaw-net \
-  -p 30083:80 \
+  -p 30073:80 \
   -e TZ=Asia/Shanghai \
   -e PORTAL_APP_TITLE="数字员工门户" \
   digital-workforce-portal:0.1.0
@@ -137,8 +137,8 @@ docker run -d \
 
 ### 关键说明
 
-- `-p 30083:80`
-  - 对外暴露前端端口，和 Helm 方案中的 `NodePort 30083` 保持一致
+- `-p 30073:80`
+  - 对外暴露前端端口，和 Helm 方案中的 `NodePort 30073` 保持一致
 - `PORTAL_APP_TITLE`
   - 可按环境修改，例如：
     - `PORTAL_APP_TITLE="智观 AI"`
@@ -168,7 +168,7 @@ docker logs -f portal
 
 ```bash
 # 检查 Portal
-curl http://127.0.0.1:30083/health
+curl http://127.0.0.1:30073/health
 
 # 检查 QwenPaw
 curl http://127.0.0.1:30088/
@@ -177,7 +177,7 @@ curl http://127.0.0.1:30088/
 ### 7.4 访问地址
 
 ```bash
-Portal:  http://<server-ip>:30083
+Portal:  http://<server-ip>:30073
 QwenPaw: http://<server-ip>:30088
 ```
 
@@ -296,7 +296,7 @@ docker run -d \
   --name portal \
   --restart unless-stopped \
   --network qwenpaw-net \
-  -p 30083:80 \
+  -p 30073:80 \
   -e TZ=Asia/Shanghai \
   -e PORTAL_APP_TITLE="数字员工门户" \
   digital-workforce-portal:0.1.0
