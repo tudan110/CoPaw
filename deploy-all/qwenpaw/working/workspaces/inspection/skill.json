@@ -51,6 +51,31 @@
         "require_envs": []
       },
       "updated_at": "2026-04-28T08:02:55.530516Z"
+    },
+    "cron": {
+      "enabled": true,
+      "channels": [
+        "all"
+      ],
+      "source": "builtin",
+      "metadata": {
+        "name": "cron",
+        "description": "Use this skill only for scheduled or recurring tasks. Manage jobs with qwenpaw cron list/create/get/state/pause/resume/delete/run, and always pass --agent-id explicitly.",
+        "version_text": "1.6",
+        "commit_text": "",
+        "source": "builtin",
+        "protected": false,
+        "requirements": {
+          "require_bins": [],
+          "require_envs": []
+        },
+        "updated_at": "2026-05-15T10:22:49.041473Z"
+      },
+      "requirements": {
+        "require_bins": [],
+        "require_envs": []
+      },
+      "updated_at": "2026-05-15T10:22:49.041473Z"
     }
   }
 }
