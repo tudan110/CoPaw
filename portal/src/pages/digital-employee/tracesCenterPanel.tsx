@@ -132,8 +132,17 @@ function StatTile({
   );
 }
 
-function EventCard({ event, index }: { event: TraceEvent; index: number }) {
-  const [open, setOpen] = useState(false);
+function EventCard({
+  event,
+  index,
+  open,
+  onToggle,
+}: {
+  event: TraceEvent;
+  index: number;
+  open: boolean;
+  onToggle: () => void;
+}) {
   const isTool = event.type === "tool_call";
   const isError = event.type === "error";
   const title = useMemo(() => {
@@ -176,7 +185,12 @@ function EventCard({ event, index }: { event: TraceEvent; index: number }) {
 
   return (
     <div className={cardClass}>
-      <div className="trace-event-head" onClick={() => setOpen((v) => !v)}>
+      <button
+        type="button"
+        className="trace-event-head"
+        onClick={onToggle}
+        aria-expanded={open}
+      >
         <span className="trace-event-index">{index + 1}</span>
         <span className="trace-event-icon">
           <i className={`fas ${eventIcon(event.type)}`} />
@@ -197,7 +211,7 @@ function EventCard({ event, index }: { event: TraceEvent; index: number }) {
         <span className="trace-event-chevron">
           <i className={`fas fa-chevron-${open ? "up" : "down"}`} />
         </span>
-      </div>
+      </button>
       {open ? (
         <div className="trace-event-body">
           {previewBody ? <pre className="trace-event-text">{previewBody}</pre> : null}
@@ -225,7 +239,17 @@ export function TracesCenterPanel() {
   const [detailError, setDetailError] = useState<string | null>(null);
   const [filter, setFilter] = useState<Filter>({ keyword: "", onlyErrors: false });
   const [autoRefresh, setAutoRefresh] = useState(true);
+  const [expandedKeys, setExpandedKeys] = useState<Set<string>>(new Set());
   const refreshTimerRef = useRef<number | null>(null);
+
+  const toggleEvent = useCallback((key: string) => {
+    setExpandedKeys((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }, []);
 
   const loadStats = useCallback(async (signal?: AbortSignal) => {
     try {
@@ -263,18 +287,25 @@ export function TracesCenterPanel() {
   );
 
   const loadDetail = useCallback(
-    async (sessionId: string, signal?: AbortSignal) => {
-      setDetailLoading(true);
+    async (
+      sessionId: string,
+      signal?: AbortSignal,
+      opts?: { background?: boolean },
+    ) => {
+      const background = !!opts?.background;
+      if (!background) setDetailLoading(true);
       setDetailError(null);
       try {
         const data = await tracesApi.getSession(sessionId, { signal });
         setDetail(data);
       } catch (err: any) {
         if (err?.name === "AbortError") return;
-        setDetail(null);
-        setDetailError(err?.message || "加载失败");
+        if (!background) {
+          setDetail(null);
+          setDetailError(err?.message || "加载失败");
+        }
       } finally {
-        setDetailLoading(false);
+        if (!background) setDetailLoading(false);
       }
     },
     [],
@@ -300,7 +331,7 @@ export function TracesCenterPanel() {
       loadStats(controller.signal);
       loadList(controller.signal);
       if (selectedId) {
-        loadDetail(selectedId, controller.signal);
+        loadDetail(selectedId, controller.signal, { background: true });
       }
     }, REFRESH_INTERVAL_MS);
     return () => {
@@ -313,6 +344,7 @@ export function TracesCenterPanel() {
 
   // Pull detail when selection changes
   useEffect(() => {
+    setExpandedKeys(new Set());
     if (!selectedId) {
       setDetail(null);
       return;
@@ -517,13 +549,18 @@ export function TracesCenterPanel() {
                     <p>该会话尚未产生事件。</p>
                   </div>
                 ) : (
-                  detail.events.map((evt, idx) => (
-                    <EventCard
-                      key={`${evt.ts}-${idx}`}
-                      event={evt}
-                      index={idx}
-                    />
-                  ))
+                  detail.events.map((evt, idx) => {
+                    const key = `${evt.ts}-${evt.type}-${idx}`;
+                    return (
+                      <EventCard
+                        key={key}
+                        event={evt}
+                        index={idx}
+                        open={expandedKeys.has(key)}
+                        onToggle={() => toggleEvent(key)}
+                      />
+                    );
+                  })
                 )}
               </div>
             </>
