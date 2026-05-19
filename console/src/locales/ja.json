@@ -1492,8 +1492,10 @@
     "changelog": "変更履歴",
     "docs": "ドキュメント",
     "tutorial": "チュートリアル",
+    "featureDemos": "機能デモ",
     "faq": "よくある質問",
     "github": "GitHub",
+    "resources": "ドキュメント資料",
     "updateAvailable": "利用可能な更新"
   },
   "theme": {
@@ -2048,7 +2050,18 @@
     "author": "作成者",
     "unknown": "不明",
     "loadFailed": "プラグイン一覧の読み込みに失敗しました",
-    "confirmTitle": "アンインストールの確認"
+    "confirmTitle": "アンインストールの確認",
+    "officialTitle": "公式プラグイン",
+    "officialDesc": "ダウンロード CDN から公開済みプラグインをインストールします。",
+    "catalogRefresh": "更新",
+    "catalogEmpty": "利用可能な公式プラグインがありません（CDN カタログが空の可能性があります）",
+    "catalogLoadFailed": "公式プラグインカタログの読み込みに失敗しました",
+    "catalogInstall": "インストール",
+    "catalogReinstall": "再インストール",
+    "catalogUpgrade": "アップグレード可能",
+    "catalogUpgradeBtn": "アップグレード",
+    "catalogInstalled": "インストール済み",
+    "catalogSha256": "SHA256"
   },
   "plan": {
     "title": "プラン",
