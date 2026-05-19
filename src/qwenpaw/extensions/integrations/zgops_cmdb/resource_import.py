@@ -125,11 +125,11 @@ DEFAULT_GROUP_HINTS = {
     "apache": "中间件",
     "docker": "容器",
     "kubernetes": "容器",
-    "dcim_idc": "IDC",
-    "dcim_server_room": "IDC",
-    "dcim_rack": "IDC",
-    "ipam_subnet": "IPAM",
-    "ipam_address": "IPAM",
+    "dcim_idc": "数据中心",
+    "dcim_server_room": "数据中心",
+    "dcim_rack": "数据中心",
+    "ipam_subnet": "IP地址管理",
+    "ipam_address": "IP地址管理",
 }
 
 FIELD_ALIASES = {
@@ -222,7 +222,13 @@ FIELD_ALIASES = {
     "manage_ip": ["manage_ip", "管理ip", "管理地址", "管理ip地址", "设备管理ip"],
     "dev_model": ["dev_model", "设备型号", "设备规格", "网络设备型号"],
     "dev_class": ["dev_class", "设备大类", "网络设备类型", "设备分类"],
-    "alarm_status": ["alarm_status", "告警状态", "高级状态元数据", "状态编码"],
+    "alarm_status": [
+        "alarm_status",
+        "告警状态",
+        "告警等级",
+        "高级状态元数据",
+        "状态编码",
+    ],
     "dev_software_version": ["dev_software_version", "设备软件版本", "软件版本", "软件版本号"],
     "dev_sn": ["dev_sn", "设备序列号", "序列号", "序列号sn", "设备sn"],
     "property_no": ["property_no"],
@@ -234,6 +240,50 @@ FIELD_ALIASES = {
     "u_count": ["u_count", "u数", "设备u数"],
     "u_start": ["u_start", "起始u位", "起始u", "开始u位"],
     "cabinet": ["cabinet", "所属机柜", "机柜柜位"],
+    "cpu_architecture": [
+        "cpu_architecture",
+        "cpu架构",
+        "处理器架构",
+        "架构",
+    ],
+    "mem_total": ["mem_total", "内存容量", "内存总量", "总内存"],
+    "mem_free": ["mem_free", "可用内存", "空闲内存"],
+    "mem_used": ["mem_used", "已用内存", "已使用内存"],
+    "disk_total": [
+        "disk_total",
+        "磁盘总量",
+        "磁盘容量",
+        "总磁盘",
+    ],
+    "disk_free": [
+        "disk_free",
+        "可用磁盘",
+        "剩余磁盘",
+        "空闲磁盘",
+    ],
+    "disk_used": ["disk_used", "已用磁盘", "已使用磁盘"],
+    "login_user": [
+        "login_user",
+        "登录用户",
+        "登录账号",
+        "登录账户",
+        "用户账号",
+    ],
+    "login_pwd": [
+        "login_pwd",
+        "登录口令",
+        "登录密码",
+        "访问口令",
+        "访问密码",
+        "口令",
+    ],
+    "db_memory": ["db_memory", "内存配置", "数据库内存"],
+    "db_connect": [
+        "db_connect",
+        "连接串",
+        "连接字符串",
+        "数据库连接",
+    ],
 }
 
 RELATION_FIELD_ALIASES = {
