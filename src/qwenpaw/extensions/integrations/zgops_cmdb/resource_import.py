@@ -2205,11 +2205,43 @@ def _build_metadata_field_catalog(metadata: dict[str, Any]) -> dict[str, dict[st
                 continue
             attribute_name = _clean_text(definition.get("name"))
             attribute_alias = _clean_text(definition.get("alias")) or attribute_name
+            if attribute_name:
+                # Always expose the model attribute as its own direct mapping
+                # target so distinct attributes never collapse into a single
+                # canonical bucket (e.g. project_type/project_description both
+                # inferring "project"). Canonical bucketing below still runs as
+                # a cross-CMDB normalization fallback.
+                direct_entry = ensure_entry(attribute_name)
+                direct_entry["attributeNames"] = _dedupe_non_empty(
+                    [*direct_entry.get("attributeNames", []), attribute_name],
+                    limit=36,
+                )
+                direct_entry["attributeAliases"] = _dedupe_non_empty(
+                    [
+                        *direct_entry.get("attributeAliases", []),
+                        attribute_alias,
+                    ],
+                    limit=36,
+                )
+                direct_entry["models"] = _dedupe_non_empty(
+                    [*direct_entry.get("models", []), model_name],
+                    limit=24,
+                )
+                direct_entry["modelAliases"] = _dedupe_non_empty(
+                    [*direct_entry.get("modelAliases", []), model_alias],
+                    limit=24,
+                )
+                direct_entry["groups"] = _dedupe_non_empty(
+                    [*direct_entry.get("groups", []), *group_names],
+                    limit=12,
+                )
             canonical_field, confidence = _infer_canonical_field_from_metadata_attribute(
                 attribute_name=attribute_name,
                 attribute_alias=attribute_alias,
             )
             if canonical_field == "unknown" or _confidence_rank(confidence) <= 0:
+                continue
+            if canonical_field == attribute_name:
                 continue
             entry = ensure_entry(canonical_field)
             entry["attributeNames"] = _dedupe_non_empty(
@@ -2270,6 +2302,7 @@ def _collect_metadata_field_candidates(
         if best_score < 54:
             continue
         models = _dedupe_non_empty(entry.get("models") or [], limit=4)
+        is_direct = target_field in (entry.get("attributeNames") or [])
         candidates.append(
             {
                 "targetField": target_field,
@@ -2280,12 +2313,17 @@ def _collect_metadata_field_candidates(
                 "matchedText": best_match_text,
                 "models": models,
                 "groups": _dedupe_non_empty(entry.get("groups") or [], limit=3),
+                "direct": is_direct,
             }
         )
 
+    # On equal score, prefer a direct model-attribute target over a canonical
+    # bucket so distinct attributes that infer the same canonical (project_type
+    # vs project) don't get shadowed by the bucket label.
     candidates.sort(
         key=lambda item: (
             -int(item.get("score") or 0),
+            not bool(item.get("direct")),
             str(item.get("targetField") or ""),
         ),
     )
@@ -2332,6 +2370,7 @@ def _collect_field_candidates(header: str, metadata: dict[str, Any] | None = Non
             matchedText=_clean_text(candidate.get("matchedText")),
             models=list(candidate.get("models") or []),
             groups=list(candidate.get("groups") or []),
+            direct=bool(candidate.get("direct")),
         )
 
     if not candidates:
@@ -2346,6 +2385,7 @@ def _collect_field_candidates(header: str, metadata: dict[str, Any] | None = Non
         key=lambda item: (
             -int(item.get("score") or 0),
             -_confidence_rank(item.get("confidence", "")),
+            not bool(item.get("direct")),
             item.get("targetField", ""),
         ),
     )
@@ -2360,6 +2400,84 @@ def _match_field_with_metadata(
         first = candidates[0]
         return _clean_text(first.get("targetField")) or "unknown", _clean_text(first.get("confidence")) or "low"
     return _match_field(header)
+
+
+def _collect_value_choice_candidates(
+    column_values: list[Any],
+    type_template: dict[str, Any] | None,
+) -> list[dict[str, Any]]:
+    # Header-agnostic mapping signal: if every distinct value in a column falls
+    # within a choice attribute's allowed value/label set, that attribute is a
+    # strong candidate regardless of how the source column is named. This
+    # rescues AI-/human-renamed headers (e.g. "系统分类"->project_type) that no
+    # alias table or lexical match would catch.
+    if not type_template:
+        return []
+    distinct: list[str] = []
+    seen: set[str] = set()
+    for value in column_values:
+        cleaned = _clean_text(value)
+        if cleaned and cleaned not in seen:
+            seen.add(cleaned)
+            distinct.append(cleaned)
+    if not distinct:
+        return []
+    distinct_tokens = {_normalize_token(value) for value in distinct}
+
+    matches: list[str] = []
+    for definition in _attribute_definitions(type_template):
+        if not definition.get("is_choice"):
+            continue
+        attr_name = _clean_text(definition.get("name"))
+        if not attr_name:
+            continue
+        allowed: set[str] = set()
+        for item in (definition.get("choices") or []):
+            if not isinstance(item, dict):
+                continue
+            for key in ("value", "label"):
+                token = _normalize_token(_clean_text(item.get(key)))
+                if token:
+                    allowed.add(token)
+        if not allowed:
+            continue
+        if distinct_tokens <= allowed:
+            matches.append(attr_name)
+
+    ambiguous = len(matches) > 1
+    confidence = "medium" if ambiguous else "high"
+    return [
+        {
+            "targetField": attr_name,
+            "confidence": confidence,
+            "source": "value",
+            "ambiguous": ambiguous,
+        }
+        for attr_name in matches
+    ]
+
+
+def _sheet_value_choice_mappings(
+    *,
+    headers: list[str],
+    rows: list[dict[str, Any]],
+    type_template: dict[str, Any] | None,
+) -> dict[str, tuple[str, str]]:
+    # Per-header strong value mapping: only an unambiguous single
+    # choice-attribute match is treated as authoritative; ambiguous matches are
+    # left to the normal heuristic/LLM flow to avoid mis-binding.
+    if not type_template:
+        return {}
+    result: dict[str, tuple[str, str]] = {}
+    for header in headers:
+        values = [row.get(header) for row in rows]
+        candidates = _collect_value_choice_candidates(values, type_template)
+        if len(candidates) == 1 and candidates[0].get("confidence") == "high":
+            result[header] = (
+                _clean_text(candidates[0].get("targetField")),
+                "high",
+            )
+    return result
 
 
 def _merge_sheet_header_mapping(
@@ -2405,7 +2523,35 @@ def _build_sheet_mapping_detail(
     llm_mapping: tuple[str, str],
     metadata: dict[str, Any] | None = None,
     type_template: dict[str, Any] | None = None,
+    value_mapping: tuple[str, str] | None = None,
 ) -> dict[str, Any]:
+    # A strong (unambiguous) value-based match is the most reliable signal we
+    # have: the column's own values fall within exactly one choice attribute's
+    # allowed set, so it wins outright over header heuristics / LLM guesses.
+    value_target, value_confidence = value_mapping or ("", "")
+    if value_target not in {"", "unknown"} and value_confidence == "high":
+        effective = _mapping_effective_target_field(
+            value_target, type_template
+        )
+        return {
+            "sourceField": header,
+            "targetField": value_target,
+            "suggestedTargetField": value_target,
+            "confidence": "high",
+            "status": "mapped",
+            "resolvedBy": "value",
+            "candidates": [
+                {
+                    "targetField": value_target,
+                    "confidence": "high",
+                    "source": "value",
+                    "effectiveTargetField": effective,
+                }
+            ],
+            "needsConfirmation": False,
+            "message": "",
+        }
+
     heuristic_target, heuristic_confidence = heuristic_mapping
     llm_target, llm_confidence = llm_mapping
     merged_target, merged_confidence = _merge_sheet_header_mapping(
@@ -2421,13 +2567,47 @@ def _build_sheet_mapping_detail(
     }
     if llm_target not in {"", "unknown"}:
         current = candidate_map.get(llm_target)
-        llm_payload = {
-            "targetField": llm_target,
-            "confidence": llm_confidence or "low",
-            "source": "llm",
+        llm_confidence_value = llm_confidence or "low"
+        if current is None:
+            candidate_map[llm_target] = {
+                "targetField": llm_target,
+                "confidence": llm_confidence_value,
+                "source": "llm",
+            }
+        else:
+            # Merge into the existing candidate instead of replacing it, so the
+            # metadata candidate's ``direct`` flag (and score) survive when the
+            # LLM happens to agree on the same target. Dropping ``direct`` here
+            # caused a correct LLM agreement to re-expose the canonical shadow
+            # and spuriously flag needs_confirmation.
+            if _confidence_rank(llm_confidence_value) > _confidence_rank(
+                str(current.get("confidence", ""))
+            ):
+                current["confidence"] = llm_confidence_value
+            current["source"] = (
+                f"{current.get('source', 'metadata')}+llm"
+            )
+    # An ambiguous value match (column values fit several choice attributes) is
+    # surfaced as a candidate so the operator can disambiguate instead of the
+    # value being silently dropped.
+    if (
+        value_target not in {"", "unknown"}
+        and value_confidence
+        and value_confidence != "high"
+    ):
+        current = candidate_map.get(value_target)
+        value_payload = {
+            "targetField": value_target,
+            "confidence": value_confidence,
+            "source": "value",
         }
-        if current is None or _confidence_rank(llm_payload["confidence"]) > _confidence_rank(str(current.get("confidence", ""))):
-            candidate_map[llm_target] = llm_payload
+        current_rank = (
+            _confidence_rank(str(current.get("confidence", "")))
+            if current
+            else -1
+        )
+        if _confidence_rank(value_confidence) > current_rank:
+            candidate_map[value_target] = value_payload
 
     ordered_candidates = sorted(
         candidate_map.values(),
@@ -2449,22 +2629,58 @@ def _build_sheet_mapping_detail(
         if _confidence_rank(str(item.get("confidence", ""))) >= 1
         and _clean_text(item.get("effectiveTargetField"))
     }
+    # A strong *direct* candidate is a concrete model attribute. Canonical
+    # buckets that merely echo the same attribute alias (e.g. db_type's alias
+    # "数据库类型" leaking into the generic ci_type bucket) must not manufacture
+    # a phantom conflict, so when a direct candidate is present only direct
+    # candidates count toward ambiguity, and a sole direct match owns the
+    # column.
+    strong_direct = [
+        item
+        for item in ordered_candidates
+        if _confidence_rank(str(item.get("confidence", ""))) >= 1
+        and item.get("direct")
+        and _clean_text(item.get("effectiveTargetField"))
+    ]
+    strong_direct_targets = {
+        _clean_text(item.get("effectiveTargetField")) for item in strong_direct
+    }
+    if strong_direct_targets:
+        competing_targets = strong_direct_targets
+    else:
+        competing_targets = strong_effective_targets
+    dominant_direct = (
+        strong_direct[0]
+        if len(strong_direct_targets) == 1
+        else None
+    )
     llm_is_strong = llm_target not in {"", "unknown"} and _confidence_rank(llm_confidence) >= 1
     heuristic_effective_target = _mapping_effective_target_field(heuristic_target, type_template)
     llm_effective_target = _mapping_effective_target_field(llm_target, type_template)
     needs_confirmation = False
-    if len(strong_effective_targets) >= 2:
+    if len(competing_targets) >= 2:
         needs_confirmation = True
-    elif len(strong_rule_targets) >= 2 and len(strong_effective_targets) > 1:
+    elif len(strong_rule_targets) >= 2 and len(competing_targets) > 1:
         needs_confirmation = True
     elif (
-        heuristic_target not in {"", "unknown"}
+        not dominant_direct
+        and heuristic_target not in {"", "unknown"}
         and llm_target not in {"", "unknown", heuristic_target}
         and _confidence_rank(heuristic_confidence) >= 1
         and llm_is_strong
         and heuristic_effective_target != llm_effective_target
     ):
         needs_confirmation = True
+
+    if dominant_direct and not needs_confirmation:
+        # The single strong concrete attribute wins outright over any
+        # canonical-bucket shadow or weaker heuristic/LLM guess.
+        merged_target = (
+            _clean_text(dominant_direct.get("targetField")) or merged_target
+        )
+        merged_confidence = (
+            _clean_text(dominant_direct.get("confidence")) or merged_confidence
+        )
 
     low_confidence_unmapped = (
         not needs_confirmation
@@ -2491,6 +2707,10 @@ def _build_sheet_mapping_detail(
         message = f"字段 {header} 当前只有低置信候选 {merged_target}，不会自动写入，请人工确认"
     elif applied_target not in {"", "unknown"} and llm_target == applied_target and heuristic_target in {"", "unknown"}:
         message = f"字段 {header} 当前由 LLM 提供候选语义 {applied_target}"
+    elif status == "unmapped":
+        # No candidate at all: make the silent drop explicit so the operator
+        # can see this source column will not be written into the CMDB.
+        message = f"字段 {header} 未匹配到任何目标字段，本列数据不会写入 CMDB，请人工确认"
 
     return {
         "sourceField": header,
@@ -3330,6 +3550,11 @@ async def _resolve_sheet_mapping_plan(
         )
         for header in headers
     }
+    heuristic_value_mappings = _sheet_value_choice_mappings(
+        headers=headers,
+        rows=rows,
+        type_template=type_template_map.get(default_ci_type),
+    )
     heuristic_plan = SheetMappingPlan(
         sheet_kind=heuristic_sheet_kind,
         default_ci_type=default_ci_type,
@@ -3342,6 +3567,7 @@ async def _resolve_sheet_mapping_plan(
                 llm_mapping=("unknown", "low"),
                 metadata=metadata,
                 type_template=type_template_map.get(default_ci_type),
+                value_mapping=heuristic_value_mappings.get(header),
             )
             for header in headers
         },
@@ -3428,6 +3654,11 @@ async def _resolve_sheet_mapping_plan(
         mapping_details: dict[str, dict[str, Any]] = {}
         resolved_default_ci_type = llm_plan.default_ci_type or heuristic_plan.default_ci_type
         resolved_type_template = type_template_map.get(_clean_text(resolved_default_ci_type))
+        resolved_value_mappings = _sheet_value_choice_mappings(
+            headers=headers,
+            rows=rows,
+            type_template=resolved_type_template,
+        )
         for header in headers:
             detail = _build_sheet_mapping_detail(
                 header=header,
@@ -3435,6 +3666,7 @@ async def _resolve_sheet_mapping_plan(
                 llm_mapping=llm_plan.mappings.get(header, ("unknown", "low")),
                 metadata=metadata,
                 type_template=resolved_type_template,
+                value_mapping=resolved_value_mappings.get(header),
             )
             mapping_details[header] = detail
             merged_mappings[header] = (str(detail.get("targetField") or "unknown"), str(detail.get("confidence") or "low"))
@@ -4601,6 +4833,13 @@ def _autofill_deterministic_cmdb_attributes(
     return next_attributes
 
 
+def _is_server_default_macro(value: Any) -> bool:
+    # VEOPS server-side computed defaults (e.g. ``$auto_inc_id``) must never be
+    # sent literally in a create payload; the CMDB resolves them when the
+    # attribute is omitted.
+    return _clean_text(value).startswith("$")
+
+
 def _extract_attribute_default_value(attribute_definition: dict[str, Any] | None) -> str:
     if not attribute_definition:
         return ""
@@ -4608,16 +4847,17 @@ def _extract_attribute_default_value(attribute_definition: dict[str, Any] | None
     if isinstance(raw_default, dict):
         for key in ("default", "value", "label"):
             value = _clean_text(raw_default.get(key))
-            if value:
+            if value and not _is_server_default_macro(value):
                 return value
-    if isinstance(raw_default, list):
+    elif isinstance(raw_default, list):
         for item in raw_default:
             value = _clean_text(item)
-            if value:
+            if value and not _is_server_default_macro(value):
                 return value
-    cleaned_default = _clean_text(raw_default)
-    if cleaned_default:
-        return cleaned_default
+    else:
+        cleaned_default = _clean_text(raw_default)
+        if cleaned_default and not _is_server_default_macro(cleaned_default):
+            return cleaned_default
 
     attr_name = _clean_text(attribute_definition.get("name")).lower()
     attr_alias = _clean_text(attribute_definition.get("alias"))
