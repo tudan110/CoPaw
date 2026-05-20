@@ -370,6 +370,56 @@ class AgentRunner(Runner):
         elif isinstance(content, str):
             last.content = new_text
 
+    async def _persist_exchange_to_session(
+        self,
+        session_id: str,
+        user_id: str,
+        channel: str,
+        msgs: list,
+        response_msg: "Msg",
+    ) -> None:
+        """Persist a user-message + response to session memory.
+
+        Used by early-exit paths (/mission info, /skill info) that bypass
+        the full agent pipeline and would otherwise leave session memory
+        unsaved — causing the response to vanish when the frontend
+        reloads the session from the backend.
+        """
+        if not session_id or not user_id:
+            return
+        try:
+            context_manager = self.context_manager
+            if context_manager is None:
+                return
+            memory = context_manager.get_agent_context()
+            if memory is None:
+                return
+            state = await self.session.get_session_state_dict(
+                session_id,
+                user_id,
+                channel,
+                allow_not_exist=True,
+            )
+            memory_state = (state or {}).get("agent", {}).get("memory", {})
+            memory.load_state_dict(memory_state, strict=False)
+            if msgs:
+                await memory.add(msgs[-1])
+            await memory.add(response_msg)
+            await self.session.update_session_state(
+                session_id=session_id,
+                key="agent.memory",
+                value=memory.state_dict(),
+                user_id=user_id,
+                channel=channel,
+            )
+            preview = session_id[:12] if len(session_id) >= 12 else session_id
+            logger.debug("Persisted exchange to session %s", preview)
+        except Exception:
+            logger.debug(
+                "Failed to persist exchange to session",
+                exc_info=True,
+            )
+
     async def query_handler(
         self,
         msgs,
@@ -540,6 +590,13 @@ class AgentRunner(Runner):
                 agent_name=self.agent_name,
             )
             if isinstance(mission_result, Msg):
+                await self._persist_exchange_to_session(
+                    session_id,
+                    user_id,
+                    channel,
+                    msgs,
+                    mission_result,
+                )
                 yield mission_result, True
                 return
             if isinstance(mission_result, dict):
@@ -750,19 +807,13 @@ class AgentRunner(Runner):
                     )
                 self._pending_skill_trigger = None
                 if skill_response is not None:
-                    if session_id:
-                        await _emit_trace_safe(
-                            session_id,
-                            "agent_reply",
-                            {
-                                "text": _safe_msg_text(skill_response),
-                                "role": "assistant",
-                                "kind": "skill_info",
-                            },
-                            agent_id=self.agent_id,
-                            user_id=user_id,
-                            channel=channel,
-                        )
+                    await self._persist_exchange_to_session(
+                        session_id,
+                        user_id,
+                        channel,
+                        msgs,
+                        skill_response,
+                    )
                     yield skill_response, True
                     return
 
