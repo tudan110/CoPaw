@@ -282,7 +282,7 @@ export function AlarmRegistryPanel({ pageTheme, onOpenChat }: AlarmRegistryPanel
                 <td className="alarm-registry-cell-title" title={record.visibleContent || record.title}>
                   {record.title || record.alarmId}
                 </td>
-                <td>{record.deviceName || "--"}</td>
+                <td title={record.deviceName || ""}>{record.deviceName || "--"}</td>
                 <td>{record.manageIp || "--"}</td>
                 <td>
                   <span className={`alarm-registry-status-badge tone-${STATUS_TONES[record.status] || "slate"}`}>
