@@ -214,30 +214,44 @@ def _fault_disposal_bridge_script() -> Path:
     return _fault_disposal_skill_root() / "scripts" / "chat_skill_bridge.py"
 
 
-def _zgops_cmdb_query_skill_root() -> Path:
-    return (
+def _resolve_workspace_skill_root(workspace: str, skill: str) -> Path:
+    """Resolve a workspace skill directory.
+
+    These skills ship under ``deploy-all/qwenpaw/working/workspaces`` in the
+    repo, but at runtime they are copied into ``$QWENPAW_WORKING_DIR``
+    (e.g. ``/app/working`` in the container). The installed package lives in
+    site-packages, so a path computed relative to ``__file__`` would point
+    into the venv where the skill does not exist. Prefer the working-dir copy
+    (the same one the agent loads), then fall back to the repo bundle.
+    """
+    from qwenpaw import constant
+
+    working_root = (
+        constant.WORKING_DIR / "workspaces" / workspace / "skills" / skill
+    )
+    repo_root = (
         Path(__file__).resolve().parents[4]
         / "deploy-all"
         / "qwenpaw"
         / "working"
         / "workspaces"
-        / "query"
+        / workspace
         / "skills"
-        / "zgops-cmdb"
+        / skill
     )
+    if working_root.exists():
+        return working_root
+    if repo_root.exists():
+        return repo_root
+    return working_root
+
+
+def _zgops_cmdb_query_skill_root() -> Path:
+    return _resolve_workspace_skill_root("query", "zgops-cmdb")
 
 
 def _zgops_cmdb_import_skill_root() -> Path:
-    return (
-        Path(__file__).resolve().parents[4]
-        / "deploy-all"
-        / "qwenpaw"
-        / "working"
-        / "workspaces"
-        / "resource"
-        / "skills"
-        / "zgops-cmdb-import"
-    )
+    return _resolve_workspace_skill_root("resource", "zgops-cmdb-import")
 
 
 def _resource_import_bridge_script() -> Path:
@@ -245,16 +259,7 @@ def _resource_import_bridge_script() -> Path:
 
 
 def _alarm_analyst_skill_root() -> Path:
-    return (
-        Path(__file__).resolve().parents[4]
-        / "deploy-all"
-        / "qwenpaw"
-        / "working"
-        / "workspaces"
-        / "fault"
-        / "skills"
-        / "alarm-analyst"
-    )
+    return _resolve_workspace_skill_root("fault", "alarm-analyst")
 
 
 def _alarm_analyst_metric_script() -> Path:
