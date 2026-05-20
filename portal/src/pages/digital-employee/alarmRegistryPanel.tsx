@@ -11,7 +11,7 @@ import "./alarmRegistryPanel.css";
 
 type AlarmRegistryPanelProps = {
   pageTheme: "light" | "dark";
-  onOpenChat?: (sessionId: string) => void;
+  onOpenChat?: (chatId: string) => void;
 };
 
 type StatusFilter = "all" | "active" | "resolved" | "ignored";
@@ -312,11 +312,11 @@ export function AlarmRegistryPanel({ pageTheme, onOpenChat }: AlarmRegistryPanel
                       <i className="fas fa-eye-slash" />
                     </button>
                   )}
-                  {record.sessionId && onOpenChat && (
+                  {record.chatId && onOpenChat && (
                     <button
                       className="alarm-registry-action-btn tone-blue"
                       title="查看关联对话"
-                      onClick={() => onOpenChat(record.sessionId)}
+                      onClick={() => onOpenChat(record.chatId)}
                     >
                       <i className="fas fa-comments" />
                     </button>

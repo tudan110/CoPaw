@@ -1471,7 +1471,16 @@ export default function DigitalEmployeePage({
           ) : isTracesMode ? (
             renderDeferredPanel(<TracesCenterPanel />)
           ) : isAlarmRegistryMode ? (
-            renderDeferredPanel(<AlarmRegistryPanel pageTheme={pageTheme} />)
+            renderDeferredPanel(<AlarmRegistryPanel pageTheme={pageTheme} onOpenChat={(chatId) => {
+              const employee = getEmployeeById("fault");
+              if (employee) {
+                navigateToEmployeePage(employee, {
+                  view: "chat",
+                  panel: null,
+                  state: { openSession: { employeeId: "fault", sessionId: chatId } },
+                });
+              }
+            }} />)
           ) : isResourceImportMode ? (
             renderDeferredPanel(<ResourceImportPanel />)
           ) : (
