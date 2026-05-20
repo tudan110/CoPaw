@@ -18,7 +18,7 @@ description: 查询 INOE 资源状态与性能数据。适用于用户询问设�
 配置从本技能目录 `.env` 读取，也支持同名环境变量：
 
 ```bash
-INOE_API_BASE_URL=http://<host>:<port>/prod-api
+INOE_API_BASE_URL=http://<host>:<port>
 INOE_API_TOKEN=your_jwt_token_here
 INOE_ENABLE_CURL_FALLBACK=true
 ```

@@ -15,7 +15,7 @@ description: 实时告警管理系统查询和统计分析。支持获取告警�
 使用本技能前，需要确认技能目录下存在 `.env` 文件并配置了以下必需字段：
 
 ```bash
-INOE_API_BASE_URL=http://<host>:<port>/prod-api
+INOE_API_BASE_URL=http://<host>:<port>
 INOE_API_TOKEN=your_jwt_token_here
 ```
 
@@ -79,7 +79,7 @@ INOE_API_TOKEN=your_jwt_token_here
 配置文件示例：
 
 ```bash
-INOE_API_BASE_URL=http://<host>:<port>/prod-api
+INOE_API_BASE_URL=http://<host>:<port>
 INOE_API_TOKEN=your_jwt_token_here
 ```
 

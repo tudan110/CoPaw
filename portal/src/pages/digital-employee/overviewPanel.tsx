@@ -1,8 +1,16 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { EChartsOption } from "echarts";
 import ReactECharts from "echarts-for-react";
 import DigitalEmployeeAvatar from "../../components/DigitalEmployeeAvatar";
 import { digitalEmployees } from "../../data/portalData";
+import {
+  getMonitoringOverviewDashboard,
+  type AlarmTop5Item,
+  type ApplicationHealth,
+  type AssetOverviewData,
+  type MonitoringOverviewDashboardResponse,
+  type ResourceTypeStat,
+} from "../../api/monitoringOverview";
 
 type OverviewEmployee = (typeof digitalEmployees)[number] & {
   statusLabel?: string;
@@ -71,90 +79,20 @@ const STATUS_LABELS: Record<string, string> = {
   completed: "已完成",
 };
 
-const ASSET_OVERVIEW_STATS: OverviewKpi[] = [
-  {
-    label: "纳管总资产",
-    value: "19,540",
-    trend: "flat",
-    trendValue: "资产",
-    color: "#3b82f6",
-    barPct: 100,
-    iconClass: "fa-server",
-  },
-  {
-    label: "云主机",
-    value: "12,450",
-    trend: "flat",
-    trendValue: "IaaS",
-    color: "#6366f1",
-    barPct: 64,
-    iconClass: "fa-cloud",
-  },
-  {
-    label: "网络设备",
-    value: "5,200",
-    trend: "flat",
-    trendValue: "LAN",
-    color: "#22c55e",
-    barPct: 27,
-    iconClass: "fa-network-wired",
-  },
-  {
-    label: "在线率",
-    value: "99.1%",
-    trend: "flat",
-    trendValue: "稳定",
-    color: "#22d3ee",
-    barPct: 99.1,
-    iconClass: "fa-signal",
-  },
-];
+const HEALTH_STATUS_TO_SERVICE: Record<string, OverviewService["status"]> = {
+  green: "healthy",
+  yellow: "warning",
+  red: "critical",
+};
 
-const KPI_CARDS: OverviewKpi[] = [
-  {
-    label: "业务可用率",
-    value: "99.97%",
-    trend: "up",
-    trendValue: "+0.12%",
-    color: "#22c55e",
-    barPct: 99.97,
-    iconClass: "fa-heart-pulse",
-  },
-  {
-    label: "活跃告警",
-    value: "7",
-    trend: "down",
-    trendValue: "-3",
-    color: "#ef4444",
-    barPct: 14,
-    iconClass: "fa-triangle-exclamation",
-  },
-  {
-    label: "今日工单",
-    value: "23",
-    trend: "up",
-    trendValue: "+5",
-    color: "#6366f1",
-    barPct: 46,
-    iconClass: "fa-square-check",
-  },
-  {
-    label: "数字员工在线",
-    value: "5/6",
-    trend: "flat",
-    trendValue: "稳定",
-    color: "#22d3ee",
-    barPct: 83,
-    iconClass: "fa-users",
-  },
-  ...ASSET_OVERVIEW_STATS,
-];
-
-const ALERTS: OverviewAlert[] = [
-  { level: "紧急", color: "#ef4444", count: 1, pct: 14 },
-  { level: "严重", color: "#f97316", count: 2, pct: 28 },
-  { level: "警告", color: "#f59e0b", count: 4, pct: 57 },
-  { level: "通知", color: "#22d3ee", count: 12, pct: 100 },
+const RESOURCE_TYPE_ICONS: Array<{ keywords: string[]; icon: string; color: string }> = [
+  { keywords: ["云主机", "虚拟机", "vm", "host"], icon: "fa-cloud", color: "#6366f1" },
+  { keywords: ["主机", "服务器", "server"], icon: "fa-server", color: "#3b82f6" },
+  { keywords: ["网络", "交换", "路由", "switch", "router", "network"], icon: "fa-network-wired", color: "#22c55e" },
+  { keywords: ["数据库", "db", "mysql", "oracle", "postgre"], icon: "fa-database", color: "#0ea5e9" },
+  { keywords: ["存储", "storage", "oss", "ceph"], icon: "fa-hard-drive", color: "#f59e0b" },
+  { keywords: ["中间件", "kafka", "redis", "mq"], icon: "fa-layer-group", color: "#a855f7" },
+  { keywords: ["容器", "kubernetes", "k8s", "pod"], icon: "fa-cubes", color: "#14b8a6" },
 ];
 
 const TICKETS: OverviewTicket[] = [
@@ -164,94 +102,234 @@ const TICKETS: OverviewTicket[] = [
   { label: "完成率", value: "75%", color: "#6366f1" },
 ];
 
-const SERVICES: OverviewService[] = [
-  { name: "核心交换网络", status: "healthy", uptime: "99.99%", latency: "2ms", latencyClass: "" },
-  { name: "Web应用集群", status: "healthy", uptime: "99.98%", latency: "45ms", latencyClass: "" },
-  {
-    name: "数据库集群(MySQL)",
-    status: "warning",
-    uptime: "99.92%",
-    latency: "128ms",
-    latencyClass: "warn",
-  },
-  { name: "K8s容器平台", status: "healthy", uptime: "99.95%", latency: "12ms", latencyClass: "" },
-  { name: "对象存储(OSS)", status: "healthy", uptime: "100%", latency: "8ms", latencyClass: "" },
-  { name: "支付服务", status: "critical", uptime: "98.7%", latency: "892ms", latencyClass: "bad" },
-  { name: "CDN加速节点", status: "healthy", uptime: "99.99%", latency: "5ms", latencyClass: "" },
-  {
-    name: "消息队列(Kafka)",
-    status: "warning",
-    uptime: "99.88%",
-    latency: "67ms",
-    latencyClass: "warn",
-  },
-];
-
-const EVENTS: OverviewEvent[] = [
-  {
-    title: "支付服务连接池耗尽",
-    time: "2分钟前",
-    color: "#ef4444",
-    iconClass: "fa-circle-xmark",
-    employeeId: "fault",
-  },
-  {
-    title: "K8s Pod自动扩容 → 12副本",
-    time: "5分钟前",
-    color: "#22d3ee",
-    iconClass: "fa-up-right-and-down-left-from-center",
-    employeeId: "resource",
-  },
-  {
-    title: "MySQL慢查询告警已触发",
-    time: "8分钟前",
-    color: "#f59e0b",
-    iconClass: "fa-database",
-    employeeId: "fault",
-  },
-  {
-    title: "SSL证书续签完成(15个域名)",
-    time: "15分钟前",
-    color: "#22c55e",
-    iconClass: "fa-lock",
-    employeeId: "inspection",
-  },
-  {
-    title: "CDN节点华东区域流量激增",
-    time: "22分钟前",
-    color: "#f97316",
-    iconClass: "fa-wave-square",
-    employeeId: "query",
-  },
-  {
-    title: "巡检专家完成全量主机巡检",
-    time: "30分钟前",
-    color: "#22c55e",
-    iconClass: "fa-circle-check",
-    employeeId: "inspection",
-  },
-  {
-    title: "Kafka消费者组Lag告警",
-    time: "45分钟前",
-    color: "#f59e0b",
-    iconClass: "fa-triangle-exclamation",
-    employeeId: "fault",
-  },
-  {
-    title: "自动备份任务完成",
-    time: "1小时前",
-    color: "#6366f1",
-    iconClass: "fa-cloud-arrow-up",
-    employeeId: "order",
-  },
-];
-
 const ALERT_TREND_HOURS = Array.from({ length: 24 }, (_, index) => `${String(index).padStart(2, "0")}:00`);
 const ALERT_TREND_SERIES_CRITICAL = [2, 1, 1, 0, 1, 0, 0, 1, 3, 5, 8, 6, 4, 3, 5, 7, 4, 3, 2, 3, 4, 2, 1, 1];
 const ALERT_TREND_SERIES_WARNING = [5, 4, 3, 2, 3, 2, 1, 4, 6, 9, 12, 10, 8, 7, 9, 11, 8, 6, 5, 6, 7, 5, 4, 3];
 
+const EMPTY_KPI: OverviewKpi = {
+  label: "—",
+  value: "—",
+  trend: "flat",
+  trendValue: "—",
+  color: "#94a3b8",
+  barPct: 0,
+  iconClass: "fa-circle-notch",
+};
+
+function pickResourceTypeIcon(name: string | undefined): { icon: string; color: string } {
+  const lowered = String(name || "").toLowerCase();
+  for (const entry of RESOURCE_TYPE_ICONS) {
+    if (entry.keywords.some((kw) => lowered.includes(kw))) {
+      return { icon: entry.icon, color: entry.color };
+    }
+  }
+  return { icon: "fa-cube", color: "#64748b" };
+}
+
+function toResourceTypeStats(
+  stats: AssetOverviewData["resourceTypeStats"] | undefined,
+): ResourceTypeStat[] {
+  if (!stats || typeof stats !== "object") return [];
+  return Object.values(stats).filter(
+    (entry): entry is ResourceTypeStat => Boolean(entry) && typeof entry === "object",
+  );
+}
+
+function buildKpiCards(
+  asset: AssetOverviewData | null,
+  employees: OverviewEmployee[],
+  activeAlarmTotal: number,
+): OverviewKpi[] {
+  const totalResources = Number(asset?.totalResources ?? 0);
+  const healthRate = Number(asset?.healthRate ?? 0);
+  const stats = toResourceTypeStats(asset?.resourceTypeStats);
+  const onlineEmployees = employees.filter(
+    (employee) => employee.status === "running" || employee.urgent,
+  ).length;
+
+  const baseCards: OverviewKpi[] = [
+    {
+      label: "业务可用率",
+      value: asset ? `${healthRate.toFixed(2)}%` : "—",
+      trend: "flat",
+      trendValue: asset ? "实时" : "—",
+      color: "#22c55e",
+      barPct: Math.max(0, Math.min(100, healthRate)),
+      iconClass: "fa-heart-pulse",
+    },
+    {
+      label: "活跃告警",
+      value: String(activeAlarmTotal),
+      trend: "flat",
+      trendValue: "实时",
+      color: "#ef4444",
+      barPct: activeAlarmTotal > 0 ? Math.min(100, activeAlarmTotal) : 0,
+      iconClass: "fa-triangle-exclamation",
+    },
+    {
+      label: "今日工单",
+      value: "—",
+      trend: "flat",
+      trendValue: "待接入",
+      color: "#6366f1",
+      barPct: 0,
+      iconClass: "fa-square-check",
+    },
+    {
+      label: "数字员工在线",
+      value: employees.length > 0 ? `${onlineEmployees}/${employees.length}` : "—",
+      trend: "flat",
+      trendValue: "稳定",
+      color: "#22d3ee",
+      barPct: employees.length > 0 ? (onlineEmployees / employees.length) * 100 : 0,
+      iconClass: "fa-users",
+    },
+    {
+      label: "纳管总资产",
+      value: asset ? totalResources.toLocaleString() : "—",
+      trend: "flat",
+      trendValue: asset ? "资产" : "—",
+      color: "#3b82f6",
+      barPct: 100,
+      iconClass: "fa-server",
+    },
+  ];
+
+  const topResourceTypes = stats
+    .slice()
+    .sort((a, b) => Number(b.totalCount || 0) - Number(a.totalCount || 0))
+    .slice(0, 3);
+
+  const resourceCards: OverviewKpi[] = topResourceTypes.map((stat) => {
+    const total = Number(stat.totalCount || 0);
+    const pct = totalResources > 0 ? (total / totalResources) * 100 : 0;
+    const { icon, color } = pickResourceTypeIcon(stat.resourceTypeName);
+    return {
+      label: stat.resourceTypeName || "未知类型",
+      value: total.toLocaleString(),
+      trend: "flat",
+      trendValue: stat.alarmCount ? `${stat.alarmCount} 告警` : "正常",
+      color,
+      barPct: Math.max(0, Math.min(100, pct)),
+      iconClass: icon,
+    };
+  });
+
+  const cards = [...baseCards, ...resourceCards];
+  while (cards.length < 8) {
+    cards.push({ ...EMPTY_KPI });
+  }
+  return cards.slice(0, 8);
+}
+
+function buildAlerts(top5: AlarmTop5Item[] | null): OverviewAlert[] {
+  if (!top5 || top5.length === 0) {
+    return [{ level: "暂无告警", color: "#22c55e", count: 0, pct: 0 }];
+  }
+  const sorted = top5
+    .slice()
+    .sort((a, b) => Number(b.count || 0) - Number(a.count || 0))
+    .slice(0, 5);
+  const maxCount = sorted.reduce((max, item) => Math.max(max, Number(item.count || 0)), 1);
+  const palette = ["#ef4444", "#f97316", "#f59e0b", "#22d3ee", "#6366f1"];
+  return sorted.map((item, index) => ({
+    level: item.title || "未命名",
+    color: palette[index] || "#64748b",
+    count: Number(item.count || 0),
+    pct: Math.max(8, (Number(item.count || 0) / maxCount) * 100),
+  }));
+}
+
+function parseLatency(value: ApplicationHealth["responseTime"]): { display: string; numeric: number } {
+  if (value === null || value === undefined || value === "") {
+    return { display: "—", numeric: 0 };
+  }
+  if (typeof value === "number") {
+    return { display: `${value}ms`, numeric: value };
+  }
+  const text = String(value).trim();
+  const match = text.match(/-?\d+(?:\.\d+)?/);
+  const numeric = match ? Number(match[0]) : 0;
+  return {
+    display: /ms|s$/i.test(text) ? text : numeric > 0 ? `${text}ms` : text,
+    numeric,
+  };
+}
+
+function buildServices(apps: ApplicationHealth[] | undefined): OverviewService[] {
+  if (!apps || apps.length === 0) return [];
+  return apps.slice(0, 8).map((app) => {
+    const healthRate = Number(app.healthRate || 0);
+    const { display: latency, numeric } = parseLatency(app.responseTime);
+    const status: OverviewService["status"] =
+      HEALTH_STATUS_TO_SERVICE[String(app.healthStatus || "").toLowerCase()] || "healthy";
+    let latencyClass: OverviewService["latencyClass"] = "";
+    if (numeric >= 500) latencyClass = "bad";
+    else if (numeric >= 100) latencyClass = "warn";
+    return {
+      name: app.platformName || "未命名应用",
+      status,
+      uptime: `${healthRate.toFixed(2)}%`,
+      latency,
+      latencyClass,
+    };
+  });
+}
+
+function buildEvents(top5: AlarmTop5Item[] | null): OverviewEvent[] {
+  if (!top5 || top5.length === 0) return [];
+  return top5.slice(0, 8).map((item) => ({
+    title: `${item.title || "未命名告警对象"} · ${item.count ?? 0} 次`,
+    time: "实时",
+    color: "#ef4444",
+    iconClass: "fa-triangle-exclamation",
+    employeeId: "fault",
+  }));
+}
+
+function envelopeData<T>(
+  envelope: { code?: number; data?: T | null } | null | undefined,
+): T | null {
+  if (!envelope) return null;
+  if (envelope.code !== 200) return null;
+  return (envelope.data ?? null) as T | null;
+}
+
 export function OverviewPanel({ pageTheme, onOpenEmployeeChat, employees }: OverviewPanelProps) {
   const isDark = pageTheme === "dark";
+  const [dashboard, setDashboard] = useState<MonitoringOverviewDashboardResponse | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setErrorMessage(null);
+    getMonitoringOverviewDashboard()
+      .then((payload) => {
+        if (cancelled) return;
+        setDashboard(payload);
+      })
+      .catch((error: unknown) => {
+        if (cancelled) return;
+        const message = error instanceof Error ? error.message : String(error);
+        setErrorMessage(message || "获取监控总览失败");
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const assetOverview = envelopeData<AssetOverviewData>(dashboard?.assetOverview);
+  const alarmTop5 = envelopeData<AlarmTop5Item[]>(dashboard?.alarmTop5);
+  const activeAlarmTotal = Number(dashboard?.activeAlarmTotal ?? 0);
+
+  const assetOverviewError = dashboard?.assetOverview && dashboard.assetOverview.code !== 200
+    ? dashboard.assetOverview.msg || null
+    : null;
 
   const orderedEmployees = useMemo(
     () =>
@@ -269,6 +347,17 @@ export function OverviewPanel({ pageTheme, onOpenEmployeeChat, employees }: Over
       })),
     [orderedEmployees],
   );
+
+  const kpiCards = useMemo(
+    () => buildKpiCards(assetOverview, employees, activeAlarmTotal),
+    [assetOverview, employees, activeAlarmTotal],
+  );
+  const alerts = useMemo(() => buildAlerts(alarmTop5), [alarmTop5]);
+  const services = useMemo(
+    () => buildServices(assetOverview?.applicationHealthList),
+    [assetOverview],
+  );
+  const events = useMemo(() => buildEvents(alarmTop5), [alarmTop5]);
 
   const chartOption = useMemo<EChartsOption>(
     () => ({
@@ -355,19 +444,27 @@ export function OverviewPanel({ pageTheme, onOpenEmployeeChat, employees }: Over
     [isDark],
   );
 
+  const statusHint = loading
+    ? "正在加载实时数据…"
+    : errorMessage
+      ? `加载失败：${errorMessage}`
+      : assetOverviewError
+        ? `资产总览接口提示：${assetOverviewError}`
+        : null;
+
   return (
     <div className="portal-overview portal-overview-reference">
       <div className="overview-main-header">
         <div className="overview-main-title">
           <span className="overview-live-dot" />
           数字总览
-          <small>全局态势感知</small>
+          <small>{statusHint || "全局态势感知"}</small>
         </div>
       </div>
 
       <section className="overview-ref-top">
-        {KPI_CARDS.map((card) => (
-          <article key={card.label} className="overview-ref-kpi">
+        {kpiCards.map((card, index) => (
+          <article key={`${card.label}-${index}`} className="overview-ref-kpi">
             <div className="overview-ref-kpi-head">
               <div className="overview-ref-kpi-icon" style={{ background: card.color }}>
                 <i className={`fas ${card.iconClass}`} />
@@ -452,7 +549,7 @@ export function OverviewPanel({ pageTheme, onOpenEmployeeChat, employees }: Over
             告警分布
           </div>
           <div className="overview-ref-alert-list">
-            {ALERTS.map((alert) => (
+            {alerts.map((alert) => (
               <div key={alert.level} className="overview-ref-alert-row">
                 <div className="overview-ref-alert-dot" style={{ background: alert.color }} />
                 <div className="overview-ref-alert-level" style={{ color: alert.color }}>
@@ -478,57 +575,77 @@ export function OverviewPanel({ pageTheme, onOpenEmployeeChat, employees }: Over
             业务服务健康度
           </div>
           <div className="overview-ref-service-list">
-            {SERVICES.map((service) => (
-              <div key={service.name} className="overview-ref-service-row">
-                <div className={`overview-ref-service-dot ${service.status}`} />
-                <div className="overview-ref-service-name">{service.name}</div>
-                <div className="overview-ref-service-uptime">{service.uptime}</div>
-                <div className={`overview-ref-service-latency ${service.latencyClass}`}>
-                  {service.latency}
-                </div>
+            {services.length === 0 ? (
+              <div className="overview-ref-service-row">
+                <div className="overview-ref-service-name">{loading ? "加载中…" : "暂无应用健康数据"}</div>
               </div>
-            ))}
+            ) : (
+              services.map((service) => (
+                <div key={service.name} className="overview-ref-service-row">
+                  <div className={`overview-ref-service-dot ${service.status}`} />
+                  <div className="overview-ref-service-name">{service.name}</div>
+                  <div className="overview-ref-service-uptime">{service.uptime}</div>
+                  <div className={`overview-ref-service-latency ${service.latencyClass}`}>
+                    {service.latency}
+                  </div>
+                </div>
+              ))
+            )}
           </div>
         </article>
 
         <article className="overview-ref-card">
           <div className="overview-ref-card-title">
             <i className="fas fa-clock" />
-            实时事件流
+            告警对象 Top5
           </div>
           <div className="overview-ref-event-list">
-            {EVENTS.map((event) => {
-              const content = (
-                <>
-                  <div className="overview-ref-event-icon" style={{ background: `${event.color}20`, color: event.color }}>
-                    <i className={`fas ${event.iconClass}`} />
-                  </div>
-                  <div className="overview-ref-event-body">
-                    <div className="overview-ref-event-title">{event.title}</div>
-                    <div className="overview-ref-event-time">{event.time}</div>
-                  </div>
-                </>
-              );
-
-              if (event.employeeId) {
-                return (
-                  <button
-                    key={event.title}
-                    type="button"
-                    className="overview-ref-event"
-                    onClick={() => onOpenEmployeeChat(event.employeeId!)}
-                  >
-                    {content}
-                  </button>
-                );
-              }
-
-              return (
-                <div key={event.title} className="overview-ref-event">
-                  {content}
+            {events.length === 0 ? (
+              <div className="overview-ref-event">
+                <div className="overview-ref-event-icon" style={{ background: "#64748b20", color: "#64748b" }}>
+                  <i className="fas fa-circle-info" />
                 </div>
-              );
-            })}
+                <div className="overview-ref-event-body">
+                  <div className="overview-ref-event-title">
+                    {loading ? "加载中…" : "暂无告警对象数据"}
+                  </div>
+                  <div className="overview-ref-event-time">—</div>
+                </div>
+              </div>
+            ) : (
+              events.map((event) => {
+                const content = (
+                  <>
+                    <div className="overview-ref-event-icon" style={{ background: `${event.color}20`, color: event.color }}>
+                      <i className={`fas ${event.iconClass}`} />
+                    </div>
+                    <div className="overview-ref-event-body">
+                      <div className="overview-ref-event-title">{event.title}</div>
+                      <div className="overview-ref-event-time">{event.time}</div>
+                    </div>
+                  </>
+                );
+
+                if (event.employeeId) {
+                  return (
+                    <button
+                      key={event.title}
+                      type="button"
+                      className="overview-ref-event"
+                      onClick={() => onOpenEmployeeChat(event.employeeId!)}
+                    >
+                      {content}
+                    </button>
+                  );
+                }
+
+                return (
+                  <div key={event.title} className="overview-ref-event">
+                    {content}
+                  </div>
+                );
+              })
+            )}
           </div>
         </article>
       </section>
