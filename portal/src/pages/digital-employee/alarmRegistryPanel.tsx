@@ -240,9 +240,9 @@ export function AlarmRegistryPanel({ pageTheme, onOpenChat }: AlarmRegistryPanel
           <button className="portal-model-btn alarm-registry-btn" onClick={handleSearch} disabled={loading}>
             <i className={`fas ${loading ? "fa-spinner fa-spin" : "fa-search"}`} />
           </button>
-          <button className="portal-model-btn alarm-registry-btn" onClick={handleExport} title="导出">
+          {/* <button className="portal-model-btn alarm-registry-btn" onClick={handleExport} title="导出">
             <i className="fas fa-download" />
-          </button>
+          </button> */}
           <button
             className="portal-model-btn alarm-registry-btn"
             onClick={() => { void fetchRecords(); void fetchStats(); }}
