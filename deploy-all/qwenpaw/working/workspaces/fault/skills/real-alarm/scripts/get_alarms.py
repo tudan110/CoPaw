@@ -481,7 +481,7 @@ def main():
 
 配置文件:
   配置从 skill 目录下的 .env 文件读取：
-  - INOE_API_BASE_URL  API 基础地址（如：http://<host>:<port>/prod-api）
+  - INOE_API_BASE_URL  API 基础地址（如：http://<host>:<port>）
   - INOE_API_TOKEN     API Token（JWT）
         """,
     )

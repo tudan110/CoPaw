@@ -27,7 +27,7 @@ cp .env.example .env
 编辑 `.env` 文件，填入实际的 API 配置：
 
 ```bash
-INOE_API_BASE_URL=http://<host>:<port>/prod-api
+INOE_API_BASE_URL=http://<host>:<port>
 INOE_API_TOKEN=your_jwt_token_here
 ```
 

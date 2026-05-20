@@ -94,7 +94,7 @@ uv run scripts/query_alarm_class_count.py [options]
 | 参数名称 | 类型 | 是否必填 | 页面字段 | 说明 | 示例 |
 |---------|------|---------|----------|------|------|
 | `token` | str | 否 | - | JWT 令牌；默认从环境变量 `INOE_API_TOKEN` 读取 | `eyJ...` |
-| `api_base_url` | str | 否 | - | API 基础地址；默认从环境变量 `INOE_API_BASE_URL` 读取 | `http://host:port/prod-api` |
+| `api_base_url` | str | 否 | - | API 基础地址；默认从环境变量 `INOE_API_BASE_URL` 读取 | `http://host:port` |
 | `start_time` / `startTime` | str | 否 | `startTime` | 开始时间，格式 `YYYY-MM-DD HH:MM:SS`；不传则不带该字段 | `2026-04-22 12:00:00` |
 | `end_time` / `endTime` | str | 否 | `endTime` | 结束时间，格式 `YYYY-MM-DD HH:MM:SS`；不传则不带该字段 | `2026-04-23 12:00:00` |
 | `alarm_class` / `alarmClass` | str | 否 | `alarmClass` | 告警类别；页面数据库概览传 `application` | `application` |
@@ -133,7 +133,7 @@ uv run scripts/query_alarm_class_count.py [options]
 技能目录下的 `.env`：
 
 ```bash
-INOE_API_BASE_URL=http://<host>:<port>/prod-api
+INOE_API_BASE_URL=http://<host>:<port>
 INOE_API_TOKEN=your_jwt_token_here
 ```
 
