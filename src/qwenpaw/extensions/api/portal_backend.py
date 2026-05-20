@@ -60,6 +60,12 @@ from qwenpaw.extensions.integrations.portal_real_alarms import (
     build_empty_portal_real_alarms_payload,
     query_portal_real_alarms,
 )
+from qwenpaw.extensions.integrations.portal_monitoring_overview import (
+    query_active_alarm_total as query_monitoring_active_alarm_total,
+    query_alarm_top5 as query_monitoring_alarm_top5,
+    query_asset_overview as query_monitoring_asset_overview,
+    query_topology as query_monitoring_topology,
+)
 from qwenpaw.extensions.integrations import knowledge_base
 from qwenpaw.extensions.api import fde_workbench_service
 from qwenpaw.extensions.api.fde_workbench_models import (
@@ -1807,6 +1813,42 @@ async def get_alarm_workorders(limit: int = 5):
         print(f"[ERROR] get_alarm_workorders failed: {error_detail}")
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=error_detail) from exc
+
+
+@router.get("/monitoring-overview/alarm-top5")
+async def get_monitoring_alarm_top5():
+    return await asyncio.to_thread(query_monitoring_alarm_top5)
+
+
+@router.get("/monitoring-overview/topology")
+async def get_monitoring_topology():
+    return await asyncio.to_thread(query_monitoring_topology)
+
+
+@router.get("/monitoring-overview/asset-overview")
+async def get_monitoring_asset_overview():
+    return await asyncio.to_thread(query_monitoring_asset_overview)
+
+
+@router.get("/monitoring-overview/dashboard")
+async def get_monitoring_overview_dashboard():
+    (
+        asset_overview,
+        alarm_top5,
+        topology,
+        active_alarm_total,
+    ) = await asyncio.gather(
+        asyncio.to_thread(query_monitoring_asset_overview),
+        asyncio.to_thread(query_monitoring_alarm_top5),
+        asyncio.to_thread(query_monitoring_topology),
+        asyncio.to_thread(query_monitoring_active_alarm_total),
+    )
+    return {
+        "assetOverview": asset_overview,
+        "alarmTop5": alarm_top5,
+        "topology": topology,
+        "activeAlarmTotal": active_alarm_total,
+    }
 
 
 @router.get("/real-alarms")
