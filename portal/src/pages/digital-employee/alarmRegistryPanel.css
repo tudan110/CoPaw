@@ -1,0 +1,285 @@
+.alarm-registry-page {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px 24px;
+  height: 100%;
+  overflow-y: auto;
+}
+
+.alarm-registry-stats-bar {
+  display: flex;
+  gap: 20px;
+  padding: 10px 16px;
+  background: var(--portal-card-bg, #f8f9fa);
+  border-radius: 8px;
+  font-size: 13px;
+}
+
+.alarm-registry-stat {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.alarm-registry-stat strong {
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.alarm-registry-stat.tone-amber strong { color: #d97706; }
+.alarm-registry-stat.tone-green strong { color: #16a34a; }
+.alarm-registry-stat.tone-slate strong { color: #64748b; }
+
+.alarm-registry-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.alarm-registry-filter-tabs {
+  display: flex;
+  gap: 4px;
+}
+
+.alarm-registry-tab {
+  padding: 5px 12px;
+  border: 1px solid var(--portal-border, #e2e8f0);
+  border-radius: 6px;
+  background: transparent;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.alarm-registry-tab:hover {
+  background: var(--portal-card-bg, #f1f5f9);
+}
+
+.alarm-registry-tab.active {
+  background: var(--portal-primary, #3b82f6);
+  color: #fff;
+  border-color: var(--portal-primary, #3b82f6);
+}
+
+.alarm-registry-search-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.alarm-registry-search-input {
+  padding: 5px 10px;
+  border: 1px solid var(--portal-border, #e2e8f0);
+  border-radius: 6px;
+  font-size: 12px;
+  width: 200px;
+  outline: none;
+}
+
+.alarm-registry-search-input:focus {
+  border-color: var(--portal-primary, #3b82f6);
+}
+
+.alarm-registry-btn {
+  padding: 5px 10px;
+  font-size: 12px;
+}
+
+.alarm-registry-error {
+  padding: 8px 12px;
+  background: #fef2f2;
+  color: #dc2626;
+  border-radius: 6px;
+  font-size: 12px;
+}
+
+.alarm-registry-table-wrapper {
+  overflow-x: auto;
+  border: 1px solid var(--portal-border, #e2e8f0);
+  border-radius: 8px;
+}
+
+.alarm-registry-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.alarm-registry-table thead {
+  background: var(--portal-card-bg, #f8f9fa);
+}
+
+.alarm-registry-table th {
+  padding: 8px 12px;
+  text-align: left;
+  font-weight: 600;
+  white-space: nowrap;
+  border-bottom: 1px solid var(--portal-border, #e2e8f0);
+}
+
+.alarm-registry-table td {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--portal-border, #f1f5f9);
+  white-space: nowrap;
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.alarm-registry-table tr:hover td {
+  background: var(--portal-card-bg, #f8f9fa);
+}
+
+.alarm-registry-table tr.updating td {
+  opacity: 0.5;
+}
+
+.alarm-registry-cell-title {
+  max-width: 260px;
+  font-weight: 500;
+}
+
+.alarm-registry-cell-actions {
+  display: flex;
+  gap: 4px;
+}
+
+.alarm-registry-action-btn {
+  width: 24px;
+  height: 24px;
+  border: 1px solid var(--portal-border, #e2e8f0);
+  border-radius: 4px;
+  background: transparent;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-size: 11px;
+  transition: all 0.15s;
+}
+
+.alarm-registry-action-btn:hover {
+  transform: scale(1.1);
+}
+
+.alarm-registry-action-btn.tone-green { color: #16a34a; }
+.alarm-registry-action-btn.tone-green:hover { background: #dcfce7; }
+.alarm-registry-action-btn.tone-slate { color: #64748b; }
+.alarm-registry-action-btn.tone-slate:hover { background: #f1f5f9; }
+.alarm-registry-action-btn.tone-blue { color: #3b82f6; }
+.alarm-registry-action-btn.tone-blue:hover { background: #dbeafe; }
+
+.alarm-registry-action-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.alarm-registry-status-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.alarm-registry-status-badge.tone-blue { background: #dbeafe; color: #1d4ed8; }
+.alarm-registry-status-badge.tone-amber { background: #fef3c7; color: #92400e; }
+.alarm-registry-status-badge.tone-green { background: #dcfce7; color: #166534; }
+.alarm-registry-status-badge.tone-red { background: #fef2f2; color: #991b1b; }
+.alarm-registry-status-badge.tone-slate { background: #f1f5f9; color: #475569; }
+
+.alarm-registry-empty {
+  text-align: center;
+  color: #94a3b8;
+  padding: 40px 0 !important;
+}
+
+.alarm-registry-pagination {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  padding: 10px 16px;
+  background: var(--portal-card-bg, #fff);
+  border-top: 1px solid var(--portal-border, #e2e8f0);
+  font-size: 12px;
+}
+
+.alarm-registry-pagination-total {
+  margin-right: auto;
+  color: #64748b;
+}
+
+.alarm-registry-pagination button {
+  min-width: 28px;
+  height: 28px;
+  padding: 0 6px;
+  border: 1px solid var(--portal-border, #e2e8f0);
+  border-radius: 4px;
+  background: transparent;
+  cursor: pointer;
+  font-size: 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.alarm-registry-pagination button:hover:not(:disabled) {
+  border-color: var(--portal-primary, #3b82f6);
+  color: var(--portal-primary, #3b82f6);
+}
+
+.alarm-registry-pagination button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.alarm-registry-pagination-page.active {
+  background: var(--portal-primary, #3b82f6);
+  color: #fff;
+  border-color: var(--portal-primary, #3b82f6);
+}
+
+.alarm-registry-pagination-ellipsis {
+  padding: 0 4px;
+  color: #94a3b8;
+}
+
+.alarm-registry-pagination-size {
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid var(--portal-border, #e2e8f0);
+  border-radius: 4px;
+  font-size: 12px;
+  background: transparent;
+  cursor: pointer;
+  margin-left: 8px;
+}
+
+.alarm-registry-pagination-jump {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 8px;
+  color: #64748b;
+}
+
+.alarm-registry-pagination-jump input {
+  width: 40px;
+  height: 28px;
+  padding: 0 6px;
+  border: 1px solid var(--portal-border, #e2e8f0);
+  border-radius: 4px;
+  font-size: 12px;
+  text-align: center;
+  outline: none;
+}
+
+.alarm-registry-pagination-jump input:focus {
+  border-color: var(--portal-primary, #3b82f6);
+}

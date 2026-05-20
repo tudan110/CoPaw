@@ -51,6 +51,7 @@ from qwenpaw.extensions.api.fault_manual_workorder_service import (
 from qwenpaw.extensions.api.alarm_analyst_service import run_alarm_analyst_diagnose
 from qwenpaw.extensions.portal_real_alarm_registry import (
     filter_visible_alarms,
+    load_alarm_records,
     update_alarm_record,
 )
 from qwenpaw.extensions.integrations.alarm_workorders.query_alarm_workorders import (
@@ -3062,6 +3063,129 @@ def register_app_routes(fastapi_app) -> None:
         fastapi_app.state.portal_api_compat_installed = True
 
     fastapi_app.include_router(router)
+
+
+# ---------------------------------------------------------------------------
+# Alarm Registry Management API
+# ---------------------------------------------------------------------------
+
+
+@router.get("/alarm-registry/records")
+async def list_alarm_registry_records(
+    status: str = Query(default="", description="Filter by status (comma-separated)"),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=20, ge=1, le=200),
+    search: str = Query(default="", description="Search in title/deviceName/manageIp/alarmId"),
+):
+    """List all alarm registry records with filtering and pagination."""
+    try:
+        all_records = load_alarm_records()
+        items = list(all_records.values())
+
+        # Filter by status
+        if status.strip():
+            allowed_statuses = {s.strip() for s in status.split(",") if s.strip()}
+            items = [r for r in items if r.get("status", "") in allowed_statuses]
+
+        # Search filter
+        search_term = search.strip().lower()
+        if search_term:
+            items = [
+                r for r in items
+                if search_term in str(r.get("title", "")).lower()
+                or search_term in str(r.get("deviceName", "")).lower()
+                or search_term in str(r.get("manageIp", "")).lower()
+                or search_term in str(r.get("alarmId", "")).lower()
+                or search_term in str(r.get("resId", "")).lower()
+            ]
+
+        # Sort by eventTime descending (fall back to updatedAt)
+        items.sort(key=lambda r: r.get("eventTime", "") or r.get("updatedAt", ""), reverse=True)
+
+        total = len(items)
+        start = (page - 1) * page_size
+        end = start + page_size
+        page_items = items[start:end]
+
+        return {
+            "total": total,
+            "page": page,
+            "pageSize": page_size,
+            "totalPages": (total + page_size - 1) // page_size if total > 0 else 0,
+            "items": page_items,
+        }
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@router.patch("/alarm-registry/records/{alarm_id}/status")
+async def update_alarm_registry_status(
+    alarm_id: str,
+    payload: dict = Body(default_factory=dict),
+):
+    """Update the status of an alarm registry record."""
+    new_status = str(payload.get("status", "")).strip()
+    if not new_status:
+        raise HTTPException(status_code=422, detail="status is required")
+    allowed_statuses = {
+        "new", "taken_over", "analyzing", "manual_pending",
+        "manual_recovered", "manual_unrecovered", "manual_unknown",
+        "resolved", "ignored",
+    }
+    if new_status not in allowed_statuses:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Invalid status '{new_status}'. Allowed: {sorted(allowed_statuses)}",
+        )
+    try:
+        record = update_alarm_record(alarm_id=alarm_id, status=new_status)
+        return {"ok": True, "record": record}
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@router.get("/alarm-registry/export")
+async def export_alarm_registry_records(
+    status: str = Query(default="", description="Filter by status (comma-separated)"),
+):
+    """Export alarm registry records as JSON."""
+    try:
+        all_records = load_alarm_records()
+        items = list(all_records.values())
+
+        if status.strip():
+            allowed_statuses = {s.strip() for s in status.split(",") if s.strip()}
+            items = [r for r in items if r.get("status", "") in allowed_statuses]
+
+        items.sort(key=lambda r: r.get("eventTime", "") or r.get("updatedAt", ""), reverse=True)
+
+        return JSONResponse(
+            content={"total": len(items), "items": items},
+            headers={
+                "Content-Disposition": "attachment; filename=alarm_registry_export.json",
+            },
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@router.get("/alarm-registry/stats")
+async def alarm_registry_stats():
+    """Get summary statistics of alarm registry records."""
+    try:
+        all_records = load_alarm_records()
+        status_counts: dict[str, int] = {}
+        for record in all_records.values():
+            s = record.get("status", "unknown")
+            status_counts[s] = status_counts.get(s, 0) + 1
+        return {
+            "total": len(all_records),
+            "byStatus": status_counts,
+        }
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
 app.include_router(router)

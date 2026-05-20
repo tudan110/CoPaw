@@ -156,6 +156,10 @@ const TracesCenterPanel = lazyNamed(
   () => import("./digital-employee/tracesCenterPanel"),
   "TracesCenterPanel",
 );
+const AlarmRegistryPanel = lazyNamed(
+  () => import("./digital-employee/alarmRegistryPanel"),
+  "AlarmRegistryPanel",
+);
 
 const panelLoadingFallback = (
   <div className="history-empty" style={{ minHeight: 280 }}>
@@ -221,6 +225,7 @@ export default function DigitalEmployeePage({
   const isNlCustomizationMode = activeAdvancedPanel === "nl-customization";
   const isAppMarketMode = activeAdvancedPanel === "app-market";
   const isTracesMode = activeAdvancedPanel === "traces";
+  const isAlarmRegistryMode = activeAdvancedPanel === "alarm-registry";
   const isPortalHome = !selectedEmployee;
   const isPortalHomeChat = isPortalHome && currentView === "chat" && !activeAdvancedPanel;
   const isAlarmWorkbenchMode = Boolean(
@@ -1298,9 +1303,15 @@ export default function DigitalEmployeePage({
             isNlCustomizationActive={isNlCustomizationMode}
             isAppMarketActive={isAppMarketMode}
             isTracesActive={isTracesMode}
+            isAlarmRegistryActive={isAlarmRegistryMode}
             onOpenTraces={() =>
               updateCurrentEmployeeRoute({
                 panel: "traces",
+              })
+            }
+            onOpenAlarmRegistry={() =>
+              updateCurrentEmployeeRoute({
+                panel: "alarm-registry",
               })
             }
             onOpenAppMarket={() =>
@@ -1350,7 +1361,7 @@ export default function DigitalEmployeePage({
 
         <div
           className={
-            isModelConfigMode || isSettingsMode || isTokenUsageMode || isOpsExpertMode || isMcpMode || isSkillPoolMode || isFdeWorkbenchMode || isKnowledgeBaseMode || isInspirationMode || isCliMode || isResourceImportMode || isNlCustomizationMode || isAppMarketMode || isTracesMode
+            isModelConfigMode || isSettingsMode || isTokenUsageMode || isOpsExpertMode || isMcpMode || isSkillPoolMode || isFdeWorkbenchMode || isKnowledgeBaseMode || isInspirationMode || isCliMode || isResourceImportMode || isNlCustomizationMode || isAppMarketMode || isTracesMode || isAlarmRegistryMode
               ? `main-content advanced-page-mode${isKnowledgeBaseMode ? " knowledge-base-page-mode" : ""}`
               : currentView === "chat"
                 ? "main-content"
@@ -1459,6 +1470,8 @@ export default function DigitalEmployeePage({
             renderDeferredPanel(<AppMarketPanel />)
           ) : isTracesMode ? (
             renderDeferredPanel(<TracesCenterPanel />)
+          ) : isAlarmRegistryMode ? (
+            renderDeferredPanel(<AlarmRegistryPanel pageTheme={pageTheme} />)
           ) : isResourceImportMode ? (
             renderDeferredPanel(<ResourceImportPanel />)
           ) : (

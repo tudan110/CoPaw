@@ -228,6 +228,7 @@ export function AdvancedModelEntry({
   isNlCustomizationActive,
   isAppMarketActive,
   isTracesActive,
+  isAlarmRegistryActive,
   onOpenNlCustomization,
   onOpenAppMarket,
   onOpenConfig,
@@ -242,6 +243,7 @@ export function AdvancedModelEntry({
   onOpenInspiration,
   onOpenCli,
   onOpenTraces,
+  onOpenAlarmRegistry,
 }: {
   activeModelLabel: string;
   activeProviderName: string;
@@ -259,6 +261,7 @@ export function AdvancedModelEntry({
   isNlCustomizationActive?: boolean;
   isAppMarketActive?: boolean;
   isTracesActive?: boolean;
+  isAlarmRegistryActive?: boolean;
   onOpenNlCustomization: () => void;
   onOpenAppMarket: () => void;
   onOpenConfig: () => void;
@@ -273,6 +276,7 @@ export function AdvancedModelEntry({
   onOpenInspiration: () => void;
   onOpenCli: () => void;
   onOpenTraces: () => void;
+  onOpenAlarmRegistry: () => void;
 }) {
   const [collapsed, setCollapsed] = useState(true);
 
@@ -406,6 +410,19 @@ export function AdvancedModelEntry({
           <div className="sidebar-advanced-item-name">追溯中心</div>
           <div className="sidebar-advanced-item-desc">操作步骤全部留痕</div>
           <div className="sidebar-advanced-item-meta">会话 / 工具 / 推理 / 异常</div>
+        </button>
+        <button
+          className={isAlarmRegistryActive ? "sidebar-advanced-item active" : "sidebar-advanced-item"}
+          onClick={onOpenAlarmRegistry}
+        >
+          <div className="sidebar-advanced-item-icon">
+            <span role="img" aria-label="alarm-registry">
+              🚨
+            </span>
+          </div>
+          <div className="sidebar-advanced-item-name">告警台账</div>
+          <div className="sidebar-advanced-item-desc">告警处置状态一览</div>
+          <div className="sidebar-advanced-item-meta">列表 / 状态 / 导出</div>
         </button>
         <button
           className={isInspirationActive ? "sidebar-advanced-item active" : "sidebar-advanced-item"}
