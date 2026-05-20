@@ -22,6 +22,7 @@ PORTAL_REAL_ALARM_HIDDEN_STATUSES = frozenset(
     {
         "taken_over",
         "analyzing",
+        "analyzed",
         "manual_pending",
         "manual_recovered",
         "manual_unrecovered",
@@ -32,6 +33,7 @@ PORTAL_REAL_ALARM_HIDDEN_STATUSES = frozenset(
 )
 _PORTAL_REAL_ALARM_TERMINAL_STATUSES = frozenset(
     {
+        "analyzed",
         "manual_pending",
         "manual_recovered",
         "manual_unrecovered",

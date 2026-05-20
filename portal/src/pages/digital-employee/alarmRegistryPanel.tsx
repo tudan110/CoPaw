@@ -20,6 +20,7 @@ const STATUS_LABELS: Record<string, string> = {
   new: "新建",
   taken_over: "已接管",
   analyzing: "分析中",
+  analyzed: "已分析",
   manual_pending: "人工待处理",
   manual_recovered: "人工已恢复",
   manual_unrecovered: "人工未恢复",
@@ -32,6 +33,7 @@ const STATUS_TONES: Record<string, string> = {
   new: "blue",
   taken_over: "amber",
   analyzing: "amber",
+  analyzed: "cyan",
   manual_pending: "amber",
   manual_recovered: "green",
   manual_unrecovered: "red",
@@ -42,21 +44,19 @@ const STATUS_TONES: Record<string, string> = {
 
 const FILTER_TO_STATUSES: Record<StatusFilter, string> = {
   all: "",
-  active: "new,taken_over,analyzing,manual_pending",
+  active: "new,taken_over,analyzing,analyzed,manual_pending",
   resolved: "manual_recovered,resolved",
   ignored: "manual_unrecovered,manual_unknown,ignored",
 };
 
 function formatTime(iso: string) {
   if (!iso) return "--";
+  // If already in "YYYY-MM-DD HH:mm:ss" format, return as-is
+  if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(iso)) return iso;
   try {
     const d = new Date(iso);
-    return d.toLocaleString("zh-CN", {
-      month: "2-digit",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
+    const pad = (n: number) => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
   } catch {
     return iso;
   }
@@ -302,7 +302,7 @@ export function AlarmRegistryPanel({ pageTheme, onOpenChat }: AlarmRegistryPanel
                       <i className="fas fa-check" />
                     </button>
                   )}
-                  {record.status !== "ignored" && record.status !== "resolved" && (
+                  {record.status !== "ignored" && record.status !== "resolved" && record.status !== "analyzed" && (
                     <button
                       className="alarm-registry-action-btn tone-slate"
                       title="忽略"

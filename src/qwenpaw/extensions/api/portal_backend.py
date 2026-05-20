@@ -422,6 +422,11 @@ async def _drain_portal_real_alarm_stream(
         traceback.print_exc()
     finally:
         await stream_it.aclose()
+    _update_portal_real_alarm_registry_safe(
+        chat_id=chat_id,
+        status="analyzed",
+        source="auto-stream-done",
+    )
 
 
 def _portal_real_alarm_has_history(state: dict[str, Any]) -> bool:
@@ -3128,7 +3133,7 @@ async def update_alarm_registry_status(
     if not new_status:
         raise HTTPException(status_code=422, detail="status is required")
     allowed_statuses = {
-        "new", "taken_over", "analyzing", "manual_pending",
+        "new", "taken_over", "analyzing", "analyzed", "manual_pending",
         "manual_recovered", "manual_unrecovered", "manual_unknown",
         "resolved", "ignored",
     }

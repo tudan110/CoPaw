@@ -187,6 +187,7 @@
 
 .alarm-registry-status-badge.tone-blue { background: #dbeafe; color: #1d4ed8; }
 .alarm-registry-status-badge.tone-amber { background: #fef3c7; color: #92400e; }
+.alarm-registry-status-badge.tone-cyan { background: #cffafe; color: #155e75; }
 .alarm-registry-status-badge.tone-green { background: #dcfce7; color: #166534; }
 .alarm-registry-status-badge.tone-red { background: #fef2f2; color: #991b1b; }
 .alarm-registry-status-badge.tone-slate { background: #f1f5f9; color: #475569; }
