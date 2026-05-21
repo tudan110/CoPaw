@@ -28,6 +28,7 @@
 }
 
 .alarm-registry-stat.tone-amber strong { color: #d97706; }
+.alarm-registry-stat.tone-cyan strong { color: #0891b2; }
 .alarm-registry-stat.tone-green strong { color: #16a34a; }
 .alarm-registry-stat.tone-slate strong { color: #64748b; }
 

@@ -181,6 +181,8 @@ export function AlarmRegistryPanel({ pageTheme, onOpenChat }: AlarmRegistryPanel
       (stats.byStatus["taken_over"] || 0) +
       (stats.byStatus["analyzing"] || 0) +
       (stats.byStatus["manual_pending"] || 0);
+    const analyzedCount =
+      (stats.byStatus["analyzed"] || 0);
     const resolvedCount =
       (stats.byStatus["manual_recovered"] || 0) +
       (stats.byStatus["resolved"] || 0);
@@ -188,7 +190,7 @@ export function AlarmRegistryPanel({ pageTheme, onOpenChat }: AlarmRegistryPanel
       (stats.byStatus["manual_unrecovered"] || 0) +
       (stats.byStatus["manual_unknown"] || 0) +
       (stats.byStatus["ignored"] || 0);
-    return { total: stats.total, activeCount, resolvedCount, ignoredCount };
+    return { total: stats.total, activeCount, analyzedCount, resolvedCount, ignoredCount };
   }, [stats]);
 
   return (
@@ -206,6 +208,9 @@ export function AlarmRegistryPanel({ pageTheme, onOpenChat }: AlarmRegistryPanel
           </span>
           <span className="alarm-registry-stat tone-amber">
             <strong>{statsBar.activeCount}</strong> 进行中
+          </span>
+          <span className="alarm-registry-stat tone-cyan">
+            <strong>{statsBar.analyzedCount}</strong> 已分析
           </span>
           <span className="alarm-registry-stat tone-green">
             <strong>{statsBar.resolvedCount}</strong> 已处理
