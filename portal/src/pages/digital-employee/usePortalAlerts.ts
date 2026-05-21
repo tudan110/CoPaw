@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getEmployeeById } from "../../data/portalData";
 import { listPortalRealAlarms } from "../../api/portalRealAlarms";
+import { registerAlarmRecord } from "../../api/alarmRegistry";
 import {
   normalizePortalBellAlerts,
   PORTAL_REAL_ALARM_POLL_ENABLED,
@@ -102,6 +103,16 @@ export function usePortalAlerts({
     }
 
     if (alert.dispatchContent) {
+      // Register alarm in the registry (fire-and-forget)
+      registerAlarmRecord({
+        alarmId: alert.id,
+        resId: alert.resId,
+        visibleContent: alert.visibleContent || alert.dispatchContent,
+        eventTime: alert.timeLabel,
+        status: "analyzing",
+        source: "manual-bell",
+      }).catch(() => {});
+
       const normalizedVisibleContent = buildPortalAlertDispatchText(
         alert.visibleContent || alert.dispatchContent,
         alert.resId,
@@ -118,6 +129,7 @@ export function usePortalAlerts({
             content: normalizedVisibleContent,
             visibleContent: normalizedVisibleContent,
             forceNewChat: true,
+            alarmId: alert.id,
           },
         } satisfies PortalLocationState,
       });

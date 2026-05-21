@@ -3128,28 +3128,63 @@ async def update_alarm_registry_status(
     alarm_id: str,
     payload: dict = Body(default_factory=dict),
 ):
-    """Update the status of an alarm registry record."""
+    """Update the status and/or chatId of an alarm registry record."""
     new_status = str(payload.get("status", "")).strip()
-    if not new_status:
-        raise HTTPException(status_code=422, detail="status is required")
-    allowed_statuses = {
-        "new", "taken_over", "analyzing", "analyzed", "manual_pending",
-        "manual_recovered", "manual_unrecovered", "manual_unknown",
-        "resolved", "ignored",
-    }
-    if new_status not in allowed_statuses:
-        raise HTTPException(
-            status_code=422,
-            detail=f"Invalid status '{new_status}'. Allowed: {sorted(allowed_statuses)}",
-        )
+    new_chat_id = str(payload.get("chatId", "")).strip()
+    if not new_status and not new_chat_id:
+        raise HTTPException(status_code=422, detail="status or chatId is required")
+    if new_status:
+        allowed_statuses = {
+            "new", "taken_over", "analyzing", "analyzed", "manual_pending",
+            "manual_recovered", "manual_unrecovered", "manual_unknown",
+            "resolved", "ignored",
+        }
+        if new_status not in allowed_statuses:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Invalid status '{new_status}'. Allowed: {sorted(allowed_statuses)}",
+            )
     try:
-        record = update_alarm_record(alarm_id=alarm_id, status=new_status)
+        kwargs: dict[str, Any] = {"alarm_id": alarm_id}
+        if new_status:
+            kwargs["status"] = new_status
+        if new_chat_id:
+            kwargs["chat_id"] = new_chat_id
+        record = update_alarm_record(**kwargs)
         return {"ok": True, "record": record}
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
+
+@router.post("/alarm-registry/register")
+async def register_alarm_registry_record(
+    payload: dict = Body(default_factory=dict),
+):
+    """Register an alarm in the registry (upsert). Used by manual bell dispatch."""
+    alarm_id = str(payload.get("alarmId", "")).strip()
+    if not alarm_id:
+        raise HTTPException(status_code=422, detail="alarmId is required")
+    alarm_data = {
+        "id": alarm_id,
+        "resId": str(payload.get("resId", "")).strip(),
+        "title": str(payload.get("title", "")).strip(),
+        "deviceName": str(payload.get("deviceName", "")).strip(),
+        "manageIp": str(payload.get("manageIp", "")).strip(),
+        "eventTime": str(payload.get("eventTime", "")).strip(),
+        "visibleContent": str(payload.get("visibleContent", "")).strip(),
+    }
+    try:
+        record = update_alarm_record(
+            alarm=alarm_data,
+            alarm_id=alarm_id,
+            status=str(payload.get("status", "analyzing")).strip(),
+            source=str(payload.get("source", "manual-bell")).strip(),
+        )
+        return {"ok": True, "record": record}
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 @router.get("/alarm-registry/export")
 async def export_alarm_registry_records(

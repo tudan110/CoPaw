@@ -155,6 +155,7 @@ export function usePortalChatOrchestration({
   const handledPendingResourceImportRef = useRef("");
   const handledPendingKnowledgeBaseRef = useRef("");
   const handledPendingKnowledgeSearchRef = useRef("");
+  const pendingAlarmRegistryIdRef = useRef("");
 
   const safeMessageCount = useMemo(
     () => ensureObjectArray(messages).length,
@@ -466,6 +467,9 @@ export function usePortalChatOrchestration({
     }
 
     handledPendingDispatchRef.current = pendingDispatch.token;
+
+    const pendingAlarmId = pendingDispatch.alarmId || "";
+    pendingAlarmRegistryIdRef.current = pendingAlarmId;
 
     if (pendingDispatch.forceNewChat) {
       if (isRemoteEmployee) {
@@ -885,5 +889,6 @@ export function usePortalChatOrchestration({
     handleChatComposerKeyDown,
     handleSendMessage,
     handleResourceImportOpenSystemTopology,
+    pendingAlarmRegistryIdRef,
   };
 }

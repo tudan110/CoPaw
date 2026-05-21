@@ -55,11 +55,32 @@ export async function listAlarmRegistryRecords(params: {
 export async function updateAlarmRegistryStatus(
   alarmId: string,
   status: string,
+  chatId?: string,
 ): Promise<{ ok: boolean; record: AlarmRegistryRecord }> {
+  const body: Record<string, string> = { status };
+  if (chatId) body.chatId = chatId;
   return requestPortalApi(`/alarm-registry/records/${encodeURIComponent(alarmId)}/status`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ status }),
+    body: JSON.stringify(body),
+  });
+}
+
+export async function registerAlarmRecord(alarm: {
+  alarmId: string;
+  resId?: string;
+  title?: string;
+  deviceName?: string;
+  manageIp?: string;
+  eventTime?: string;
+  visibleContent?: string;
+  status?: string;
+  source?: string;
+}): Promise<{ ok: boolean; record: AlarmRegistryRecord }> {
+  return requestPortalApi("/alarm-registry/register", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(alarm),
   });
 }
 

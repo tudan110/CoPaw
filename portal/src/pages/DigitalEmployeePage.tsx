@@ -98,6 +98,7 @@ import {
   isKnowledgeBaseCardIntent,
 } from "./digital-employee/pageHelpers";
 import { lazyNamed } from "../utils/lazyNamed";
+import { updateAlarmRegistryStatus } from "../api/alarmRegistry";
 
 const CronJobsPanel = lazyNamed(
   () => import("./digital-employee/cronJobsPanel"),
@@ -599,6 +600,7 @@ export default function DigitalEmployeePage({
     handleChatComposerKeyDown,
     handleSendMessage,
     handleResourceImportOpenSystemTopology,
+    pendingAlarmRegistryIdRef,
   } = usePortalChatOrchestration({
     currentEmployee,
     selectedEmployee,
@@ -629,6 +631,14 @@ export default function DigitalEmployeePage({
     locationPathname: location.pathname,
     locationSearch: location.search,
   });
+
+  // Backfill chatId into alarm registry when a new chat is created for a bell-triggered alarm
+  useEffect(() => {
+    const alarmId = pendingAlarmRegistryIdRef.current;
+    if (!alarmId || !currentChatId) return;
+    pendingAlarmRegistryIdRef.current = "";
+    void updateAlarmRegistryStatus(alarmId, "", currentChatId).catch(() => {});
+  }, [currentChatId, pendingAlarmRegistryIdRef]);
 
   const handleQuickCommand = useCallback((command?: string) => {
     const normalizedCommand = String(command || "").trim();

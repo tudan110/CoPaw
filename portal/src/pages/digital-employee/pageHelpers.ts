@@ -877,6 +877,7 @@ export type PendingPortalDispatch = {
   content: string;
   visibleContent: string;
   forceNewChat?: boolean;
+  alarmId?: string;
 };
 
 export type PortalLocationState = {
