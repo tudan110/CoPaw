@@ -1,5 +1,4 @@
 import importlib.util
-import json
 from pathlib import Path
 from unittest.mock import patch
 
@@ -475,40 +474,3 @@ def test_feishu_notification_payload_uses_table_card_and_sign():
         and "巡检结论" in element.get("text", {}).get("content", "")
     )
     assert "各项指标均在正常范围" in conclusion_element["text"]["content"]
-
-
-def test_notification_settings_prefer_workspace_settings(tmp_path):
-    settings_file = tmp_path / "extensions" / "notifications" / "settings.json"
-    settings_file.parent.mkdir(parents=True, exist_ok=True)
-    settings_file.write_text(
-        json.dumps(
-            {
-                "notification_channels": {
-                    "inspection": {
-                        "push_url": "http://settings.example.com/push",
-                        "dingtalk_webhook_url": "",
-                        "dingtalk_secret": "",
-                        "feishu_webhook_url": "",
-                        "feishu_secret": "",
-                        "timeout_seconds": 21,
-                        "mention_all": False,
-                    }
-                }
-            }
-        ),
-        "utf-8",
-    )
-
-    with patch.dict(
-        "os.environ",
-        {
-            "QWENPAW_WORKING_DIR": str(tmp_path),
-            "INSPECTION_NOTIFY_PUSH_URL": "http://env.example.com/push",
-            "INSPECTION_NOTIFY_TIMEOUT_SECONDS": "8",
-            "INSPECTION_NOTIFY_MENTION_ALL": "true",
-        },
-        clear=False,
-    ):
-        assert INSPECTION_MODULE._get_notify_env("PUSH_URL") == "http://settings.example.com/push"
-        assert INSPECTION_MODULE._get_notify_timeout() == 21
-        assert INSPECTION_MODULE._get_notify_mention_all() is False

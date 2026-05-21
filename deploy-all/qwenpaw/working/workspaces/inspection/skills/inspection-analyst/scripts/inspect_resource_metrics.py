@@ -374,15 +374,22 @@ def fetch_all_metric_definitions(
     pages_fetched = 0
 
     for page_num in range(1, max_pages + 1):
-        page_result = _ALARM_METRIC_HELPERS.fetch_metric_definitions(
-            metric_type=normalized_metric_type,
-            page_num=page_num,
-            page_size=resolved_page_size,
-            api_base_url=api_base_url,
-            token=token,
-            timeout_seconds=timeout_seconds,
-            limit=resolved_page_size,
-        )
+        try:
+            page_result = _ALARM_METRIC_HELPERS.fetch_metric_definitions(
+                metric_type=normalized_metric_type,
+                page_num=page_num,
+                page_size=resolved_page_size,
+                api_base_url=api_base_url,
+                token=token,
+                timeout_seconds=timeout_seconds,
+                limit=resolved_page_size,
+            )
+        except (requests.exceptions.RequestException, ValueError, json.JSONDecodeError) as error:
+            fallback_reasons.append(str(error))
+            if all_metrics:
+                page_sources.append("partial")
+                break
+            raise
         pages_fetched += 1
         if not first_url:
             first_url = _safe_str(page_result.get("url"))
@@ -391,9 +398,6 @@ def fetch_all_metric_definitions(
 
         page_source = _safe_str(page_result.get("source")) or "unknown"
         page_sources.append(page_source)
-        fallback_reason = _safe_str(page_result.get("fallbackReason"))
-        if fallback_reason:
-            fallback_reasons.append(fallback_reason)
 
         page_metrics = page_result.get("metrics") or []
         if not page_metrics:
@@ -407,13 +411,13 @@ def fetch_all_metric_definitions(
             seen_codes.add(dedupe_key)
             all_metrics.append(metric)
 
-        if page_source != "live" or len(page_metrics) < resolved_page_size:
+        if len(page_metrics) < resolved_page_size:
             break
 
-    combined_source = "live" if page_sources and all(source == "live" for source in page_sources) else "mock"
+    combined_source = "live" if page_sources and all(source == "live" for source in page_sources) else "partial"
     return {
         "code": 200,
-        "msg": "查询成功" if combined_source == "live" else "指标定义查询已部分或全部回退到 mock 数据",
+        "msg": "查询成功" if combined_source == "live" else "指标定义查询部分失败",
         "metricType": normalized_metric_type,
         "source": combined_source,
         "fallbackReason": "；".join(dict.fromkeys(fallback_reasons)) if fallback_reasons else None,
@@ -618,34 +622,6 @@ def fetch_inspection_verification_rules(
         "operatorMap": operator_dict.get("operatorMap") or {},
         "ruleConfigsFallbackReason": rule_configs.get("fallbackReason"),
         "operatorDictFallbackReason": operator_dict.get("fallbackReason"),
-    }
-
-
-def _build_mock_metric_data_batch_payload(
-    *,
-    res_id: str | int,
-    metric_codes: list[str],
-) -> dict[str, Any]:
-    original_point = {"formatTime": "2026-04-24 10:00:00", "gatherTime": 1777005600}
-    process_data: dict[str, str] = {}
-    for index, metric_code in enumerate(metric_codes, start=1):
-        sample_value = str(index)
-        process_data[f"{metric_code}Min"] = sample_value
-        process_data[f"{metric_code}Avg"] = sample_value
-        process_data[f"{metric_code}Max"] = sample_value
-        original_point[metric_code] = sample_value
-
-    return {
-        "code": 200,
-        "msg": "mock",
-        "data": [
-            {
-                "resId": str(res_id),
-                "subResName": "",
-                "processData": process_data,
-                "originalDatas": [original_point],
-            }
-        ],
     }
 
 
@@ -1296,23 +1272,15 @@ def fetch_metric_data_batch(
 
     source = "live"
     fallback_reason = None
-    try:
-        response_payload, _transport = _ALARM_METRIC_HELPERS._post_json_with_fallback(  # noqa: SLF001
-            url=url,
-            headers=headers,
-            json_payload=request_payload,
-            timeout_seconds=resolved_timeout,
-        )
-        data_rows = response_payload.get("data") or []
-        if not data_rows:
-            raise ValueError("指标数据接口未返回有效 data")
-    except (requests.exceptions.RequestException, ValueError, json.JSONDecodeError) as error:
-        source = "mock"
-        fallback_reason = str(error)
-        response_payload = _build_mock_metric_data_batch_payload(
-            res_id=normalized_res_id,
-            metric_codes=metric_codes,
-        )
+    response_payload, _transport = _ALARM_METRIC_HELPERS._post_json_with_fallback(  # noqa: SLF001
+        url=url,
+        headers=headers,
+        json_payload=request_payload,
+        timeout_seconds=resolved_timeout,
+    )
+    data_rows = response_payload.get("data") or []
+    if not data_rows:
+        raise ValueError("指标数据接口未返回有效 data")
 
     return {
         "code": 200,
@@ -1773,9 +1741,12 @@ def main() -> None:
             end_time=args.end_time,
             notify=not args.no_notify,
         )
-    except ValueError as error:
+    except (ValueError, requests.exceptions.RequestException, json.JSONDecodeError) as error:
         print(f"错误: {error}", file=sys.stderr)
         sys.exit(1)
+    except Exception as error:
+        print(f"未预期的错误: {type(error).__name__}: {error}", file=sys.stderr)
+        sys.exit(2)
 
     if args.output == "markdown":
         print(render_markdown(result))
