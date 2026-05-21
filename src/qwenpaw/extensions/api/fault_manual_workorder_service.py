@@ -13,49 +13,43 @@ def utc_now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def build_manual_dispatch_payload(
+def build_analysis_dispatch_payload(
     request: ManualWorkorderDispatchRequest,
     *,
     callback_url: str,
 ) -> dict[str, Any]:
     alarm_payload = request.alarm.model_dump(mode="json")
     analysis_payload = request.analysis.model_dump(mode="json")
-    ticket_payload = request.ticket.model_dump(mode="json")
 
-    title = ticket_payload.get("title") or alarm_payload.get("title") or "人工故障处置工单"
     return {
+        "alarmId": request.alarm_id,
         "chatId": request.chat_id,
         "resId": request.res_id,
         "metricType": request.metric_type,
         "alarm": alarm_payload,
         "analysis": analysis_payload,
-        "ticket": {
-            **ticket_payload,
-            "title": title,
-        },
         "context": {
-            "source": ticket_payload.get("source") or "portal-fault-disposal",
-            "externalSystem": ticket_payload.get("external_system") or "manual-workorder",
+            "source": "portal-fault-disposal",
             "callback_url": callback_url,
         },
     }
 
 
-def build_manual_workorder_record(
+def build_analysis_record(
     request: ManualWorkorderDispatchRequest,
     *,
     callback_url: str,
 ) -> dict[str, Any]:
     now = utc_now_iso()
-    dispatch_payload = build_manual_dispatch_payload(request, callback_url=callback_url)
+    dispatch_payload = build_analysis_dispatch_payload(request, callback_url=callback_url)
     return {
+        "alarmId": request.alarm_id,
         "chatId": request.chat_id,
         "resId": request.res_id,
         "metricType": request.metric_type,
         "status": "pending_manual",
         "alarm": request.alarm.model_dump(mode="json"),
         "analysis": request.analysis.model_dump(mode="json"),
-        "ticket": request.ticket.model_dump(mode="json"),
         "dispatchPayload": dispatch_payload,
         "callbackUrl": callback_url,
         "createdAt": now,
@@ -85,51 +79,51 @@ def merge_manual_workorder_notification(
     return merged
 
 
-def build_manual_dispatch_history_message(record: dict[str, Any]) -> dict[str, Any]:
+def build_analysis_dispatch_history_message(record: dict[str, Any]) -> dict[str, Any]:
     dispatch_payload = record.get("dispatchPayload") or {}
-    alarm = dispatch_payload.get("alarm") or {}
-    title = alarm.get("title") or "人工故障处置工单"
+    alarm = dispatch_payload.get("alarm") or record.get("alarm") or {}
+    alarm_id = record.get("alarmId") or alarm.get("alarmId") or alarm.get("alarm_id") or ""
+    title = alarm.get("title") or "告警分析报告"
     visible_content = alarm.get("visible_content") or alarm.get("visibleContent") or ""
-    summary = dispatch_payload.get("analysis", {}).get("summary") or "AI 当前转人工处理"
+    summary = dispatch_payload.get("analysis", {}).get("summary") or "AI 已完成根因分析"
     callback_url = dispatch_payload.get("context", {}).get("callback_url") or record.get("callbackUrl") or ""
     content_lines = [
-        "## 人工故障工单已生成派单请求",
+        "## AI 告警分析报告已登记",
+        f"- 告警编号：`{alarm_id}`",
         f"- 会话 ID：`{record.get('chatId', '')}`",
-        f"- 资源 ID（CI ID）：`{record.get('resId', '')}`",
         f"- 告警标题：`{title}`",
     ]
     if visible_content:
         content_lines.append(f"- 告警摘要：{visible_content}")
     content_lines.extend(
         [
-            f"- 派单原因：{summary}",
+            f"- 分析结论：{summary}",
             f"- 回调地址：`{callback_url}`",
-            "- 当前状态：已转人工处理，等待工单系统回调处理结果",
+            "- 当前状态：已推送分析报告，等待处置完成回调",
         ]
     )
     return {
         "type": "agent",
         "content": "\n".join(content_lines),
-        "manualWorkorder": record,
+        "analysisRecord": record,
     }
 
 
-def build_manual_close_history_message(
+def build_analysis_close_history_message(
     record: dict[str, Any],
     *,
     verification: dict[str, Any],
 ) -> dict[str, Any]:
     processing = record.get("processing") or {}
-    workorder = record.get("workorder") or {}
+    alarm = record.get("alarm") or {}
+    alarm_id = record.get("alarmId") or alarm.get("alarmId") or alarm.get("alarm_id") or ""
     verification_summary = verification.get("summary") or "已完成恢复性检测"
     abnormal_metrics = verification.get("abnormalMetrics") or []
     content_lines = [
-        "## 人工处理完成通知",
+        "## 处置完成回调通知",
+        f"- 告警编号：`{alarm_id}`",
         f"- 会话 ID：`{record.get('chatId', '')}`",
-        f"- 资源 ID（CI ID）：`{record.get('resId', '')}`",
     ]
-    if workorder.get("workorder_no"):
-        content_lines.append(f"- 工单号：`{workorder['workorder_no']}`")
     if processing.get("summary"):
         content_lines.append(f"- 处理摘要：{processing['summary']}")
     if processing.get("details"):
@@ -147,7 +141,7 @@ def build_manual_close_history_message(
     return {
         "type": "agent",
         "content": "\n".join(content_lines),
-        "manualWorkorder": record,
+        "analysisRecord": record,
         "recoveryVerification": verification,
     }
 

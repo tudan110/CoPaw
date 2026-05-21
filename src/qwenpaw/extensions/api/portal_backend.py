@@ -42,15 +42,16 @@ from qwenpaw.extensions.api.fault_manual_workorder_models import (
     ManualWorkorderDispatchRequest,
 )
 from qwenpaw.extensions.api.fault_manual_workorder_service import (
-    build_manual_close_history_message,
-    build_manual_dispatch_history_message,
-    build_manual_workorder_record,
+    build_analysis_close_history_message,
+    build_analysis_dispatch_history_message,
+    build_analysis_record,
     evaluate_metric_recovery,
     merge_manual_workorder_notification,
 )
 from qwenpaw.extensions.api.alarm_analyst_service import run_alarm_analyst_diagnose
 from qwenpaw.extensions.portal_real_alarm_registry import (
     filter_visible_alarms,
+    get_alarm_record,
     load_alarm_records,
     update_alarm_record,
 )
@@ -2110,12 +2111,18 @@ async def dispatch_fault_manual_workorder(
 ):
     try:
         parsed = ManualWorkorderDispatchRequest.model_validate(payload)
+        alarm_id = parsed.alarm_id
+        if not alarm_id:
+            raise HTTPException(
+                status_code=422,
+                detail="alarm.alarmId is required",
+            )
         callback_url = str(
             request.url_for("notify_fault_manual_workorder_closed")
         )
-        record = build_manual_workorder_record(parsed, callback_url=callback_url)
+        record = build_analysis_record(parsed, callback_url=callback_url)
         records = await _load_portal_manual_workorders(request, session_id=parsed.chat_id)
-        records[str(parsed.res_id)] = record
+        records[alarm_id] = record
         await _save_portal_manual_workorders(
             request,
             session_id=parsed.chat_id,
@@ -2134,7 +2141,7 @@ async def dispatch_fault_manual_workorder(
             _compact_ui_message(
                 {
                     "id": f"agent-{datetime.now(timezone.utc).timestamp()}",
-                    **build_manual_dispatch_history_message(record),
+                    **build_analysis_dispatch_history_message(record),
                 }
             )
         )
@@ -2142,10 +2149,11 @@ async def dispatch_fault_manual_workorder(
 
         return {
             "status": "pending_manual",
+            "alarmId": alarm_id,
             "chatId": parsed.chat_id,
             "resId": parsed.res_id,
-            "manualWorkorder": record,
-            "dispatchRequest": record.get("dispatchPayload") or {},
+            "analysisRecord": record,
+            "callbackUrl": callback_url,
         }
     except ValidationError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
@@ -2163,64 +2171,121 @@ async def notify_fault_manual_workorder_closed(
 ):
     try:
         parsed = ManualWorkorderCloseNotificationRequest.model_validate(payload)
-        records = await _load_portal_manual_workorders(request, session_id=parsed.chat_id)
-        record = records.get(str(parsed.res_id))
-        if not record:
+
+        # Resolve alarm_id and chat_id for record lookup
+        alarm_id = parsed.alarm_id.strip()
+        chat_id = parsed.chat_id.strip()
+        res_id = parsed.res_id.strip()
+
+        # When alarm_id is provided but chat_id is missing, look up from alarm registry
+        if alarm_id and not chat_id:
+            registry_record = get_alarm_record(alarm_id)
+            if registry_record:
+                chat_id = str(registry_record.get("chatId") or "").strip()
+                if not res_id:
+                    res_id = str(registry_record.get("resId") or "").strip()
+
+        if not alarm_id and not chat_id:
             raise HTTPException(
-                status_code=404,
-                detail=f"manual workorder not found for chatId={parsed.chat_id}, resId={parsed.res_id}",
+                status_code=422,
+                detail="alarm_id or chat_id is required to locate the analysis record",
             )
 
+        # Try to find the record: first by alarm_id, then fall back to res_id (legacy)
+        record = None
+        if chat_id:
+            records = await _load_portal_manual_workorders(request, session_id=chat_id)
+            if alarm_id:
+                record = records.get(alarm_id)
+            if not record and res_id:
+                record = records.get(res_id)
+        else:
+            records = {}
+
+        if not record:
+            detail_parts = []
+            if alarm_id:
+                detail_parts.append(f"alarmId={alarm_id}")
+            if chat_id:
+                detail_parts.append(f"chatId={chat_id}")
+            if res_id:
+                detail_parts.append(f"resId={res_id}")
+            raise HTTPException(
+                status_code=404,
+                detail=f"analysis record not found for {', '.join(detail_parts)}",
+            )
+
+        # Use res_id from stored record for metric verification if not in request
+        effective_res_id = res_id or str(record.get("resId") or "").strip()
         metric_type = (
             str(parsed.metric_type or "").strip()
             or str(record.get("metricType") or "").strip()
             or "mysql"
         )
-        metric_result = await asyncio.to_thread(
-            _run_alarm_metric_verification,
-            metric_type=metric_type,
-            res_id=str(parsed.res_id),
-        )
-        verification = evaluate_metric_recovery(metric_result)
+
+        verification: dict[str, Any]
+        if effective_res_id:
+            metric_result = await asyncio.to_thread(
+                _run_alarm_metric_verification,
+                metric_type=metric_type,
+                res_id=effective_res_id,
+            )
+            verification = evaluate_metric_recovery(metric_result)
+        else:
+            verification = {
+                "status": "unknown",
+                "summary": "缺少资源 ID (resId)，跳过恢复验证",
+                "usedMock": False,
+                "checkedMetrics": [],
+                "abnormalMetrics": [],
+                "metricDataResults": [],
+                "source": "skipped",
+            }
+
         merged_record = merge_manual_workorder_notification(
             record,
             parsed,
             verification=verification,
         )
         merged_record["metricType"] = metric_type
-        records[str(parsed.res_id)] = merged_record
-        await _save_portal_manual_workorders(
-            request,
-            session_id=parsed.chat_id,
-            records=records,
-        )
+        record_key = alarm_id or res_id
+        records[record_key] = merged_record
+        if chat_id:
+            await _save_portal_manual_workorders(
+                request,
+                session_id=chat_id,
+                records=records,
+            )
         _update_portal_real_alarm_registry_safe(
+            alarm_id=alarm_id,
             status=_build_portal_registry_status_from_verification(verification),
-            chat_id=parsed.chat_id,
-            res_id=str(parsed.res_id),
+            chat_id=chat_id,
+            res_id=effective_res_id,
             source="manual-close",
             verification_status=str(verification.get("status") or "").strip(),
         )
 
-        history = await _load_portal_fault_history(request, session_id=parsed.chat_id)
-        history.append(
-            _compact_ui_message(
-                {
-                    "id": f"agent-{datetime.now(timezone.utc).timestamp()}",
-                    **build_manual_close_history_message(
-                        merged_record,
-                        verification=verification,
-                    ),
-                }
+        if chat_id:
+            history = await _load_portal_fault_history(request, session_id=chat_id)
+            history.append(
+                _compact_ui_message(
+                    {
+                        "id": f"agent-{datetime.now(timezone.utc).timestamp()}",
+                        **build_analysis_close_history_message(
+                            merged_record,
+                            verification=verification,
+                        ),
+                    }
+                )
             )
-        )
-        await _save_portal_fault_history(request, session_id=parsed.chat_id, messages=history)
+            await _save_portal_fault_history(request, session_id=chat_id, messages=history)
 
         return {
             "status": verification.get("status") or "unknown",
-            "chatId": parsed.chat_id,
-            "resId": parsed.res_id,
-            "manualWorkorder": merged_record,
+            "alarmId": alarm_id,
+            "chatId": chat_id,
+            "resId": effective_res_id,
+            "analysisRecord": merged_record,
             "verification": verification,
         }
     except ValidationError as exc:

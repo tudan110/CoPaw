@@ -49,19 +49,6 @@ class AnalysisPayload(BaseModel):
     )
 
 
-class DispatchTicketOptions(BaseModel):
-    model_config = ConfigDict(extra="allow")
-
-    title: str = ""
-    priority: str = "P1"
-    category: str = "database-lock"
-    source: str = "portal-fault-disposal"
-    external_system: str = Field(
-        default="manual-workorder",
-        validation_alias=AliasChoices("external_system", "externalSystem"),
-    )
-
-
 class ManualWorkorderDispatchRequest(BaseModel):
     model_config = ConfigDict(extra="allow")
 
@@ -72,8 +59,7 @@ class ManualWorkorderDispatchRequest(BaseModel):
         validation_alias=AliasChoices("chat_id", "chatId", "sessionId"),
     )
     res_id: str = Field(
-        ...,
-        min_length=1,
+        default="",
         validation_alias=AliasChoices("res_id", "resId"),
     )
     metric_type: str = Field(
@@ -82,7 +68,10 @@ class ManualWorkorderDispatchRequest(BaseModel):
     )
     alarm: AlarmInfoPayload
     analysis: AnalysisPayload = Field(default_factory=AnalysisPayload)
-    ticket: DispatchTicketOptions = Field(default_factory=DispatchTicketOptions)
+
+    @property
+    def alarm_id(self) -> str:
+        return self.alarm.alarm_id
 
 
 class WorkorderHandlePayload(BaseModel):
@@ -110,15 +99,17 @@ class ProcessingResultPayload(BaseModel):
 class ManualWorkorderCloseNotificationRequest(BaseModel):
     model_config = ConfigDict(extra="allow")
 
+    alarm_id: str = Field(
+        default="",
+        validation_alias=AliasChoices("alarm_id", "alarmId"),
+    )
     chat_id: str = Field(
-        ...,
-        min_length=1,
+        default="",
         serialization_alias="chatId",
         validation_alias=AliasChoices("chat_id", "chatId", "sessionId"),
     )
     res_id: str = Field(
-        ...,
-        min_length=1,
+        default="",
         validation_alias=AliasChoices("res_id", "resId"),
     )
     metric_type: str | None = Field(

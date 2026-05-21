@@ -1,9 +1,9 @@
 ---
 name: alarm-analyst
 category: root-cause
-tags: [fault, alarm, diagnosis, cmdb, mysql, metrics, deadlock, workorder, collaboration, portal, topology, application]
+tags: [fault, alarm, diagnosis, cmdb, mysql, metrics, deadlock, analysis-report, collaboration, portal, topology, application]
 triggers: [告警分析, 故障分析, 数据库锁异常, 数据库死锁分析, 告警处置分析, 告警根因分析, 活动告警处置, 告警闭环, 应用新增数据失败, CMDB 插入失败]
-description: 面向单条活动告警或单个应用故障现象驱动的故障分析与闭环处置技能。适用于 Portal 中用户点击右上角铃铛告警后，或直接描述"某应用新增数据失败 / CMDB 插入数据失败"等现象后，由故障分析专家数字员工接管，并向用户展示从智观活动告警、CMDB 资源确认、应用拓扑拆解、指标分析、影响范围判断、处置建议、恢复验证到清除告警/更新工单状态的完整过程。若当前工作区已具备 shell、跨智能体和指标接口能力，应优先执行真实查询，不要只复述流程模板。
+description: 面向单条活动告警或单个应用故障现象驱动的故障分析与闭环处置技能。适用于 Portal 中用户点击右上角铃铛告警后，或直接描述"某应用新增数据失败 / CMDB 插入数据失败"等现象后，由故障分析专家数字员工接管，并向用户展示从智观活动告警、CMDB 资源确认、应用拓扑拆解、指标分析、影响范围判断、处置建议、恢复验证到清除告警/推送分析报告的完整过程。若当前工作区已具备 shell、跨智能体和指标接口能力，应优先执行真实查询，不要只复述流程模板。
 ---
 
 # Alarm Analyst
@@ -14,7 +14,7 @@ description: 面向单条活动告警或单个应用故障现象驱动的故障�
 
 - 用户给出了一条具体告警，或上下文中已选中一条活动告警
 - 用户希望分析故障根因、影响范围和处置建议
-- 用户需要推进闭环：工单 / 恢复验证 / 清除告警 / 更新状态
+- 用户需要推进闭环：推送分析报告 / 恢复验证 / 清除告警 / 更新状态
 - 告警与数据库、MySQL、锁异常、死锁、性能异常、服务异常等主题相关
 - 用户描述"某应用新增数据失败""CMDB 插入数据失败"等故障现象
 
@@ -50,15 +50,15 @@ description: 面向单条活动告警或单个应用故障现象驱动的故障�
 
 ```
 1. 接收告警 → 提取告警标题、resId/CI ID、告警时间、设备名/IP
-2. 查智观活动告警上下文（活跃状态、近7日历史、关联工单）
+2. 查智观活动告警上下文（活跃状态、近7日历史）
 3. CMDB 资源确认 → 根资源详情 + ciType + 拓扑关系
 4. 变更关联 → 查询故障前24h内相关配置变更/版本升级/割接记录（变更命中=高置信线索）
 5. 拓扑关联资源告警查询（硬约束）
 6. 指标定义查询 → AI 筛选关键指标 → 查指标值（含动态基线偏离分析）
 7. AI 综合分析 → 故障类型识别 + 根因判断（六步分析法）
 8. 影响范围分析
-9. 自动创建工单 + 通知推送
-10. 恢复验证 → 清除告警 → 更新工单状态
+9. 推送分析报告 + 通知推送
+10. 恢复验证 → 清除告警 → 更新状态
 ```
 
 ---
@@ -108,19 +108,18 @@ cd skills/alarm-analyst && python scripts/get_metric_definitions.py \
 
 分析时参考 `references/rca-*.md` 中对应场景的经验知识。
 
-### 自动创建工单
+### 推送分析报告
 
-RCA 结论形成后，必须执行工单创建（不是可选的）：
+RCA 结论形成后，必须推送分析报告通知（不是可选的）：
 
 ```bash
-cd skills/alarm-analyst && python scripts/create_manual_workorder.py \
-  --chat-id <会话ID> --res-id <CI_ID> --metric-type <ciType> \
+cd skills/alarm-analyst && python scripts/send_analysis_report.py \
   --alarm-id <alarmId> --alarm-title "<标题>" \
   --device-name <设备名> --manage-ip <IP> \
   --root-cause "<根因>" --suggestion "<建议>" --output markdown
 ```
 
-详见 `references/workorder-api.md`。创建成功后自动推送通知（见 `references/notification-protocol.md`）。
+详见 `references/workorder-api.md`。推送成功后通知会发送到配置的渠道（见 `references/notification-protocol.md`）。
 
 ---
 
@@ -166,7 +165,7 @@ ALARM_ANALYST_METRIC_PAGE_SIZE=20
 
 - 缺少 token 时必须停止调用并明确报错
 - `getMetricDefinitions` 与 `getMetricData` 共用同一个 base URL
-- 工单创建接口（4.2）复用同一个 base URL / token
+- 分析报告推送复用同一个 base URL / token
 
 ---
 
@@ -181,6 +180,6 @@ ALARM_ANALYST_METRIC_PAGE_SIZE=20
 | `rca-cross-layer.md` | 告警涉及跨层复合（级联故障/网络-应用联合/IaaS-PaaS联合/全链路退化） |
 | `portal-card-protocol.md` | 输出需要 Portal 渲染卡片时 |
 | `notification-protocol.md` | 处理通知推送逻辑时 |
-| `workorder-api.md` | 创建工单时 |
+| `workorder-api.md` | 推送分析报告时 |
 
 AI 应根据当前告警场景**按需读取**对应的 reference 文件，不要全部加载。

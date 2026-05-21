@@ -286,6 +286,29 @@ def _merge_alarm_metadata(
     return merged
 
 
+def get_alarm_record(
+    alarm_id: str,
+    *,
+    path: str | Path | None = None,
+) -> dict[str, Any] | None:
+    """Look up a single alarm record by alarm_id. Returns None if not found."""
+    normalized = _coalesce_text(alarm_id)
+    if not normalized:
+        return None
+    db_path = _resolve_registry_path(path)
+    with _REGISTRY_LOCK:
+        _ensure_migrated(db_path)
+        conn = _open_db(db_path)
+        try:
+            row = conn.execute(
+                "SELECT * FROM alarm_records WHERE alarm_id = ?",
+                (normalized,),
+            ).fetchone()
+            return _row_to_dict(row) if row else None
+        finally:
+            conn.close()
+
+
 def load_alarm_records(path: str | Path | None = None) -> dict[str, dict[str, Any]]:
     db_path = _resolve_registry_path(path)
     with _REGISTRY_LOCK:

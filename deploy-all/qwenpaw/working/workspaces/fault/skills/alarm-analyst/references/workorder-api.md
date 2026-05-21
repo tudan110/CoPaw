@@ -1,12 +1,9 @@
-# 工单创建 API 与脚本参考
+# 分析报告推送 API 与脚本参考
 
 ## 脚本入口
 
 ```bash
-cd skills/alarm-analyst && python scripts/create_manual_workorder.py \
-  --chat-id <当前会话ID> \
-  --res-id <当前告警对应的CI_ID> \
-  --metric-type <ciType或mysql> \
+cd skills/alarm-analyst && python scripts/send_analysis_report.py \
   --alarm-id <alarmId> \
   --alarm-title "<告警标题>" \
   --visible-content "<用户可见告警摘要>" \
@@ -16,22 +13,21 @@ cd skills/alarm-analyst && python scripts/create_manual_workorder.py \
   --level <alarmLevel> \
   --status <alarmStatus> \
   --event-time "<eventTime>" \
-  --analysis-summary "AI 已完成根因分析，自动创建人工处置工单" \
+  --analysis-summary "AI 已完成根因分析" \
   --root-cause "<根因方向>" \
   --suggestion "<处置建议1>" \
   --suggestion "<处置建议2>" \
   --output markdown
 ```
 
-## 工单字段要求
+## 字段要求
 
-- 必须提交**告警流水号**，映射到请求体 `alarm.alarmId`
-- `ticket.source` 默认使用 `portal-fault-disposal-ai`
-- 工单标题应体现 `AI创建`
+- 必须提交**告警流水号**，映射到 `alarm.alarmId`
 - 告警标题末尾用括号标注，如 `数据库锁异常（AI创建）`
 - 请求体里必须带处置建议
+- `--chat-id` 和 `--res-id` 为可选参数，用于内部记录关联
 
-## 创建前提
+## 推送前提
 
 必须先形成：
 1. 根因总结
@@ -40,12 +36,18 @@ cd skills/alarm-analyst && python scripts/create_manual_workorder.py \
 
 ## 失败处理
 
-- 接口失败：明确写出失败原因，不能谎称"已创建工单"，仍保留 RCA 结论供人工补建
-- 通知失败：与建单失败分开说明，写清失败渠道和原因
+- 通知推送失败：明确写出失败渠道和原因
+- 即使推送失败，RCA 结论仍保留供人工查看
 
-## 创建后链路
+## 推送后链路
 
-1. 自动创建工单
-2. 执行通知推送（见 `references/notification-protocol.md`）
-3. 如果可自动处置 → 执行处置 → 恢复验证 → 清除告警 → 更新工单状态
-4. 如果不可闭环 → 等待恢复告警或人工处理 → 再做恢复验证
+1. 推送分析报告通知（见 `references/notification-protocol.md`）
+2. 等待处置完成回调（基于告警编号 alarmId 匹配）
+3. 收到回调后执行恢复验证 → 更新告警状态
+
+## 回调闭环
+
+- 回调接口：`POST /api/portal/fault-disposal/manual-workorders/notify-closed`
+- 回调请求体必须包含 `alarmId`（告警编号）
+- `chatId` 和 `resId` 为可选字段
+- 系统根据 `alarmId` 从告警注册表反查 `chatId`，然后加载分析记录并执行恢复验证
