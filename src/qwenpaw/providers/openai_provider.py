@@ -10,6 +10,7 @@ import os
 import time
 from typing import TYPE_CHECKING, Any, List
 
+import httpx
 from agentscope.model import ChatModelBase
 from openai import APIError
 
@@ -41,6 +42,30 @@ else:
             "install with `pip install langfuse` to enable tracing",
         )
     from openai import AsyncOpenAI  # pylint: disable=ungrouped-imports
+
+
+def _env_float(name: str, default: float) -> float:
+    raw = os.environ.get(name)
+    if raw is None or not raw.strip():
+        return default
+    try:
+        return float(raw.strip())
+    except (TypeError, ValueError):
+        return default
+
+
+# Connect timeout for the chat model client. The OpenAI/httpx default is 5s,
+# which is shorter than the TCP+TLS handshake time of some upstream endpoints
+# (e.g. ctyun's GLM gateway measured at ~8s), causing spurious ConnectTimeout
+# failures + retries. A generous connect budget lets slow-but-working connects
+# succeed; read/write stay large so genuine generation is never cut short.
+CHAT_CLIENT_CONNECT_TIMEOUT = _env_float("QWENPAW_LLM_CONNECT_TIMEOUT", 30.0)
+CHAT_CLIENT_READ_TIMEOUT = _env_float("QWENPAW_LLM_READ_TIMEOUT", 600.0)
+# Keep idle connections alive long enough to be reused across ReAct rounds /
+# user turns, so the expensive handshake is paid rarely instead of per call.
+CHAT_CLIENT_KEEPALIVE_EXPIRY = _env_float(
+    "QWENPAW_LLM_KEEPALIVE_EXPIRY", 300.0
+)
 
 
 class OpenAIProvider(Provider):
@@ -181,6 +206,29 @@ class OpenAIProvider(Provider):
 
         if merged_headers:
             client_kwargs["default_headers"] = merged_headers
+
+        # Explicit timeout/keepalive: the default 5s connect timeout is too
+        # short for slow-handshake endpoints (e.g. ctyun ~8s), and the default
+        # 5s keepalive drops idle connections between ReAct rounds, forcing a
+        # fresh slow handshake every call. See CHAT_CLIENT_* above.
+        client_kwargs["timeout"] = httpx.Timeout(
+            connect=CHAT_CLIENT_CONNECT_TIMEOUT,
+            read=CHAT_CLIENT_READ_TIMEOUT,
+            write=CHAT_CLIENT_READ_TIMEOUT,
+            pool=CHAT_CLIENT_READ_TIMEOUT,
+        )
+        client_kwargs["http_client"] = httpx.AsyncClient(
+            timeout=httpx.Timeout(
+                connect=CHAT_CLIENT_CONNECT_TIMEOUT,
+                read=CHAT_CLIENT_READ_TIMEOUT,
+                write=CHAT_CLIENT_READ_TIMEOUT,
+                pool=CHAT_CLIENT_READ_TIMEOUT,
+            ),
+            limits=httpx.Limits(
+                max_keepalive_connections=20,
+                keepalive_expiry=CHAT_CLIENT_KEEPALIVE_EXPIRY,
+            ),
+        )
 
         return OpenAIChatModelCompat(
             model_name=model_id,

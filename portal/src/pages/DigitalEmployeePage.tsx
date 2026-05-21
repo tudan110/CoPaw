@@ -384,7 +384,7 @@ export default function DigitalEmployeePage({
   );
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const handledDashboardSessionOpenRef = useRef("");
-  const chatInputRef = useRef<HTMLInputElement | null>(null);
+  const chatInputRef = useRef<HTMLTextAreaElement | null>(null);
   const homeComposerRef = useRef<HTMLTextAreaElement | null>(null);
   const chatMessagesRef = useRef<HTMLDivElement | null>(null);
   const shouldAutoScrollRef = useRef(true);

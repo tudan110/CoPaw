@@ -2405,7 +2405,8 @@
   border-color: var(--primary);
 }
 
-.portal-digital-employee.theme-dark .input-box input::placeholder {
+.portal-digital-employee.theme-dark .input-box input::placeholder,
+.portal-digital-employee.theme-dark .input-box textarea::placeholder {
   color: #7f8ea3;
 }
 
@@ -8120,13 +8121,25 @@
   font-size: 16px;
 }
 
-.portal-digital-employee .input-box input {
+.portal-digital-employee .input-box input,
+.portal-digital-employee .input-box textarea {
   flex: 1;
   background: none;
   border: none;
   outline: none;
   color: var(--text-primary);
   font-size: 13px;
+}
+
+/* 对话输入框为多行 textarea：随内容增高，超过上限后内部滚动；
+   隐藏拖拽手柄，行为对齐原单行 input。 */
+.portal-digital-employee .input-box textarea {
+  resize: none;
+  font-family: inherit;
+  line-height: 1.5;
+  max-height: 120px;
+  overflow-y: auto;
+  field-sizing: content;
 }
 
 .portal-digital-employee .send-btn {
