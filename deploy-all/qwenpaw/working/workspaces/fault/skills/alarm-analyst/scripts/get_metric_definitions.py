@@ -10,8 +10,8 @@
 说明:
     - 默认读取当前 skill 目录下的 .env 文件
     - 先按 ciType 调用 /resource/resource/threshold/getMetricDefinitions
-    - 再按 AI 选出的关键指标逐个调用 /resource/pm/getMetricData
-    - getMetricDefinitions / getMetricData 任一接口不可用时，自动回退到内置 mock 数据
+    - 再按 AI 选出的关键指标批量调用 /resource/pm/getMetricData（一次请求传递多个 queryKeys）
+    - 接口不可用时直接报错，不再回退到 mock 数据
 """
 
 from __future__ import annotations
@@ -22,7 +22,6 @@ import os
 import subprocess
 import sys
 import tempfile
-from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
@@ -77,116 +76,6 @@ MYSQL_RELEVANCE_RULES = (
     ("连接", 56, "连接堆积会放大故障影响面"),
     ("connection", 56, "连接堆积会放大故障影响面"),
 )
-
-MOCK_METRIC_DEFINITIONS: dict[str, list[dict[str, Any]]] = {
-    "mysql": [
-        {
-            "metricCode": "mysql_global_status_innodb_row_lock_current_waits",
-            "metricName": "当前正在等待行锁的事务数量",
-            "metricType": "mysql",
-            "metricClass": "数据库",
-            "description": "",
-            "valUnit": "",
-        },
-        {
-            "metricCode": "mysql_global_status_innodb_row_lock_time",
-            "metricName": "InnoDB 总锁等待时长",
-            "metricType": "mysql",
-            "metricClass": "数据库",
-            "description": "",
-            "valUnit": "ms",
-        },
-        {
-            "metricCode": "mysql_global_status_innodb_row_lock_waits",
-            "metricName": "InnoDB 锁等待次数",
-            "metricType": "mysql",
-            "metricClass": "数据库",
-            "description": "",
-            "valUnit": "",
-        },
-        {
-            "metricCode": "mysql_global_status_table_locks_waited",
-            "metricName": "InnoDB 总锁等待次数",
-            "metricType": "mysql",
-            "metricClass": "数据库",
-            "description": "",
-            "valUnit": "",
-        },
-        {
-            "metricCode": "mysql_global_status_slow_queries",
-            "metricName": "每秒的慢查询数",
-            "metricType": "mysql",
-            "metricClass": "数据库",
-            "description": "",
-            "valUnit": "",
-        },
-        {
-            "metricCode": "mysql_global_status_threads_running",
-            "metricName": "活跃线程数",
-            "metricType": "mysql",
-            "metricClass": "数据库",
-            "description": "",
-            "valUnit": "",
-        },
-        {
-            "metricCode": "mysql_global_status_threads_connected",
-            "metricName": "当前打开的连接的数量",
-            "metricType": "mysql",
-            "metricClass": "数据库",
-            "description": "",
-            "valUnit": "",
-        },
-        {
-            "metricCode": "mysql_global_status_max_used_connections",
-            "metricName": "最大连接数",
-            "metricType": "mysql",
-            "metricClass": "数据库",
-            "description": "",
-            "valUnit": "",
-        },
-        {
-            "metricCode": "mysql_global_status_aborted_connects",
-            "metricName": "连接失败次数",
-            "metricType": "mysql",
-            "metricClass": "数据库",
-            "description": "",
-            "valUnit": "",
-        },
-        {
-            "metricCode": "mysql_global_status_updates",
-            "metricName": "每秒update操作数",
-            "metricType": "mysql",
-            "metricClass": "数据库",
-            "description": "",
-            "valUnit": "",
-        },
-    ]
-}
-
-MOCK_METRIC_DATA_TEMPLATE = {
-    "code": 200,
-    "msg": None,
-    "data": [
-        {
-            "resId": "3094",
-            "subResName": "",
-            "processData": {
-                "ifBandWidth": "",
-                "unit": "ms",
-                "mysql_global_status_innodb_row_lock_timeMin": "1874522.50",
-                "mysql_global_status_innodb_row_lock_timeAvg": "1874522.50",
-                "mysql_global_status_innodb_row_lock_timeMax": "1874522.50",
-            },
-            "originalDatas": [
-                {
-                    "formatTime": "2026-04-20 11:01:33",
-                    "gatherTime": 1776654093,
-                    "mysql_global_status_innodb_row_lock_time": "1874522.50",
-                }
-            ],
-        }
-    ],
-}
 
 
 def _load_skill_env() -> None:
@@ -427,11 +316,6 @@ def _select_relevant_metrics(
     return [{**metric, "selectionScore": 0, "selectionReasons": []} for metric in metrics[:limit]]
 
 
-def _build_mock_metric_definitions(metric_type: str) -> dict[str, Any]:
-    mock_rows = deepcopy(MOCK_METRIC_DEFINITIONS.get(metric_type.strip().lower(), []))
-    return {"code": 200, "msg": None, "data": mock_rows}
-
-
 def _build_metric_definitions_result(
     response_payload: dict[str, Any],
     *,
@@ -446,8 +330,6 @@ def _build_metric_definitions_result(
     metrics = [_normalize_metric(item) for item in raw_rows]
     relevant_metrics = _select_relevant_metrics(metric_type, metrics, limit=limit)
     msg = _safe_str(response_payload.get("msg")) or "查询成功"
-    if fallback_reason:
-        msg = f"{msg}；已回退到 mock 数据：{fallback_reason}"
 
     return {
         "code": 200,
@@ -496,48 +378,36 @@ def fetch_metric_definitions(
     }
     resolved_timeout = _get_timeout(timeout_seconds)
 
-    try:
-        response_payload, _transport = _post_json_with_fallback(
-            url=url,
-            headers=headers,
-            json_payload=request_payload,
-            timeout_seconds=resolved_timeout,
-        )
-        raw_rows = _extract_metric_rows(response_payload)
-        if not raw_rows:
-            raise ValueError("指标定义接口未返回可用指标列表")
-        return _build_metric_definitions_result(
-            response_payload,
-            metric_type=normalized_metric_type,
-            url=url,
-            request_payload=request_payload,
-            source="live",
-            limit=limit,
-        )
-    except (requests.exceptions.RequestException, ValueError, json.JSONDecodeError) as error:
-        mock_payload = _build_mock_metric_definitions(normalized_metric_type)
-        return _build_metric_definitions_result(
-            mock_payload,
-            metric_type=normalized_metric_type,
-            url=url,
-            request_payload=request_payload,
-            source="mock",
-            fallback_reason=str(error),
-            limit=limit,
-        )
+    response_payload, _transport = _post_json_with_fallback(
+        url=url,
+        headers=headers,
+        json_payload=request_payload,
+        timeout_seconds=resolved_timeout,
+    )
+    raw_rows = _extract_metric_rows(response_payload)
+    if not raw_rows:
+        raise ValueError("指标定义接口未返回可用指标列表")
+    return _build_metric_definitions_result(
+        response_payload,
+        metric_type=normalized_metric_type,
+        url=url,
+        request_payload=request_payload,
+        source="live",
+        limit=limit,
+    )
 
 
 def _build_metric_data_request(
     *,
     res_id: str | int,
-    metric_code: str,
+    metric_codes: list[str],
     query_type: str,
     start_time: str | None = None,
     end_time: str | None = None,
 ) -> dict[str, Any]:
     payload: dict[str, Any] = {
         "mulRes": [{"resId": res_id}],
-        "queryKeys": [metric_code],
+        "queryKeys": metric_codes,
         "queryType": str(query_type),
     }
     if str(query_type) != "0":
@@ -548,39 +418,16 @@ def _build_metric_data_request(
     return payload
 
 
-def _build_mock_metric_data_payload(
-    *,
-    res_id: str | int,
-    metric_code: str,
-) -> dict[str, Any]:
-    payload = deepcopy(MOCK_METRIC_DATA_TEMPLATE)
-    data_rows = payload.get("data", [])
-    if not data_rows:
-        return payload
-
-    row = data_rows[0]
-    row["resId"] = str(res_id)
-    row["processData"]["unit"] = _infer_mock_unit(metric_code)
-
-    sample_value = row["originalDatas"][0]["mysql_global_status_innodb_row_lock_time"]
-    row["processData"].pop("mysql_global_status_innodb_row_lock_timeMin", None)
-    row["processData"].pop("mysql_global_status_innodb_row_lock_timeAvg", None)
-    row["processData"].pop("mysql_global_status_innodb_row_lock_timeMax", None)
-    row["originalDatas"][0].pop("mysql_global_status_innodb_row_lock_time", None)
-    row["processData"][f"{metric_code}Min"] = sample_value
-    row["processData"][f"{metric_code}Avg"] = sample_value
-    row["processData"][f"{metric_code}Max"] = sample_value
-    row["originalDatas"][0][metric_code] = sample_value
-    return payload
-
-
-def _infer_mock_unit(metric_code: str) -> str:
+def _infer_unit(metric_code: str) -> str:
     normalized = metric_code.lower()
     if "time" in normalized:
         return "ms"
     if "ratio" in normalized or "usage" in normalized:
         return "%"
     return ""
+
+
+_infer_mock_unit = _infer_unit
 
 
 def _extract_latest_metric_value(payload: dict[str, Any], metric_code: str) -> dict[str, str]:
@@ -635,41 +482,139 @@ def fetch_metric_data(
     }
     request_payload = _build_metric_data_request(
         res_id=res_id,
-        metric_code=normalized_metric_code,
+        metric_codes=[normalized_metric_code],
         query_type=query_type,
         start_time=start_time,
         end_time=end_time,
     )
     resolved_timeout = _get_timeout(timeout_seconds)
 
-    source = "live"
-    fallback_reason = None
-    try:
-        response_payload, _transport = _post_json_with_fallback(
-            url=url,
-            headers=headers,
-            json_payload=request_payload,
-            timeout_seconds=resolved_timeout,
-        )
-        data_rows = response_payload.get("data") or []
-        if not data_rows:
-            raise ValueError("指标数据接口未返回有效 data")
-    except (requests.exceptions.RequestException, ValueError, json.JSONDecodeError) as error:
-        source = "mock"
-        fallback_reason = str(error)
-        response_payload = _build_mock_metric_data_payload(res_id=res_id, metric_code=normalized_metric_code)
+    response_payload, _transport = _post_json_with_fallback(
+        url=url,
+        headers=headers,
+        json_payload=request_payload,
+        timeout_seconds=resolved_timeout,
+    )
+    data_rows = response_payload.get("data") or []
+    if not data_rows:
+        raise ValueError("指标数据接口未返回有效 data")
 
     values = _extract_latest_metric_value(response_payload, normalized_metric_code)
     return {
         "code": 200,
-        "msg": "查询成功" if source == "live" else f"接口失败，已回退到 mock 数据：{fallback_reason}",
-        "source": source,
-        "fallbackReason": fallback_reason,
+        "msg": "查询成功",
+        "source": "live",
+        "fallbackReason": None,
         "url": url,
         "request": request_payload,
         "metricCode": normalized_metric_code,
         "resId": str(res_id),
         **values,
+        "raw": response_payload,
+    }
+
+
+def _extract_metric_data_results(
+    payload: dict[str, Any],
+    *,
+    metric_definitions: list[dict[str, Any]],
+    source: str,
+) -> list[dict[str, Any]]:
+    definitions_by_code = {
+        _safe_str(metric.get("code")): metric
+        for metric in metric_definitions
+        if _safe_str(metric.get("code"))
+    }
+    data_rows = payload.get("data") or []
+    row = data_rows[0] if data_rows and isinstance(data_rows[0], dict) else {}
+    process_data = row.get("processData") or {}
+    original_datas = row.get("originalDatas") or []
+    latest_point = original_datas[-1] if original_datas and isinstance(original_datas[-1], dict) else {}
+
+    results: list[dict[str, Any]] = []
+    for metric_code, metric in definitions_by_code.items():
+        unit = (
+            _safe_str(process_data.get("unit"))
+            or _safe_str(metric.get("unit"))
+            or _infer_unit(metric_code)
+        )
+        results.append(
+            {
+                "metricCode": metric_code,
+                "metricName": _safe_str(metric.get("name")) or metric_code,
+                "latestValue": _safe_str(latest_point.get(metric_code)),
+                "sampleTime": _safe_str(latest_point.get("formatTime")),
+                "minValue": _safe_str(process_data.get(f"{metric_code}Min")),
+                "avgValue": _safe_str(process_data.get(f"{metric_code}Avg")),
+                "maxValue": _safe_str(process_data.get(f"{metric_code}Max")),
+                "unit": unit,
+                "source": source,
+            }
+        )
+    return results
+
+
+def fetch_metric_data_batch(
+    *,
+    res_id: str | int,
+    metric_definitions: list[dict[str, Any]],
+    query_type: str = "0",
+    start_time: str | None = None,
+    end_time: str | None = None,
+    api_base_url: str | None = None,
+    token: str | None = None,
+    timeout_seconds: int | None = None,
+) -> dict[str, Any]:
+    normalized_res_id = _safe_str(res_id)
+    if not normalized_res_id:
+        raise ValueError("res_id 不能为空，它应来自 CMDB 返回的 CI ID")
+
+    metric_codes = [
+        _safe_str(metric.get("code"))
+        for metric in metric_definitions
+        if _safe_str(metric.get("code"))
+    ]
+    if not metric_codes:
+        raise ValueError("metric_definitions 不能为空，且必须包含至少一个指标编码")
+
+    url = f"{_normalize_base_url(api_base_url)}/resource/pm/getMetricData"
+    headers = {
+        "Content-Type": "application/json;charset=UTF-8",
+        "Accept": "application/json",
+        "Authorization": f"Bearer {_get_token(token)}",
+    }
+    request_payload = _build_metric_data_request(
+        res_id=normalized_res_id,
+        metric_codes=metric_codes,
+        query_type=query_type,
+        start_time=start_time,
+        end_time=end_time,
+    )
+    resolved_timeout = _get_timeout(timeout_seconds)
+
+    response_payload, _transport = _post_json_with_fallback(
+        url=url,
+        headers=headers,
+        json_payload=request_payload,
+        timeout_seconds=resolved_timeout,
+    )
+    data_rows = response_payload.get("data") or []
+    if not data_rows:
+        raise ValueError("指标数据接口未返回有效 data")
+
+    return {
+        "code": 200,
+        "msg": "查询成功",
+        "source": "live",
+        "fallbackReason": None,
+        "url": url,
+        "request": request_payload,
+        "resId": normalized_res_id,
+        "metricResults": _extract_metric_data_results(
+            response_payload,
+            metric_definitions=metric_definitions,
+            source="live",
+        ),
         "raw": response_payload,
     }
 
@@ -700,23 +645,20 @@ def analyze_metrics(
 
     selected_metrics = definitions.get("relevantMetrics", [])
     metric_data_results: list[dict[str, Any]] = []
-    if res_id is not None:
-        for metric in selected_metrics:
-            metric_code = _safe_str(metric.get("code"))
-            if not metric_code:
-                continue
-            metric_data_results.append(
-                fetch_metric_data(
-                    res_id=res_id,
-                    metric_code=metric_code,
-                    query_type=query_type,
-                    start_time=start_time,
-                    end_time=end_time,
-                    api_base_url=api_base_url,
-                    token=token,
-                    timeout_seconds=timeout_seconds,
-                )
-            )
+    metric_data_request: dict[str, Any] = {}
+    if res_id is not None and selected_metrics:
+        batch_result = fetch_metric_data_batch(
+            res_id=res_id,
+            metric_definitions=selected_metrics,
+            query_type=query_type,
+            start_time=start_time,
+            end_time=end_time,
+            api_base_url=api_base_url,
+            token=token,
+            timeout_seconds=timeout_seconds,
+        )
+        metric_data_results = batch_result.get("metricResults", [])
+        metric_data_request = batch_result.get("request", {})
 
     return {
         "code": 200,
@@ -726,6 +668,7 @@ def analyze_metrics(
         "definitions": definitions,
         "selectedMetrics": selected_metrics,
         "metricDataResults": metric_data_results,
+        "metricDataRequest": metric_data_request,
     }
 
 
@@ -802,25 +745,18 @@ def render_markdown(result: dict[str, Any]) -> str:
 
     if result.get("resId") is not None:
         metric_data_results = result.get("metricDataResults") or []
+        metric_data_request = result.get("metricDataRequest") or {}
         lines.extend(
             [
                 "",
                 "## 指标值查询结果",
                 f"- 资源 ID（CMDB CI ID）：`{result['resId']}`",
-                f"- 查询方式：`queryType={metric_data_results[0].get('request', {}).get('queryType', '0') if metric_data_results else '0'}`",
-                "- 说明：`queryKeys` 当前每次只传 1 个指标编码，因此脚本会按选中的指标逐个遍历查询",
+                f"- 查询方式：`queryType={metric_data_request.get('queryType', '0')}`",
+                f"- 批量查询指标数：`{len(metric_data_request.get('queryKeys', []))}`",
                 "",
                 _render_metric_data_table(metric_data_results, result.get("selectedMetrics") or []),
             ]
         )
-        fallback_items = [
-            item for item in metric_data_results if item.get("source") == "mock" and item.get("fallbackReason")
-        ]
-        if fallback_items:
-            lines.append("")
-            lines.append("### 指标值接口回退说明")
-            for item in fallback_items:
-                lines.append(f"- `{item['metricCode']}`：{item['fallbackReason']}")
 
     return "\n".join(lines)
 
@@ -858,9 +794,12 @@ def main() -> None:
             start_time=args.start_time,
             end_time=args.end_time,
         )
-    except ValueError as error:
+    except (ValueError, requests.exceptions.RequestException, json.JSONDecodeError) as error:
         print(f"错误: {error}", file=sys.stderr)
         sys.exit(1)
+    except Exception as error:
+        print(f"未预期的错误: {type(error).__name__}: {error}", file=sys.stderr)
+        sys.exit(2)
 
     if args.output == "markdown":
         print(render_markdown(result))

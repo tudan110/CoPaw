@@ -745,13 +745,17 @@ def _fetch_metric_analysis(
 
     from get_metric_definitions import analyze_metrics  # local script import
 
-    metric_analysis = analyze_metrics(
-        metric_type=resolved_metric_type,
-        res_id=root_res_id,
-        api_base_url=api_base_url,
-        token=token,
-    )
-    return metric_analysis, ""
+    try:
+        metric_analysis = analyze_metrics(
+            metric_type=resolved_metric_type,
+            res_id=root_res_id,
+            api_base_url=api_base_url,
+            token=token,
+        )
+        return metric_analysis, ""
+    except Exception as error:
+        empty = _empty_metric_analysis(resolved_metric_type)
+        return empty, f"metric_query_failed: {error}"
 
 
 def analyze_alarm_context(
