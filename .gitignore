@@ -12,6 +12,8 @@ sessions_mount_dir/
 coverage.xml
 htmlcov/
 htmlcov.zip
+htmlcov-integration/
+.integration_coverage/
 
 # cookbook
 cookbook/_build
@@ -43,9 +45,6 @@ providers.json
 envs.json
 !.env.example
 !.env.template
-# 共享 secrets 目录：忽略真实凭证文件，保留 *.example 模板
-deploy-all/qwenpaw/working/secrets/*.env
-!deploy-all/qwenpaw/working/secrets/*.env.example
 __pycache__/
 *.db
 *.rdb
@@ -96,7 +95,7 @@ logs/
 *.log
 
 # vibe coding
-/AGENTS.md
+AGENTS.md
 .claude
 openspec
 CLAUDE.md
@@ -115,8 +114,15 @@ src/.hypothesis/
 # Qoder IDE
 .qoder/
 
+# Cursor IDE
+.cursor/
+
 # Worktrees
 .worktrees/
+
+# Local File
+/localfile/
+
 
 ###### Custom ignore files start ######
 
@@ -127,6 +133,9 @@ portal/package-lock.json
 
 # 智能体本地初始化数据
 deploy-all/qwenpaw/data*/
+# 共享 secrets 目录：忽略真实凭证文件，保留 *.example 模板
+deploy-all/qwenpaw/working/secrets/*.env
+!deploy-all/qwenpaw/working/secrets/*.env.example
 
 # 敏感知识库目录
 /knowledge/
