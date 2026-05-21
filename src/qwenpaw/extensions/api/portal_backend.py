@@ -3104,8 +3104,14 @@ async def list_alarm_registry_records(
                 or search_term in str(r.get("resId", "")).lower()
             ]
 
-        # Sort by eventTime descending (fall back to updatedAt)
-        items.sort(key=lambda r: r.get("eventTime", "") or r.get("updatedAt", ""), reverse=True)
+        # Sort by eventTime descending, then by updatedAt descending
+        items.sort(
+            key=lambda r: (
+                r.get("eventTime", "") or "",
+                r.get("updatedAt", "") or "",
+            ),
+            reverse=True,
+        )
 
         total = len(items)
         start = (page - 1) * page_size
@@ -3199,7 +3205,13 @@ async def export_alarm_registry_records(
             allowed_statuses = {s.strip() for s in status.split(",") if s.strip()}
             items = [r for r in items if r.get("status", "") in allowed_statuses]
 
-        items.sort(key=lambda r: r.get("eventTime", "") or r.get("updatedAt", ""), reverse=True)
+        items.sort(
+            key=lambda r: (
+                r.get("eventTime", "") or "",
+                r.get("updatedAt", "") or "",
+            ),
+            reverse=True,
+        )
 
         return JSONResponse(
             content={"total": len(items), "items": items},
