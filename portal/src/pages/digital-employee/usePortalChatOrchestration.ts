@@ -142,7 +142,7 @@ export function usePortalChatOrchestration({
   ) => Promise<boolean> | boolean;
   resetRemoteState: (options?: { initialMessages?: any[]; clearHistoryError?: boolean }) => void;
   homeComposerRef: MutableRefObject<HTMLTextAreaElement | null>;
-  chatInputRef: MutableRefObject<HTMLInputElement | null>;
+  chatInputRef: MutableRefObject<HTMLTextAreaElement | null>;
   locationState: PortalLocationState | null;
   locationPathname: string;
   locationSearch: string;
@@ -651,7 +651,7 @@ export function usePortalChatOrchestration({
     updateComposerValue(event.target.value, event.target.selectionStart);
   }, [updateComposerValue]);
 
-  const handleChatComposerChange = useCallback((event: ChangeEvent<HTMLInputElement>) => {
+  const handleChatComposerChange = useCallback((event: ChangeEvent<HTMLTextAreaElement>) => {
     updateComposerValue(event.target.value, event.target.selectionStart);
   }, [updateComposerValue]);
 
@@ -865,8 +865,8 @@ export function usePortalChatOrchestration({
     handleComposerKeyDown(event, { multiline: true });
   }, [handleComposerKeyDown]);
 
-  const handleChatComposerKeyDown = useCallback((event: KeyboardEvent<HTMLInputElement>) => {
-    handleComposerKeyDown(event);
+  const handleChatComposerKeyDown = useCallback((event: KeyboardEvent<HTMLTextAreaElement>) => {
+    handleComposerKeyDown(event, { multiline: true });
   }, [handleComposerKeyDown]);
 
   return {

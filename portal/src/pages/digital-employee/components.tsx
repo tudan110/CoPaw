@@ -1016,6 +1016,12 @@ export const ChatMessageItem = memo(function ChatMessageItem({
   ).trim();
   const traceBundleSubtitle = buildTraceBundleSubtitle(auxiliaryTraceBlocks);
   const showTraceBundleStreamingIndicator = isStreamingMessage && auxiliaryTraceBlocks.length > 0;
+  // 是否处于"思考阶段"：正在流式产出、有过程块、但最终答案尚未开始渲染。
+  // 用于让过程记录在思考时自动展开（像主流模型那样实时显示思考），
+  // 一旦答案开始就自动收起，保持答案区清爽。
+  const hasAnswerStarted = Boolean(String(renderedMessageContent || "").trim());
+  const isTraceThinkingPhase =
+    isStreamingMessage && auxiliaryTraceBlocks.length > 0 && !hasAnswerStarted;
   const [traceBundleDisplayMode, setTraceBundleDisplayMode] = useState(() =>
     readConversationProcessRecordDisplayMode(),
   );
@@ -1049,10 +1055,18 @@ export const ChatMessageItem = memo(function ChatMessageItem({
       return;
     }
 
-    if (!hasManualTraceBundleToggleRef.current) {
+    if (hasManualTraceBundleToggleRef.current) {
+      return;
+    }
+
+    // 思考阶段自动展开，让用户看到实时思考过程，避免"无响应"既视感；
+    // 答案一旦开始渲染则收起到默认（通常折叠），保持答案区清爽。
+    if (isTraceThinkingPhase) {
+      setIsTraceBundleOpen(true);
+    } else {
       setIsTraceBundleOpen(traceBundleDefaultOpen);
     }
-  }, [auxiliaryTraceBlocks.length, traceBundleDefaultOpen]);
+  }, [auxiliaryTraceBlocks.length, traceBundleDefaultOpen, isTraceThinkingPhase]);
   return (
     <div
       id={`message-${message.id}`}
@@ -1089,8 +1103,8 @@ export const ChatMessageItem = memo(function ChatMessageItem({
               }}
             >
               <span className="trace-label">
-                <i className="fas fa-layer-group" />
-                过程记录
+                <i className={`fas ${isTraceThinkingPhase ? "fa-brain" : "fa-layer-group"}`} />
+                {isTraceThinkingPhase ? "正在思考…" : "过程记录"}
               </span>
               {showTraceBundleStreamingIndicator || traceBundleSubtitle ? (
                 <span className="trace-summary-meta">
@@ -1113,6 +1127,11 @@ export const ChatMessageItem = memo(function ChatMessageItem({
                   block={block}
                   defaultOpen={traceBundleDefaultOpen}
                   isStreaming={isStreamingMessage}
+                  open={
+                    isTraceThinkingPhase
+                      ? index === auxiliaryTraceBlocks.length - 1
+                      : undefined
+                  }
                 />
               ))}
             </div>
@@ -1442,10 +1461,14 @@ function TraceEntry({
   block,
   defaultOpen = false,
   isStreaming = false,
+  open,
 }: {
   block: any;
   defaultOpen?: boolean;
   isStreaming?: boolean;
+  // 受控开关：定义时优先级最高（思考阶段父层用它强制只展开最新一条）；
+  // 为 undefined 时退回原有的 block.defaultOpen / defaultOpen 行为。
+  open?: boolean;
 }) {
   if (block?.kind === "response") {
     return (
@@ -1465,7 +1488,7 @@ function TraceEntry({
   return (
     <details
       className={`trace-block trace-entry ${block?.kind || "misc"}`}
-      open={block?.defaultOpen ?? defaultOpen}
+      open={open ?? block?.defaultOpen ?? defaultOpen}
     >
       <summary className="trace-summary">
         <span className="trace-label">

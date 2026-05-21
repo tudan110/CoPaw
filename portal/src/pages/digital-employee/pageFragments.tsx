@@ -900,13 +900,16 @@ export function EmployeeChatMainPanel({
   openResourceImport: () => void;
   onSendPreset: (command?: string) => void;
   inputMessage: string;
-  chatInputRef: MutableRefObject<HTMLInputElement | null>;
+  chatInputRef: MutableRefObject<HTMLTextAreaElement | null>;
   onComposerBlur: () => void;
   onInputSelection: (
-    event: ChangeEvent<HTMLInputElement> | KeyboardEvent<HTMLInputElement> | MouseEvent<HTMLInputElement>,
+    event:
+      | ChangeEvent<HTMLTextAreaElement>
+      | KeyboardEvent<HTMLTextAreaElement>
+      | MouseEvent<HTMLTextAreaElement>,
   ) => void;
-  onComposerChange: (event: ChangeEvent<HTMLInputElement>) => void;
-  onComposerKeyDown: (event: KeyboardEvent<HTMLInputElement>) => void;
+  onComposerChange: (event: ChangeEvent<HTMLTextAreaElement>) => void;
+  onComposerKeyDown: (event: KeyboardEvent<HTMLTextAreaElement>) => void;
   mentionSuggestions: MentionSuggestionItem[];
   mentionActiveIndex: number;
   onApplyMentionSuggestion: (name: string) => void;
@@ -1015,9 +1018,9 @@ export function EmployeeChatMainPanel({
         <div className="input-wrapper">
           <div className={isCreatingChat ? "input-box disabled" : "input-box"}>
             <i className="fas fa-comment-dots" />
-            <input
+            <textarea
               ref={chatInputRef}
-              type="text"
+              rows={1}
               value={inputMessage}
               disabled={isInteractionLocked}
               onBlur={onComposerBlur}
@@ -1025,7 +1028,7 @@ export function EmployeeChatMainPanel({
               onChange={onComposerChange}
               onKeyDown={onComposerKeyDown}
               onKeyUp={onInputSelection}
-              placeholder={`向 ${visibleEmployee.name} 描述您的需求...`}
+              placeholder={`向 ${visibleEmployee.name} 描述您的需求...（Enter 发送，Shift+Enter 换行）`}
             />
           </div>
           {mentionSuggestions.length ? (
