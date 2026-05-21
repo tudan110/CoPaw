@@ -74,7 +74,51 @@ helm install cnos-inoe-agent ./deploy-all/helm/cnos-inoe-agent -f my-values.yaml
 helm install cnos-inoe-agent ./deploy-all/helm/cnos-inoe-agent \
   --set digital-workforce-portal.service.nodePort=32080 \
   --set qwenpaw.service.nodePort=32088
+
+
+# 实际部署示例 -- 大装置
+helm install cnos-inoe-agent ./cnos-inoe-agent-1.0.0.tgz -n cnos-iomp \
+  --set-string digital-workforce-portal.env.PORTAL_APP_TITLE="智观 AI" \
+  --set-string qwenpaw.env.INOE_API_BASE_URL="http://192.168.130.51:30080"
+
+# 实际部署示例 -- 北京环境
+helm install cnos-inoe-agent ./cnos-inoe-agent-1.0.0.tgz -n cnos-iomp \
+  --set-string digital-workforce-portal.env.PORTAL_APP_TITLE="智观 AI" \
+  --set-string qwenpaw.env.INOE_API_BASE_URL="http://10.3.39.246:30080"
 ```
+
+### 常用环境变量设置
+
+部署时可通过 `--set-string` 覆盖环境变量，格式为 `<子chart名>.env.<变量名>=<值>`：
+
+```bash
+helm install cnos-inoe-agent ./cnos-inoe-agent-1.0.0.tgz -n cnos-iomp \
+  --set-string digital-workforce-portal.env.PORTAL_APP_TITLE="智观 AI" \
+  --set-string qwenpaw.env.INOE_API_BASE_URL="http://192.168.130.51:30080" \
+  --set-string qwenpaw.env.INOE_API_TOKEN="<your_jwt_token>" \
+  --set-string qwenpaw.env.INOE_API_TIMEOUT="60" \
+  --set-string qwenpaw.env.QWENPAW_PORTAL_REAL_ALARM_ROUTE_TIMEOUT="5" \
+  --set-string qwenpaw.env.QWENPAW_PORTAL_REAL_ALARM_CACHE_TTL="30" \
+  --set-string qwenpaw.env.QWENPAW_PORTAL_REAL_ALARM_DEGRADED_COOLDOWN="30" \
+  --set-string qwenpaw.env.QWENPAW_PORTAL_REAL_ALARM_AUTO_TAKEOVER_ENABLED="true" \
+  --set-string qwenpaw.env.QWENPAW_PORTAL_REAL_ALARM_AUTO_TAKEOVER_INTERVAL="300" \
+  --set-string qwenpaw.env.QWENPAW_PORTAL_REAL_ALARM_AUTO_TAKEOVER_LIMIT="20" \
+  --set-string qwenpaw.env.QWENPAW_PORTAL_REAL_ALARM_MAX_ACTIVE_ANALYSES="1"
+```
+
+| 变量 | 说明 | 默认值 |
+|------|------|--------|
+| `PORTAL_APP_TITLE` | Portal 页面标题 | - |
+| `INOE_API_BASE_URL` | 智观告警平台接口地址 | `http://192.168.130.51:30080` |
+| `INOE_API_TOKEN` | 智观平台 JWT Token | - |
+| `INOE_API_TIMEOUT` | 接口请求超时(秒) | `60` |
+| `QWENPAW_PORTAL_REAL_ALARM_ROUTE_TIMEOUT` | Portal 告警列表前台等待超时(秒) | `5` |
+| `QWENPAW_PORTAL_REAL_ALARM_CACHE_TTL` | 告警列表缓存 TTL(秒) | `30` |
+| `QWENPAW_PORTAL_REAL_ALARM_DEGRADED_COOLDOWN` | 告警后端异常降级冷却(秒) | `30` |
+| `QWENPAW_PORTAL_REAL_ALARM_AUTO_TAKEOVER_ENABLED` | 是否启用告警自动接管分析 | `true` |
+| `QWENPAW_PORTAL_REAL_ALARM_AUTO_TAKEOVER_INTERVAL` | 自动接管轮询间隔(秒) | `300` |
+| `QWENPAW_PORTAL_REAL_ALARM_AUTO_TAKEOVER_LIMIT` | 单次轮询最大处理告警数 | `20` |
+| `QWENPAW_PORTAL_REAL_ALARM_MAX_ACTIVE_ANALYSES` | 同时进行的最大分析任务数 | `1` |
 
 ## 相关文档
 
