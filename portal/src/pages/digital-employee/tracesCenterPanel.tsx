@@ -63,6 +63,7 @@ const EVENT_LABEL: Record<string, string> = {
   skill_trigger: "技能触发",
   agent_reasoning: "推理过程",
   error: "异常",
+  cancelled: "已中断",
 };
 
 const EVENT_ICON: Record<string, string> = {
@@ -72,6 +73,7 @@ const EVENT_ICON: Record<string, string> = {
   skill_trigger: "fa-bolt",
   agent_reasoning: "fa-brain",
   error: "fa-triangle-exclamation",
+  cancelled: "fa-ban",
 };
 
 function eventLabel(type: string) {
@@ -159,7 +161,7 @@ function EventCard({
     if (event.type === "user_message" || event.type === "agent_reply") {
       return event.text || "";
     }
-    if (isError) {
+    if (isError || event.type === "cancelled") {
       return event.message || "";
     }
     if (isTool) {
@@ -178,6 +180,13 @@ function EventCard({
     }
     return "";
   }, [event, isError, isTool]);
+
+  // Whether collapsing actually hides anything. When the body fits inside
+  // the preview budget there is nothing to reveal, so we render it in full
+  // (no 3-line clamp) — otherwise expanding a short reply feels like a no-op.
+  const PREVIEW_CHARS = 200;
+  const previewTruncated =
+    previewBody.length > PREVIEW_CHARS || previewBody.split("\n").length > 3;
 
   const cardClass = `trace-event ${event.type}${
     isError ? " err" : event.outcome === "error" ? " err" : ""
@@ -221,7 +230,11 @@ function EventCard({
           </details>
         </div>
       ) : previewBody ? (
-        <div className="trace-event-preview">{truncate(previewBody, 200)}</div>
+        <div
+          className={`trace-event-preview${previewTruncated ? "" : " full"}`}
+        >
+          {previewTruncated ? truncate(previewBody, PREVIEW_CHARS) : previewBody}
+        </div>
       ) : null}
     </div>
   );
