@@ -26,8 +26,8 @@ INOE_API_TOKEN=your_jwt_token_here
 4. 将 Token 填入 `.env` 文件
 
 **配置优先级**：
-1. 技能目录下的 `.env` 文件（优先）
-2. 项目根目录下的 `.env` 文件（备选）
+1. 共享 `secrets/inoe.env` 或同名环境变量（优先）
+2. 技能目录下的 `.env` 文件（回退）
 
 如果配置缺失或无效，技能会直接返回配置错误信息，不会继续执行请求。
 
@@ -50,7 +50,7 @@ INOE_API_TOKEN=your_jwt_token_here
 - 页面类别统计入口：`uv run scripts/query_alarm_class_count.py [options]`
 - 聊天窗口优先：`uv run scripts/analyze_alarms.py --mode <mode> --output markdown`
 - 图表直出：`uv run scripts/analyze_alarms.py --mode <mode> --output markdown-echarts-only`
-- 默认读取技能目录下的 `.env`
+- 优先读取共享 `secrets/`，未配置时回退技能目录下的 `.env`
 - 配置只关注 2 个字段：`INOE_API_BASE_URL`、`INOE_API_TOKEN`
 - 不要要求用户手动拼接接口 URL
 - 不要先做无意义预检查；直接执行真实查询

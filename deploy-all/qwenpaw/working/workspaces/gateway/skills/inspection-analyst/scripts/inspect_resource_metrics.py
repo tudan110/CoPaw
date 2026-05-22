@@ -7,7 +7,7 @@
     python scripts/inspect_resource_metrics.py --res-id 3094 --metric-type mysql --output markdown
 
 说明:
-    - 默认读取当前 skill 目录下的 .env
+    - 优先环境变量/共享 secrets，回退当前 skill 目录下的 .env
     - 复用 fault/alarm-analyst 的指标接口访问与 HTTP fallback 能力
     - 先查询全部指标定义，再提取全部 metric codes
     - 再以一次批量请求把全部 metric codes 传给 /resource/pm/getMetricData
@@ -56,7 +56,7 @@ def _load_skill_env() -> None:
     skill_dir = Path(__file__).resolve().parents[1]
     skill_env_file = skill_dir / ".env"
     if skill_env_file.exists():
-        load_dotenv(skill_env_file, override=True)
+        load_dotenv(skill_env_file, override=False)
 
 
 _load_skill_env()

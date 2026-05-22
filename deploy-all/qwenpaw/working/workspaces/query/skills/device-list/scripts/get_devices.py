@@ -7,7 +7,7 @@
     uv run get_devices.py [--token <token>] [--page_num 1] [--page_size 10]
 
 说明:
-    - 配置从 skill 目录下的 .env 文件读取
+    - 配置优先取环境变量/共享 secrets，回退 skill 目录下的 .env
     - 配置项：INOE_API_BASE_URL（API 基础地址）、INOE_API_TOKEN（认证令牌）
 """
 
@@ -33,8 +33,8 @@ def _load_skill_env() -> None:
     加载 skill 目录下的 .env 文件
 
     优先级:
-    1. skill 目录下的 .env 文件
-    2. 项目根目录下的 .env 文件
+    1. 已有环境变量（共享 secrets 注入，优先）
+    2. skill 目录下的 .env，再到项目根目录 .env（回退，override=False）
     """
     if not HAS_DOTENV:
         return
@@ -43,10 +43,10 @@ def _load_skill_env() -> None:
     script_dir = Path(__file__).parent
     skill_dir = script_dir.parent  # scripts 的上级目录就是 skill 目录
 
-    # 优先加载 skill 目录下的 .env
+    # skill .env 用 override=False：仅补 os.environ 缺失项（共享 secrets 优先）
     skill_env_file = skill_dir / ".env"
     if skill_env_file.exists():
-        load_dotenv(skill_env_file, override=True)
+        load_dotenv(skill_env_file, override=False)
         return
 
     # 如果 skill 目录没有，尝试项目根目录
@@ -204,7 +204,7 @@ def main():
     uv run get_devices.py --api_base_url "http://127.0.0.1:30080" --page_num 1 --page_size 10
 
 配置文件:
-  配置从 skill 目录下的 .env 文件读取：
+  配置优先取环境变量/共享 secrets，回退 skill 目录下的 .env：
   - INOE_API_BASE_URL  API 基础地址（如：http://192.168.130.211:30080）
   - INOE_API_TOKEN     API Token（JWT）
         """

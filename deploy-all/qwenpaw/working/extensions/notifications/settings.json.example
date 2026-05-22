@@ -1,0 +1,31 @@
+{
+  "notification_channels": {
+    "order_workflow": {
+      "push_url": "",
+      "dingtalk_webhook_url": "",
+      "dingtalk_secret": "",
+      "feishu_webhook_url": "",
+      "feishu_secret": "",
+      "timeout_seconds": 8,
+      "mention_all": false
+    },
+    "inspection": {
+      "push_url": "",
+      "dingtalk_webhook_url": "",
+      "dingtalk_secret": "",
+      "feishu_webhook_url": "",
+      "feishu_secret": "",
+      "timeout_seconds": 8,
+      "mention_all": false
+    },
+    "alarm_analyst": {
+      "push_url": "",
+      "dingtalk_webhook_url": "",
+      "dingtalk_secret": "",
+      "feishu_webhook_url": "",
+      "feishu_secret": "",
+      "timeout_seconds": 8,
+      "mention_all": false
+    }
+  }
+}

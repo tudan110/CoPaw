@@ -51,7 +51,7 @@ N9E_LOG_TIMEOUT=60             # 模板挖掘比一般查询稍慢
 - 一站式综合报告：`uv run scripts/n9e_log_hazard.py [--from-time now-15m] [--baseline 24h]`
 - 单窗口聚类：`uv run scripts/n9e_log_cluster.py [--from-time now-15m] [--top 20]`
 - 漂移分析：`uv run scripts/n9e_log_drift.py [--baseline 24h] [--from-time now-1h]`
-- 默认读取本技能目录下的 `.env`
+- 优先读取共享 `secrets/`，未配置时回退本技能目录下的 `.env`
 - 不要要求用户手动拼接 `_msearch` URL 或写 ES DSL
 - 不要先做无意义的 ping / 健康检查；直接执行真实分析
 - 缺配置或 token 无效时，停止后续分析，直接返回原因

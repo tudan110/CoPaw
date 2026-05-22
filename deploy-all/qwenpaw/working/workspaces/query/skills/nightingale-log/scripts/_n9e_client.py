@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """Nightingale (n9e) log query — shared HTTP client and helpers.
 
-Loads `.env` from the skill directory (preferred) or the project root.
+Resolves config from ambient env (shared secrets, preferred), then the skill `.env`, then project root, as fallbacks.
 Provides:
 - env accessors (base URL, token, default datasource / index)
 - time-range parsing (ISO + relative `now-15m` style)
@@ -82,7 +82,7 @@ def _load_skill_env() -> None:
     script_dir = here.parent
     skill_dir = script_dir.parent
 
-    candidates: List[Tuple[Path, bool]] = [(skill_dir / ".env", True)]
+    candidates: List[Tuple[Path, bool]] = [(skill_dir / ".env", False)]
     for parent in skill_dir.parents:
         candidates.append((parent / ".env", False))
 

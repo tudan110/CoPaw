@@ -34,8 +34,8 @@ N9E_LOG_TIMESTAMP_FIELD=@timestamp
 
 **配置加载优先级**：
 
-1. 本 skill 目录下的 `.env`（优先）
-2. 项目根目录下的 `.env`（备选）
+1. 共享 `secrets/n9e.env` 或同名环境变量（优先）
+2. 本 skill 目录下的 `.env`（回退）
 
 如果配置缺失或 token 无效，技能会直接返回配置错误信息，不会继续执行请求。
 
@@ -67,7 +67,7 @@ N9E_LOG_TIMESTAMP_FIELD=@timestamp
 - 元数据查询：`uv run scripts/n9e_log_meta.py --mode <datasources|indices|mapping|fields> [...]`
 - 日志检索：`uv run scripts/n9e_log_query.py [--query <lucene>] [--from-time now-15m] [...]`
 - 聚合统计：`uv run scripts/n9e_log_aggregate.py --mode <count|level|host|service|terms|histogram> [...]`
-- 默认读取本技能目录下的 `.env`
+- 优先读取共享 `secrets/`，未配置时回退本技能目录下的 `.env`
 - 不要要求用户手动拼接 `_msearch` URL 或写完整 ES DSL
 - 不要先做无意义的 ping / 健康检查；直接执行真实查询
 - 缺配置或 token 无效时，停止后续分析，直接返回缺失项或错误原因
