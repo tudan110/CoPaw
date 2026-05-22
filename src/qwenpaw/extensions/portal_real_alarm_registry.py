@@ -65,7 +65,8 @@ CREATE TABLE IF NOT EXISTS alarm_records (
     taken_over_at TEXT NOT NULL DEFAULT '',
     handled_at TEXT NOT NULL DEFAULT '',
     last_triggered_at TEXT NOT NULL DEFAULT '',
-    resolved_at TEXT NOT NULL DEFAULT ''
+    resolved_at TEXT NOT NULL DEFAULT '',
+    analysis_result TEXT NOT NULL DEFAULT ''
 )
 """
 
@@ -97,6 +98,7 @@ _KEY_TO_COL: dict[str, str] = {
     "handledAt": "handled_at",
     "lastTriggeredAt": "last_triggered_at",
     "resolvedAt": "resolved_at",
+    "analysisResult": "analysis_result",
 }
 _COL_TO_KEY: dict[str, str] = {v: k for k, v in _KEY_TO_COL.items()}
 _ALL_COLUMNS = list(_KEY_TO_COL.values())
@@ -151,6 +153,14 @@ def _open_db(db_path: Path) -> sqlite3.Connection:
     conn.execute(_CREATE_TABLE_SQL)
     for idx_sql in _CREATE_INDEXES_SQL:
         conn.execute(idx_sql)
+    # Migrate: add columns that may not exist in older DBs
+    existing_cols = {
+        row[1] for row in conn.execute("PRAGMA table_info(alarm_records)").fetchall()
+    }
+    if "analysis_result" not in existing_cols:
+        conn.execute(
+            "ALTER TABLE alarm_records ADD COLUMN analysis_result TEXT NOT NULL DEFAULT ''"
+        )
     conn.commit()
     return conn
 
@@ -446,6 +456,7 @@ def update_alarm_record(
     source: str = "",
     verification_status: str = "",
     last_error: str | None = None,
+    analysis_result: str | None = None,
     path: str | Path | None = None,
 ) -> dict[str, Any]:
     db_path = _resolve_registry_path(path)
@@ -530,6 +541,11 @@ def update_alarm_record(
                 merged["lastError"] = _coalesce_text(last_error)
             elif existing.get("lastError"):
                 merged["lastError"] = existing.get("lastError")
+
+            if analysis_result is not None:
+                merged["analysisResult"] = analysis_result
+            elif existing.get("analysisResult"):
+                merged["analysisResult"] = existing.get("analysisResult")
 
             # Upsert into DB
             db_values = {}

@@ -28,6 +28,7 @@ from qwenpaw.extensions.api.alarm_analyst_card_models import (
 )
 from qwenpaw.extensions.api.alarm_analyst_card_service import (
     build_alarm_analyst_card,
+    extract_display_fields as extract_card_display_fields,
     is_alarm_analyst_card_candidate,
 )
 from qwenpaw.extensions.api.natural_language_customization_api import (
@@ -1271,6 +1272,7 @@ def _update_portal_real_alarm_registry_safe(
     source: str = "",
     verification_status: str = "",
     last_error: str | None = None,
+    analysis_result: str | None = None,
 ) -> dict[str, Any] | None:
     try:
         return update_alarm_record(
@@ -1283,6 +1285,7 @@ def _update_portal_real_alarm_registry_safe(
             source=source,
             verification_status=verification_status,
             last_error=last_error,
+            analysis_result=analysis_result,
         )
     except ValueError as exc:
         print(
@@ -1296,6 +1299,29 @@ def _update_portal_real_alarm_registry_safe(
         )
         traceback.print_exc()
     return None
+
+
+def _persist_analysis_result_to_registry(
+    *,
+    session_id: str,
+    card: dict[str, Any],
+) -> None:
+    """Persist the card display fields as analysis_result JSON in the alarm registry."""
+    try:
+        alarm_id = session_id.removeprefix(PORTAL_REAL_ALARM_SESSION_PREFIX).strip()
+        if not alarm_id:
+            return
+        display_fields = extract_card_display_fields(card)
+        result_json = json.dumps(display_fields, ensure_ascii=False)
+        _update_portal_real_alarm_registry_safe(
+            alarm_id=alarm_id,
+            analysis_result=result_json,
+        )
+    except Exception as exc:
+        print(
+            f"[WARN] _persist_analysis_result_to_registry failed: "
+            f"{type(exc).__name__}: {exc}"
+        )
 
 
 async def _get_employee_alert_count(employee_id: str, *, include_alert_count: bool = True) -> int:
@@ -2396,6 +2422,13 @@ async def create_portal_alarm_analyst_card(
                 session_id=parsed.session_id,
                 records=records,
             )
+
+        # Persist card data to alarm registry for external API access
+        if parsed.session_id.startswith(PORTAL_REAL_ALARM_SESSION_PREFIX):
+            _persist_analysis_result_to_registry(
+                session_id=parsed.session_id,
+                card=card.model_dump(by_alias=True),
+            )
         return AlarmAnalystCardCreateResponse(
             matched=True,
             card=card,
@@ -2434,6 +2467,39 @@ async def list_portal_alarm_analyst_cards(
     except Exception as exc:
         error_detail = f"{type(exc).__name__}: {str(exc)}"
         print(f"[ERROR] list_portal_alarm_analyst_cards failed: {error_detail}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=error_detail) from exc
+
+
+@router.get("/alarm-analyst/result/{alarm_id:path}")
+async def get_alarm_analysis_result(alarm_id: str):
+    """Get the AI analysis result for an alarm by alarm ID.
+
+    Returns the structured analysis card data that was persisted
+    when the alarm analysis completed. Used by external systems
+    (e.g., the alarm platform) to retrieve AI analysis conclusions.
+    """
+    try:
+        record = get_alarm_record(alarm_id)
+        if not record:
+            raise HTTPException(status_code=404, detail=f"Alarm not found: {alarm_id}")
+
+        analysis_json = record.get("analysisResult", "")
+        if not analysis_json:
+            status = record.get("status", "")
+            if status == "analyzing":
+                return {"code": 0, "message": "分析进行中", "data": None}
+            return {"code": 0, "message": "暂无分析结果", "data": None}
+
+        analysis_data = json.loads(analysis_json)
+        return {"code": 0, "message": "success", "data": analysis_data}
+    except HTTPException:
+        raise
+    except json.JSONDecodeError:
+        return {"code": 0, "message": "分析结果数据异常", "data": None}
+    except Exception as exc:
+        error_detail = f"{type(exc).__name__}: {str(exc)}"
+        print(f"[ERROR] get_alarm_analysis_result failed: {error_detail}")
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=error_detail) from exc
 

@@ -758,3 +758,121 @@ def _extract_brief_title(text: str, *, fallback: str) -> str:
     content = _sanitize_inline_text(content)
     title = re.split(r"\s*(?:→|->|=>|；|;|。)\s*", content, maxsplit=1)[0].strip()
     return (title[:32] or fallback).strip()
+
+
+# ---------------------------------------------------------------------------
+# Summary-table label aliases (mirrors frontend SUMMARY_LABEL_ALIASES)
+# ---------------------------------------------------------------------------
+_SUMMARY_LABEL_ALIASES: dict[str, str] = {
+    "影响面": "影响范围",
+    "根因结论": "根因方向",
+    "优先建议": "优先动作",
+    "关键问题": "关键提醒",
+    "关联告警查询": "关联资源告警查询状态",
+    "关联告警": "关联资源告警查询状态",
+    "关联资源告警查询": "关联资源告警查询状态",
+    "关联资源告警": "关联资源告警查询状态",
+}
+
+_SUMMARY_DISPLAY_LABELS = [
+    "置信度",
+    "故障性质",
+    "根因方向",
+    "影响范围",
+    "优先动作",
+    "关联资源告警查询状态",
+    "关键提醒",
+]
+
+
+def extract_display_fields(card_dict: dict[str, Any]) -> dict[str, Any]:
+    """Extract the display-ready fields from a card dict.
+
+    Mirrors the frontend card display: parses the 📊 总结 section
+    and structured card fields, returns English-keyed dict matching
+    what the UI shows.
+    """
+    raw_md = str(card_dict.get("rawReportMarkdown") or "")
+    summary_section = _extract_named_section(raw_md, ("总结",))
+
+    # Parse label:value pairs from bullets and table rows
+    rows_by_label: dict[str, str] = {}
+    if summary_section:
+        for line in summary_section.splitlines():
+            label = ""
+            value = ""
+
+            # Try table row: | **label** | value |
+            table_match = TABLE_KV_RE.match(line)
+            if table_match:
+                label = _sanitize_inline_text(table_match.group(1)).strip()
+                value = _sanitize_inline_text(table_match.group(2)).strip()
+            else:
+                # Try bullet: - label：value
+                bullet_match = re.match(
+                    r"^\s*[-*•]\s*\**([^：:]{1,24}?)\**\s*[：:]\s*(.+)$", line
+                )
+                if bullet_match:
+                    label = _sanitize_inline_text(bullet_match.group(1)).strip()
+                    value = _sanitize_inline_text(bullet_match.group(2)).strip()
+
+            if not label or not value:
+                continue
+            if re.match(r"^[-:]+$", label) or re.match(r"^[-:]+$", value):
+                continue
+
+            # Normalize alias
+            normalized_label = _SUMMARY_LABEL_ALIASES.get(label, label)
+            if normalized_label not in rows_by_label:
+                rows_by_label[normalized_label] = value
+
+    # Build the display result with English keys
+    summary = card_dict.get("summary") or {}
+    root_cause = card_dict.get("rootCause") or {}
+
+    # Title: prefer report heading, fallback to summary.title
+    title_match = re.search(
+        r"^##+\s*.*?告警分析报告[：:]\s*(.+?)\s*$", raw_md, re.MULTILINE
+    )
+    title = (
+        _sanitize_inline_text(title_match.group(1))
+        if title_match
+        else _sanitize_inline_text(summary.get("title") or "")
+    ) or "故障根因分析"
+
+    resource_name = _sanitize_inline_text(root_cause.get("resourceName") or "")
+    fault_nature = rows_by_label.get("故障性质", "")
+    root_cause_direction = rows_by_label.get("根因方向", "")
+    confidence = rows_by_label.get("置信度", "")
+
+    # Fallback to structured card fields
+    if not fault_nature:
+        fault_nature = _sanitize_inline_text(summary.get("conclusion") or "")
+    if not root_cause_direction:
+        root_cause_direction = _sanitize_inline_text(root_cause.get("reason") or "")
+    if not confidence:
+        raw_conf = summary.get("confidence") or ""
+        if raw_conf in ("high", "高"):
+            confidence = "90%"
+        elif raw_conf in ("medium", "中"):
+            confidence = "70%"
+        elif raw_conf in ("low", "低"):
+            confidence = "50%"
+
+    result: dict[str, Any] = {
+        "title": title,
+        "anchorObject": resource_name,
+        "faultNature": fault_nature,
+        "rootCauseDirection": root_cause_direction,
+        "impactScope": rows_by_label.get("影响范围", ""),
+        "priorityAction": rows_by_label.get("优先动作", ""),
+        "relatedAlarmQueryStatus": rows_by_label.get("关联资源告警查询状态", ""),
+        "keyReminder": rows_by_label.get("关键提醒", ""),
+        "confidence": confidence,
+        "rootCauseType": fault_nature,
+        "rootCauseObject": resource_name,
+        "faultReason": root_cause_direction,
+    }
+
+    # Remove empty values
+    return {k: v for k, v in result.items() if v}
