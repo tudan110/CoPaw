@@ -53,6 +53,7 @@ from qwenpaw.extensions.portal_real_alarm_registry import (
     filter_visible_alarms,
     get_alarm_record,
     load_alarm_records,
+    reset_zombie_analyzing_records,
     update_alarm_record,
 )
 from qwenpaw.extensions.integrations.alarm_workorders.query_alarm_workorders import (
@@ -787,6 +788,17 @@ async def _portal_real_alarm_auto_takeover_loop() -> None:
 @router.on_event("startup")
 async def start_portal_real_alarm_auto_takeover() -> None:
     global PORTAL_REAL_ALARM_AUTO_TAKEOVER_TASK
+
+    # Reset zombie records stuck in 'analyzing' from previous unclean shutdown
+    try:
+        reset_count = reset_zombie_analyzing_records()
+        if reset_count > 0:
+            print(
+                f"[INFO] portal real alarm startup: reset {reset_count} zombie "
+                f"'analyzing' record(s) to pending_retry"
+            )
+    except Exception:
+        traceback.print_exc()
 
     if not PORTAL_REAL_ALARM_AUTO_TAKEOVER_ENABLED:
         return

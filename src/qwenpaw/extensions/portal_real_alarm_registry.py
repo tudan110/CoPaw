@@ -608,3 +608,32 @@ def filter_visible_alarms(
     payload["items"] = visible_items
     payload["total"] = len(visible_items)
     return payload
+
+
+def reset_zombie_analyzing_records(
+    *,
+    path: str | Path | None = None,
+) -> int:
+    """Reset records stuck in 'analyzing' status back to allow re-processing.
+
+    Should be called at startup to recover from unclean shutdowns where
+    asyncio tasks were lost before completing analysis.
+    Returns the number of records reset.
+    """
+    db_path = _resolve_registry_path(path)
+    with _REGISTRY_LOCK:
+        _ensure_migrated(db_path)
+        conn = _open_db(db_path)
+        try:
+            now = _local_now_iso()
+            cursor = conn.execute(
+                "UPDATE alarm_records SET status = 'pending_retry', "
+                "updated_at = ?, source = 'startup-zombie-reset' "
+                "WHERE status = 'analyzing'",
+                (now,),
+            )
+            count = cursor.rowcount
+            conn.commit()
+            return count
+        finally:
+            conn.close()
