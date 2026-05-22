@@ -490,6 +490,7 @@ class ToolGuardMixin:
             f"- {tg('tool')}: `{tool_name}`\n"
             f"- {tg('severity')}: `{severity}`\n"
             f"- {tg('findings')}: `{count}`\n\n"
+            f"⚠️ **System instruction**: {tg('instruction_no_retry')}\n\n"
             f"{findings_text}\n\n"
             f"{tg('blocked_footer')}"
         )
@@ -813,6 +814,7 @@ class ToolGuardMixin:
             f"🚫 **{tg('tool_blocked')}**\n\n"
             f"- {tg('tool')}: `{tool_name}`\n"
             f"- {tg('reason')}: {tg('reason_denied')}\n\n"
+            f"⚠️ **System instruction**: {tg('instruction_no_retry')}\n\n"
             f"{findings_text}"
         )
 
