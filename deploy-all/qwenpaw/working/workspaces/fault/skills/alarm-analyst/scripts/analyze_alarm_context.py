@@ -42,7 +42,7 @@ def _load_skill_env() -> None:
     skill_dir = Path(__file__).resolve().parents[1]
     skill_env_file = skill_dir / ".env"
     if skill_env_file.exists():
-        load_dotenv(skill_env_file, override=True)
+        load_dotenv(skill_env_file, override=False)
 
 
 _load_skill_env()

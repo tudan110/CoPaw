@@ -8,7 +8,7 @@
     python scripts/get_metric_definitions.py --metric-type mysql --res-id 3094 --output markdown
 
 说明:
-    - 默认读取当前 skill 目录下的 .env 文件
+    - 优先环境变量/共享 secrets，回退当前 skill 目录下的 .env 文件
     - 先按 ciType 调用 /resource/resource/threshold/getMetricDefinitions
     - 再按 AI 选出的关键指标批量调用 /resource/pm/getMetricData（一次请求传递多个 queryKeys）
     - 接口不可用时直接报错，不再回退到 mock 数据
@@ -85,7 +85,7 @@ def _load_skill_env() -> None:
     skill_dir = Path(__file__).resolve().parents[1]
     skill_env_file = skill_dir / ".env"
     if skill_env_file.exists():
-        load_dotenv(skill_env_file, override=True)
+        load_dotenv(skill_env_file, override=False)
 
 
 _load_skill_env()

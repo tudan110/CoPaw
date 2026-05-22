@@ -5,11 +5,11 @@ description: 用于查询当前 `.env` 配置所指向的 CMDB 环境。当用�
 
 # ZGOPS CMDB 查询技能
 
-仅面向 `.env` 中配置的当前 CMDB 环境。
-`.env.example` 只是模板示例，运行时实际读取的是 `.env`。
-无论是直接执行本 skill，还是被其他 skill / 后端桥接调用，都应固定读取 **本 `zgops-cmdb` 技能目录** 下的 `.env`，不要回退到工作区目录或其他 skill 的 `.env`。
+仅面向凭证（共享 `secrets/zgops-cmdb.env` 或本技能 `.env`）所配置的当前 CMDB 环境。
+凭证优先从共享 `secrets/zgops-cmdb.env` 读取，未配置时回退本技能目录 `.env`（`.env.example` 仅模板）。
+凭证解析顺序统一为 `$VEOPS_ENV_FILE` → 共享 `secrets/zgops-cmdb.env` → 本技能目录 `.env`（旧版回退）；不读取其他 skill 的 `.env`。
 
-不要在对外描述里写死某个固定地址、某套“测试环境”或特定站点；环境信息应完全来自 `.env`。
+不要在对外描述里写死某个固定地址、某套“测试环境”或特定站点；环境信息应完全来自上述凭证文件。
 
 ## 默认行为
 

@@ -380,6 +380,10 @@
   border-left-color: #dc2626;
   background: #fff5f5;
 }
+.trace-event.cancelled {
+  border-left-color: #f59e0b;
+  background: #fffbeb;
+}
 
 .trace-event-head {
   display: flex;
@@ -529,6 +533,14 @@
   -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
   overflow: hidden;
+}
+
+/* Short content fully fits the preview — show it all (no clamp) so the
+   chevron no longer feels like a dead control on brief replies. */
+.trace-event-preview.full {
+  display: block;
+  -webkit-line-clamp: unset;
+  overflow: visible;
 }
 
 .trace-event-body {

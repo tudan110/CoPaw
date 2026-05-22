@@ -17,7 +17,7 @@ description: 查询监控总览/运维驾驶舱页面数据。适用于用户询
 
 ## 配置
 
-配置从本技能目录 `.env` 读取，也支持同名环境变量：
+配置优先从共享 `secrets/`（`working/secrets/`）读取，未配置时回退本技能目录 `.env` 或同名环境变量：
 
 ```bash
 INOE_API_BASE_URL=http://<host>:<port>

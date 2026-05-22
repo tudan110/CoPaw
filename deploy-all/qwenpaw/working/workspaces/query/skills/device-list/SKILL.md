@@ -28,7 +28,7 @@ description: 设备管理系统查询。支持获取设备列表、统计设备�
 - 统一汇总入口：`uv run scripts/analyze_devices.py --mode <mode> [options]`
 - 聊天窗口优先：`uv run scripts/analyze_devices.py --mode <mode> --output markdown`
 - 图表直出：`uv run scripts/analyze_devices.py --mode <mode> --output markdown-echarts-only`
-- 默认读取技能目录下的 `.env`
+- 优先读取共享 `secrets/`，未配置时回退技能目录下的 `.env`
 - 配置只关注 2 个字段：`INOE_API_BASE_URL`、`INOE_API_TOKEN`
 - 不要要求用户手动拼接接口 URL
 - 不要先做无意义预检查；直接执行真实查询

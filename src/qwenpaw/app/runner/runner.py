@@ -973,6 +973,35 @@ class AgentRunner(Runner):
         except asyncio.CancelledError as exc:
             logger.info(f"query_handler: {session_id} cancelled!")
 
+            # Record a terminal marker so the trace timeline shows *why* it
+            # stopped instead of ending silently on the last tool_call.
+            # Shielded so the write completes even as this task unwinds.
+            if session_id:
+                try:
+                    await asyncio.shield(
+                        _emit_trace_safe(
+                            session_id,
+                            "cancelled",
+                            {
+                                "message": (
+                                    "任务被取消或中断，本次运行未产出"
+                                    "最终回复。"
+                                ),
+                            },
+                            agent_id=self.agent_id,
+                            user_id=str(getattr(request, "user_id", "") or "")
+                            or None,
+                            channel=str(getattr(request, "channel", "") or "")
+                            or None,
+                        )
+                    )
+                except asyncio.CancelledError:
+                    # Shield keeps the emit running to completion; ignore the
+                    # re-raised cancellation and fall through to cleanup.
+                    pass
+                except Exception:  # pylint: disable=broad-except
+                    logger.debug("cancel trace emit failed", exc_info=True)
+
             # Cancel all pending approvals for this root session
             root_session_id = base_request_context.get(
                 "root_session_id",
