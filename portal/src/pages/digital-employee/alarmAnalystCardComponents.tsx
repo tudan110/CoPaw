@@ -61,12 +61,25 @@ const SUMMARY_LABEL_ALIASES: Record<string, string> = {
   关键问题: "关键提醒",
 };
 
+const GENERIC_FILLER_PATTERNS = [
+  /^已完成故障根因分析[。.]?$/u,
+  /^已完成根因分析[。.]?$/u,
+  /^分析完成[。.]?$/u,
+  /^无[。.]?$/u,
+];
+
 function normalizeChartToken(value: unknown) {
   return String(value || "")
     .replace(/[*_~`>#]/g, "")
     .replace(/\s+/g, "")
     .toLowerCase()
     .trim();
+}
+
+function isGenericFiller(value: string): boolean {
+  const trimmed = String(value || "").trim();
+  if (!trimmed) return true;
+  return GENERIC_FILLER_PATTERNS.some((pattern) => pattern.test(trimmed));
 }
 
 function buildHighlightTokens(card: AlarmAnalystCardV1) {
@@ -335,7 +348,7 @@ function buildSummaryRowsFromReport(card: AlarmAnalystCardV1): AlarmAnalystSumma
     const label = normalizeLabel(match[1]);
     const rawValue = stripMarkdownInline(match[2]);
     const value = label === "置信度" ? mapConfidenceLabel(rawValue) : rawValue;
-    if (!label || !value) {
+    if (!label || !value || isGenericFiller(value)) {
       continue;
     }
     rowsByLabel.set(label, {
@@ -511,16 +524,28 @@ function buildNotificationAutomationCard(reportText: string, notificationStatus:
   };
 }
 
+const RESOURCE_NAME_REJECT_VALUES = new Set([
+  "ci id", "ciid", "ci_id", "ci", "resid", "res_id", "res id",
+  "资源id", "资源 id", "无", "未知", "n/a", "-", "--",
+]);
+
+function isValidResourceName(value: string): boolean {
+  return Boolean(value) && !RESOURCE_NAME_REJECT_VALUES.has(value.toLowerCase().trim());
+}
+
 function buildAnchorText(card: AlarmAnalystCardV1) {
   const reportText = unwrapPortalAlarmAnalystCardContent(card.rawReportMarkdown);
-  const resourceName = (
+  const candidateName = (
     card.rootCause.resourceName && card.rootCause.resourceName !== "自身"
       ? card.rootCause.resourceName
-      : extractReportField(reportText, ["资产编号", "资源名称", "实例", "根因资源"])
+      : ""
   );
+  const resourceName = isValidResourceName(candidateName)
+    ? candidateName
+    : extractReportField(reportText, ["设备名称", "资产编号", "资源名称", "实例", "根因资源"]);
   const manageIp = extractReportField(reportText, ["管理 IP", "设备 IP", "IP"]);
 
-  return [resourceName, manageIp]
+  return [isValidResourceName(resourceName) ? resourceName : "", manageIp]
     .map((item) => stripMarkdownInline(item))
     .filter(Boolean)
     .join(" · ");
@@ -534,19 +559,21 @@ function buildFallbackRows(card: AlarmAnalystCardV1): AlarmAnalystSummaryRow[] {
   }
 
   const severity = mapSeverityLabel(card.summary.severity || "");
-  const faultNature = joinUnique([severity, stripMarkdownInline(card.summary.conclusion || "")]);
+  const conclusionText = isGenericFiller(card.summary.conclusion || "") ? "" : stripMarkdownInline(card.summary.conclusion || "");
+  const faultNature = joinUnique([severity, conclusionText].filter(Boolean));
   if (faultNature) {
     rows.push({ label: "故障性质", value: faultNature, tone: "neutral" });
   }
 
+  const reasonText = isGenericFiller(card.rootCause.reason || "") ? "" : stripMarkdownInline(card.rootCause.reason || "");
   const rootCause = joinUnique([
-    stripMarkdownInline(card.rootCause.reason || ""),
+    reasonText,
     stripMarkdownInline(
       [card.rootCause.resourceName || card.rootCause.resourceId]
         .filter(Boolean)
         .join(" · "),
     ),
-  ]);
+  ].filter(Boolean));
   if (rootCause) {
     rows.push({ label: "根因方向", value: rootCause, tone: "neutral" });
   }
@@ -573,8 +600,12 @@ function buildFallbackRows(card: AlarmAnalystCardV1): AlarmAnalystSummaryRow[] {
     });
   }
 
-  const evidenceSummary = joinUnique(card.evidence.slice(0, 2).map((item) => item.summary || item.title || ""));
-  if (evidenceSummary) {
+  const evidenceSummary = joinUnique(
+    card.evidence.slice(0, 2)
+      .map((item) => item.summary || item.title || "")
+      .filter((item) => !isGenericFiller(item))
+  );
+  if (evidenceSummary && !isGenericFiller(evidenceSummary)) {
     rows.push({
       label: "关键提醒",
       value: stripMarkdownInline(evidenceSummary),

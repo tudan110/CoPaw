@@ -284,15 +284,34 @@ def _extract_resource_id(text: str) -> str:
     return fallback_match.group(1) if fallback_match else ""
 
 
+_RESOURCE_NAME_REJECT_VALUES = {
+    "ci id", "ciid", "ci_id", "ci", "resid", "res_id", "res id",
+    "资源id", "资源 id", "无", "未知", "n/a", "-", "--",
+}
+
+_GENERIC_FILLER_VALUES = {
+    "已完成故障根因分析。",
+    "已完成故障根因分析",
+    "已完成根因分析。",
+    "已完成根因分析",
+    "分析完成。",
+    "分析完成",
+}
+
+
 def _extract_root_resource_name(text: str) -> str:
     labeled = _extract_labeled_value(
         text,
-        ("资源名称", "根因资源", "根资源", "实例", "资产编号"),
+        ("设备名称", "资源名称", "根因资源", "根资源", "实例", "资产编号"),
     )
-    if labeled:
+    if labeled and labeled.lower().strip() not in _RESOURCE_NAME_REJECT_VALUES:
         return labeled
     match = ROOT_RESOURCE_RE.search(str(text or ""))
-    return match.group(1).strip() if match else ""
+    if match:
+        value = match.group(1).strip()
+        if value.lower() not in _RESOURCE_NAME_REJECT_VALUES:
+            return value
+    return ""
 
 
 def _extract_labeled_value(text: str, labels: tuple[str, ...]) -> str:
@@ -483,7 +502,7 @@ def _extract_evidence(
             )
         )
 
-    if not evidence and conclusion:
+    if not evidence and conclusion and conclusion not in _GENERIC_FILLER_VALUES:
         evidence.append(
             AlarmAnalystCardEvidence(
                 kind="alarm",
