@@ -13,6 +13,7 @@ REAL_ALARM_LIST_ENDPOINT = "/resource/realalarm/list"
 REAL_ALARM_TIMEOUT_SECONDS = 8.0
 DEFAULT_REAL_ALARM_LIMIT = 20
 MAX_REAL_ALARM_LIMIT = 50
+DEFAULT_REAL_ALARM_LOOKBACK_HOURS = 24
 
 SEVERITY_TO_LEVEL = {
     "1": "critical",
@@ -142,7 +143,13 @@ def _normalize_alarm_row(row: dict[str, Any]) -> dict[str, Any]:
 def query_portal_real_alarms(limit: int, now: datetime | None = None) -> dict[str, Any]:
     safe_limit = max(1, min(int(limit or DEFAULT_REAL_ALARM_LIMIT), MAX_REAL_ALARM_LIMIT))
     current_time = now or datetime.now(timezone.utc)
-    begin_time = _format_dt(current_time - timedelta(days=7))
+    lookback_hours = float(
+        EnvVarLoader.get_str(
+            "PORTAL_REAL_ALARM_LOOKBACK_HOURS",
+            str(DEFAULT_REAL_ALARM_LOOKBACK_HOURS),
+        ).strip() or str(DEFAULT_REAL_ALARM_LOOKBACK_HOURS)
+    )
+    begin_time = _format_dt(current_time - timedelta(hours=max(1, lookback_hours)))
     end_time = _format_dt(current_time)
 
     try:

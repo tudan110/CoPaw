@@ -162,7 +162,7 @@ def test_query_portal_real_alarms_returns_empty_live_payload_when_request_failur
     assert payload == {"total": 0, "items": [], "source": "live"}
 
 
-def test_query_portal_real_alarms_sends_last_7_days_active_alarm_request(monkeypatch) -> None:
+def test_query_portal_real_alarms_sends_last_24_hours_active_alarm_request(monkeypatch) -> None:
     captured = {}
 
     def _fake_post(*, limit, begin_time, end_time):
@@ -175,13 +175,14 @@ def test_query_portal_real_alarms_sends_last_7_days_active_alarm_request(monkeyp
         "qwenpaw.extensions.integrations.portal_real_alarms._post_real_alarm_list",
         _fake_post,
     )
+    monkeypatch.delenv("QWENPAW_PORTAL_REAL_ALARM_LOOKBACK_HOURS", raising=False)
     query_portal_real_alarms(
         limit=5,
         now=datetime(2026, 4, 17, 1, 0, 0, tzinfo=timezone.utc),
     )
 
     assert captured["limit"] == 5
-    assert captured["begin_time"] == "2026-04-10 01:00:00"
+    assert captured["begin_time"] == "2026-04-16 01:00:00"
     assert captured["end_time"] == "2026-04-17 01:00:00"
 
 
@@ -235,7 +236,7 @@ def test_query_portal_real_alarms_posts_gateway_json_payload(monkeypatch) -> Non
     assert captured["content_type"].startswith("application/json")
     assert captured["json"]["alarmstatus"] == "1"
     assert captured["json"]["params"] == {
-        "beginEventtime": "2026-04-10 01:00:00",
+        "beginEventtime": "2026-04-16 01:00:00",
         "endEventtime": "2026-04-17 01:00:00",
     }
 
