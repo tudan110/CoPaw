@@ -59,6 +59,10 @@ const SUMMARY_LABEL_ALIASES: Record<string, string> = {
   根因结论: "根因方向",
   优先建议: "优先动作",
   关键问题: "关键提醒",
+  关联告警查询: "关联资源告警查询状态",
+  关联告警: "关联资源告警查询状态",
+  关联资源告警查询: "关联资源告警查询状态",
+  关联资源告警: "关联资源告警查询状态",
 };
 
 const GENERIC_FILLER_PATTERNS = [
@@ -659,11 +663,14 @@ function buildDisplayModel(card: AlarmAnalystCardV1, showConfidence: boolean) {
     .filter((row) => showConfidence || row.label !== "置信度");
   const rowsByLabel = new Map(summaryRows.map((row) => [row.label, row]));
 
-  const lead = (
+  const titleText = extractReportTitle(card);
+  const leadCandidate = (
     rowsByLabel.get("故障性质")?.value ||
     rowsByLabel.get("根因方向")?.value ||
     stripMarkdownInline(card.summary.conclusion || "")
   );
+  // Avoid showing the same text as both title and lead
+  const lead = leadCandidate === titleText ? "" : leadCandidate;
 
   const confidenceLabel = showConfidence
     ? (rowsByLabel.get("置信度")?.value || mapConfidenceLabel(card.summary.confidence || ""))
@@ -771,7 +778,7 @@ function buildDisplayModel(card: AlarmAnalystCardV1, showConfidence: boolean) {
   ].filter((item): item is AlarmAnalystDecisionCard => Boolean(item));
 
   return {
-    title: extractReportTitle(card),
+    title: titleText,
     lead,
     summaryRows,
     badges,
