@@ -112,12 +112,17 @@ def build_alarm_analyst_card(
         report_text,
         ("根因判断", "根因分析结论", "根因结论", "根因分析", "根因"),
     )
+    summary_section = _extract_named_section(report_text, ("总结",))
     impact_section = _extract_named_section(report_text, ("影响范围", "影响分析", "影响面"))
     recommendation_section = _extract_named_section(report_text, ("处置建议", "建议动作", "修复建议", "处置方案"))
     evidence_section = _extract_named_section(report_text, ("证据摘要", "关键证据", "证据", "分析依据"))
 
     title = _extract_title(report_text)
-    conclusion = _first_meaningful_item(root_section) or _first_meaningful_item(report_text)
+    conclusion = (
+        _first_meaningful_item(root_section)
+        or _first_meaningful_item(summary_section)
+        or _first_meaningful_item(report_text)
+    )
     resource_id = _extract_resource_id(root_section) or _extract_resource_id(report_text)
     resource_name = _extract_root_resource_name(root_section) or _extract_root_resource_name(report_text)
     severity = _detect_severity(report_text)
@@ -178,13 +183,23 @@ def _extract_title(report_markdown: str) -> str:
     if heading_match:
         return _sanitize_inline_text(heading_match.group(1)) or "故障根因分析"
 
+    # Try extracting "故障性质" from 📊 总结 section as a structured title
+    summary_section = _extract_named_section(report_markdown, ("总结",))
+    if summary_section:
+        fault_nature = _extract_labeled_value(
+            summary_section,
+            ("故障性质", "根因方向", "根因结论"),
+        )
+        if fault_nature and not _is_ai_thinking_text(fault_nature):
+            return fault_nature
+
     for line in str(report_markdown or "").splitlines():
         text = line.strip()
         if not text or text.startswith("#"):
             continue
         text = re.sub(r"^[\W_]+", "", text)
         text = re.split(r"\s+[—-]\s+", text, maxsplit=1)[0].strip()
-        if text:
+        if text and not _is_ai_thinking_text(text):
             return text
     return "故障根因分析"
 
@@ -234,7 +249,8 @@ def _extract_named_section(report_markdown: str, names: tuple[str, ...]) -> str:
 
     normalized_names = {_normalize_heading(name) for name in names}
     for index, heading in enumerate(headings):
-        if _normalize_heading(heading.group(1)) not in normalized_names:
+        heading_normalized = _normalize_heading(heading.group(1))
+        if not any(name in heading_normalized for name in normalized_names):
             continue
         current_level = len(heading.group(0)) - len(heading.group(0).lstrip("#"))
         start = heading.end()
@@ -252,19 +268,58 @@ def _normalize_heading(value: str) -> str:
     return re.sub(r"\s+", "", str(value or "").strip().lower())
 
 
+TABLE_KV_RE = re.compile(
+    r"^\s*\|\s*\**([^|*]{1,30}?)\**\s*\|\s*\**(.+?)\**\s*\|?\s*$",
+    re.MULTILINE,
+)
+
+
+_TABLE_HEADER_VALUES = {
+    "结论", "内容", "值", "value", "说明", "描述", "备注",
+    "步骤", "项目", "维度", "字段", "指标", "当前值",
+}
+
+
 def _first_meaningful_item(text: str) -> str:
     bullets = [
         _sanitize_inline_text(item)
         for item in BULLET_LINE_RE.findall(str(text or ""))
         if _sanitize_inline_text(item)
+        and not _is_ai_thinking_text(_sanitize_inline_text(item))
+        and _sanitize_inline_text(item) not in _GENERIC_FILLER_VALUES
     ]
     if bullets:
         return bullets[0]
 
     for line in str(text or "").splitlines():
+        if re.match(r"^\s*#{1,6}\s", line):
+            continue
+        if "|" in line:
+            continue
         cleaned = _sanitize_inline_text(line)
-        if cleaned and not cleaned.startswith("#"):
+        if (
+            cleaned
+            and not cleaned.startswith("#")
+            and not _is_ai_thinking_text(cleaned)
+            and cleaned not in _GENERIC_FILLER_VALUES
+        ):
             return cleaned
+
+    # Try table rows: | label | value |
+    for match in TABLE_KV_RE.finditer(str(text or "")):
+        label = _sanitize_inline_text(match.group(1))
+        value = _sanitize_inline_text(match.group(2))
+        if (
+            label and value
+            and len(value) > 3
+            and not re.match(r"^[-:]+$", label)
+            and label not in _TABLE_HEADER_VALUES
+            and value not in _TABLE_HEADER_VALUES
+            and not _is_ai_thinking_text(value)
+            and value not in _GENERIC_FILLER_VALUES
+        ):
+            return value
+
     return "已完成故障根因分析。"
 
 
@@ -286,7 +341,7 @@ def _extract_resource_id(text: str) -> str:
 
 _RESOURCE_NAME_REJECT_VALUES = {
     "ci id", "ciid", "ci_id", "ci", "resid", "res_id", "res id",
-    "资源id", "资源 id", "无", "未知", "n/a", "-", "--",
+    "资源id", "资源 id", "无", "未知", "n/a", "-", "--", "未配置",
 }
 
 _GENERIC_FILLER_VALUES = {
@@ -297,6 +352,31 @@ _GENERIC_FILLER_VALUES = {
     "分析完成。",
     "分析完成",
 }
+
+_AI_THINKING_RE = re.compile(
+    r"^("
+    r"我来分析|我先|先读取|先加载|先并行|先查|先执行|"
+    r"好的[，,]|好的。|现在按|现在开始|现在继续|"
+    r"技能文档已|文档已读取|文档已加载|"
+    r"让我|让我们|"
+    r"资源确认为|资源确认完毕|"
+    r"很好[！!]|"
+    r"接下来|下一步|"
+    r"📋\s*Step|"
+    r"\d+\.\s*(?:查|读取|确认|执行)|"
+    r"拓扑关系中|指标值返回|"
+    r"关键发现|数据完整|数据非常|"
+    r"现在推送|分析报告已"
+    r")",
+    re.UNICODE,
+)
+
+
+def _is_ai_thinking_text(text: str) -> bool:
+    cleaned = re.sub(r"^[\W_]+", "", str(text or "").strip())
+    if not cleaned:
+        return False
+    return bool(_AI_THINKING_RE.match(cleaned))
 
 
 def _extract_root_resource_name(text: str) -> str:
@@ -646,6 +726,10 @@ def _is_readable_summary_line(raw_line: str, cleaned_line: str) -> bool:
     if "|" in str(raw_line or ""):
         return False
     if "完整故障分析报告" in cleaned_line or "告警分析报告" in cleaned_line:
+        return False
+    if _is_ai_thinking_text(cleaned_line):
+        return False
+    if cleaned_line in _GENERIC_FILLER_VALUES:
         return False
     if APPLICATION_VALUE_RE.match(cleaned_line) or RESOURCE_VALUE_RE.match(cleaned_line):
         return False

@@ -68,6 +68,17 @@ const GENERIC_FILLER_PATTERNS = [
   /^无[。.]?$/u,
 ];
 
+const AI_THINKING_RE =
+  /^(?:我来分析|我先|先读取|先加载|先并行|先查|先执行|好的[，,。]|现在按|现在开始|现在继续|技能文档已|文档已读取|文档已加载|让我|让我们|资源确认为|资源确认完毕|很好[！!]|接下来|下一步|📋\s*Step|\d+\.\s*(?:查|读取|确认|执行)|拓扑关系中|指标值返回|关键发现|数据完整|数据非常|现在推送|分析报告已)/u;
+
+function isAiThinkingText(value: string): boolean {
+  const cleaned = String(value || "")
+    .trim()
+    .replace(/^[\W_]+/, "");
+  if (!cleaned) return false;
+  return AI_THINKING_RE.test(cleaned);
+}
+
 function normalizeChartToken(value: unknown) {
   return String(value || "")
     .replace(/[*_~`>#]/g, "")
@@ -80,6 +91,10 @@ function isGenericFiller(value: string): boolean {
   const trimmed = String(value || "").trim();
   if (!trimmed) return true;
   return GENERIC_FILLER_PATTERNS.some((pattern) => pattern.test(trimmed));
+}
+
+function isJunkValue(value: string): boolean {
+  return isGenericFiller(value) || isAiThinkingText(value);
 }
 
 function buildHighlightTokens(card: AlarmAnalystCardV1) {
@@ -313,6 +328,22 @@ function extractBulletEntries(content: string) {
       continue;
     }
 
+    // Parse markdown table rows: | **label** | value |
+    const tableMatch = line.match(
+      /^\s*\|\s*\*{0,2}([^|*]{1,30})\*{0,2}\s*\|\s*\*{0,2}(.+?)\*{0,2}\s*\|?\s*$/u,
+    );
+    if (tableMatch) {
+      const label = stripMarkdownInline(tableMatch[1]).trim();
+      const value = stripMarkdownInline(tableMatch[2]).trim();
+      if (label && value && !/^[-:]+$/.test(label) && !/^[-:]+$/.test(value)) {
+        if (current) {
+          rows.push(current.trim());
+        }
+        current = `${label}：${value}`;
+        continue;
+      }
+    }
+
     const trimmed = line.trim();
     if (!trimmed || /^[-]{3,}$/.test(trimmed)) {
       continue;
@@ -348,7 +379,7 @@ function buildSummaryRowsFromReport(card: AlarmAnalystCardV1): AlarmAnalystSumma
     const label = normalizeLabel(match[1]);
     const rawValue = stripMarkdownInline(match[2]);
     const value = label === "置信度" ? mapConfidenceLabel(rawValue) : rawValue;
-    if (!label || !value || isGenericFiller(value)) {
+    if (!label || !value || isJunkValue(value)) {
       continue;
     }
     rowsByLabel.set(label, {
@@ -443,7 +474,11 @@ function extractReportTitle(card: AlarmAnalystCardV1) {
   if (match?.[1]) {
     return stripMarkdownInline(match[1]);
   }
-  return stripMarkdownInline(card.summary.title || "故障根因分析");
+  const title = stripMarkdownInline(card.summary.title || "");
+  if (title && !isAiThinkingText(title)) {
+    return title;
+  }
+  return "故障根因分析";
 }
 
 function extractReportField(content: string, labels: string[]) {
@@ -526,7 +561,7 @@ function buildNotificationAutomationCard(reportText: string, notificationStatus:
 
 const RESOURCE_NAME_REJECT_VALUES = new Set([
   "ci id", "ciid", "ci_id", "ci", "resid", "res_id", "res id",
-  "资源id", "资源 id", "无", "未知", "n/a", "-", "--",
+  "资源id", "资源 id", "无", "未知", "n/a", "-", "--", "未配置",
 ]);
 
 function isValidResourceName(value: string): boolean {
@@ -559,13 +594,13 @@ function buildFallbackRows(card: AlarmAnalystCardV1): AlarmAnalystSummaryRow[] {
   }
 
   const severity = mapSeverityLabel(card.summary.severity || "");
-  const conclusionText = isGenericFiller(card.summary.conclusion || "") ? "" : stripMarkdownInline(card.summary.conclusion || "");
+  const conclusionText = isJunkValue(card.summary.conclusion || "") ? "" : stripMarkdownInline(card.summary.conclusion || "");
   const faultNature = joinUnique([severity, conclusionText].filter(Boolean));
   if (faultNature) {
     rows.push({ label: "故障性质", value: faultNature, tone: "neutral" });
   }
 
-  const reasonText = isGenericFiller(card.rootCause.reason || "") ? "" : stripMarkdownInline(card.rootCause.reason || "");
+  const reasonText = isJunkValue(card.rootCause.reason || "") ? "" : stripMarkdownInline(card.rootCause.reason || "");
   const rootCause = joinUnique([
     reasonText,
     stripMarkdownInline(
@@ -578,8 +613,9 @@ function buildFallbackRows(card: AlarmAnalystCardV1): AlarmAnalystSummaryRow[] {
     rows.push({ label: "根因方向", value: rootCause, tone: "neutral" });
   }
 
+  const blastRadius = stripMarkdownInline(card.impact.blastRadiusText || "");
   const impactSegments = [
-    stripMarkdownInline(card.impact.blastRadiusText || ""),
+    isJunkValue(blastRadius) ? "" : blastRadius,
     card.impact.affectedApplications.length
       ? `受影响应用：${joinUnique(card.impact.affectedApplications.map((item) => item.name || ""))}`
       : "",
@@ -603,9 +639,9 @@ function buildFallbackRows(card: AlarmAnalystCardV1): AlarmAnalystSummaryRow[] {
   const evidenceSummary = joinUnique(
     card.evidence.slice(0, 2)
       .map((item) => item.summary || item.title || "")
-      .filter((item) => !isGenericFiller(item))
+      .filter((item) => !isJunkValue(item))
   );
-  if (evidenceSummary && !isGenericFiller(evidenceSummary)) {
+  if (evidenceSummary && !isJunkValue(evidenceSummary)) {
     rows.push({
       label: "关键提醒",
       value: stripMarkdownInline(evidenceSummary),
