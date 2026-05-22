@@ -15,7 +15,7 @@ from pathlib import Path
 
 from qwenpaw.constant import WORKING_DIR
 
-SHARED_SECRET_FILES = ("inoe.env", "n9e.env")
+SHARED_SECRET_FILES = ("inoe.env", "n9e.env", "zgops-cmdb.env")
 
 _LOADED = False
 

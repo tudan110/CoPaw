@@ -10,7 +10,7 @@
 
 说明:
     - 统一拉取全部告警后做本地过滤、分组和汇总
-    - 默认读取 skill 目录下的 .env 文件
+    - 优先环境变量/共享 secrets，回退 skill 目录下的 .env 文件
     - 配置项：INOE_API_BASE_URL（API 基础地址）、INOE_API_TOKEN（认证令牌）
 """
 

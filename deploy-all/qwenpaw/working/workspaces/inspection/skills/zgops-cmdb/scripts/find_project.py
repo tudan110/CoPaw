@@ -30,6 +30,70 @@ def _default_env_file() -> Path:
     return Path(__file__).resolve().parents[1] / ".env"
 
 
+def _candidate_env_files() -> list[Path]:
+    """VEOPS env resolution order (first existing file wins).
+
+    Shared secrets are preferred; the per-skill ``.env`` is only a
+    legacy fallback used when secrets are not yet provisioned.
+
+    1. ``$VEOPS_ENV_FILE`` if set (explicit override).
+    2. ``$QWENPAW_WORKING_DIR/secrets/zgops-cmdb.env`` (or COPAW).
+    3. ``~/.qwenpaw/secrets/zgops-cmdb.env`` — default working dir.
+    4. The per-skill ``.env`` next to this skill (legacy fallback).
+    """
+    candidates: list[Path] = []
+    explicit = os.environ.get("VEOPS_ENV_FILE")
+    if explicit:
+        candidates.append(Path(explicit).expanduser())
+    working = os.environ.get("QWENPAW_WORKING_DIR") or os.environ.get(
+        "COPAW_WORKING_DIR"
+    )
+    if working:
+        candidates.append(
+            Path(working).expanduser() / "secrets" / "zgops-cmdb.env"
+        )
+    candidates.append(
+        Path.home() / ".qwenpaw" / "secrets" / "zgops-cmdb.env"
+    )
+    candidates.append(_default_env_file())
+    seen: set[str] = set()
+    unique: list[Path] = []
+    for path in candidates:
+        key = str(path)
+        if key not in seen:
+            seen.add(key)
+            unique.append(path)
+    return unique
+
+
+def _resolve_veops_env() -> dict[str, str]:
+    """Resolve VEOPS_* config from the shared secrets cascade.
+
+    Falls back through ``_candidate_env_files``; real environment values
+    (e.g. backend-injected shared secrets) always win for VEOPS_* keys.
+    """
+    values: dict[str, str] = {}
+    for path in _candidate_env_files():
+        try:
+            if not path.is_file():
+                continue
+        except OSError:
+            continue
+        values = _load_env_file(path)
+        if values.get("VEOPS_BASE_URL"):
+            break
+    for key in (
+        "VEOPS_BASE_URL",
+        "VEOPS_USERNAME",
+        "VEOPS_PASSWORD",
+        "VEOPS_SESSION_NAME",
+    ):
+        env_val = os.environ.get(key)
+        if env_val:
+            values[key] = env_val
+    return values
+
+
 def _clean_text(value: Any) -> str:
     if value is None:
         return ""
@@ -327,10 +391,9 @@ def main() -> int:
     parser.add_argument("--json", action="store_true", help="输出 JSON")
     args = parser.parse_args()
 
-    env_file = _default_env_file()
-    env = _load_env_file(env_file)
+    env = _resolve_veops_env()
     client = CmdbHttpClient(
-        base_url=env["VEOPS_BASE_URL"],
+        base_url=env.get("VEOPS_BASE_URL", ""),
         username=env.get("VEOPS_USERNAME", ""),
         password=env.get("VEOPS_PASSWORD", ""),
     )

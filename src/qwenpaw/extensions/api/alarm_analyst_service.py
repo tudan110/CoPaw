@@ -326,10 +326,9 @@ def _load_veops_modules():
 
 
 def _load_veops_client(find_project_module: Any):
-    env_file = find_project_module._default_env_file()  # noqa: SLF001
-    env = find_project_module._load_env_file(env_file)  # noqa: SLF001
+    env = find_project_module._resolve_veops_env()  # noqa: SLF001
     client = find_project_module.CmdbHttpClient(
-        base_url=env["VEOPS_BASE_URL"],
+        base_url=env.get("VEOPS_BASE_URL", ""),
         username=env.get("VEOPS_USERNAME", ""),
         password=env.get("VEOPS_PASSWORD", ""),
     )
