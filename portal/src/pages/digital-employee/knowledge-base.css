@@ -527,9 +527,57 @@
   width: 100%;
 }
 
-.kb-query-area .portal-model-btn {
-  align-self: flex-end;
+.kb-query-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
   margin-top: 10px;
+}
+
+.kb-query-actions .portal-model-btn {
+  flex: 0 0 auto;
+}
+
+.kb-query-feedback {
+  display: inline-flex;
+  min-height: 32px;
+  min-width: 0;
+  align-items: center;
+  gap: 7px;
+  border: 1px solid rgba(203, 213, 225, 0.88);
+  border-radius: 4px;
+  background: #f8fafc;
+  color: #475569;
+  font-size: 12px;
+  line-height: 1.4;
+  padding: 7px 10px;
+}
+
+.kb-query-feedback.loading {
+  border-color: rgba(79, 143, 247, 0.3);
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
+.kb-query-feedback.done {
+  border-color: rgba(34, 197, 94, 0.26);
+  background: #f0fdf4;
+  color: #15803d;
+}
+
+.kb-query-feedback.warning {
+  border-color: rgba(245, 158, 11, 0.28);
+  background: #fffbeb;
+  color: #92400e;
+}
+
+.kb-query-result {
+  scroll-margin-top: 14px;
+}
+
+.kb-query-result:focus {
+  outline: none;
 }
 
 .kb-segmented {
@@ -562,6 +610,16 @@
   border-radius: 4px;
   background: #f8fbff;
   padding: 11px 12px;
+}
+
+.kb-query-empty {
+  margin-top: 10px;
+  border: 1px dashed rgba(148, 163, 184, 0.58);
+  border-radius: 4px;
+  background: #f8fafc;
+  color: #64748b;
+  font-size: 12px;
+  padding: 10px 12px;
 }
 
 .kb-answer p,
@@ -682,8 +740,26 @@
 }
 
 .portal-digital-employee.theme-dark .kb-answer,
-.portal-digital-employee.theme-dark .kb-job {
+.portal-digital-employee.theme-dark .kb-job,
+.portal-digital-employee.theme-dark .kb-query-empty {
   background: rgba(30, 41, 59, 0.86);
+}
+
+.portal-digital-employee.theme-dark .kb-query-feedback {
+  background: rgba(30, 41, 59, 0.86);
+  color: #cbd5e1;
+}
+
+.portal-digital-employee.theme-dark .kb-query-feedback.loading {
+  color: #bfdbfe;
+}
+
+.portal-digital-employee.theme-dark .kb-query-feedback.done {
+  color: #bbf7d0;
+}
+
+.portal-digital-employee.theme-dark .kb-query-feedback.warning {
+  color: #fde68a;
 }
 
 .portal-digital-employee.theme-dark .kb-notice {
@@ -740,5 +816,15 @@
   .kb-job {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .kb-query-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .kb-query-actions .portal-model-btn {
+    justify-content: center;
+    width: 100%;
   }
 }

@@ -110,6 +110,7 @@ function compactText(value?: string | null, maxLength = 120) {
 
 export function KnowledgeBasePanel() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const queryResultRef = useRef<HTMLDivElement | null>(null);
   const [health, setHealth] = useState<KnowledgeBaseHealth | null>(null);
   const [sources, setSources] = useState<KnowledgeSourceRecord[]>([]);
   const [summary, setSummary] = useState<KnowledgeSourceSummaryItem[]>([]);
@@ -123,6 +124,8 @@ export function KnowledgeBasePanel() {
   const [query, setQuery] = useState("");
   const [queryResult, setQueryResult] = useState<KnowledgeQueryResponse | null>(null);
   const [ragAnswer, setRagAnswer] = useState("");
+  const [queryFeedback, setQueryFeedback] = useState("");
+  const [queryLoading, setQueryLoading] = useState(false);
   const [answerMode, setAnswerMode] = useState<AnswerMode>("evidence");
   const [manualTitle, setManualTitle] = useState("");
   const [manualContent, setManualContent] = useState("");
@@ -191,6 +194,20 @@ export function KnowledgeBasePanel() {
     return () => window.clearInterval(timerId);
   }, [job?.id, job?.job_id, job?.status, refresh]);
 
+  useEffect(() => {
+    if (!queryResult || queryLoading) {
+      return;
+    }
+    const timerId = window.setTimeout(() => {
+      queryResultRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+      queryResultRef.current?.focus({ preventScroll: true });
+    }, 80);
+    return () => window.clearTimeout(timerId);
+  }, [queryLoading, queryResult, ragAnswer]);
+
   const stats = useMemo(() => {
     const active = sources.filter((item) => !item.archived_at);
     const archived = sources.length - active.length;
@@ -202,13 +219,16 @@ export function KnowledgeBasePanel() {
   async function runQuery() {
     const text = query.trim();
     if (!text) {
-      setError("请输入检索问题");
+      setQueryFeedback("请输入检索问题");
       return;
     }
     setLoading(true);
+    setQueryLoading(true);
     setError("");
+    setQueryFeedback("正在检索知识库，请稍候...");
     setNotice("");
     setRagAnswer("");
+    setQueryResult(null);
     try {
       const result = await queryKnowledgeBase(text);
       setQueryResult(result);
@@ -219,9 +239,11 @@ export function KnowledgeBasePanel() {
           setRagAnswer(answer.answer || "");
         }
       }
+      setQueryFeedback("检索完成，已定位到结果。");
     } catch (err: any) {
-      setError(err?.message || "检索失败");
+      setQueryFeedback(err?.message || "检索失败");
     } finally {
+      setQueryLoading(false);
       setLoading(false);
     }
   }
@@ -386,6 +408,7 @@ export function KnowledgeBasePanel() {
   }
 
   const evidence = queryResult?.relevant_evidence || [];
+  const queryFeedbackTone = queryLoading ? "loading" : queryFeedback.startsWith("检索完成") ? "done" : "warning";
 
   return (
     <div className="knowledge-base-panel">
@@ -689,17 +712,44 @@ export function KnowledgeBasePanel() {
           </div>
           <textarea
             value={query}
-            onChange={(event) => setQuery(event.target.value)}
+            onChange={(event) => {
+              setQuery(event.target.value);
+              if (!queryLoading) {
+                setQueryFeedback("");
+              }
+            }}
             placeholder="输入要从知识库检索的问题"
           />
-          <button type="button" className="portal-model-btn success" disabled={loading} onClick={() => void runQuery()}>
-            <i className="fas fa-magnifying-glass" />
-            检索
-          </button>
+          <div className="kb-query-actions">
+            {queryFeedback ? (
+              <div
+                className={`kb-query-feedback ${queryFeedbackTone}`}
+                role="status"
+                aria-live="polite"
+              >
+                {queryLoading ? <i className="fas fa-spinner fa-spin" /> : null}
+                {queryFeedback}
+              </div>
+            ) : null}
+            <button type="button" className="portal-model-btn success" disabled={loading} onClick={() => void runQuery()}>
+              <i className={`fas ${queryLoading ? "fa-spinner fa-spin" : "fa-magnifying-glass"}`} />
+              {queryLoading ? "检索中" : "检索"}
+            </button>
+          </div>
           {queryResult ? (
-            <div className="kb-answer">
-              <strong>{ragAnswer ? "合成答案" : "检索摘要"}</strong>
-              <p>{ragAnswer || queryResult.summary || queryResult.evidence_boundary_statement}</p>
+            <div
+              ref={queryResultRef}
+              className="kb-query-result"
+              tabIndex={-1}
+              aria-label="知识库检索结果"
+            >
+              <div className="kb-answer">
+                <strong>{ragAnswer ? "合成答案" : "检索摘要"}</strong>
+                <p>{ragAnswer || queryResult.summary || queryResult.evidence_boundary_statement}</p>
+              </div>
+              {!evidence.length ? (
+                <div className="kb-query-empty">本次检索未返回命中证据，可调整问题描述后再次检索。</div>
+              ) : null}
             </div>
           ) : null}
           {evidence.length ? (

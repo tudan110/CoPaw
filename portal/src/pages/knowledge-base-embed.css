@@ -1,0 +1,25 @@
+.portal-knowledge-embed {
+  --portal-quick-actions-space: 0px;
+  min-height: 100vh;
+  overflow: auto;
+  background: #f3f6fb;
+}
+
+.portal-knowledge-embed .knowledge-base-embed-content {
+  min-height: 100vh;
+  padding: 16px;
+}
+
+.portal-knowledge-embed .knowledge-base-panel {
+  min-height: calc(100vh - 32px);
+}
+
+@media (max-width: 720px) {
+  .portal-knowledge-embed .knowledge-base-embed-content {
+    padding: 10px;
+  }
+
+  .portal-knowledge-embed .knowledge-base-panel {
+    min-height: calc(100vh - 20px);
+  }
+}
