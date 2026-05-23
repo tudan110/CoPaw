@@ -98,6 +98,65 @@ async def test_put_notification_channels_roundtrip(_use_tmp_settings: dict[str, 
     assert data["notification_channels"]["alarm_analyst"] == payload["alarm_analyst"]
 
 
+async def test_put_notification_channels_accepts_custom_scope(
+    _use_tmp_settings: dict[str, Path],
+):
+    payload = {
+        "web_monitor": {
+            "push_url": " http://notify.example.com/web ",
+            "timeout_seconds": "10",
+            "mention_all": "true",
+        }
+    }
+
+    put_resp = await _request(
+        "PUT",
+        "/api/portal/settings/notification-channels",
+        json=payload,
+    )
+    get_resp = await _request("GET", "/api/portal/settings/notification-channels")
+
+    assert put_resp.status_code == 200
+    assert get_resp.status_code == 200
+    assert get_resp.json()["web_monitor"] == {
+        **_default_scope(),
+        "push_url": "http://notify.example.com/web",
+        "timeout_seconds": 10,
+        "mention_all": True,
+    }
+
+    data = json.loads(_use_tmp_settings["current"].read_text("utf-8"))
+    assert data["notification_channels"]["web_monitor"]["push_url"] == (
+        "http://notify.example.com/web"
+    )
+
+
+async def test_delete_notification_channels_removes_custom_scope():
+    put_resp = await _request(
+        "PUT",
+        "/api/portal/settings/notification-channels",
+        json={"web_monitor": {"push_url": "http://notify.example.com/web"}},
+    )
+    delete_resp = await _request(
+        "DELETE",
+        "/api/portal/settings/notification-channels/web_monitor",
+    )
+
+    assert put_resp.status_code == 200
+    assert delete_resp.status_code == 200
+    assert "web_monitor" not in delete_resp.json()
+
+
+async def test_delete_notification_channels_rejects_builtin_scope():
+    resp = await _request(
+        "DELETE",
+        "/api/portal/settings/notification-channels/order_workflow",
+    )
+
+    assert resp.status_code == 400
+    assert "Built-in notification scope cannot be deleted" in resp.json()["detail"]
+
+
 async def test_put_notification_channels_preserves_other_settings(
     _use_tmp_settings: dict[str, Path],
 ):
@@ -154,6 +213,17 @@ async def test_put_notification_channels_rejects_invalid_timeout():
 
     assert resp.status_code == 400
     assert "greater than 0" in resp.json()["detail"]
+
+
+async def test_put_notification_channels_rejects_invalid_scope_payload():
+    resp = await _request(
+        "PUT",
+        "/api/portal/settings/notification-channels",
+        json={"web_monitor": ["not", "a", "dict"]},
+    )
+
+    assert resp.status_code == 400
+    assert "Invalid notification scope" in resp.json()["detail"]
 
 
 async def test_get_notification_channels_ignores_deprecated_keyword(

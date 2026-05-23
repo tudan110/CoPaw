@@ -32,6 +32,9 @@ logger = logging.getLogger(__name__)
 
 _DOCX_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
 _DOCX_W = f"{{{_DOCX_NS}}}"
+_PPTX_A_NS = "http://schemas.openxmlformats.org/drawingml/2006/main"
+_PPTX_A = f"{{{_PPTX_A_NS}}}"
+_PPTX_SLIDE_RE = re.compile(r"^ppt/slides/slide(\d+)\.xml$")
 
 
 class IngestionError(Exception):
@@ -129,6 +132,8 @@ def extract(filename: str, content_bytes: bytes) -> ExtractedDocument:
         return _extract_pdf(content_bytes, filename)
     if ext == "docx":
         return _extract_docx(content_bytes, filename)
+    if ext == "pptx":
+        return _extract_pptx(content_bytes, filename)
     if ext in ("png", "jpg", "jpeg", "tiff", "tif", "bmp", "webp"):
         return _extract_image(content_bytes)
     if ext == "eml":
@@ -206,6 +211,62 @@ def _extract_docx(data: bytes, filename: str) -> ExtractedDocument:
         content="\n\n".join(paragraphs),
         source_format="markdown",
     )
+
+
+def _extract_pptx(data: bytes, filename: str) -> ExtractedDocument:
+    """Extract text from .pptx slides by reading slide XML directly.
+
+    PowerPoint files are ZIP packages. Treating them as plain text yields the
+    PK header and package XML names, so this extractor only reads slide parts.
+    """
+    import io
+
+    slides: list[tuple[int, str]] = []
+    warnings: list[str] = []
+    try:
+        with zipfile.ZipFile(io.BytesIO(data)) as zf:
+            slide_names = sorted(
+                (
+                    (int(match.group(1)), name)
+                    for name in zf.namelist()
+                    if (match := _PPTX_SLIDE_RE.match(name))
+                ),
+                key=lambda item: item[0],
+            )
+            if not slide_names:
+                raise IngestionError("invalid pptx file: no slide XML parts found")
+
+            for slide_no, name in slide_names:
+                try:
+                    paragraphs = _pptx_paragraphs_from_xml(zf.read(name))
+                except ET.ParseError as exc:
+                    warnings.append(f"slide {slide_no} XML parse failed: {exc}")
+                    continue
+                if paragraphs:
+                    slides.append((slide_no, "\n".join(paragraphs)))
+    except zipfile.BadZipFile as exc:
+        raise IngestionError(f"invalid pptx file: {exc}") from exc
+
+    parts: list[str] = []
+    for slide_no, text in slides:
+        parts.append(f"# 幻灯片 {slide_no}\n\n{text}")
+
+    return ExtractedDocument(
+        content="\n\n".join(parts),
+        source_format="markdown",
+        warnings=warnings,
+    )
+
+
+def _pptx_paragraphs_from_xml(xml_bytes: bytes) -> list[str]:
+    root = ET.fromstring(xml_bytes)
+    paragraphs: list[str] = []
+    for para in root.iter(f"{_PPTX_A}p"):
+        texts = [t.text or "" for t in para.iter(f"{_PPTX_A}t")]
+        line = "".join(texts).strip()
+        if line:
+            paragraphs.append(line)
+    return paragraphs
 
 
 def _docx_paragraph_style(para: ET.Element) -> str:

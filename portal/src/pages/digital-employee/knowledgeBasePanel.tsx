@@ -58,6 +58,7 @@ const KNOWLEDGE_TIME_FORMATTER = new Intl.DateTimeFormat("zh-CN", {
   minute: "2-digit",
   hour12: false,
 });
+const INGEST_FOLLOW_UP_REFRESH_DELAY_MS = 1200;
 
 function normalizeKnowledgeDate(value: string) {
   const trimmed = value.trim();
@@ -111,6 +112,8 @@ function compactText(value?: string | null, maxLength = 120) {
 export function KnowledgeBasePanel() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const queryResultRef = useRef<HTMLDivElement | null>(null);
+  const finalizedIngestJobRef = useRef("");
+  const ingestRefreshTimerRef = useRef<number | null>(null);
   const [health, setHealth] = useState<KnowledgeBaseHealth | null>(null);
   const [sources, setSources] = useState<KnowledgeSourceRecord[]>([]);
   const [summary, setSummary] = useState<KnowledgeSourceSummaryItem[]>([]);
@@ -131,6 +134,7 @@ export function KnowledgeBasePanel() {
   const [manualContent, setManualContent] = useState("");
   const [manualTags, setManualTags] = useState("");
   const [job, setJob] = useState<KnowledgeIngestJob | null>(null);
+  const [uploading, setUploading] = useState(false);
   const [selectedSource, setSelectedSource] = useState<KnowledgeSourceDetail | null>(null);
   const [editorTitle, setEditorTitle] = useState("");
   const [editorTags, setEditorTags] = useState("");
@@ -165,16 +169,47 @@ export function KnowledgeBasePanel() {
     }
   }, [includeArchived, sourceKeyword, sourceScope, sourceType]);
 
+  const refreshAfterIngestSettles = useCallback(async () => {
+    await refresh();
+    if (ingestRefreshTimerRef.current) {
+      window.clearTimeout(ingestRefreshTimerRef.current);
+    }
+    ingestRefreshTimerRef.current = window.setTimeout(() => {
+      ingestRefreshTimerRef.current = null;
+      void refresh();
+    }, INGEST_FOLLOW_UP_REFRESH_DELAY_MS);
+  }, [refresh]);
+
   useEffect(() => {
     void refresh().catch((err) => setError(err?.message || "知识库状态加载失败"));
   }, [refresh]);
+
+  useEffect(() => () => {
+    if (ingestRefreshTimerRef.current) {
+      window.clearTimeout(ingestRefreshTimerRef.current);
+    }
+  }, []);
 
   useEffect(() => {
     if (!job?.job_id && !job?.id) {
       return undefined;
     }
     const jobId = String(job.job_id || job.id);
-    if (job.status === "completed" || job.status === "failed") {
+    const finalJobKey = `${jobId}:${job.status || ""}`;
+    if (job.status === "completed") {
+      if (finalizedIngestJobRef.current !== finalJobKey) {
+        finalizedIngestJobRef.current = finalJobKey;
+        setNotice("文件已入库，资料列表已更新");
+        void refreshAfterIngestSettles();
+      }
+      return undefined;
+    }
+    if (job.status === "failed") {
+      if (finalizedIngestJobRef.current !== finalJobKey) {
+        finalizedIngestJobRef.current = finalJobKey;
+        setNotice("");
+        setError(job.note || "文件入库失败");
+      }
       return undefined;
     }
     const timerId = window.setInterval(() => {
@@ -182,17 +217,17 @@ export function KnowledgeBasePanel() {
         .then((nextJob) => {
           setJob(nextJob);
           if (nextJob.status === "completed") {
-            setNotice("文件已入库");
-            void refresh();
+            setNotice("文件已入库，资料列表已更新");
           }
           if (nextJob.status === "failed") {
+            setNotice("");
             setError(nextJob.note || "文件入库失败");
           }
         })
         .catch((err) => setError(err?.message || "入库进度获取失败"));
     }, 1500);
     return () => window.clearInterval(timerId);
-  }, [job?.id, job?.job_id, job?.status, refresh]);
+  }, [job?.id, job?.job_id, job?.status, refreshAfterIngestSettles]);
 
   useEffect(() => {
     if (!queryResult || queryLoading) {
@@ -252,16 +287,35 @@ export function KnowledgeBasePanel() {
     if (!file) {
       return;
     }
+    setUploading(true);
     setLoading(true);
     setError("");
-    setNotice("");
+    setNotice("正在上传文件并提交入库...");
     try {
       const nextJob = await uploadKnowledgeFile(file);
       setJob(nextJob);
-      setNotice("文件已提交入库");
+      if (nextJob.status === "completed") {
+        const jobId = String(nextJob.job_id || nextJob.id || file.name);
+        finalizedIngestJobRef.current = `${jobId}:${nextJob.status}`;
+        setNotice("文件已入库，资料列表已更新");
+      } else if (nextJob.status === "failed") {
+        const jobId = String(nextJob.job_id || nextJob.id || file.name);
+        finalizedIngestJobRef.current = `${jobId}:${nextJob.status}`;
+        setNotice("");
+        setError(nextJob.note || "文件入库失败");
+      } else {
+        setNotice("文件已提交入库，正在刷新资料列表...");
+      }
+      if (nextJob.status === "completed") {
+        await refreshAfterIngestSettles();
+      } else {
+        await refresh();
+      }
     } catch (err: any) {
+      setNotice("");
       setError(err?.message || "文件上传失败");
     } finally {
+      setUploading(false);
       setLoading(false);
       if (fileInputRef.current) {
         fileInputRef.current.value = "";
@@ -483,11 +537,11 @@ export function KnowledgeBasePanel() {
               <button
                 type="button"
                 className="portal-model-btn compact"
-                disabled={loading}
+                disabled={uploading}
                 onClick={() => fileInputRef.current?.click()}
               >
-                <i className="fas fa-upload" />
-                上传文件
+                <i className={`fas ${uploading ? "fa-spinner fa-spin" : "fa-upload"}`} />
+                {uploading ? "上传中" : "上传文件"}
               </button>
               <input
                 ref={fileInputRef}

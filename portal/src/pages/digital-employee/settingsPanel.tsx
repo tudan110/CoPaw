@@ -36,36 +36,68 @@ const SETTINGS_TABS = [
 ] as const;
 
 type SettingsTabId = (typeof SETTINGS_TABS)[number]["id"];
-type NotificationScopeId = keyof NotificationChannelSettings;
+type NotificationScopeId = string;
 type NotificationChannelForm = Omit<NotificationChannelScopeConfig, "timeout_seconds"> & {
   timeout_seconds: string;
 };
 
-const NOTIFICATION_SCOPE_META: Array<{
+const BUILTIN_NOTIFICATION_SCOPE_IDS = [
+  "inspection",
+  "alarm_analyst",
+  "order_workflow",
+] as const;
+
+const NOTIFICATION_SCOPE_META: Record<string, {
   id: NotificationScopeId;
   label: string;
   iconClass: string;
   description: string;
-}> = [
-  {
+}> = {
+  inspection: {
     id: "inspection",
     label: "巡检结果推送",
     iconClass: "fa-stethoscope",
     description: "inspection-analyst 完成巡检后自动推送结果。",
   },
-  {
+  alarm_analyst: {
     id: "alarm_analyst",
     label: "alarm-analyst 建单推送",
     iconClass: "fa-ticket",
     description: "alarm-analyst 自动建单成功后推送结果。",
   },
+  order_workflow: {
+    id: "order_workflow",
+    label: "order 工单建单推送",
+    iconClass: "fa-sitemap",
+    description: "order-workflow 创建工单成功后推送结果；order 技能会优先读取这里。",
+  },
+};
+
+const NOTIFICATION_TARGET_OPTIONS = [
   {
     id: "order_workflow",
-    label: "order-workflow 建单推送",
-    iconClass: "fa-sitemap",
-    description: "order-workflow 创建工单成功后推送结果。",
+    label: "order 工单建单推送",
+    description: "用于当前 order-workflow 创建工单后的通知。",
   },
-];
+  {
+    id: "inspection",
+    label: "巡检结果推送",
+    description: "用于 inspection-analyst 巡检结果通知。",
+  },
+  {
+    id: "alarm_analyst",
+    label: "alarm-analyst 建单推送",
+    description: "用于 alarm-analyst 自动建单后的通知。",
+  },
+  {
+    id: "__custom__",
+    label: "自定义作用位置",
+    description: "预留给后续新的 skill 或推送场景。",
+  },
+] as const;
+
+const CUSTOM_NOTIFICATION_TARGET_ID = "__custom__";
+const NOTIFICATION_SCOPE_ID_PATTERN = /^[A-Za-z][A-Za-z0-9_.-]{0,63}$/;
 
 const EMPTY_NOTIFICATION_SCOPE = (): NotificationChannelForm => ({
   push_url: "",
@@ -95,15 +127,38 @@ function toNotificationForm(config?: NotificationChannelScopeConfig | null): Not
 function createNotificationForms(
   settings?: Partial<NotificationChannelSettings> | null,
 ): Record<NotificationScopeId, NotificationChannelForm> {
-  return {
-    inspection: toNotificationForm(settings?.inspection),
-    alarm_analyst: toNotificationForm(settings?.alarm_analyst),
-    order_workflow: toNotificationForm(settings?.order_workflow),
-  };
+  const forms: Record<NotificationScopeId, NotificationChannelForm> = {};
+  for (const scope of BUILTIN_NOTIFICATION_SCOPE_IDS) {
+    forms[scope] = toNotificationForm(settings?.[scope]);
+  }
+  Object.entries(settings || {}).forEach(([scope, config]) => {
+    forms[scope] = toNotificationForm(config);
+  });
+  return forms;
 }
 
 function getNotificationScopeLabel(scope: NotificationScopeId) {
-  return NOTIFICATION_SCOPE_META.find((item) => item.id === scope)?.label || scope;
+  return NOTIFICATION_SCOPE_META[scope]?.label || scope;
+}
+
+function getNotificationScopeMeta(scope: NotificationScopeId) {
+  return NOTIFICATION_SCOPE_META[scope] || {
+    id: scope,
+    label: scope,
+    iconClass: "fa-paper-plane",
+    description: `自定义通知作用位置：${scope}`,
+  };
+}
+
+function getSortedNotificationScopes(
+  forms: Record<NotificationScopeId, NotificationChannelForm>,
+) {
+  const existing = new Set(Object.keys(forms));
+  const builtinScopes = BUILTIN_NOTIFICATION_SCOPE_IDS.filter((scope) => existing.has(scope));
+  const customScopes = Object.keys(forms)
+    .filter((scope) => !BUILTIN_NOTIFICATION_SCOPE_IDS.includes(scope as (typeof BUILTIN_NOTIFICATION_SCOPE_IDS)[number]))
+    .sort((left, right) => left.localeCompare(right));
+  return [...builtinScopes, ...customScopes];
 }
 
 function notificationFormsEqual(
@@ -155,6 +210,9 @@ export function SettingsPanel() {
   } | null>(null);
   const [savingNotificationScope, setSavingNotificationScope] =
     useState<NotificationScopeId | null>(null);
+  const [newNotificationTarget, setNewNotificationTarget] =
+    useState<string>("order_workflow");
+  const [newCustomNotificationScope, setNewCustomNotificationScope] = useState("");
 
   const handleProcessRecordModeChange = (mode: ConversationProcessRecordDisplayMode) => {
     setProcessRecordDisplayMode(writeConversationProcessRecordDisplayMode(mode));
@@ -199,23 +257,21 @@ export function SettingsPanel() {
     };
   }, []);
 
-  const notificationDirty = useMemo(
-    () => ({
-      inspection: !notificationFormsEqual(
-        notificationForms.inspection,
-        savedNotificationForms.inspection,
-      ),
-      alarm_analyst: !notificationFormsEqual(
-        notificationForms.alarm_analyst,
-        savedNotificationForms.alarm_analyst,
-      ),
-      order_workflow: !notificationFormsEqual(
-        notificationForms.order_workflow,
-        savedNotificationForms.order_workflow,
-      ),
-    }),
-    [notificationForms, savedNotificationForms],
+  const notificationScopeIds = useMemo(
+    () => getSortedNotificationScopes(notificationForms),
+    [notificationForms],
   );
+
+  const notificationDirty = useMemo(() => {
+    const dirty: Record<NotificationScopeId, boolean> = {};
+    Object.keys(notificationForms).forEach((scope) => {
+      dirty[scope] = !notificationFormsEqual(
+        notificationForms[scope],
+        savedNotificationForms[scope] || EMPTY_NOTIFICATION_SCOPE(),
+      );
+    });
+    return dirty;
+  }, [notificationForms, savedNotificationForms]);
 
   const handleNotificationFieldChange = <
     TKey extends keyof NotificationChannelForm,
@@ -234,12 +290,19 @@ export function SettingsPanel() {
   };
 
   const handleResetNotificationScope = (scope: NotificationScopeId) => {
-    setNotificationForms((current) => ({
-      ...current,
-      [scope]: {
-        ...savedNotificationForms[scope],
-      },
-    }));
+    setNotificationForms((current) => {
+      if (!savedNotificationForms[scope]) {
+        const next = { ...current };
+        delete next[scope];
+        return next;
+      }
+      return {
+        ...current,
+        [scope]: {
+          ...savedNotificationForms[scope],
+        },
+      };
+    });
     setNotificationNotice(null);
   };
 
@@ -249,15 +312,9 @@ export function SettingsPanel() {
       const payload = await settingsApi.updateNotificationChannels({
         [scope]: serializeNotificationForm(notificationForms[scope]),
       });
-      const nextScopeForm = toNotificationForm(payload[scope]);
-      setNotificationForms((current) => ({
-        ...current,
-        [scope]: nextScopeForm,
-      }));
-      setSavedNotificationForms((current) => ({
-        ...current,
-        [scope]: nextScopeForm,
-      }));
+      const nextForms = createNotificationForms(payload);
+      setNotificationForms(nextForms);
+      setSavedNotificationForms(nextForms);
       setNotificationNotice({
         type: "success",
         text: `${getNotificationScopeLabel(scope)}配置已保存`,
@@ -266,6 +323,72 @@ export function SettingsPanel() {
       setNotificationNotice({
         type: "error",
         text: error instanceof Error ? error.message : "通知设置保存失败",
+      });
+    } finally {
+      setSavingNotificationScope(null);
+    }
+  };
+
+  const handleAddNotificationScope = () => {
+    const scope = newNotificationTarget === CUSTOM_NOTIFICATION_TARGET_ID
+      ? newCustomNotificationScope.trim()
+      : newNotificationTarget;
+
+    if (!NOTIFICATION_SCOPE_ID_PATTERN.test(scope)) {
+      setNotificationNotice({
+        type: "error",
+        text: "作用位置标识只能使用 1-64 位字母、数字、下划线、短横线或点号，并且必须以字母开头",
+      });
+      return;
+    }
+
+    if (notificationForms[scope]) {
+      setNotificationNotice({
+        type: "success",
+        text: `${getNotificationScopeLabel(scope)}已存在，可直接编辑`,
+      });
+      return;
+    }
+
+    setNotificationForms((current) => ({
+      ...current,
+      [scope]: EMPTY_NOTIFICATION_SCOPE(),
+    }));
+    setNotificationNotice({
+      type: "success",
+      text: `${getNotificationScopeLabel(scope)}已添加，填写后保存生效`,
+    });
+    setNewCustomNotificationScope("");
+  };
+
+  const handleDeleteNotificationScope = async (scope: NotificationScopeId) => {
+    if (BUILTIN_NOTIFICATION_SCOPE_IDS.includes(scope as (typeof BUILTIN_NOTIFICATION_SCOPE_IDS)[number])) {
+      return;
+    }
+    if (!savedNotificationForms[scope]) {
+      setNotificationForms((current) => {
+        const next = { ...current };
+        delete next[scope];
+        return next;
+      });
+      setNotificationNotice(null);
+      return;
+    }
+
+    try {
+      setSavingNotificationScope(scope);
+      const payload = await settingsApi.deleteNotificationChannel(scope);
+      const nextForms = createNotificationForms(payload);
+      setNotificationForms(nextForms);
+      setSavedNotificationForms(nextForms);
+      setNotificationNotice({
+        type: "success",
+        text: `${scope} 配置已删除`,
+      });
+    } catch (error) {
+      setNotificationNotice({
+        type: "error",
+        text: error instanceof Error ? error.message : "通知设置删除失败",
       });
     } finally {
       setSavingNotificationScope(null);
@@ -416,16 +539,83 @@ export function SettingsPanel() {
                       </div>
                     ) : null}
 
+                    <section className="portal-advanced-config-panel settings-notification-card">
+                      <div className="portal-model-block-head">
+                        <div>
+                          <h4>
+                            <i className="fas fa-plus-circle" /> 新增通知作用位置
+                          </h4>
+                          <p>
+                            选择这组 webhook 要作用的业务位置。当前 order 使用
+                            `order_workflow`，后续新 skill 可用自定义标识接入同一配置文件。
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="settings-form-grid">
+                        <div className="portal-form-group settings-field">
+                          <label htmlFor="notification-target-scope">作用位置</label>
+                          <select
+                            id="notification-target-scope"
+                            value={newNotificationTarget}
+                            disabled={notificationLoading || Boolean(savingNotificationScope)}
+                            onChange={(event) => setNewNotificationTarget(event.target.value)}
+                          >
+                            {NOTIFICATION_TARGET_OPTIONS.map((option) => (
+                              <option key={option.id} value={option.id}>
+                                {option.label}
+                              </option>
+                            ))}
+                          </select>
+                          <small>
+                            {NOTIFICATION_TARGET_OPTIONS.find((option) => option.id === newNotificationTarget)
+                              ?.description || "选择通知配置生效的业务位置。"}
+                          </small>
+                        </div>
+
+                        {newNotificationTarget === CUSTOM_NOTIFICATION_TARGET_ID ? (
+                          <div className="portal-form-group settings-field">
+                            <label htmlFor="notification-custom-scope">自定义标识</label>
+                            <input
+                              id="notification-custom-scope"
+                              type="text"
+                              value={newCustomNotificationScope}
+                              disabled={notificationLoading || Boolean(savingNotificationScope)}
+                              onChange={(event) => setNewCustomNotificationScope(event.target.value)}
+                              placeholder="例如 web_monitor 或 change_workflow"
+                            />
+                            <small>只能使用字母、数字、下划线、短横线和点号，并且以字母开头。</small>
+                          </div>
+                        ) : null}
+                      </div>
+
+                      <div className="portal-model-form-actions compact-row">
+                        <button
+                          type="button"
+                          className="portal-model-btn compact"
+                          disabled={notificationLoading || Boolean(savingNotificationScope)}
+                          onClick={handleAddNotificationScope}
+                        >
+                          <i className="fas fa-plus" />
+                          添加配置
+                        </button>
+                      </div>
+                    </section>
+
                     <div className="settings-notification-stack">
-                      {NOTIFICATION_SCOPE_META.map((scope) => {
-                        const form = notificationForms[scope.id];
-                        const dirty = notificationDirty[scope.id];
-                        const saving = savingNotificationScope === scope.id;
+                      {notificationScopeIds.map((scopeId) => {
+                        const scope = getNotificationScopeMeta(scopeId);
+                        const form = notificationForms[scopeId] || EMPTY_NOTIFICATION_SCOPE();
+                        const dirty = notificationDirty[scopeId];
+                        const saving = savingNotificationScope === scopeId;
                         const disabled = notificationLoading || Boolean(savingNotificationScope);
+                        const isBuiltin = BUILTIN_NOTIFICATION_SCOPE_IDS.includes(
+                          scopeId as (typeof BUILTIN_NOTIFICATION_SCOPE_IDS)[number],
+                        );
 
                         return (
                           <section
-                            key={scope.id}
+                            key={scopeId}
                             className="portal-advanced-config-panel settings-notification-card"
                           >
                             <div className="portal-model-block-head">
@@ -439,15 +629,15 @@ export function SettingsPanel() {
 
                             <div className="settings-form-grid">
                               <div className="portal-form-group settings-field">
-                                <label htmlFor={`${scope.id}-push-url`}>消息中心推送地址</label>
+                                <label htmlFor={`${scopeId}-push-url`}>消息中心推送地址</label>
                                 <input
-                                  id={`${scope.id}-push-url`}
+                                  id={`${scopeId}-push-url`}
                                   type="url"
                                   value={form.push_url}
                                   disabled={disabled}
                                   onChange={(event) => {
                                     handleNotificationFieldChange(
-                                      scope.id,
+                                      scopeId,
                                       "push_url",
                                       event.target.value,
                                     );
@@ -458,9 +648,9 @@ export function SettingsPanel() {
                               </div>
 
                               <div className="portal-form-group settings-field">
-                                <label htmlFor={`${scope.id}-timeout`}>通知超时（秒）</label>
+                                <label htmlFor={`${scopeId}-timeout`}>通知超时（秒）</label>
                                 <input
-                                  id={`${scope.id}-timeout`}
+                                  id={`${scopeId}-timeout`}
                                   type="number"
                                   min="1"
                                   step="1"
@@ -468,7 +658,7 @@ export function SettingsPanel() {
                                   disabled={disabled}
                                   onChange={(event) => {
                                     handleNotificationFieldChange(
-                                      scope.id,
+                                      scopeId,
                                       "timeout_seconds",
                                       event.target.value,
                                     );
@@ -479,15 +669,15 @@ export function SettingsPanel() {
                               </div>
 
                               <div className="portal-form-group settings-field">
-                                <label htmlFor={`${scope.id}-dingtalk-webhook`}>钉钉 Webhook</label>
+                                <label htmlFor={`${scopeId}-dingtalk-webhook`}>钉钉 Webhook</label>
                                 <input
-                                  id={`${scope.id}-dingtalk-webhook`}
+                                  id={`${scopeId}-dingtalk-webhook`}
                                   type="url"
                                   value={form.dingtalk_webhook_url}
                                   disabled={disabled}
                                   onChange={(event) => {
                                     handleNotificationFieldChange(
-                                      scope.id,
+                                      scopeId,
                                       "dingtalk_webhook_url",
                                       event.target.value,
                                     );
@@ -498,15 +688,15 @@ export function SettingsPanel() {
                               </div>
 
                               <div className="portal-form-group settings-field">
-                                <label htmlFor={`${scope.id}-dingtalk-secret`}>钉钉加签 Secret</label>
+                                <label htmlFor={`${scopeId}-dingtalk-secret`}>钉钉加签 Secret</label>
                                 <input
-                                  id={`${scope.id}-dingtalk-secret`}
+                                  id={`${scopeId}-dingtalk-secret`}
                                   type="password"
                                   value={form.dingtalk_secret}
                                   disabled={disabled}
                                   onChange={(event) => {
                                     handleNotificationFieldChange(
-                                      scope.id,
+                                      scopeId,
                                       "dingtalk_secret",
                                       event.target.value,
                                     );
@@ -517,15 +707,15 @@ export function SettingsPanel() {
                               </div>
 
                               <div className="portal-form-group settings-field">
-                                <label htmlFor={`${scope.id}-feishu-webhook`}>飞书 Webhook</label>
+                                <label htmlFor={`${scopeId}-feishu-webhook`}>飞书 Webhook</label>
                                 <input
-                                  id={`${scope.id}-feishu-webhook`}
+                                  id={`${scopeId}-feishu-webhook`}
                                   type="url"
                                   value={form.feishu_webhook_url}
                                   disabled={disabled}
                                   onChange={(event) => {
                                     handleNotificationFieldChange(
-                                      scope.id,
+                                      scopeId,
                                       "feishu_webhook_url",
                                       event.target.value,
                                     );
@@ -536,15 +726,15 @@ export function SettingsPanel() {
                               </div>
 
                               <div className="portal-form-group settings-field">
-                                <label htmlFor={`${scope.id}-feishu-secret`}>飞书签名 Secret</label>
+                                <label htmlFor={`${scopeId}-feishu-secret`}>飞书签名 Secret</label>
                                 <input
-                                  id={`${scope.id}-feishu-secret`}
+                                  id={`${scopeId}-feishu-secret`}
                                   type="password"
                                   value={form.feishu_secret}
                                   disabled={disabled}
                                   onChange={(event) => {
                                     handleNotificationFieldChange(
-                                      scope.id,
+                                      scopeId,
                                       "feishu_secret",
                                       event.target.value,
                                     );
@@ -564,7 +754,7 @@ export function SettingsPanel() {
                                     ? "portal-managed-config-toggle active"
                                     : "portal-managed-config-toggle"}
                                   disabled={disabled}
-                                  onClick={() => handleNotificationFieldChange(scope.id, "mention_all", true)}
+                                  onClick={() => handleNotificationFieldChange(scopeId, "mention_all", true)}
                                 >
                                   <i className="fas fa-at" />
                                   开启 @所有人
@@ -575,7 +765,7 @@ export function SettingsPanel() {
                                     ? "portal-managed-config-toggle active"
                                     : "portal-managed-config-toggle"}
                                   disabled={disabled}
-                                  onClick={() => handleNotificationFieldChange(scope.id, "mention_all", false)}
+                                  onClick={() => handleNotificationFieldChange(scopeId, "mention_all", false)}
                                 >
                                   <i className="fas fa-user-minus" />
                                   不 @所有人
@@ -592,15 +782,25 @@ export function SettingsPanel() {
                                 type="button"
                                 className="portal-model-btn secondary compact"
                                 disabled={disabled || !dirty}
-                                onClick={() => handleResetNotificationScope(scope.id)}
+                                onClick={() => handleResetNotificationScope(scopeId)}
                               >
                                 重置
                               </button>
+                              {!isBuiltin ? (
+                                <button
+                                  type="button"
+                                  className="portal-model-btn secondary compact"
+                                  disabled={disabled}
+                                  onClick={() => void handleDeleteNotificationScope(scopeId)}
+                                >
+                                  删除
+                                </button>
+                              ) : null}
                               <button
                                 type="button"
                                 className="portal-model-btn compact"
                                 disabled={disabled || !dirty}
-                                onClick={() => void handleSaveNotificationScope(scope.id)}
+                                onClick={() => void handleSaveNotificationScope(scopeId)}
                               >
                                 <i className={`fas ${saving ? "fa-spinner fa-spin" : "fa-floppy-disk"}`} />
                                 {saving ? "保存中" : "保存"}
