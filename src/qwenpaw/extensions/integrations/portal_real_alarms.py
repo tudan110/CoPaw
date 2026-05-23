@@ -57,8 +57,21 @@ def _build_real_alarm_headers() -> dict[str, str]:
     return headers
 
 
+DEFAULT_REAL_ALARM_TIMEZONE_OFFSET = 8
+
+
+def _get_alarm_timezone() -> timezone:
+    offset_hours = float(
+        EnvVarLoader.get_str(
+            "PORTAL_REAL_ALARM_TIMEZONE_OFFSET",
+            str(DEFAULT_REAL_ALARM_TIMEZONE_OFFSET),
+        ).strip() or str(DEFAULT_REAL_ALARM_TIMEZONE_OFFSET)
+    )
+    return timezone(timedelta(hours=offset_hours))
+
+
 def _format_dt(value: datetime) -> str:
-    return value.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+    return value.astimezone(_get_alarm_timezone()).strftime("%Y-%m-%d %H:%M:%S")
 
 
 def _build_real_alarm_payload(
