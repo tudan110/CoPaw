@@ -35,6 +35,7 @@ import {
   normalizeRemoteHistoryMessages,
   normalizeRemoteSessions,
 } from "./helpers";
+import { isResourceImportIntent } from "./pageHelpers";
 import {
   createAlarmAnalystCard,
   listAlarmAnalystCards,
@@ -105,6 +106,7 @@ export function useRemoteChatSession({
   const remoteHistoryRequestIdRef = useRef(0);
   const pendingProcessBlocksRef = useRef(new Map());
   const streamProcessBlocksRef = useRef(new Map());
+  const pendingResourceImportGuideRef = useRef(false);
   const flushTimerRef = useRef(0);
   const currentEmployeeRef = useRef(currentEmployee);
   const currentChatIdRef = useRef(currentChatId);
@@ -172,6 +174,7 @@ export function useRemoteChatSession({
       createAgentMessage(employee, {
         id: frontendMessageId,
         content: "",
+        resourceImportGuide: pendingResourceImportGuideRef.current,
       }),
     ]);
     streamResponseTextRef.current.set(frontendMessageId, new Map());
@@ -376,6 +379,7 @@ export function useRemoteChatSession({
           createAgentMessage(currentEmployeeRef.current, {
             id: `agent-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
             content: fallbackText,
+            resourceImportGuide: pendingResourceImportGuideRef.current,
           }),
         ]);
       }
@@ -419,6 +423,7 @@ export function useRemoteChatSession({
     streamMessageMetaRef.current = new Map();
     streamPendingTextRef.current = new Map();
     streamResponseTextRef.current = new Map();
+    pendingResourceImportGuideRef.current = false;
     if (!silent && hadActiveStream) {
       finalizePendingResponse("本轮对话已停止。");
     }
@@ -855,6 +860,9 @@ export function useRemoteChatSession({
     streamPendingTextRef.current = new Map();
     streamResponseTextRef.current = new Map();
     activeAssistantMessageIdRef.current = null;
+    pendingResourceImportGuideRef.current = isResourceImportIntent(
+      `${normalizedVisibleContent}\n${content}`,
+    );
 
     const controller = new AbortController();
     streamAbortRef.current = controller;
@@ -961,6 +969,7 @@ export function useRemoteChatSession({
       streamPendingTextRef.current = new Map();
       streamResponseTextRef.current = new Map();
       streamProcessBlocksRef.current = new Map();
+      pendingResourceImportGuideRef.current = false;
       await refreshRemoteSessions(false);
     }
 

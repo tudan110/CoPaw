@@ -965,6 +965,7 @@ export function EmployeeChatMainPanel({
             onResourceImportScrollToStage={onResourceImportScrollToStage}
             onResourceImportSubmitImport={onResourceImportSubmitImport}
             onResourceImportUploadFiles={onResourceImportUploadFiles}
+            onResourceImportGuideOpen={openResourceImport}
             onKnowledgeBaseFlowUpdate={onKnowledgeBaseFlowUpdate}
             onKnowledgeBaseUploadRequest={onKnowledgeBaseUploadRequest}
             onKnowledgeBaseManagementOpen={onKnowledgeBaseManagementOpen}

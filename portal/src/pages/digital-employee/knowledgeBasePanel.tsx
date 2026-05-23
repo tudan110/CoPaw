@@ -110,6 +110,7 @@ function compactText(value?: string | null, maxLength = 120) {
 
 export function KnowledgeBasePanel() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const queryResultRef = useRef<HTMLDivElement | null>(null);
   const [health, setHealth] = useState<KnowledgeBaseHealth | null>(null);
   const [sources, setSources] = useState<KnowledgeSourceRecord[]>([]);
   const [summary, setSummary] = useState<KnowledgeSourceSummaryItem[]>([]);
@@ -123,6 +124,8 @@ export function KnowledgeBasePanel() {
   const [query, setQuery] = useState("");
   const [queryResult, setQueryResult] = useState<KnowledgeQueryResponse | null>(null);
   const [ragAnswer, setRagAnswer] = useState("");
+  const [queryFeedback, setQueryFeedback] = useState("");
+  const [queryLoading, setQueryLoading] = useState(false);
   const [answerMode, setAnswerMode] = useState<AnswerMode>("evidence");
   const [manualTitle, setManualTitle] = useState("");
   const [manualContent, setManualContent] = useState("");
@@ -191,6 +194,20 @@ export function KnowledgeBasePanel() {
     return () => window.clearInterval(timerId);
   }, [job?.id, job?.job_id, job?.status, refresh]);
 
+  useEffect(() => {
+    if (!queryResult || queryLoading) {
+      return;
+    }
+    const timerId = window.setTimeout(() => {
+      queryResultRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+      queryResultRef.current?.focus({ preventScroll: true });
+    }, 80);
+    return () => window.clearTimeout(timerId);
+  }, [queryLoading, queryResult, ragAnswer]);
+
   const stats = useMemo(() => {
     const active = sources.filter((item) => !item.archived_at);
     const archived = sources.length - active.length;
@@ -202,13 +219,16 @@ export function KnowledgeBasePanel() {
   async function runQuery() {
     const text = query.trim();
     if (!text) {
-      setError("请输入检索问题");
+      setQueryFeedback("请输入检索问题");
       return;
     }
     setLoading(true);
+    setQueryLoading(true);
     setError("");
+    setQueryFeedback("正在检索知识库，请稍候...");
     setNotice("");
     setRagAnswer("");
+    setQueryResult(null);
     try {
       const result = await queryKnowledgeBase(text);
       setQueryResult(result);
@@ -219,9 +239,11 @@ export function KnowledgeBasePanel() {
           setRagAnswer(answer.answer || "");
         }
       }
+      setQueryFeedback("检索完成，已定位到结果。");
     } catch (err: any) {
-      setError(err?.message || "检索失败");
+      setQueryFeedback(err?.message || "检索失败");
     } finally {
+      setQueryLoading(false);
       setLoading(false);
     }
   }
@@ -386,6 +408,7 @@ export function KnowledgeBasePanel() {
   }
 
   const evidence = queryResult?.relevant_evidence || [];
+  const queryFeedbackTone = queryLoading ? "loading" : queryFeedback.startsWith("检索完成") ? "done" : "warning";
 
   return (
     <div className="knowledge-base-panel">
@@ -426,87 +449,113 @@ export function KnowledgeBasePanel() {
         </div>
       </div>
 
-      {notice ? <div className="kb-notice">{notice}</div> : null}
-      {error ? <div className="kb-error">{error}</div> : null}
-
-      <section className="kb-workbench">
-        <div className="kb-query-area">
-          <div className="kb-section-title">
-            <h3>检索验证</h3>
-            <div className="kb-segmented">
-              {ANSWER_MODE_OPTIONS.map((item) => (
-                <button
-                  key={item.value}
-                  type="button"
-                  className={answerMode === item.value ? "active" : ""}
-                  title={item.title}
-                  onClick={() => setAnswerMode(item.value)}
-                >
-                  {item.label}
-                </button>
-              ))}
+      <section className="kb-primary-row">
+        <section className="kb-source-section">
+          <div className="kb-section-title kb-source-title">
+            <h3>资料列表</h3>
+            <div className="kb-source-tools">
+              <input
+                value={sourceKeyword}
+                onChange={(event) => setSourceKeyword(event.target.value)}
+                placeholder="按文件名过滤"
+              />
+              <select value={sourceScope} onChange={(event) => setSourceScope(event.target.value)}>
+                <option value="">全部层级</option>
+                <option value="tenant_private">企业内部经验</option>
+                <option value="runtime_curated">运行时沉淀</option>
+                <option value="system_builtin">平台内置知识</option>
+              </select>
+              <select value={sourceType} onChange={(event) => setSourceType(event.target.value)}>
+                <option value="">全部类型</option>
+                <option value="document">文档</option>
+                <option value="pdf">PDF</option>
+                <option value="spreadsheet">表格</option>
+                <option value="image">图片</option>
+              </select>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={includeArchived}
+                  onChange={(event) => setIncludeArchived(event.target.checked)}
+                />
+                含归档
+              </label>
+              <button
+                type="button"
+                className="portal-model-btn compact"
+                disabled={loading}
+                onClick={() => fileInputRef.current?.click()}
+              >
+                <i className="fas fa-upload" />
+                上传文件
+              </button>
+              <input
+                ref={fileInputRef}
+                className="kb-file-input"
+                type="file"
+                onChange={(event) => void handleUpload(event.target.files?.[0])}
+              />
             </div>
           </div>
-          <textarea
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder="输入要从知识库检索的问题"
-          />
-          <button type="button" className="portal-model-btn success" disabled={loading} onClick={() => void runQuery()}>
-            <i className="fas fa-magnifying-glass" />
-            检索
-          </button>
-          {queryResult ? (
-            <div className="kb-answer">
-              <strong>{ragAnswer ? "合成答案" : "检索摘要"}</strong>
-              <p>{ragAnswer || queryResult.summary || queryResult.evidence_boundary_statement}</p>
-            </div>
-          ) : null}
-          {evidence.length ? (
-            <div className="kb-evidence-table">
-              <table>
-                <thead>
-                  <tr>
-                    <th>来源</th>
-                    <th>位置</th>
-                    <th>置信度</th>
-                    <th>命中片段</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {evidence.map((item: KnowledgeEvidence) => (
-                    <tr key={item.evidence_id}>
-                      <td>
-                        <strong>{compactText(item.citation?.source_label || item.chunk_summary || item.evidence_id, 54)}</strong>
-                        <small>{item.citation?.source_scope_label || item.source_type || "-"}</small>
-                      </td>
-                      <td>{compactText(item.citation?.locator || "-", 54)}</td>
-                      <td>{typeof item.confidence_score === "number" ? `${Math.round(item.confidence_score * 100)}%` : "-"}</td>
-                      <td>{compactText(item.chunk_text || item.chunk_summary, 180)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ) : null}
-        </div>
 
-        <aside className="kb-side-area">
+          {notice || error || job ? (
+            <div className="kb-source-feedback">
+              {notice ? <div className="kb-notice">{notice}</div> : null}
+              {error ? <div className="kb-error">{error}</div> : null}
+              {job ? (
+                <div className="kb-job">
+                  <strong>{job.filename}</strong>
+                  <span>{job.status || "-"} · {job.progress_pct ?? 0}% · {job.note || job.current_stage}</span>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+
+          <div className="kb-source-table">
+            <table>
+              <thead>
+                <tr>
+                  <th>资料</th>
+                  <th>类型</th>
+                  <th>层级</th>
+                  <th>切片</th>
+                  <th>时间</th>
+                  <th>状态</th>
+                  <th />
+                </tr>
+              </thead>
+              <tbody>
+                {sources.map((source) => (
+                  <tr key={source.id}>
+                    <td>
+                      <strong>{source.meta?.display_title || source.filename}</strong>
+                      <small>{source.note || source.meta?.tags?.join(", ") || "-"}</small>
+                    </td>
+                    <td>{source.source_type || "-"}</td>
+                    <td>{scopeLabel(source.source_scope, source.meta?.scope_label)}</td>
+                    <td>{source.unit_count || 0}</td>
+                    <td>{formatDate(source.uploaded_at)}</td>
+                    <td>{source.archived_at ? "已归档" : "有效"}</td>
+                    <td>
+                      <button type="button" onClick={() => void openSourceDetail(source)}>详情</button>
+                      {source.archived_at ? (
+                        <button type="button" onClick={() => void handleUnarchive(source)}>恢复</button>
+                      ) : (
+                        <button type="button" onClick={() => void handleArchive(source)}>归档</button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {!sources.length ? <div className="kb-empty-state">暂无资料</div> : null}
+          </div>
+        </section>
+
+        <aside className="kb-ingest-card">
           <div className="kb-section-title">
             <h3>资料入库</h3>
           </div>
-          <input
-            ref={fileInputRef}
-            type="file"
-            onChange={(event) => void handleUpload(event.target.files?.[0])}
-          />
-          {job ? (
-            <div className="kb-job">
-              <strong>{job.filename}</strong>
-              <span>{job.status || "-"} · {job.progress_pct ?? 0}% · {job.note || job.current_stage}</span>
-            </div>
-          ) : null}
-
           <div className="kb-manual-form">
             <input value={manualTitle} onChange={(event) => setManualTitle(event.target.value)} placeholder="标题" />
             <input value={manualTags} onChange={(event) => setManualTags(event.target.value)} placeholder="标签，逗号分隔" />
@@ -605,113 +654,131 @@ export function KnowledgeBasePanel() {
             ) : <div className="kb-empty-line">暂无入库任务</div>}
           </div>
         </div>
+      </section>
 
-        <div className="kb-admin-card kb-admin-card-wide">
+      <section className="kb-admin-card kb-unit-section">
+        <div className="kb-section-title">
+          <h3>最近知识切片</h3>
+        </div>
+        <div className="kb-unit-table">
+          {units.length ? (
+            <table>
+              <thead>
+                <tr>
+                  <th>标题</th>
+                  <th>来源</th>
+                  <th>层级</th>
+                  <th>位置</th>
+                  <th>内容预览</th>
+                  <th>时间</th>
+                </tr>
+              </thead>
+              <tbody>
+                {units.slice(0, 16).map((unit) => (
+                  <tr key={unit.id}>
+                    <td>
+                      <strong>{compactText(unit.title || unit.id, 64)}</strong>
+                    </td>
+                    <td>{compactText(unit.filename || "-", 42)}</td>
+                    <td>{scopeLabel(unit.source_scope)}</td>
+                    <td>{compactText(unit.locator || "-", 42)}</td>
+                    <td>{compactText(unit.content, 150)}</td>
+                    <td>{formatDate(unit.created_at)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : <div className="kb-empty-line">暂无知识切片</div>}
+        </div>
+      </section>
+
+      <section className="kb-workbench">
+        <div className="kb-query-area">
           <div className="kb-section-title">
-            <h3>最近知识切片</h3>
+            <h3>检索验证</h3>
+            <div className="kb-segmented">
+              {ANSWER_MODE_OPTIONS.map((item) => (
+                <button
+                  key={item.value}
+                  type="button"
+                  className={answerMode === item.value ? "active" : ""}
+                  title={item.title}
+                  onClick={() => setAnswerMode(item.value)}
+                >
+                  {item.label}
+                </button>
+              ))}
+            </div>
           </div>
-          <div className="kb-unit-table">
-            {units.length ? (
+          <textarea
+            value={query}
+            onChange={(event) => {
+              setQuery(event.target.value);
+              if (!queryLoading) {
+                setQueryFeedback("");
+              }
+            }}
+            placeholder="输入要从知识库检索的问题"
+          />
+          <div className="kb-query-actions">
+            {queryFeedback ? (
+              <div
+                className={`kb-query-feedback ${queryFeedbackTone}`}
+                role="status"
+                aria-live="polite"
+              >
+                {queryLoading ? <i className="fas fa-spinner fa-spin" /> : null}
+                {queryFeedback}
+              </div>
+            ) : null}
+            <button type="button" className="portal-model-btn success" disabled={loading} onClick={() => void runQuery()}>
+              <i className={`fas ${queryLoading ? "fa-spinner fa-spin" : "fa-magnifying-glass"}`} />
+              {queryLoading ? "检索中" : "检索"}
+            </button>
+          </div>
+          {queryResult ? (
+            <div
+              ref={queryResultRef}
+              className="kb-query-result"
+              tabIndex={-1}
+              aria-label="知识库检索结果"
+            >
+              <div className="kb-answer">
+                <strong>{ragAnswer ? "合成答案" : "检索摘要"}</strong>
+                <p>{ragAnswer || queryResult.summary || queryResult.evidence_boundary_statement}</p>
+              </div>
+              {!evidence.length ? (
+                <div className="kb-query-empty">本次检索未返回命中证据，可调整问题描述后再次检索。</div>
+              ) : null}
+            </div>
+          ) : null}
+          {evidence.length ? (
+            <div className="kb-evidence-table">
               <table>
                 <thead>
                   <tr>
-                    <th>标题</th>
                     <th>来源</th>
-                    <th>层级</th>
                     <th>位置</th>
-                    <th>内容预览</th>
-                    <th>时间</th>
+                    <th>置信度</th>
+                    <th>命中片段</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {units.slice(0, 16).map((unit) => (
-                    <tr key={unit.id}>
+                  {evidence.map((item: KnowledgeEvidence) => (
+                    <tr key={item.evidence_id}>
                       <td>
-                        <strong>{compactText(unit.title || unit.id, 64)}</strong>
+                        <strong>{compactText(item.citation?.source_label || item.chunk_summary || item.evidence_id, 54)}</strong>
+                        <small>{item.citation?.source_scope_label || item.source_type || "-"}</small>
                       </td>
-                      <td>{compactText(unit.filename || "-", 42)}</td>
-                      <td>{scopeLabel(unit.source_scope)}</td>
-                      <td>{compactText(unit.locator || "-", 42)}</td>
-                      <td>{compactText(unit.content, 150)}</td>
-                      <td>{formatDate(unit.created_at)}</td>
+                      <td>{compactText(item.citation?.locator || "-", 54)}</td>
+                      <td>{typeof item.confidence_score === "number" ? `${Math.round(item.confidence_score * 100)}%` : "-"}</td>
+                      <td>{compactText(item.chunk_text || item.chunk_summary, 180)}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
-            ) : <div className="kb-empty-line">暂无知识切片</div>}
-          </div>
-        </div>
-      </section>
-
-      <section className="kb-source-section">
-        <div className="kb-section-title">
-          <h3>资料列表</h3>
-          <div className="kb-source-tools">
-            <input
-              value={sourceKeyword}
-              onChange={(event) => setSourceKeyword(event.target.value)}
-              placeholder="按文件名过滤"
-            />
-            <select value={sourceScope} onChange={(event) => setSourceScope(event.target.value)}>
-              <option value="">全部层级</option>
-              <option value="tenant_private">企业内部经验</option>
-              <option value="runtime_curated">运行时沉淀</option>
-              <option value="system_builtin">平台内置知识</option>
-            </select>
-            <select value={sourceType} onChange={(event) => setSourceType(event.target.value)}>
-              <option value="">全部类型</option>
-              <option value="document">文档</option>
-              <option value="pdf">PDF</option>
-              <option value="spreadsheet">表格</option>
-              <option value="image">图片</option>
-            </select>
-            <label>
-              <input
-                type="checkbox"
-                checked={includeArchived}
-                onChange={(event) => setIncludeArchived(event.target.checked)}
-              />
-              含归档
-            </label>
-          </div>
-        </div>
-        <div className="kb-source-table">
-          <table>
-            <thead>
-              <tr>
-                <th>资料</th>
-                <th>类型</th>
-                <th>层级</th>
-                <th>切片</th>
-                <th>时间</th>
-                <th>状态</th>
-                <th />
-              </tr>
-            </thead>
-            <tbody>
-              {sources.map((source) => (
-                <tr key={source.id}>
-                  <td>
-                    <strong>{source.meta?.display_title || source.filename}</strong>
-                    <small>{source.note || source.meta?.tags?.join(", ") || "-"}</small>
-                  </td>
-                  <td>{source.source_type || "-"}</td>
-                  <td>{scopeLabel(source.source_scope, source.meta?.scope_label)}</td>
-                  <td>{source.unit_count || 0}</td>
-                  <td>{formatDate(source.uploaded_at)}</td>
-                  <td>{source.archived_at ? "已归档" : "有效"}</td>
-                  <td>
-                    <button type="button" onClick={() => void openSourceDetail(source)}>详情</button>
-                    {source.archived_at ? (
-                      <button type="button" onClick={() => void handleUnarchive(source)}>恢复</button>
-                    ) : (
-                      <button type="button" onClick={() => void handleArchive(source)}>归档</button>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+            </div>
+          ) : null}
         </div>
       </section>
 

@@ -1968,6 +1968,75 @@ function FlowSteps({
   );
 }
 
+const CANONICAL_RESOURCE_IMPORT_COPY_BLOCKS: ResourceImportStartPayload["copyBlocks"] = [
+  {
+    title: "资源导入入口已准备好",
+    paragraphs: [
+      "请在下方上传资源清单文件，我会先解析字段、清洗数据并生成预览，确认无误后再导入 CMDB。",
+    ],
+  },
+  {
+    title: "我能处理的各种资料：",
+    items: [
+      "资源实例：服务器、虚拟机、容器、Kubernetes 节点、数据库、中间件、Nginx / Apache、网络设备。",
+      "业务对象：产品、应用、服务、平台、负责人、环境、所属部门。",
+      "网络与机房：IP 地址、子网、VLAN、机柜、机房、交换机端口。",
+      "资源关系：服务器属于哪个应用、应用属于哪个产品、IP 与设备绑定、上下游依赖关系。",
+    ],
+  },
+  {
+    title: "建议清单中包含的字段：",
+    items: [
+      "基础字段：名称、资源类型、IP、环境、状态、所属应用或产品。",
+      "可选字段：厂商、型号、序列号、系统版本、负责人、机房、机柜、备注。",
+      "关系字段：应用名、产品名、父级资源、关联 IP、依赖服务。",
+    ],
+  },
+  {
+    title: "导入前会自动处理：",
+    items: [
+      "识别 Excel/CSV 表头并映射到 CMDB 字段。",
+      "清洗名称、IP、状态、类型等不统一的数据。",
+      "按命名、网段、应用字段推断资源拓扑关系。",
+      "生成可编辑预览，确认后才会写入 CMDB。",
+    ],
+  },
+  {
+    title: "导入流程：",
+    ordered: true,
+    items: [
+      "上传资源清单文件。",
+      "AI 解析字段并清洗数据。",
+      "确认资源和关系预览。",
+      "查看推断拓扑。",
+      "确认导入 CMDB。",
+    ],
+  },
+  {
+    title: "支持的文件：",
+    items: [
+      "Excel / CSV 资源台账优先支持。",
+      "Word 文档、拓扑图片可上传，系统会尽量抽取结构化信息。",
+      "可以一次上传多个客户或多个系统的清单，进入预览后再筛选。",
+    ],
+  },
+];
+
+function normalizeResourceImportStartPayload(
+  payload: ResourceImportStartPayload | null,
+  fallbackPayload: ResourceImportStartPayload,
+): ResourceImportStartPayload {
+  const sourcePayload = payload || fallbackPayload;
+
+  return {
+    ...sourcePayload,
+    copyBlocks: CANONICAL_RESOURCE_IMPORT_COPY_BLOCKS,
+    supportedFormats: sourcePayload.supportedFormats?.length
+      ? sourcePayload.supportedFormats
+      : fallbackPayload.supportedFormats,
+  };
+}
+
 function IntroStage({
   agentId,
   flow,
@@ -1991,47 +2060,7 @@ function IntroStage({
   const [dragActive, setDragActive] = useState(false);
 
   const fallbackStartPayload: ResourceImportStartPayload = {
-    copyBlocks: [
-      {
-        title: "我将帮助您零门槛完成资源盘点和录入，您只需要提供手里的资料，剩下的交给我！",
-      },
-      {
-        title: "🎯 我能处理的各种资料：",
-        items: [
-          "📊 Excel/CSV设备清单 - 自动识别表头，智能映射字段",
-          "📸 网络拓扑图截图 - OCR识别设备信息",
-          "📝 Word技术文档 - 提取配置信息",
-          "☁️ 云账号资料 - 直接同步云资源（暂未开放）",
-        ],
-      },
-      {
-        title: "🔧 智能处理能力：",
-        items: [
-          "自动字段映射 - 无需手动配置",
-          "数据清洗标准化 - IP、状态、类型自动规范",
-          "拓扑关系推断 - 基于IP网段、命名规则自动发现",
-          "交互式确认 - 每步都可查看和修改",
-        ],
-      },
-      {
-        title: "📋 5步快速纳管：",
-        ordered: true,
-        items: [
-          "1️⃣ 上传资源文件（拖拽或选择）",
-          "2️⃣ AI智能解析和字段映射",
-          "3️⃣ 确认解析结果（可编辑）",
-          "4️⃣ 查看推断的拓扑关系",
-          "5️⃣ 一键导入CMDB",
-        ],
-      },
-      {
-        title: "💡 支持的关键字：",
-        items: [
-          "“导入资源清单” / “批量导入” / “资源纳管”",
-          "直接拖拽Excel文件到对话框",
-        ],
-      },
-    ],
+    copyBlocks: CANONICAL_RESOURCE_IMPORT_COPY_BLOCKS,
     supportedFormats: ["Excel", "CSV", "Word", "图片"],
   };
 
@@ -2077,7 +2106,7 @@ function IntroStage({
     });
   };
 
-  const introPayload = startPayload || fallbackStartPayload;
+  const introPayload = normalizeResourceImportStartPayload(startPayload, fallbackStartPayload);
   const supportedFormats = metadata?.supportedFormats?.length
     ? metadata.supportedFormats
     : introPayload.supportedFormats;

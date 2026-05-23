@@ -931,6 +931,7 @@ export const ChatMessageItem = memo(function ChatMessageItem({
   onResourceImportScrollToStage,
   onResourceImportSubmitImport,
   onResourceImportUploadFiles,
+  onResourceImportGuideOpen,
   onKnowledgeBaseFlowUpdate,
   onKnowledgeBaseUploadRequest,
   onKnowledgeBaseManagementOpen,
@@ -994,6 +995,14 @@ export const ChatMessageItem = memo(function ChatMessageItem({
           ? trailingResponseContent
           : (liveMessageContent || trailingResponseContent)
       );
+  const shouldShowResourceImportGuide = Boolean(
+    message.resourceImportGuide
+    && message.type === "agent"
+    && !isStreamingMessage
+    && !hasResourceImportFlow
+    && renderedMessageContent
+    && onResourceImportGuideOpen,
+  );
   const effectiveDisposalOperation =
     message.disposalOperation ||
     extractPortalActionPayload(renderedMessageContent || message.content || "");
@@ -1225,6 +1234,22 @@ export const ChatMessageItem = memo(function ChatMessageItem({
               />
             )}
             {isStreamingMessage ? <span className="streaming-cursor" /> : null}
+          </div>
+        ) : null}
+
+        {shouldShowResourceImportGuide ? (
+          <div className="resource-import-guide-row">
+            <button
+              type="button"
+              className="resource-import-guide-button"
+              onClick={() => onResourceImportGuideOpen()}
+            >
+              <i className="fas fa-file-import" aria-hidden="true" />
+              <span>前往导入资源清单</span>
+            </button>
+            <span className="resource-import-guide-hint">
+              支持上传 Excel/CSV 台账，先预览清洗结果，再确认导入 CMDB。
+            </span>
           </div>
         ) : null}
 

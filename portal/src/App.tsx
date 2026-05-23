@@ -1,10 +1,11 @@
 import { Suspense } from "react";
-import { Navigate, Route, Routes } from "react-router-dom";
+import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import ChunkErrorBoundary from "./components/ChunkErrorBoundary";
 import DigitalEmployeePage from "./pages/DigitalEmployeePage";
 import { lazyWithRetry } from "./utils/lazyWithRetry";
 
 const AgentCenterPage = lazyWithRetry(() => import("./pages/AgentCenterPage"));
+const KnowledgeBaseEmbedPage = lazyWithRetry(() => import("./pages/KnowledgeBaseEmbedPage"));
 
 const routeFallback = (
   <div
@@ -26,10 +27,28 @@ function renderDeferredPage(node: React.ReactNode) {
 }
 
 export default function App() {
+  const location = useLocation();
+  const isKnowledgeBaseEmbed =
+    location.pathname === "/embed/knowledge-base" ||
+    location.pathname.endsWith("/embed/knowledge-base") ||
+    new URLSearchParams(location.search).get("embed") === "knowledge-base";
+
+  if (isKnowledgeBaseEmbed) {
+    return (
+      <ChunkErrorBoundary>
+        {renderDeferredPage(<KnowledgeBaseEmbedPage />)}
+      </ChunkErrorBoundary>
+    );
+  }
+
   return (
     <ChunkErrorBoundary>
       <Routes>
         <Route path="/" element={renderDeferredPage(<DigitalEmployeePage />)} />
+      <Route
+        path="/embed/knowledge-base"
+        element={renderDeferredPage(<KnowledgeBaseEmbedPage />)}
+      />
       <Route path="/agent-center" element={renderDeferredPage(<AgentCenterPage />)} />
       <Route
         path="/nl-customization"
