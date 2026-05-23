@@ -82,6 +82,7 @@ def _build_real_alarm_payload(
 ) -> dict[str, Any]:
     safe_limit = max(1, min(int(limit or DEFAULT_REAL_ALARM_LIMIT), MAX_REAL_ALARM_LIMIT))
     items = [_normalize_alarm_row(row) for row in rows[:safe_limit]]
+    items.sort(key=lambda a: a.get("eventTime") or "")
     return {
         "total": len(items),
         "items": items,
