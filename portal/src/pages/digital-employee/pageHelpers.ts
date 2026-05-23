@@ -61,8 +61,10 @@ export const RESOURCE_IMPORT_COMMAND = "导入资源清单";
 export const KNOWLEDGE_BASE_SEARCH_COMMAND = "知识库检索";
 export const PORTAL_RESOURCE_IMPORT_SOURCE = "portal-resource-import";
 export const PORTAL_KNOWLEDGE_BASE_SOURCE = "portal-knowledge-base";
+export const RESOURCE_IMPORT_DIRECT_INTENT_PATTERN =
+  /(导入资源清单|资源清单导入|批量导入|资源纳管|智能导入|上传台账导入)/;
 export const RESOURCE_IMPORT_INTENT_PATTERN =
-  /(导入资源清单|资源清单导入|批量导入|资源纳管|导入资源|智能导入|上传台账导入)/;
+  /(导入资源清单|资源清单导入|批量导入|资源纳管|导入资源|智能导入|上传台账导入|导入.{0,12}(资源|资产|设备|主机|服务器|虚拟机|应用|产品|网络设备|数据库|IP|子网|机柜|清单|台账)|上传.{0,12}(资源|资产|设备|清单|台账)|资源.{0,12}(导入|纳管|录入|入库)|资产.{0,12}(导入|纳管|录入|入库)|设备.{0,12}(导入|纳管|录入|入库)|清单.{0,12}(导入|纳管|录入|入库)|台账.{0,12}(导入|纳管|录入|入库))/i;
 export const KNOWLEDGE_BASE_INTENT_PATTERN =
   /(知识库检索|检索知识库|上传知识文档|导入知识文档|文档入库|资料入库|知识沉淀|手动沉淀知识|查看知识资料)/;
 export const KNOWLEDGE_BASE_CARD_INTENT_PATTERN =
@@ -80,6 +82,11 @@ export function createKnowledgeBaseFlowId() {
 export function isResourceImportIntent(value: string) {
   const normalized = String(value || "").replace(/\s+/g, "");
   return RESOURCE_IMPORT_INTENT_PATTERN.test(normalized);
+}
+
+export function isResourceImportDirectIntent(value: string) {
+  const normalized = String(value || "").replace(/\s+/g, "");
+  return RESOURCE_IMPORT_DIRECT_INTENT_PATTERN.test(normalized);
 }
 
 export function isKnowledgeBaseIntent(value: string) {

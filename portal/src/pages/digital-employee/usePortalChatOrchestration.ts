@@ -43,6 +43,7 @@ import {
   extractMentionTarget,
   isKnowledgeBaseCardIntent,
   isKnowledgeBaseIntent,
+  isResourceImportDirectIntent,
   isResourceImportIntent,
   resolveEmployeeAgentId,
   resolveResourceImportTopologyScope,
@@ -285,10 +286,14 @@ export function usePortalChatOrchestration({
       employeeWorkflows[employee.id as keyof typeof employeeWorkflows] || [];
     const result =
       employeeResults[employee.id as keyof typeof employeeResults] || null;
+    const shouldShowResourceImportGuide =
+      isResourceImportIntent(`${visibleContent}\n${content}`)
+      && !isResourceImportDirectIntent(visibleContent);
     const agentMessage = {
       ...createAgentMessage(employee, {
         id: `agent-${Date.now()}`,
         content: workflow.length ? "收到！我正在为您处理..." : buildPortalAssistantReply(content),
+        resourceImportGuide: shouldShowResourceImportGuide,
       }),
       workflow: [...workflow],
       currentStep: 0,
@@ -668,7 +673,7 @@ export function usePortalChatOrchestration({
     if (mentionResult.employee) {
       if (
         mentionResult.employee.id === RESOURCE_IMPORT_OWNER_ID
-        && isResourceImportIntent(mentionResult.cleanContent)
+        && isResourceImportDirectIntent(mentionResult.cleanContent)
       ) {
         openResourceImport(mentionResult.visibleContent);
         return;
@@ -740,7 +745,7 @@ export function usePortalChatOrchestration({
       return;
     }
 
-    if (isResourceImportIntent(rawContent)) {
+    if (isResourceImportDirectIntent(rawContent)) {
       openResourceImport(rawContent);
       return;
     }
