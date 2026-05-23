@@ -11,9 +11,7 @@ export interface NotificationChannelScopeConfig {
 }
 
 export interface NotificationChannelSettings {
-  inspection: NotificationChannelScopeConfig;
-  alarm_analyst: NotificationChannelScopeConfig;
-  order_workflow: NotificationChannelScopeConfig;
+  [scope: string]: NotificationChannelScopeConfig;
 }
 
 async function requestSettings<T>(
@@ -40,4 +38,12 @@ export const settingsApi = {
       method: "PUT",
       body: JSON.stringify(body),
     }),
+
+  deleteNotificationChannel: (scope: string) =>
+    requestSettings<NotificationChannelSettings>(
+      `/settings/notification-channels/${encodeURIComponent(scope)}`,
+      {
+        method: "DELETE",
+      },
+    ),
 };

@@ -110,6 +110,7 @@ export function usePortalChatOrchestration({
   navigateToEmployeePage,
   handleRemoteSendMessage,
   resetRemoteState,
+  onConversationDispatchStart,
   homeComposerRef,
   chatInputRef,
   locationState,
@@ -142,6 +143,7 @@ export function usePortalChatOrchestration({
     options?: { visibleContent?: string; forceNewChat?: boolean },
   ) => Promise<boolean> | boolean;
   resetRemoteState: (options?: { initialMessages?: any[]; clearHistoryError?: boolean }) => void;
+  onConversationDispatchStart?: () => void;
   homeComposerRef: MutableRefObject<HTMLTextAreaElement | null>;
   chatInputRef: MutableRefObject<HTMLTextAreaElement | null>;
   locationState: PortalLocationState | null;
@@ -377,6 +379,8 @@ export function usePortalChatOrchestration({
       return false;
     }
 
+    onConversationDispatchStart?.();
+
     if (isRemoteEmployee && targetEmployee.id === currentEmployee?.id) {
       if (!isResourceImportIntent(visibleContent)) {
         setActivePortalResourceImportSessionId("");
@@ -393,6 +397,7 @@ export function usePortalChatOrchestration({
     currentEmployee,
     handleRemoteSendMessage,
     isRemoteEmployee,
+    onConversationDispatchStart,
     runLocalEmployeeFlow,
     setActivePortalResourceImportSessionId,
   ]);
@@ -808,6 +813,8 @@ export function usePortalChatOrchestration({
       setInputMessage("");
     }
 
+    onConversationDispatchStart?.();
+
     if (showPortalHomeHero) {
       setPendingPortalHomeMessage(rawContent);
       setPortalHomeChatMode(true);
@@ -818,6 +825,7 @@ export function usePortalChatOrchestration({
   }, [
     currentEmployee,
     inputMessage,
+    onConversationDispatchStart,
     sendResolvedMessage,
     setPortalHomeChatMode,
     showPortalHomeHero,

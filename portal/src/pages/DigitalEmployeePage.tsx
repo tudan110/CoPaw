@@ -388,17 +388,40 @@ export default function DigitalEmployeePage({
   const homeComposerRef = useRef<HTMLTextAreaElement | null>(null);
   const chatMessagesRef = useRef<HTMLDivElement | null>(null);
   const shouldAutoScrollRef = useRef(true);
-  const scrollMessagesToBottom = useCallback((behavior: ScrollBehavior = "auto") => {
+  const latestMessagesRef = useRef<any[]>([]);
+  const pendingReplyFocusBaselineRef = useRef<Set<string> | null>(null);
+  const pendingReplyFocusExpiryTimerRef = useRef(0);
+  const replyFocusAlignmentHandlesRef = useRef<{ raf: number[]; timers: number[] }>({
+    raf: [],
+    timers: [],
+  });
+  const suppressAutoScrollStateUntilRef = useRef(0);
+  const lastChatScrollTopRef = useRef(0);
+  const lastChatScrollMaxTopRef = useRef(0);
+  const clearReplyFocusAlignmentHandles = useCallback(() => {
+    replyFocusAlignmentHandlesRef.current.raf.forEach((handle) => {
+      window.cancelAnimationFrame(handle);
+    });
+    replyFocusAlignmentHandlesRef.current.timers.forEach((handle) => {
+      window.clearTimeout(handle);
+    });
+    replyFocusAlignmentHandlesRef.current = { raf: [], timers: [] };
+  }, []);
+  const rememberChatScrollMetrics = useCallback(() => {
     const chatContainer = chatMessagesRef.current;
     if (!chatContainer) {
       return;
     }
 
-    if (messagesEndRef.current) {
-      messagesEndRef.current.scrollIntoView({
-        behavior,
-        block: "end",
-      });
+    lastChatScrollTopRef.current = chatContainer.scrollTop;
+    lastChatScrollMaxTopRef.current = Math.max(
+      0,
+      chatContainer.scrollHeight - chatContainer.clientHeight,
+    );
+  }, []);
+  const scrollMessagesToBottom = useCallback((behavior: ScrollBehavior = "auto") => {
+    const chatContainer = chatMessagesRef.current;
+    if (!chatContainer) {
       return;
     }
 
@@ -406,7 +429,25 @@ export default function DigitalEmployeePage({
       top: chatContainer.scrollHeight,
       behavior,
     });
-  }, []);
+    window.requestAnimationFrame(rememberChatScrollMetrics);
+  }, [rememberChatScrollMetrics]);
+  const requestReplyFocusOnNextAssistant = useCallback(() => {
+    clearReplyFocusAlignmentHandles();
+    if (pendingReplyFocusExpiryTimerRef.current) {
+      window.clearTimeout(pendingReplyFocusExpiryTimerRef.current);
+    }
+    rememberChatScrollMetrics();
+    pendingReplyFocusBaselineRef.current = new Set(
+      latestMessagesRef.current
+        .map((message) => String(message?.id || ""))
+        .filter(Boolean),
+    );
+    shouldAutoScrollRef.current = false;
+    pendingReplyFocusExpiryTimerRef.current = window.setTimeout(() => {
+      pendingReplyFocusBaselineRef.current = null;
+      pendingReplyFocusExpiryTimerRef.current = 0;
+    }, 12000);
+  }, [clearReplyFocusAlignmentHandles, rememberChatScrollMetrics]);
 
   const {
     currentSessionId,
@@ -625,6 +666,7 @@ export default function DigitalEmployeePage({
     navigateToEmployeePage,
     handleRemoteSendMessage,
     resetRemoteState,
+    onConversationDispatchStart: requestReplyFocusOnNextAssistant,
     homeComposerRef,
     chatInputRef,
     locationState,
@@ -816,6 +858,72 @@ export default function DigitalEmployeePage({
   ]);
 
   useEffect(() => {
+    latestMessagesRef.current = messages;
+  }, [messages]);
+
+  useEffect(() => {
+    const baseline = pendingReplyFocusBaselineRef.current;
+    if (!baseline) {
+      return;
+    }
+
+    const nextAssistantMessage = messages.find((message) => {
+      const messageId = String(message?.id || "");
+      return messageId && message?.type !== "user" && !baseline.has(messageId);
+    });
+    if (!nextAssistantMessage?.id) {
+      return;
+    }
+
+    pendingReplyFocusBaselineRef.current = null;
+    if (pendingReplyFocusExpiryTimerRef.current) {
+      window.clearTimeout(pendingReplyFocusExpiryTimerRef.current);
+      pendingReplyFocusExpiryTimerRef.current = 0;
+    }
+    shouldAutoScrollRef.current = false;
+    const targetId = String(nextAssistantMessage.id);
+    clearReplyFocusAlignmentHandles();
+
+    const alignToReply = () => {
+      const targetElement = document.getElementById(`message-${targetId}`);
+      const chatContainer = chatMessagesRef.current;
+      if (!targetElement || !chatContainer?.contains(targetElement)) {
+        return;
+      }
+      suppressAutoScrollStateUntilRef.current = window.performance.now() + 1100;
+      const containerRect = chatContainer.getBoundingClientRect();
+      const targetRect = targetElement.getBoundingClientRect();
+      const targetTop = chatContainer.scrollTop + targetRect.top - containerRect.top;
+      chatContainer.scrollTo({
+        top: Math.max(0, targetTop),
+        behavior: "auto",
+      });
+      rememberChatScrollMetrics();
+    };
+
+    const firstFrame = window.requestAnimationFrame(() => {
+      alignToReply();
+      const secondFrame = window.requestAnimationFrame(alignToReply);
+      replyFocusAlignmentHandlesRef.current.raf.push(secondFrame);
+    });
+    const settleTimer = window.setTimeout(alignToReply, 120);
+    const lateSettleTimer = window.setTimeout(alignToReply, 360);
+    replyFocusAlignmentHandlesRef.current = {
+      raf: [firstFrame],
+      timers: [settleTimer, lateSettleTimer],
+    };
+  }, [clearReplyFocusAlignmentHandles, messages, rememberChatScrollMetrics]);
+
+  useEffect(() => (
+    () => {
+      clearReplyFocusAlignmentHandles();
+      if (pendingReplyFocusExpiryTimerRef.current) {
+        window.clearTimeout(pendingReplyFocusExpiryTimerRef.current);
+      }
+    }
+  ), [clearReplyFocusAlignmentHandles]);
+
+  useEffect(() => {
     const chatContainer = chatMessagesRef.current;
     if (!chatContainer) {
       return;
@@ -833,6 +941,9 @@ export default function DigitalEmployeePage({
   }, [isStreaming, messages, scrollMessagesToBottom]);
 
   useEffect(() => {
+    if (pendingReplyFocusBaselineRef.current) {
+      return;
+    }
     shouldAutoScrollRef.current = true;
     const timerId = window.requestAnimationFrame(() => {
       scrollMessagesToBottom("auto");
@@ -881,9 +992,30 @@ export default function DigitalEmployeePage({
     if (!element) {
       return;
     }
-    const distanceToBottom = element.scrollHeight - element.scrollTop - element.clientHeight;
-    shouldAutoScrollRef.current = distanceToBottom <= CHAT_SCROLL_BOTTOM_THRESHOLD_PX;
-  }, []);
+    if (window.performance.now() < suppressAutoScrollStateUntilRef.current) {
+      shouldAutoScrollRef.current = false;
+      return;
+    }
+    const maxScrollTop = Math.max(0, element.scrollHeight - element.clientHeight);
+    const distanceToBottom = maxScrollTop - element.scrollTop;
+    const isNearBottom = distanceToBottom <= CHAT_SCROLL_BOTTOM_THRESHOLD_PX;
+    const isScrollingDown = element.scrollTop > lastChatScrollTopRef.current + 1;
+    const reachedPreviousBottom =
+      isStreaming &&
+      isScrollingDown &&
+      lastChatScrollMaxTopRef.current > 0 &&
+      element.scrollTop >= lastChatScrollMaxTopRef.current - CHAT_SCROLL_BOTTOM_THRESHOLD_PX;
+
+    shouldAutoScrollRef.current = isNearBottom || reachedPreviousBottom;
+    lastChatScrollTopRef.current = element.scrollTop;
+    lastChatScrollMaxTopRef.current = maxScrollTop;
+
+    if (reachedPreviousBottom && !isNearBottom) {
+      window.requestAnimationFrame(() => {
+        scrollMessagesToBottom("auto");
+      });
+    }
+  }, [isStreaming, scrollMessagesToBottom]);
 
   useEffect(() => {
     persistPageTheme(pageTheme);
