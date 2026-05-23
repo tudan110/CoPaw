@@ -42,7 +42,7 @@ digital-workforce-portal:
     type: NodePort
     port: 80
     targetPort: 80
-    nodePort: 30073
+    nodePort: 30083
 
 # ----- qwenpaw 配置 -----
 qwenpaw:
@@ -79,7 +79,7 @@ qwenpaw:
     KNOWLEDGE_BASE_LLM_RERANK_INPUT_K: "15"
 
     # 智观告警平台接口
-    INOE_API_BASE_URL: "http://192.168.130.51:30080"
+    INOE_API_BASE_URL: "http://10.3.39.246:30080"
     INOE_API_TOKEN: "eyJhbGciOiJIUzUxMiJ9.eyJ1c2VyX2lkIjoxLCJ1c2VyX2tleSI6ImU5ZGIyMTljLTRiNmUtNGJkNS1hYmViLWExOWEyOTQ2YzQzYSIsInVzZXJuYW1lIjoieGlhb2sifQ.EpCFu6WKBPmirfqZHkBR-qPy72p9rZ8WgIPXFuDAJzg4KhH8ou88G7NvbfjwF9BN-hnRdCeh9mKJfbeuCVMetA"
     INOE_API_TIMEOUT: "60"
 

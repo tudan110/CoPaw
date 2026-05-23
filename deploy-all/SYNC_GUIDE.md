@@ -10,6 +10,7 @@
 |---------|---------|------|
 | `~/.qwenpaw/` | `deploy-all/qwenpaw/data/qwenpaw/` | 主目录 |
 | `~/.qwenpaw.secret/` | `deploy-all/qwenpaw/data/qwenpaw.secret/` | 大模型配置（API Key 等） |
+| `~/.qwenpaw/secrets/` | `deploy-all/qwenpaw/data/qwenpaw/secrets/` | 外部系统连接凭证 |
 
 > **注意**：`qwenpaw.secret` 目录包含大模型 Provider 配置，需要打包到 Docker 镜像中。该目录通常包含：
 > - `providers/active_model.json` - 当前激活的模型配置
@@ -234,7 +235,24 @@ rsync -a --exclude='.DS_Store' \
 
 > **说明**：`qwenpaw.secret` 目录包含大模型 API Key 等敏感配置，需要打包到镜像中，容器启动后会自动加载。请确保该目录中的 API Key 是有效的，或者在部署后通过环境变量覆盖。
 
-### 8. 清理运行时数据（不打包进镜像）
+### 8. 同步外部系统凭证目录 (secrets)
+
+```bash
+# 同步 secrets 目录（包含外部系统连接凭证）
+rm -rf deploy-all/qwenpaw/data/qwenpaw/secrets 2>/dev/null
+mkdir -p deploy-all/qwenpaw/data/qwenpaw/secrets
+rsync -a --exclude='.DS_Store' \
+  ~/.qwenpaw/secrets/ deploy-all/qwenpaw/data/qwenpaw/secrets/
+```
+
+> **说明**：`secrets` 目录包含外部系统的连接凭证 `.env` 文件，如：
+> - `inoe.env` - 智观告警平台连接配置
+> - `n9e.env` - 夜莺监控连接配置
+> - `zgops-cmdb.env` - CMDB 连接配置
+>
+> 每个 `.env` 文件都有对应的 `.env.example` 示例文件。部署到不同环境时需根据实际情况修改凭证内容。
+
+### 9. 清理运行时数据（不打包进镜像）
 
 ```bash
 for ws in $(ls deploy-all/qwenpaw/data/qwenpaw/workspaces/); do
@@ -249,7 +267,7 @@ rm -f deploy-all/qwenpaw/data/qwenpaw/token_usage.json 2>/dev/null
 rm -f deploy-all/qwenpaw/data/qwenpaw/qwenpaw.log 2>/dev/null
 ```
 
-### 9. 清理 Python 缓存和系统文件
+### 10. 清理 Python 缓存和系统文件
 
 ```bash
 find deploy-all/qwenpaw/data/qwenpaw -type d \( -name ".venv" -o -name "__pycache__" -o -name "*.egg-info" \) -exec rm -rf {} + 2>/dev/null
@@ -257,7 +275,7 @@ find deploy-all/qwenpaw/data/qwenpaw -name "*.pyc" -delete 2>/dev/null
 find deploy-all/qwenpaw/data/qwenpaw -name ".DS_Store" -delete 2>/dev/null
 ```
 
-### 10. 敏感文件处理
+### 11. 敏感文件处理
 
 **注意**：`.env` 文件包含 API Token 等敏感信息，请根据实际情况决定是否保留。
 
@@ -478,19 +496,24 @@ rm -rf "$SECRET_DIR" 2>/dev/null || true
 mkdir -p "$SECRET_DIR"
 rsync -a --exclude='.DS_Store' "$LOCAL_SECRET_DIR/" "$SECRET_DIR/"
 
-echo "=== Step 8: Clean runtime data ==="
+echo "=== Step 8: Sync secrets (external system credentials) ==="
+rm -rf "$DEPLOY_DIR/secrets" 2>/dev/null || true
+mkdir -p "$DEPLOY_DIR/secrets"
+rsync -a --exclude='.DS_Store' "$LOCAL_DIR/secrets/" "$DEPLOY_DIR/secrets/"
+
+echo "=== Step 9: Clean runtime data ==="
 for ws in $(ls workspaces/); do
   rm -rf "workspaces/$ws/sessions" "workspaces/$ws/file_store" "workspaces/$ws/tool_result" 2>/dev/null || true
   rm -f "workspaces/$ws/chats.json" "workspaces/$ws/feishu_receive_ids.json" 2>/dev/null || true
 done
 rm -f token_usage.json qwenpaw.log 2>/dev/null || true
 
-echo "=== Step 9: Clean cache files ==="
+echo "=== Step 10: Clean cache files ==="
 find . -type d \( -name ".venv" -o -name "__pycache__" \) -exec rm -rf {} + 2>/dev/null || true
 find . -name "*.pyc" -delete 2>/dev/null || true
 find . -name ".DS_Store" -delete 2>/dev/null || true
 
-echo "=== Step 10: Handle .env files ==="
+echo "=== Step 11: Handle .env files ==="
 echo "Skills 目录下可能包含 .env 文件（如 real-alarm/.env 包含 API Token）"
 echo "是否保留 .env 文件？(Y/n)"
 read -r SYNC_ENV

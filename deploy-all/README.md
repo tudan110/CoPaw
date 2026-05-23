@@ -33,7 +33,7 @@ deploy-all/
 
 | 应用 | 端口 | NodePort | 说明 |
 |------|------|----------|------|
-| digital-workforce-portal | 80 | 30073 | Portal 纯前端 |
+| digital-workforce-portal | 80 | 30083 | Portal 纯前端 |
 | qwenpaw | 8088 | 30088 | QwenPaw 主后端 |
 
 ### 服务依赖关系
@@ -130,7 +130,7 @@ helm install cnos-inoe-agent ./cnos-inoe-agent-1.0.0.tgz -n cnos-iomp \
 
 部署完成后访问：
 
-- Portal: `http://<node-ip>:30073`
+- Portal: `http://<node-ip>:30083`
 - QwenPaw: `http://<node-ip>:30088`
 
 ## 单独部署子应用

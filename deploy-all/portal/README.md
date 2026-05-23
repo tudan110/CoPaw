@@ -97,10 +97,10 @@ service:
   type: NodePort
   port: 80
   targetPort: 80
-  nodePort: 30073
+  nodePort: 30083
 ```
 
-访问地址：`http://<node-ip>:30073`
+访问地址：`http://<node-ip>:30083`
 
 ### 自定义配置
 
