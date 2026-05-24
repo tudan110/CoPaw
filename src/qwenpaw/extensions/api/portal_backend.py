@@ -2482,7 +2482,7 @@ async def get_alarm_analysis_result(alarm_id: str):
     try:
         record = get_alarm_record(alarm_id)
         if not record:
-            raise HTTPException(status_code=404, detail=f"Alarm not found: {alarm_id}")
+            return {"code": 1, "message": f"Alarm not found: {alarm_id}", "data": None}
 
         analysis_json = record.get("analysisResult", "")
         if not analysis_json:
