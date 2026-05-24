@@ -2482,21 +2482,21 @@ async def get_alarm_analysis_result(alarm_id: str):
     try:
         record = get_alarm_record(alarm_id)
         if not record:
-            return {"code": 1, "message": f"Alarm not found: {alarm_id}", "data": None}
+            return {"code": 200, "analyst_result": 1, "message": f"Alarm not found: {alarm_id}", "data": None}
 
         analysis_json = record.get("analysisResult", "")
         if not analysis_json:
             status = record.get("status", "")
             if status == "analyzing":
-                return {"code": 0, "message": "分析进行中", "data": None}
-            return {"code": 0, "message": "暂无分析结果", "data": None}
+                return {"code": 200, "analyst_result": 0, "message": "分析进行中", "data": None}
+            return {"code": 200, "analyst_result": 0, "message": "暂无分析结果", "data": None}
 
         analysis_data = json.loads(analysis_json)
-        return {"code": 0, "message": "success", "data": analysis_data}
+        return {"code": 200, "analyst_result": 0, "message": "success", "data": analysis_data}
     except HTTPException:
         raise
     except json.JSONDecodeError:
-        return {"code": 0, "message": "分析结果数据异常", "data": None}
+        return {"code": 200, "analyst_result": 0, "message": "分析结果数据异常", "data": None}
     except Exception as exc:
         error_detail = f"{type(exc).__name__}: {str(exc)}"
         print(f"[ERROR] get_alarm_analysis_result failed: {error_detail}")
