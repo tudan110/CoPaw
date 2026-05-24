@@ -42,12 +42,4 @@ cd skills/alarm-analyst && python scripts/send_analysis_report.py \
 ## 推送后链路
 
 1. 推送分析报告通知（见 `references/notification-protocol.md`）
-2. 等待处置完成回调（基于告警编号 alarmId 匹配）
-3. 收到回调后执行恢复验证 → 更新告警状态
-
-## 回调闭环
-
-- 回调接口：`POST /api/portal/fault-disposal/manual-workorders/notify-closed`
-- 回调请求体必须包含 `alarmId`（告警编号）
-- `chatId` 和 `resId` 为可选字段
-- 系统根据 `alarmId` 从告警注册表反查 `chatId`，然后加载分析记录并执行恢复验证
+2. 收到回调后执行恢复验证 → 更新告警状态

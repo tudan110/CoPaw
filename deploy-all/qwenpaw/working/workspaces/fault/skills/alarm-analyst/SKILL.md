@@ -133,7 +133,7 @@ cd skills/alarm-analyst && python scripts/send_analysis_report.py \
 4. 拓扑关联资源告警查询结果
 5. 指标采集与分析
 6. 根因判断与影响范围
-7. 处置建议与自动建单
+7. 处置建议
 8. 通知推送结果
 9. 恢复验证与状态回写
 
