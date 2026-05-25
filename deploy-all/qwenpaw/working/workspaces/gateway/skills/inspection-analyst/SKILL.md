@@ -53,7 +53,11 @@ cd skills/inspection-analyst && python scripts/inspect_resource_metrics.py \
 
 ## 输出结构
 
+**每次输出完整巡检报告时，必须在最前面加上标志行和分隔线，否则 Portal 前端无法渲染卡片：**
+
 ```markdown
+# PORTAL INSPECTION CARD MODE
+---
 ## 巡检结果
 （整体状态）
 
