@@ -9,3 +9,5 @@ def test_main_app_registers_portal_routes() -> None:
 
     assert "/api/portal/employee-status" in paths
     assert "/api/portal/real-alarms" in paths
+    assert "/api/portal/qiming-adapter/v1/models" in paths
+    assert "/api/portal/xingchen-adapter/v1/models" in paths

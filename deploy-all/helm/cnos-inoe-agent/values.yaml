@@ -95,6 +95,23 @@ qwenpaw:
     # 告警平台接口时区偏移（小时），默认东八区
     QWENPAW_PORTAL_REAL_ALARM_TIMEZONE_OFFSET: "8"
 
+
+    # 启明大模型 OpenAI 风格适配层（测试时请使用本地覆盖文件或 Secret 注入真实密钥）
+    QWENPAW_QIMING_BASE_URL: "http://10.130.154.233:30000"
+    QWENPAW_QIMING_COMPLETIONS_PATH: "/serviceAgent/rest/wsc/completions"
+    QWENPAW_QIMING_APP_ID: "your_qiming_app_id"
+    QWENPAW_QIMING_APP_KEY: "your_qiming_app_key"
+    QWENPAW_QIMING_BEARER_TOKEN: "your_qiming_bearer_token"
+    QWENPAW_QIMING_MODELS: "qiming25_72b_fc"
+
+    # 星辰大模型 OpenAI 风格适配层（测试时请使用本地覆盖文件或 Secret 注入真实密钥）
+    QWENPAW_XINGCHEN_BASE_URL: "https://openapi.teleagi.cn:443"
+    QWENPAW_XINGCHEN_CHAT_PATH: "/aipaas/lm/v1/telechat/chat115b"
+    QWENPAW_XINGCHEN_APP_ID: "your_xingchen_app_id"
+    QWENPAW_XINGCHEN_ORDER_NUM: "your_xingchen_order_num"
+    QWENPAW_XINGCHEN_AUTHORIZATION: "your_xingchen_authorization"
+    QWENPAW_XINGCHEN_MODELS: "telechat-115b"
+
   # 资源限制
   resources:
     requests:
