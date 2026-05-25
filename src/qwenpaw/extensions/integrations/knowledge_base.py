@@ -890,6 +890,8 @@ def _detect_source_type(filename: str, mime_type: str | None) -> str:
         return "pdf"
     if lowered.endswith(".docx"):
         return "docx"
+    if lowered.endswith(".doc"):
+        return "doc"
     if lowered.endswith(".pptx") or mime_type == (
         "application/vnd.openxmlformats-officedocument.presentationml.presentation"
     ):
