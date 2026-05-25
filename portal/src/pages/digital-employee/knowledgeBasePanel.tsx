@@ -59,6 +59,51 @@ const KNOWLEDGE_TIME_FORMATTER = new Intl.DateTimeFormat("zh-CN", {
   hour12: false,
 });
 const INGEST_FOLLOW_UP_REFRESH_DELAY_MS = 1200;
+const KNOWLEDGE_BASE_CHANGE_EVENT = "portal:knowledge-base-changed";
+const KNOWLEDGE_BASE_CHANGE_CHANNEL = "portal-knowledge-base-changes";
+const KNOWLEDGE_BASE_CHANGE_STORAGE_KEY = "portal:knowledge-base:last-change";
+
+type KnowledgeBaseChangeDetail = {
+  id: string;
+  sourceId: string;
+  reason: string;
+  timestamp: number;
+};
+
+function createKnowledgeBaseChangeId() {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
+    return crypto.randomUUID();
+  }
+  return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+function emitKnowledgeBaseChanged(sourceId: string, reason: string) {
+  if (typeof window === "undefined") {
+    return;
+  }
+  const detail: KnowledgeBaseChangeDetail = {
+    id: createKnowledgeBaseChangeId(),
+    sourceId,
+    reason,
+    timestamp: Date.now(),
+  };
+  window.dispatchEvent(new CustomEvent<KnowledgeBaseChangeDetail>(
+    KNOWLEDGE_BASE_CHANGE_EVENT,
+    { detail },
+  ));
+  try {
+    const channel = new BroadcastChannel(KNOWLEDGE_BASE_CHANGE_CHANNEL);
+    channel.postMessage(detail);
+    channel.close();
+  } catch {
+    // BroadcastChannel is not available in every embedded browser surface.
+  }
+  try {
+    window.localStorage.setItem(KNOWLEDGE_BASE_CHANGE_STORAGE_KEY, JSON.stringify(detail));
+  } catch {
+    // Storage may be blocked in private or sandboxed iframe contexts.
+  }
+}
 
 function normalizeKnowledgeDate(value: string) {
   const trimmed = value.trim();
@@ -109,11 +154,29 @@ function compactText(value?: string | null, maxLength = 120) {
   return `${text.slice(0, maxLength - 1)}…`;
 }
 
+function normalizeIngestStatus(status?: string | null) {
+  return String(status || "").trim().toLowerCase();
+}
+
+function isIngestSuccess(status?: string | null) {
+  return ["completed", "complete", "success", "succeeded", "done"].includes(
+    normalizeIngestStatus(status),
+  );
+}
+
+function isIngestFailure(status?: string | null) {
+  return ["failed", "failure", "error", "errored"].includes(
+    normalizeIngestStatus(status),
+  );
+}
+
 export function KnowledgeBasePanel() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const queryResultRef = useRef<HTMLDivElement | null>(null);
   const finalizedIngestJobRef = useRef("");
   const ingestRefreshTimerRef = useRef<number | null>(null);
+  const panelInstanceIdRef = useRef(createKnowledgeBaseChangeId());
+  const refreshRef = useRef<() => Promise<void>>(async () => undefined);
   const [health, setHealth] = useState<KnowledgeBaseHealth | null>(null);
   const [sources, setSources] = useState<KnowledgeSourceRecord[]>([]);
   const [summary, setSummary] = useState<KnowledgeSourceSummaryItem[]>([]);
@@ -169,6 +232,55 @@ export function KnowledgeBasePanel() {
     }
   }, [includeArchived, sourceKeyword, sourceScope, sourceType]);
 
+  useEffect(() => {
+    refreshRef.current = refresh;
+  }, [refresh]);
+
+  const publishKnowledgeBaseChange = useCallback((reason: string) => {
+    emitKnowledgeBaseChanged(panelInstanceIdRef.current, reason);
+  }, []);
+
+  useEffect(() => {
+    const handleDetail = (detail?: Partial<KnowledgeBaseChangeDetail>) => {
+      if (!detail?.id || detail.sourceId === panelInstanceIdRef.current) {
+        return;
+      }
+      void refreshRef.current().catch((err) => {
+        setError(err?.message || "知识库数据刷新失败");
+      });
+    };
+
+    const handleWindowEvent = (event: Event) => {
+      handleDetail((event as CustomEvent<KnowledgeBaseChangeDetail>).detail);
+    };
+    const handleStorageEvent = (event: StorageEvent) => {
+      if (event.key !== KNOWLEDGE_BASE_CHANGE_STORAGE_KEY || !event.newValue) {
+        return;
+      }
+      try {
+        handleDetail(JSON.parse(event.newValue));
+      } catch {
+        // Ignore malformed cross-window refresh payloads.
+      }
+    };
+
+    let channel: BroadcastChannel | null = null;
+    try {
+      channel = new BroadcastChannel(KNOWLEDGE_BASE_CHANGE_CHANNEL);
+      channel.onmessage = (event) => handleDetail(event.data);
+    } catch {
+      channel = null;
+    }
+
+    window.addEventListener(KNOWLEDGE_BASE_CHANGE_EVENT, handleWindowEvent);
+    window.addEventListener("storage", handleStorageEvent);
+    return () => {
+      window.removeEventListener(KNOWLEDGE_BASE_CHANGE_EVENT, handleWindowEvent);
+      window.removeEventListener("storage", handleStorageEvent);
+      channel?.close();
+    };
+  }, []);
+
   const refreshAfterIngestSettles = useCallback(async () => {
     await refresh();
     if (ingestRefreshTimerRef.current) {
@@ -196,19 +308,21 @@ export function KnowledgeBasePanel() {
     }
     const jobId = String(job.job_id || job.id);
     const finalJobKey = `${jobId}:${job.status || ""}`;
-    if (job.status === "completed") {
+    if (isIngestSuccess(job.status)) {
       if (finalizedIngestJobRef.current !== finalJobKey) {
         finalizedIngestJobRef.current = finalJobKey;
         setNotice("文件已入库，资料列表已更新");
         void refreshAfterIngestSettles();
+        publishKnowledgeBaseChange("ingest-completed");
       }
       return undefined;
     }
-    if (job.status === "failed") {
+    if (isIngestFailure(job.status)) {
       if (finalizedIngestJobRef.current !== finalJobKey) {
         finalizedIngestJobRef.current = finalJobKey;
         setNotice("");
         setError(job.note || "文件入库失败");
+        publishKnowledgeBaseChange("ingest-failed");
       }
       return undefined;
     }
@@ -216,10 +330,10 @@ export function KnowledgeBasePanel() {
       void getKnowledgeIngestProgress(jobId)
         .then((nextJob) => {
           setJob(nextJob);
-          if (nextJob.status === "completed") {
+          if (isIngestSuccess(nextJob.status)) {
             setNotice("文件已入库，资料列表已更新");
           }
-          if (nextJob.status === "failed") {
+          if (isIngestFailure(nextJob.status)) {
             setNotice("");
             setError(nextJob.note || "文件入库失败");
           }
@@ -227,7 +341,7 @@ export function KnowledgeBasePanel() {
         .catch((err) => setError(err?.message || "入库进度获取失败"));
     }, 1500);
     return () => window.clearInterval(timerId);
-  }, [job?.id, job?.job_id, job?.status, refreshAfterIngestSettles]);
+  }, [job?.id, job?.job_id, job?.status, publishKnowledgeBaseChange, refreshAfterIngestSettles]);
 
   useEffect(() => {
     if (!queryResult || queryLoading) {
@@ -242,6 +356,19 @@ export function KnowledgeBasePanel() {
     }, 80);
     return () => window.clearTimeout(timerId);
   }, [queryLoading, queryResult, ragAnswer]);
+
+  useEffect(() => {
+    if (!selectedSource) {
+      return undefined;
+    }
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setSelectedSource(null);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [selectedSource]);
 
   const stats = useMemo(() => {
     const active = sources.filter((item) => !item.archived_at);
@@ -294,19 +421,22 @@ export function KnowledgeBasePanel() {
     try {
       const nextJob = await uploadKnowledgeFile(file);
       setJob(nextJob);
-      if (nextJob.status === "completed") {
+      publishKnowledgeBaseChange("ingest-submitted");
+      if (isIngestSuccess(nextJob.status)) {
         const jobId = String(nextJob.job_id || nextJob.id || file.name);
         finalizedIngestJobRef.current = `${jobId}:${nextJob.status}`;
         setNotice("文件已入库，资料列表已更新");
-      } else if (nextJob.status === "failed") {
+        publishKnowledgeBaseChange("ingest-completed");
+      } else if (isIngestFailure(nextJob.status)) {
         const jobId = String(nextJob.job_id || nextJob.id || file.name);
         finalizedIngestJobRef.current = `${jobId}:${nextJob.status}`;
         setNotice("");
         setError(nextJob.note || "文件入库失败");
+        publishKnowledgeBaseChange("ingest-failed");
       } else {
         setNotice("文件已提交入库，正在刷新资料列表...");
       }
-      if (nextJob.status === "completed") {
+      if (isIngestSuccess(nextJob.status)) {
         await refreshAfterIngestSettles();
       } else {
         await refresh();
@@ -340,6 +470,7 @@ export function KnowledgeBasePanel() {
       setManualContent("");
       setManualTags("");
       setNotice("知识已沉淀");
+      publishKnowledgeBaseChange("manual-entry-created");
       await refresh();
     } catch (err: any) {
       setError(err?.message || "手动录入失败");
@@ -354,6 +485,7 @@ export function KnowledgeBasePanel() {
     try {
       await archiveKnowledgeSources([source.id], "portal archive");
       setNotice("资料已归档");
+      publishKnowledgeBaseChange("source-archived");
       await refresh();
     } catch (err: any) {
       setError(err?.message || "归档失败");
@@ -368,6 +500,7 @@ export function KnowledgeBasePanel() {
     try {
       await unarchiveKnowledgeSources([source.id]);
       setNotice("资料已恢复");
+      publishKnowledgeBaseChange("source-unarchived");
       await refresh();
     } catch (err: any) {
       setError(err?.message || "恢复失败");
@@ -410,6 +543,7 @@ export function KnowledgeBasePanel() {
       setNotice("资料元数据已更新");
       const detail = await getKnowledgeSourceDetail(selectedSource.id, true);
       setSelectedSource(detail);
+      publishKnowledgeBaseChange("source-updated");
       await refresh();
     } catch (err: any) {
       setError(err?.message || "资料编辑失败");
@@ -424,6 +558,7 @@ export function KnowledgeBasePanel() {
     try {
       await reloadKnowledgeBuiltinPacks({ force: true, packId });
       setNotice(packId ? `内置知识包 ${packId} 已重载` : "内置知识包已重载");
+      publishKnowledgeBaseChange("builtin-packs-reloaded");
       await refresh();
     } catch (err: any) {
       setError(err?.message || "内置知识包重载失败");
@@ -439,6 +574,7 @@ export function KnowledgeBasePanel() {
       const enabled = !health?.embedding?.enabled;
       await toggleKnowledgeEmbedding(enabled);
       setNotice(enabled ? "向量检索已开启" : "向量检索已关闭");
+      publishKnowledgeBaseChange("embedding-toggled");
       await refresh();
     } catch (err: any) {
       setError(err?.message || "向量开关更新失败");
@@ -453,6 +589,7 @@ export function KnowledgeBasePanel() {
     try {
       const result = await reindexKnowledgeEmbeddings(false);
       setNotice(`向量回填完成：${result.embedded || 0}/${result.requested || 0}`);
+      publishKnowledgeBaseChange("embedding-reindexed");
       await refresh();
     } catch (err: any) {
       setError(err?.message || "向量回填失败");
@@ -463,6 +600,10 @@ export function KnowledgeBasePanel() {
 
   const evidence = queryResult?.relevant_evidence || [];
   const queryFeedbackTone = queryLoading ? "loading" : queryFeedback.startsWith("检索完成") ? "done" : "warning";
+  const showEmbeddingControls = Boolean(
+    health?.embedding?.enabled
+    || (health?.embedding?.key_configured && !health?.embedding?.env_forced_off),
+  );
 
   return (
     <div className="knowledge-base-panel">
@@ -522,6 +663,9 @@ export function KnowledgeBasePanel() {
               <select value={sourceType} onChange={(event) => setSourceType(event.target.value)}>
                 <option value="">全部类型</option>
                 <option value="document">文档</option>
+                <option value="doc">DOC</option>
+                <option value="docx">DOCX</option>
+                <option value="pptx">PPTX</option>
                 <option value="pdf">PDF</option>
                 <option value="spreadsheet">表格</option>
                 <option value="image">图片</option>
@@ -621,12 +765,16 @@ export function KnowledgeBasePanel() {
           </div>
 
           <div className="kb-maintenance">
-            <button type="button" className="portal-model-btn secondary" disabled={loading} onClick={() => void handleEmbeddingToggle()}>
-              {health?.embedding?.enabled ? "关闭向量检索" : "开启向量检索"}
-            </button>
-            <button type="button" className="portal-model-btn secondary" disabled={loading} onClick={() => void handleReindex()}>
-              回填向量
-            </button>
+            {showEmbeddingControls ? (
+              <>
+                <button type="button" className="portal-model-btn secondary" disabled={loading} onClick={() => void handleEmbeddingToggle()}>
+                  {health?.embedding?.enabled ? "关闭向量检索" : "开启向量检索"}
+                </button>
+                <button type="button" className="portal-model-btn secondary" disabled={loading} onClick={() => void handleReindex()}>
+                  回填向量
+                </button>
+              </>
+            ) : null}
             <small>{health?.storage?.dataDir}</small>
           </div>
         </aside>
@@ -837,56 +985,94 @@ export function KnowledgeBasePanel() {
       </section>
 
       {selectedSource ? (
-        <section className="kb-source-detail">
-          <div className="kb-section-title">
-            <h3>资料详情</h3>
-            <button type="button" className="portal-model-btn secondary" onClick={() => setSelectedSource(null)}>
-              关闭
-            </button>
-          </div>
-          <div className="kb-detail-grid">
-            <div className="kb-detail-editor">
-              <strong>{selectedSource.filename}</strong>
-              <small>{selectedSource.builtin_pack_id ? `内置包：${selectedSource.builtin_pack_id}` : "用户资料"} · {selectedSource.units?.length || 0} 个切片</small>
-              <label>
-                显示标题
-                <input value={editorTitle} onChange={(event) => setEditorTitle(event.target.value)} placeholder="留空则使用文件名" />
-              </label>
-              <label>
-                标签
-                <input value={editorTags} onChange={(event) => setEditorTags(event.target.value)} placeholder="逗号分隔" />
-              </label>
-              <label>
-                备注
-                <textarea value={editorNote} onChange={(event) => setEditorNote(event.target.value)} />
-              </label>
-              <label>
-                来源层级
-                <select
-                  value={editorScope}
-                  disabled={Boolean(selectedSource.builtin_pack_id)}
-                  onChange={(event) => setEditorScope(event.target.value)}
-                >
-                  <option value="tenant_private">企业内部经验</option>
-                  <option value="runtime_curated">运行时沉淀</option>
-                  <option value="system_builtin">平台内置知识</option>
-                </select>
-              </label>
-              <button type="button" className="portal-model-btn" disabled={loading} onClick={() => void handleSaveSource()}>
-                保存资料设置
+        <div
+          className="kb-detail-modal-backdrop"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) {
+              setSelectedSource(null);
+            }
+          }}
+        >
+          <section
+            className="kb-source-detail kb-source-detail-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="kb-source-detail-title"
+          >
+            <div className="kb-section-title kb-detail-header">
+              <div className="kb-detail-title">
+                <h3 id="kb-source-detail-title">资料详情</h3>
+                <small>{selectedSource.filename}</small>
+              </div>
+              <div className="kb-detail-header-actions">
+                <span>{scopeLabel(selectedSource.source_scope, selectedSource.meta?.scope_label)}</span>
+                <span>{selectedSource.source_type || "document"}</span>
+                <span>{selectedSource.units?.length || 0} 个切片</span>
+              </div>
+              <button
+                type="button"
+                className="portal-model-btn secondary kb-detail-close"
+                aria-label="关闭资料详情"
+                onClick={() => setSelectedSource(null)}
+              >
+                <i className="fas fa-xmark" />
               </button>
             </div>
-            <div className="kb-unit-list">
-              {(selectedSource.units || []).slice(0, 20).map((unit) => (
-                <article key={unit.id} className="kb-unit-item">
-                  <strong>{unit.title || unit.id}</strong>
-                  <small>{unit.locator || unit.source_type || "-"}</small>
-                  <p>{unit.content}</p>
-                </article>
-              ))}
+            <div className="kb-detail-grid">
+              <div className="kb-detail-editor kb-detail-editor-panel">
+                <div className="kb-detail-summary">
+                  <strong>{selectedSource.meta?.display_title || selectedSource.filename}</strong>
+                  <small>{selectedSource.builtin_pack_id ? `内置包：${selectedSource.builtin_pack_id}` : "用户资料"} · {formatDate(selectedSource.uploaded_at)}</small>
+                </div>
+                <label>
+                  显示标题
+                  <input value={editorTitle} onChange={(event) => setEditorTitle(event.target.value)} placeholder="留空则使用文件名" />
+                </label>
+                <label>
+                  标签
+                  <input value={editorTags} onChange={(event) => setEditorTags(event.target.value)} placeholder="逗号分隔" />
+                </label>
+                <label>
+                  备注
+                  <textarea value={editorNote} onChange={(event) => setEditorNote(event.target.value)} />
+                </label>
+                <label>
+                  来源层级
+                  <select
+                    value={editorScope}
+                    disabled={Boolean(selectedSource.builtin_pack_id)}
+                    onChange={(event) => setEditorScope(event.target.value)}
+                  >
+                    <option value="tenant_private">企业内部经验</option>
+                    <option value="runtime_curated">运行时沉淀</option>
+                    <option value="system_builtin">平台内置知识</option>
+                  </select>
+                </label>
+                <button type="button" className="portal-model-btn" disabled={loading} onClick={() => void handleSaveSource()}>
+                  保存资料设置
+                </button>
+              </div>
+              <div className="kb-unit-panel">
+                <div className="kb-unit-list-header">
+                  <strong>知识切片</strong>
+                  <span>最多展示前 20 条</span>
+                </div>
+                <div className="kb-unit-list">
+                  {(selectedSource.units || []).slice(0, 20).map((unit, index) => (
+                    <article key={unit.id} className="kb-unit-item">
+                      <div>
+                        <strong>{unit.title || `切片 ${index + 1}`}</strong>
+                        <small>{unit.locator || unit.source_type || "-"}</small>
+                      </div>
+                      <p>{unit.content}</p>
+                    </article>
+                  ))}
+                  {selectedSource.units?.length ? null : <div className="kb-empty-line">暂无切片内容</div>}
+                </div>
+              </div>
             </div>
-          </div>
-        </section>
+          </section>
+        </div>
       ) : null}
     </div>
   );
