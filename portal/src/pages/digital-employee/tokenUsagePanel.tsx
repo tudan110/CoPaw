@@ -428,9 +428,10 @@ export function TokenUsagePanel({
         },
         formatter: (params: Array<{ axisValue: string; seriesName: string; data: number; color: string }>) => {
           const lines = params
-            .map((item) => `${item.seriesName}：${formatNumber(item.data || 0)}`)
+            .filter((item) => item.data > 0)
+            .map((item) => `<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${item.color};margin-right:6px;"></span>${item.seriesName}<span style="float:right;margin-left:20px;font-weight:600">${formatNumber(item.data || 0)}</span>`)
             .join("<br/>");
-          return `${params[0]?.axisValue || ""}<br/>${lines}`;
+          return `<div style="min-width:180px">${params[0]?.axisValue || ""}<br/>${lines || '<span style="color:#94a3b8">暂无用量</span>'}</div>`;
         },
       },
       legend: {
@@ -514,11 +515,11 @@ export function TokenUsagePanel({
           color: isDark ? "#e2e8f0" : "#1e293b",
           fontSize: 12,
         },
-        formatter: (params: Array<{ axisValue: string; seriesName: string; data: number }>) => {
+        formatter: (params: Array<{ axisValue: string; seriesName: string; data: number; color: string }>) => {
           const lines = params
-            .map((item) => `${item.seriesName}：${formatNumber(item.data || 0)}`)
+            .map((item) => `<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${item.color};margin-right:6px;"></span>${item.seriesName}<span style="float:right;margin-left:20px;font-weight:600">${formatNumber(item.data || 0)}</span>`)
             .join("<br/>");
-          return `${params[0]?.axisValue || ""}<br/>${lines}`;
+          return `<div style="min-width:180px">${params[0]?.axisValue || ""}<br/>${lines}</div>`;
         },
       },
       legend: {
@@ -564,7 +565,7 @@ export function TokenUsagePanel({
       },
       series: [
         {
-          name: "Prompt Tokens",
+          name: "输入 Token",
           type: "line",
           smooth: true,
           showSymbol: false,
@@ -572,7 +573,7 @@ export function TokenUsagePanel({
           data: allDatesAsc.map((date) => byDateStatsMap.get(date)?.prompt_tokens || 0),
         },
         {
-          name: "Completion Tokens",
+          name: "输出 Token",
           type: "line",
           smooth: true,
           showSymbol: false,
@@ -580,7 +581,7 @@ export function TokenUsagePanel({
           data: allDatesAsc.map((date) => byDateStatsMap.get(date)?.completion_tokens || 0),
         },
         {
-          name: "Total Tokens",
+          name: "总计 Token",
           type: "line",
           smooth: true,
           showSymbol: false,
@@ -682,7 +683,7 @@ export function TokenUsagePanel({
             <section className="token-usage-chart-card">
               <div className="token-usage-card-head">
                 <div>
-                  <h4>Token 趋势</h4>
+                  <h4>每日 Token 消耗</h4>
                   <p>按日期展示输入 / 输出 token 消耗变化</p>
                 </div>
               </div>
@@ -716,7 +717,7 @@ export function TokenUsagePanel({
               <section className="token-usage-chart-card">
                 <div className="token-usage-card-head">
                   <div>
-                    <h4>Token 类型趋势</h4>
+                    <h4>Token 类型分布趋势</h4>
                   </div>
                 </div>
                 <ReactECharts
