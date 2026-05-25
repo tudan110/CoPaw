@@ -135,7 +135,6 @@ DEFAULT_GROUP_HINTS = {
 FIELD_ALIASES = {
     "asset_code": [
         "asset_code",
-        "资产编号",
         "资源编号",
         "设备编号",
         "设备编码",
@@ -231,15 +230,15 @@ FIELD_ALIASES = {
     ],
     "dev_software_version": ["dev_software_version", "设备软件版本", "软件版本", "软件版本号"],
     "dev_sn": ["dev_sn", "设备序列号", "序列号", "序列号sn", "设备sn"],
-    "property_no": ["property_no"],
+    "property_no": ["property_no", "资产编号", "资产标识", "资产编码", "固定资产编号", "固定资产编码"],
     "city": ["city", "地市", "城市"],
     "county": ["county", "区县", "区"],
     "data_center": ["data_center", "所属数据中心"],
     "platform": ["platform", "平台", "采集平台", "纳管平台"],
     "op_duty": ["op_duty", "运维负责人", "运维组", "责任人", "维护人"],
-    "u_count": ["u_count", "u数", "设备u数"],
+    "u_count": ["u_count", "u数", "设备u数", "u位", "u位数", "u位高度"],
     "u_start": ["u_start", "起始u位", "起始u", "开始u位"],
-    "cabinet": ["cabinet", "所属机柜", "机柜柜位"],
+    "cabinet": ["cabinet", "所属机柜", "机柜位置", "机柜柜位"],
     "cpu_architecture": [
         "cpu_architecture",
         "cpu架构",
@@ -276,6 +275,31 @@ FIELD_ALIASES = {
         "访问口令",
         "访问密码",
         "口令",
+    ],
+    "snmp_version": [
+        "snmp_version",
+        "proto_snmp",
+        "snmp版本",
+        "snmp协议版本",
+        "snmp version",
+    ],
+    "snmp_read_community": [
+        "snmp_read_community",
+        "snmp_read_pwd",
+        "snmp_ro_community",
+        "snmp读口令",
+        "snmp只读口令",
+        "snmp读团体字",
+        "snmp read community",
+    ],
+    "snmp_write_community": [
+        "snmp_write_community",
+        "snmp_write_pwd",
+        "snmp_rw_community",
+        "snmp写口令",
+        "snmp读写口令",
+        "snmp写团体字",
+        "snmp write community",
     ],
     "db_memory": ["db_memory", "内存配置", "数据库内存"],
     "db_connect": [
@@ -907,8 +931,8 @@ def _semantic_field_candidates(header: str) -> list[dict[str, str]]:
 
     if any(token in raw for token in ("资源主键", "业务主键", "实例主键", "设备主键", "主键", "唯一标识", "唯一键", "资源编码", "资源编号")):
         register("asset_code", "high")
-    elif any(token in raw for token in ("资产标识", "资产编号", "资产编码")):
-        register("asset_code", "medium")
+    elif any(token in raw for token in ("资产标识", "资产编号", "资产编码", "固定资产编号", "固定资产编码")):
+        register("property_no", "high")
 
     if any(token in raw for token in ("组件实例名", "数据库实例名", "服务实例名", "应用实例名", "实例名称", "实例名", "应用名称", "设备名称", "主机名称", "主机名", "节点名称", "节点名")):
         register("name", "high")
@@ -2344,13 +2368,19 @@ def _collect_field_candidates(header: str, metadata: dict[str, Any] | None = Non
             "source": source,
             **extra,
         }
-        if current is None or _confidence_rank(confidence) > _confidence_rank(current.get("confidence", "")):
+        if current is None or (
+            _confidence_rank(confidence),
+            int(extra.get("score") or 0),
+        ) > (
+            _confidence_rank(current.get("confidence", "")),
+            int(current.get("score") or 0),
+        ):
             candidates[target] = payload
 
     for target, aliases in FIELD_ALIASES.items():
         for alias in aliases:
             if normalized == _normalize_header(alias):
-                register(target, "high", "rule")
+                register(target, "high", "rule", score=100)
 
     for candidate in _semantic_field_candidates(header):
         register(
@@ -2378,13 +2408,13 @@ def _collect_field_candidates(header: str, metadata: dict[str, Any] | None = Non
             for alias in aliases:
                 alias_token = _normalize_header(alias)
                 if alias_token and len(alias_token) >= 5 and (alias_token in normalized or normalized in alias_token):
-                    register(target, "medium", "rule")
+                    register(target, "medium", "rule", score=60)
 
     return sorted(
         candidates.values(),
         key=lambda item: (
-            -int(item.get("score") or 0),
             -_confidence_rank(item.get("confidence", "")),
+            -int(item.get("score") or 0),
             not bool(item.get("direct")),
             item.get("targetField", ""),
         ),
@@ -2516,6 +2546,55 @@ def _mapping_effective_target_field(
     return _clean_text(resolved) or cleaned_target
 
 
+def _exact_model_attribute_mapping(
+    header: str,
+    type_template: dict[str, Any] | None,
+) -> str:
+    if not type_template:
+        return ""
+    cleaned_header = _clean_text(header)
+    normalized_header = _normalize_token(cleaned_header)
+    if not cleaned_header or not normalized_header:
+        return ""
+
+    definitions_by_name = {
+        _clean_text(definition.get("name")): definition
+        for definition in _attribute_definitions(type_template)
+        if _clean_text(definition.get("name"))
+    }
+    matches: list[str] = []
+    for definition in definitions_by_name.values():
+        attr_name = _clean_text(definition.get("name"))
+        attr_alias = _clean_text(definition.get("alias"))
+        for candidate in (attr_name, attr_alias):
+            if not candidate:
+                continue
+            if cleaned_header == candidate or normalized_header == _normalize_token(candidate):
+                if attr_name not in matches:
+                    matches.append(attr_name)
+
+    if len(matches) == 1:
+        return matches[0]
+    if not matches:
+        return ""
+
+    exact_name_matches = [item for item in matches if item == cleaned_header]
+    if len(exact_name_matches) == 1:
+        return exact_name_matches[0]
+
+    required_matches = [
+        item
+        for item in matches
+        if bool(definitions_by_name.get(item, {}).get("required") or definitions_by_name.get(item, {}).get("is_required"))
+    ]
+    if len(required_matches) == 1:
+        return required_matches[0]
+
+    if cleaned_header in {"name", "名称"} and "name" in matches:
+        return "name"
+    return ""
+
+
 def _build_sheet_mapping_detail(
     *,
     header: str,
@@ -2525,10 +2604,56 @@ def _build_sheet_mapping_detail(
     type_template: dict[str, Any] | None = None,
     value_mapping: tuple[str, str] | None = None,
 ) -> dict[str, Any]:
-    # A strong (unambiguous) value-based match is the most reliable signal we
-    # have: the column's own values fall within exactly one choice attribute's
-    # allowed set, so it wins outright over header heuristics / LLM guesses.
     value_target, value_confidence = value_mapping or ("", "")
+    exact_model_target = _exact_model_attribute_mapping(header, type_template)
+    if exact_model_target:
+        return {
+            "sourceField": header,
+            "targetField": exact_model_target,
+            "suggestedTargetField": exact_model_target,
+            "confidence": "high",
+            "status": "mapped",
+            "resolvedBy": "model",
+            "candidates": [
+                {
+                    "targetField": exact_model_target,
+                    "confidence": "high",
+                    "source": "model",
+                    "effectiveTargetField": exact_model_target,
+                }
+            ],
+            "needsConfirmation": False,
+            "message": "",
+        }
+
+    heuristic_target, heuristic_confidence = heuristic_mapping
+    llm_target, llm_confidence = llm_mapping
+    if heuristic_target not in {"", "unknown"} and heuristic_confidence == "high":
+        effective = _mapping_effective_target_field(heuristic_target, type_template)
+        if not type_template or not effective or _find_attribute_definition(type_template, effective):
+            return {
+                "sourceField": header,
+                "targetField": heuristic_target,
+                "suggestedTargetField": heuristic_target,
+                "confidence": "high",
+                "status": "mapped",
+                "resolvedBy": "rule",
+                "candidates": [
+                    {
+                        "targetField": heuristic_target,
+                        "confidence": "high",
+                        "source": "rule",
+                        "effectiveTargetField": effective,
+                    }
+                ],
+                "needsConfirmation": False,
+                "message": "",
+            }
+
+    # Header/model evidence is safer than value-domain inference. Value-only
+    # mapping remains useful for vague headers, but numeric columns such as
+    # "U位高度" must not be mistaken for an unrelated enum just because values
+    # overlap.
     if value_target not in {"", "unknown"} and value_confidence == "high":
         effective = _mapping_effective_target_field(
             value_target, type_template
@@ -2552,8 +2677,6 @@ def _build_sheet_mapping_detail(
             "message": "",
         }
 
-    heuristic_target, heuristic_confidence = heuristic_mapping
-    llm_target, llm_confidence = llm_mapping
     merged_target, merged_confidence = _merge_sheet_header_mapping(
         header=header,
         heuristic_mapping=heuristic_mapping,
@@ -3555,22 +3678,30 @@ async def _resolve_sheet_mapping_plan(
         rows=rows,
         type_template=type_template_map.get(default_ci_type),
     )
+    heuristic_mapping_details = {
+        header: _build_sheet_mapping_detail(
+            header=header,
+            heuristic_mapping=heuristic_mappings.get(header, ("unknown", "low")),
+            llm_mapping=("unknown", "low"),
+            metadata=metadata,
+            type_template=type_template_map.get(default_ci_type),
+            value_mapping=heuristic_value_mappings.get(header),
+        )
+        for header in headers
+    }
+    heuristic_mappings = {
+        header: (
+            str(detail.get("targetField") or "unknown"),
+            str(detail.get("confidence") or "low"),
+        )
+        for header, detail in heuristic_mapping_details.items()
+    }
     heuristic_plan = SheetMappingPlan(
         sheet_kind=heuristic_sheet_kind,
         default_ci_type=default_ci_type,
         mappings=heuristic_mappings,
         reason="规则映射",
-        mapping_details={
-            header: _build_sheet_mapping_detail(
-                header=header,
-                heuristic_mapping=heuristic_mappings.get(header, ("unknown", "low")),
-                llm_mapping=("unknown", "low"),
-                metadata=metadata,
-                type_template=type_template_map.get(default_ci_type),
-                value_mapping=heuristic_value_mappings.get(header),
-            )
-            for header in headers
-        },
+        mapping_details=heuristic_mapping_details,
     )
 
     if not llm_client or heuristic_sheet_kind in {"relation", "note"}:
@@ -4037,6 +4168,15 @@ def _collect_confirmation_issues(
     def has_value_for(canonical_field: str) -> bool:
         if _clean_text(attributes.get(canonical_field)):
             return True
+        if canonical_field == "name" and _first_non_empty_value(
+            attributes.get("project_name"),
+            attributes.get("product_name"),
+            attributes.get("vserver_name"),
+            attributes.get("db_instance"),
+            attributes.get("middleware_name"),
+            attributes.get("dev_name"),
+        ):
+            return True
         if type_template:
             resolved_key = _resolve_import_target_key(
                 type_template=type_template,
@@ -4050,13 +4190,13 @@ def _collect_confirmation_issues(
         issues.append("名称")
     if ci_type in {"PhysicalMachine", "vserver", "networkdevice"} and not has_value_for("private_ip"):
         issues.append("IP")
-    if ci_type == "networkdevice" and not _clean_text(attributes.get("model")):
+    if ci_type == "networkdevice" and not has_value_for("model"):
         issues.append("型号")
-    if ci_type in SOFTWARE_RESOURCE_TYPES and not _clean_text(attributes.get("version")):
+    if ci_type in SOFTWARE_RESOURCE_TYPES and not has_value_for("version"):
         issues.append("版本")
     if ci_type in SOFTWARE_RESOURCE_TYPES and not has_value_for("service_port"):
         issues.append("端口")
-    if ci_type in SOFTWARE_RESOURCE_TYPES and not _clean_text(attributes.get("deploy_target")):
+    if ci_type in SOFTWARE_RESOURCE_TYPES and not has_value_for("deploy_target"):
         issues.append("部署节点")
     return issues
 
@@ -4587,6 +4727,19 @@ SPECIAL_ATTRIBUTE_NAME_CANDIDATES = {
     "server_room": ["server_room"],
     "rack": ["rack", "cabinet"],
     "idc": ["idc", "data_center"],
+    "snmp_version": ["snmp_version", "proto_snmp", "snmpVersion"],
+    "snmp_read_community": [
+        "snmp_read_community",
+        "snmp_read_pwd",
+        "snmp_ro_community",
+        "read_community",
+    ],
+    "snmp_write_community": [
+        "snmp_write_community",
+        "snmp_write_pwd",
+        "snmp_rw_community",
+        "write_community",
+    ],
 }
 
 
@@ -4738,6 +4891,26 @@ def _autofill_deterministic_cmdb_attributes(
         if private_ip_value:
             next_attributes[private_ip_key] = private_ip_value
 
+    name_key = _resolve_cmdb_attribute_name(type_template, "name")
+    if name_key and not _clean_text(next_attributes.get(name_key)):
+        name_value = _first_non_empty_value(
+            next_attributes.get("name"),
+            canonical_attributes.get("name"),
+            canonical_attributes.get("dev_name"),
+            canonical_attributes.get("hostname"),
+            canonical_attributes.get("host_name"),
+            canonical_attributes.get("db_instance"),
+            canonical_attributes.get("middleware_name"),
+            canonical_attributes.get("project_name"),
+            canonical_attributes.get("product_name"),
+            canonical_attributes.get("vserver_name"),
+            canonical_attributes.get("asset_code"),
+            canonical_attributes.get("private_ip"),
+            canonical_attributes.get("manage_ip"),
+        )
+        if name_value:
+            next_attributes[name_key] = name_value
+
     unique_value = ""
     unique_key = _get_import_required_unique_key(type_template)
     if unique_key and not _clean_text(next_attributes.get(unique_key)):
@@ -4804,6 +4977,9 @@ def _autofill_deterministic_cmdb_attributes(
         canonical_attributes.get("host_name"),
         canonical_attributes.get("db_instance"),
         canonical_attributes.get("middleware_name"),
+        canonical_attributes.get("project_name"),
+        canonical_attributes.get("product_name"),
+        canonical_attributes.get("vserver_name"),
         canonical_attributes.get("instance_name"),
     )
     if canonical_name:
@@ -6317,8 +6493,8 @@ def _preflight_import_resources(
             ) or (record.get("existingCi") or {})
 
         if existing_ci and import_action == "create":
-            LOGGER.warning(
-                "resource-import preflight failed: %s",
+            LOGGER.info(
+                "resource-import preflight will update existing CI for create action: %s",
                 json.dumps(
                     {
                         **_build_import_record_debug_context(
@@ -6330,13 +6506,12 @@ def _preflight_import_resources(
                             type_template=type_template,
                             existing_ci=existing_ci,
                         ),
-                        "reason": "existing_ci_conflict",
+                        "reason": "existing_ci_create_action_treated_as_update",
                     },
                     ensure_ascii=False,
                     default=str,
                 ),
             )
-            results.append({"previewKey": preview_key, "status": "failed", "ciId": existing_ci.get("ciId"), "message": "CMDB 中已存在匹配资源，请改为更新或跳过"})
             continue
         if not existing_ci and import_action == "update":
             LOGGER.warning(
@@ -6592,6 +6767,8 @@ def _infer_relation_type_for_models(
     for parent in (target_template.get("parentTypes") or []):
         if _clean_text(parent.get("name")) == source_type:
             return _normalize_relation_type(parent.get("relationType")) or "contain"
+    if source_type == "project" and target_type in RESOURCE_DEPLOY_TYPES:
+        return "deploy"
     if source_type in {"project", "product", "Department"}:
         return "contain"
     if target_type in SOFTWARE_RESOURCE_TYPES and source_type in RESOURCE_DEPLOY_TYPES:
@@ -7071,6 +7248,26 @@ def _ensure_selected_model_relations(
                 }
             )
         except Exception as exc:  # noqa: BLE001
+            error_text = _clean_text(exc)
+            if (
+                "循环依赖" in error_text
+                or "cycle" in error_text.lower()
+                or "circular" in error_text.lower()
+            ):
+                results.append(
+                    {
+                        "kind": "relation-config",
+                        "status": "skipped",
+                        "sourceType": source_type,
+                        "targetType": target_type,
+                        "relationType": relation_type,
+                        "message": (
+                            f"已跳过模型关系 {source_type} -> {relation_type} -> {target_type}："
+                            f"CMDB 返回循环依赖，通常表示目标环境已有相反方向或更高层级约束"
+                        ),
+                    }
+                )
+                continue
             results.append(
                 {
                     "kind": "relation-config",
