@@ -4872,6 +4872,21 @@
   min-width: 0;
 }
 
+.portal-digital-employee .order-detail-composite {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+
+.portal-digital-employee .order-detail-markdown {
+  min-width: 0;
+}
+
+.portal-digital-employee .order-detail-markdown + .order-detail-report {
+  border-top: 1px solid rgba(148, 163, 184, 0.22);
+  padding-top: 16px;
+}
+
 .portal-digital-employee .order-detail-header {
   display: flex;
   align-items: flex-start;
@@ -4940,13 +4955,12 @@
 .portal-digital-employee .order-detail-summary strong,
 .portal-digital-employee .order-detail-fields strong {
   display: block;
-  overflow: hidden;
   margin-top: 4px;
   color: #0f172a;
   font-size: 13px;
   font-weight: 650;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
 }
 
 .portal-digital-employee .order-detail-section {
@@ -6698,6 +6712,9 @@
   min-height: 0;
   padding: 16px;
   overflow-y: auto;
+  overflow-anchor: none;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -7041,6 +7058,14 @@
   width: 100%;
   border-collapse: separate;
   border-spacing: 0;
+  table-layout: auto;
+}
+
+.portal-digital-employee .markdown-bubble .portal-x-markdown th,
+.portal-digital-employee .markdown-bubble .portal-x-markdown td {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .portal-digital-employee .markdown-bubble .portal-x-markdown thead,

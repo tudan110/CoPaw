@@ -16,6 +16,9 @@ Key patterns demonstrated:
 # pylint: disable=unused-argument
 from __future__ import annotations
 
+import asyncio
+import json
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -110,6 +113,54 @@ class TestConsoleChannelUnit:
         # Prefix should appear before or with message
         assert ">> " in captured.out
         assert "Test message" in captured.out
+
+    @pytest.mark.asyncio
+    async def test_stream_one_emits_portal_progress_before_agent_events(
+        self,
+        monkeypatch,
+    ):
+        """stream_one should emit real backend progress before model output."""
+        from qwenpaw.app.channels.base import ContentType, TextContent
+        from qwenpaw.app.channels.console import channel as console_module
+
+        async def delayed_process(_request):
+            await asyncio.sleep(0.05)
+            yield SimpleNamespace(
+                object="response",
+                status="completed",
+                output=[],
+            )
+
+        monkeypatch.setattr(
+            console_module,
+            "CONSOLE_PROGRESS_HEARTBEAT_SECONDS",
+            0.01,
+        )
+        ch = ConsoleChannel(
+            process=delayed_process,
+            enabled=True,
+            bot_prefix="",
+        )
+
+        payload = {
+            "channel_id": "console",
+            "sender_id": "user123",
+            "content_parts": [
+                TextContent(type=ContentType.TEXT, text="hello"),
+            ],
+            "meta": {"session_id": "session-1"},
+        }
+
+        events = []
+        async for sse in ch.stream_one(payload):
+            events.append(json.loads(sse.removeprefix("data:").strip()))
+            if len(events) >= 3:
+                break
+
+        assert events[0]["object"] == "portal_progress"
+        assert events[0]["stage"] == "request_received"
+        assert events[1]["stage"] == "agent_started"
+        assert events[2]["stage"] == "waiting_first_event"
 
     @pytest.mark.asyncio
     async def test_start_when_enabled(self, channel):
@@ -471,6 +522,7 @@ class TestConsoleStreaming:
 
         assert len(events) == 1
         assert "data:" in events[0]
+        assert '"object": "portal_progress"' in events[0]
 
     async def test_stream_one_handles_dict_payload(self, stream_channel):
         """stream_one should handle dict payload with debounce."""
@@ -575,12 +627,14 @@ class TestConsoleStreaming:
         events = []
         async for event in stream_channel.stream_one(payload):
             events.append(event)
-            break
+            if '"object": "portal_progress"' not in event:
+                break
 
-        assert len(events) == 1
-        assert events[0].startswith("data: ")
-        assert "\\ud83d" not in events[0]
-        assert "? broken" in events[0]
+        assert events
+        final_event = events[-1]
+        assert final_event.startswith("data: ")
+        assert "\\ud83d" not in final_event
+        assert "? broken" in final_event
 
     async def test_consume_one_drain_stream(self, stream_channel):
         """consume_one should drain stream_one."""

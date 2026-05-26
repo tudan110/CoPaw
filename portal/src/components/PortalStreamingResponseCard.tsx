@@ -1,4 +1,13 @@
-import { memo, useCallback, useMemo, type ComponentProps, type CSSProperties, type ReactNode } from "react";
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type ComponentProps,
+  type CSSProperties,
+  type ReactNode,
+} from "react";
 import { Bubble, Markdown } from "@agentscope-ai/chat";
 import { Avatar, Flex } from "antd";
 import DefaultResponseCard from "@agentscope-ai/chat/lib/AgentScopeRuntimeWebUI/core/AgentScopeRuntime/Response/Card";
@@ -16,10 +25,15 @@ import {
   AgentScopeRuntimeContentType,
   AgentScopeRuntimeMessageType,
   AgentScopeRuntimeRunStatus,
-  type IAgentScopeRuntimeContent,
   type IAgentScopeRuntimeMessage,
   type IAgentScopeRuntimeResponse,
 } from "@agentscope-ai/chat/lib/AgentScopeRuntimeWebUI/core/AgentScopeRuntime/types";
+import {
+  getPortalOrderDetailMarkdownContentFromRuntimeOutput,
+  hasPortalOrderDetailPayloadContent,
+  parsePortalOrderDetailPayloadFromRuntimeOutput,
+  PortalOrderDetailReport,
+} from "./PortalOrderDetailReport";
 
 type ResponseCardProps = ComponentProps<typeof DefaultResponseCard>;
 
@@ -41,6 +55,20 @@ const RAW_BLOCK_STYLE: CSSProperties = {
   overflowWrap: "anywhere",
 };
 
+const STREAM_NOTICE_STYLE: CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  gap: 8,
+  margin: "8px 0",
+  padding: "8px 10px",
+  borderRadius: 8,
+  color: "#92400e",
+  background: "rgba(251, 191, 36, 0.14)",
+  border: "1px solid rgba(245, 158, 11, 0.24)",
+  fontSize: 13,
+  lineHeight: 1.6,
+};
+
 function isGeneratingStatus(status?: string): boolean {
   return (
     status === AgentScopeRuntimeRunStatus.Created ||
@@ -48,7 +76,7 @@ function isGeneratingStatus(status?: string): boolean {
   );
 }
 
-function hasGeneratingContent(content?: IAgentScopeRuntimeContent[] | null): boolean {
+function hasGeneratingContent(content?: Array<{ status?: string }> | null): boolean {
   return Array.isArray(content)
     ? content.some((item) => isGeneratingStatus(item?.status))
     : false;
@@ -65,6 +93,72 @@ function hasGeneratingMessages(messages?: IAgentScopeRuntimeMessage[] | null): b
 
 function isGeneratingResponse(data: IAgentScopeRuntimeResponse): boolean {
   return isGeneratingStatus(data.status) || hasGeneratingMessages(data.output);
+}
+
+function getStreamingActivityKey(data: IAgentScopeRuntimeResponse): string {
+  const messages = data.output || [];
+  return messages
+    .map((message) => {
+      const contentKey = (message.content || [])
+        .map((item) => {
+          if (item.type === AgentScopeRuntimeContentType.TEXT) {
+            return `${item.type}:${String(item.text || "").length}:${item.status || ""}`;
+          }
+          if (item.type === AgentScopeRuntimeContentType.REFUSAL) {
+            return `${item.type}:${String(item.refusal || "").length}:${item.status || ""}`;
+          }
+          return `${item.type}:${item.status || ""}`;
+        })
+        .join(",");
+      return `${message.id || ""}:${message.type || ""}:${message.status || ""}:${contentKey}`;
+    })
+    .join("|");
+}
+
+function useStreamingWaitNotice(
+  isGenerating: boolean,
+  activityKey: string,
+): string {
+  const [notice, setNotice] = useState("");
+
+  useEffect(() => {
+    if (!isGenerating) {
+      setNotice("");
+      return undefined;
+    }
+
+    setNotice("");
+    const timers = [
+      window.setTimeout(() => {
+        setNotice("正在等待模型返回内容，请稍候。");
+      }, 12000),
+      window.setTimeout(() => {
+        setNotice("LLM 响应时间较长，后端可能正在等待上游模型或自动重试，请继续等待。");
+      }, 45000),
+      window.setTimeout(() => {
+        setNotice("仍未收到新的模型内容，请检查 LLM 服务、DNS 或网络状态；当前请求可能仍在后端重试。");
+      }, 90000),
+    ];
+
+    return () => {
+      timers.forEach((timer) => window.clearTimeout(timer));
+    };
+  }, [activityKey, isGenerating]);
+
+  return notice;
+}
+
+function StreamingWaitNotice({ notice }: { notice: string }) {
+  if (!notice) {
+    return null;
+  }
+
+  return (
+    <div style={STREAM_NOTICE_STYLE} role="status" aria-live="polite">
+      <span aria-hidden="true">...</span>
+      <span>{notice}</span>
+    </div>
+  );
 }
 
 const StreamingMessage = memo(function StreamingMessage({
@@ -157,17 +251,57 @@ export default function PortalStreamingResponseCard(
   const isGenerating = isGeneratingResponse(props.data);
   const avatar = useChatAnywhereOptions((value) => value.welcome.avatar);
   const nick = useChatAnywhereOptions((value) => value.welcome.nick);
+  const activityKey = useMemo(
+    () => getStreamingActivityKey(props.data),
+    [props.data],
+  );
+  const waitNotice = useStreamingWaitNotice(isGenerating, activityKey);
   const messages = useMemo(
     () => AgentScopeRuntimeResponseBuilder.mergeToolMessages(props.data.output),
     [props.data.output],
   );
+  const orderDetailPayload = useMemo(
+    () => parsePortalOrderDetailPayloadFromRuntimeOutput(props.data.output),
+    [props.data.output],
+  );
+  const orderDetailMarkdown = useMemo(
+    () => getPortalOrderDetailMarkdownContentFromRuntimeOutput(props.data.output),
+    [props.data.output],
+  );
+  const shouldRenderOrderDetailCard = orderDetailPayload
+    ? hasPortalOrderDetailPayloadContent(orderDetailPayload)
+    : false;
+
+  if (orderDetailPayload) {
+    return (
+      <>
+        <div className="order-detail-composite">
+          {orderDetailMarkdown ? (
+            <div className="order-detail-markdown">
+              <Markdown raw content={orderDetailMarkdown} />
+            </div>
+          ) : null}
+          {shouldRenderOrderDetailCard ? (
+            <PortalOrderDetailReport payload={orderDetailPayload} />
+          ) : null}
+        </div>
+        {props.data.error ? <ErrorCard data={props.data.error} /> : null}
+        <Actions {...props} />
+      </>
+    );
+  }
 
   if (!isGenerating) {
     return <DefaultResponseCard {...props} />;
   }
 
   if (!messages?.length && AgentScopeRuntimeResponseBuilder.maybeGenerating(props.data)) {
-    return <Bubble.Spin />;
+    return (
+      <>
+        <Bubble.Spin />
+        <StreamingWaitNotice notice={waitNotice} />
+      </>
+    );
   }
 
   return (
@@ -200,6 +334,7 @@ export default function PortalStreamingResponseCard(
             return null;
         }
       })}
+      <StreamingWaitNotice notice={waitNotice} />
       {props.data.error ? <ErrorCard data={props.data.error} /> : null}
       <Actions {...props} />
     </>
