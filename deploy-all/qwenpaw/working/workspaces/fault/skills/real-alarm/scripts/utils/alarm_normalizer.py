@@ -5,10 +5,10 @@
 from typing import Any, Dict, Iterable, List, Optional
 
 ALARM_SEVERITY_MAP = {
-    "1": "严重",
-    "2": "重要",
-    "3": "一般",
-    "4": "提示",
+    "1": "紧急",
+    "2": "严重",
+    "3": "普通",
+    "4": "预警",
 }
 
 ALARM_STATUS_MAP = {

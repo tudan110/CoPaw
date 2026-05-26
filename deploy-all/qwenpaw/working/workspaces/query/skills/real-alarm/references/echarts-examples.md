@@ -17,7 +17,7 @@
   "legend": {
     "bottom": 0,
     "left": "center",
-    "data": ["严重", "重要", "一般", "提示"]
+    "data": ["紧急", "严重", "普通", "预警"]
   },
   "series": [
     {
@@ -25,10 +25,10 @@
       "type": "pie",
       "radius": ["40%", "68%"],
       "data": [
-        {"name": "严重", "value": 5, "itemStyle": {"color": "#ff4d4f"}},
-        {"name": "重要", "value": 8, "itemStyle": {"color": "#fa8c16"}},
-        {"name": "一般", "value": 12, "itemStyle": {"color": "#1890ff"}},
-        {"name": "提示", "value": 3, "itemStyle": {"color": "#52c41a"}}
+        {"name": "紧急", "value": 5, "itemStyle": {"color": "#ff4d4f"}},
+        {"name": "严重", "value": 8, "itemStyle": {"color": "#fa8c16"}},
+        {"name": "普通", "value": 12, "itemStyle": {"color": "#1890ff"}},
+        {"name": "预警", "value": 3, "itemStyle": {"color": "#52c41a"}}
       ]
     }
   ]
@@ -284,7 +284,7 @@
       "type": "pie",
       "radius": ["40%", "68%"],
       "data": [
-        {"name": "严重", "value": 5, "itemStyle": {"color": "#ff4d4f"}},
+        {"name": "紧急", "value": 5, "itemStyle": {"color": "#ff4d4f"}},
         {"name": "其他", "value": 23, "itemStyle": {"color": "#1890ff"}}
       ]
     }
@@ -306,7 +306,7 @@
   },
   "legend": {
     "top": 30,
-    "data": ["严重", "重要", "一般"]
+    "data": ["紧急", "严重", "普通"]
   },
   "grid": {
     "left": 48,
@@ -326,21 +326,21 @@
   },
   "series": [
     {
-      "name": "严重",
+      "name": "紧急",
       "type": "bar",
       "stack": "total",
       "data": [2, 3, 1, 0, 1],
       "itemStyle": {"color": "#ff4d4f"}
     },
     {
-      "name": "重要",
+      "name": "严重",
       "type": "bar",
       "stack": "total",
       "data": [3, 2, 4, 2, 1],
       "itemStyle": {"color": "#fa8c16"}
     },
     {
-      "name": "一般",
+      "name": "普通",
       "type": "bar",
       "stack": "total",
       "data": [5, 3, 2, 4, 2],
