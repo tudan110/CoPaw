@@ -46,6 +46,35 @@ description: 面向单条活动告警或单个应用故障现象驱动的故障�
 
 ---
 
+## 并行执行策略（减少分析耗时）
+
+告警分析涉及多个独立数据源查询，**必须按依赖关系分组并行执行**，不允许无依赖的调用串行排队。
+
+### 并行组划分
+
+**第一波（立即发出，无依赖）**：
+- 查智观活动告警上下文（real-alarm 脚本，ci_id）
+- 查 CMDB 根资源详情（zgops-cmdb fetch）
+- 查 CMDB 拓扑关系（zgops-cmdb ci_relations）
+- 读取对应场景的 rca-*.md
+
+**第二波（等第一波返回后）**：
+- 从拓扑/链路告警提取关联资源 ID → 批量查关联资源告警（可多个 CI ID 并行）
+- 查指标定义 + 指标值（`analyze_alarm_context.py` 内部已并行）
+- 如果本地拓扑为空，才考虑 `chat_with_agent(query)` 补充
+
+**第三波（等第二波返回后）**：
+- AI 综合分析 + 推送报告
+
+### 关键约束
+
+- **本地查拓扑优先**：先用 `zgops-cmdb.sh fetch` 或链路告警提取对端信息，不要首选 `chat_with_agent(query)` 查拓扑（跨智能体调用可能超时 60s+）
+- **跨智能体调用只做补充**：如果本地 CMDB 拓扑为空且链路告警也无法推断对端，才发起 `chat_with_agent`，且用 `submit_to_agent` 后台模式，不阻塞主流程
+- **对端设备告警批量查**：多个 CI ID 的告警查询是独立的，必须并行发出（脚本内部已实现并行）
+- **ciType 自动解析**：`analyze_alarm_context.py` 已支持从 CMDB `ci_type` 字段、`_type` 数字映射、告警标题关键词三级回退推断 metricType，不需要手动重跑
+
+---
+
 ## 完整执行链路（不允许跳步）
 
 ```
@@ -71,14 +100,32 @@ description: 面向单条活动告警或单个应用故障现象驱动的故障�
 
 1. 拿到根资源 resId 后，通过 zgops-cmdb 查询 CMDB 拓扑关系
 2. 从拓扑中提取**全部**关联资源 ID（根资源、节点 `_id/ci_id`、关系边 `src_ci_id/dst_ci_id`）
-3. 对这些资源 ID **逐个**调用 real-alarm 查询告警（时间窗：告警前后 10 分钟）
-4. 可选查询环比窗口做趋势对比
+3. 对这些资源 ID 的告警查询已由 `analyze_alarm_context.py` 内部并行完成，无需手动逐个调用
+4. 如果 CMDB 拓扑为空，可从链路类告警标题中提取对端设备信息作为补充
 
 如果这一步没完成，不能宣称"分析完成"，只能标记为 `partial`，置信度降为低/中。
 
+### CMDB 查询语法参考
+
+```bash
+# 单条件查询（按 CI ID）
+zgops-cmdb.sh fetch --ci-id 18
+
+# 多条件查询（按名称模糊匹配）
+zgops-cmdb.sh search --q "name:DKCZZ-HUAWEI"
+
+# 查拓扑关系
+zgops-cmdb.sh fetch --ci-id 18 --relations
+
+# 按 IP 查设备
+zgops-cmdb.sh search --q "manage_ip:172.27.34.1"
+```
+
+注意：多条件查询用空格分隔（不要用 `+AND+`），如 `--q "ci_type:networkdevice manage_ip:172.27.34.1"`
+
 ### 指标分析
 
-已确认 ciType 后，执行聚合脚本：
+执行聚合脚本（**不需要**先手动确认 ciType，脚本会自动解析）：
 
 ```bash
 cd skills/alarm-analyst && python scripts/analyze_alarm_context.py \
@@ -87,7 +134,9 @@ cd skills/alarm-analyst && python scripts/analyze_alarm_context.py \
   --event-time "<告警时间>" --output markdown
 ```
 
-该脚本会：查根资源详情 → 查拓扑 → 收集关联资源 ID → 查关联告警 → 查指标定义 → 筛选并查询指标值 → 输出结构化结果。
+该脚本会：查根资源详情 → 自动解析 ciType（三级回退：ci_type 字段 → _type 数字映射 → 告警标题关键词推断）→ 查拓扑 → **并行**收集关联资源告警 → 查指标定义 → 筛选并查询指标值 → 输出结构化结果。
+
+⚠️ **不要在脚本返回 ciType 为空时手动重跑 `get_metric_definitions.py`**——脚本已内置回退逻辑。如果脚本仍返回指标数为 0，说明该资源类型确实无指标定义，直接进入下一步。
 
 如果只需单独查指标：
 

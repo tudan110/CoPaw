@@ -249,7 +249,28 @@ def _resource_name(item: dict[str, Any]) -> str:
 
 
 def _resource_ci_type(item: dict[str, Any]) -> str:
-    return _safe_str(item.get("ci_type"))
+    ci_type = _safe_str(item.get("ci_type"))
+    if ci_type:
+        return ci_type
+    # Fallback: resolve numeric _type to model name
+    raw_type = item.get("_type")
+    if raw_type is not None and str(raw_type).isdigit():
+        return _CI_TYPE_ID_MAP.get(int(raw_type), "")
+    return ""
+
+
+# CMDB numeric _type → metricType string mapping
+_CI_TYPE_ID_MAP: dict[int, str] = {
+    2: "server",
+    4: "network",
+    5: "database",
+    6: "middleware",
+    17: "os",
+    54: "networkdevice",
+    61: "redis",
+    77: "mysql",
+    78: "PostgreSQL",
+}
 
 
 def _resource_ci_type_alias(item: dict[str, Any]) -> str:
@@ -355,7 +376,7 @@ def _build_topology_summary(
     }
 
 
-def _infer_metric_type(metric_type: str | None, topology_summary: dict[str, Any]) -> str:
+def _infer_metric_type(metric_type: str | None, topology_summary: dict[str, Any], alarm_title: str = "") -> str:
     explicit = _safe_str(metric_type)
     if explicit:
         return explicit
@@ -365,6 +386,21 @@ def _infer_metric_type(metric_type: str | None, topology_summary: dict[str, Any]
     for resource in topology_summary.get("resources") or []:
         if _safe_str(resource.get("ciType")):
             return _safe_str(resource["ciType"])
+    # Fallback: infer from alarm title keywords
+    return _infer_metric_type_from_title(alarm_title)
+
+
+def _infer_metric_type_from_title(title: str) -> str:
+    """Infer metric type from alarm title keywords as last resort."""
+    t = title.lower()
+    if any(kw in t for kw in ("丢包", "ping", "链路", "端口", "带宽", "网络", "丢包率", "设备异常")):
+        return "networkdevice"
+    if any(kw in t for kw in ("cpu", "内存", "温度", "磁盘", "服务器", "主机")):
+        return "server"
+    if any(kw in t for kw in ("死锁", "锁异常", "慢sql", "数据库", "mysql", "postgresql", "postgres")):
+        return "database"
+    if any(kw in t for kw in ("中间件", "redis", "kafka", "mq", "rabbitmq", "消息队列")):
+        return "middleware"
     return ""
 
 
@@ -791,7 +827,7 @@ def analyze_alarm_context(
     client, _find_project, cmdb_access_mode = _load_cmdb_client()
     root_resource = _fetch_root_resource_detail(client, root_res_id)
     topology_summary = _build_topology_summary(root_res_id, [], root_resource=root_resource)
-    resolved_metric_type = _infer_metric_type(metric_type, topology_summary)
+    resolved_metric_type = _infer_metric_type(metric_type, topology_summary, alarm_title)
     with ThreadPoolExecutor(max_workers=2) as executor:
         topology_future = executor.submit(
             _fetch_topology_summary,
@@ -809,26 +845,33 @@ def analyze_alarm_context(
         topology_summary = topology_future.result()
         metric_analysis, metric_skipped_reason = metric_future.result()
 
-    recent_alarm_results = [
-        _query_alarms_for_res_id(
-            res_id=related_res_id,
-            begin_time=begin_time,
-            end_time=end_time,
-            api_base_url=api_base_url,
-            token=token,
-        )
-        for related_res_id in topology_summary["resourceIds"]
-    ]
-    previous_alarm_results = [
-        _query_alarms_for_res_id(
-            res_id=related_res_id,
-            begin_time=previous_begin_time,
-            end_time=previous_end_time,
-            api_base_url=api_base_url,
-            token=token,
-        )
-        for related_res_id in topology_summary["resourceIds"]
-    ]
+    # Parallel alarm queries for all related resource IDs
+    resource_ids = topology_summary["resourceIds"]
+    with ThreadPoolExecutor(max_workers=min(len(resource_ids) * 2, 10)) as executor:
+        recent_futures = [
+            executor.submit(
+                _query_alarms_for_res_id,
+                res_id=related_res_id,
+                begin_time=begin_time,
+                end_time=end_time,
+                api_base_url=api_base_url,
+                token=token,
+            )
+            for related_res_id in resource_ids
+        ]
+        previous_futures = [
+            executor.submit(
+                _query_alarms_for_res_id,
+                res_id=related_res_id,
+                begin_time=previous_begin_time,
+                end_time=previous_end_time,
+                api_base_url=api_base_url,
+                token=token,
+            )
+            for related_res_id in resource_ids
+        ]
+        recent_alarm_results = [f.result() for f in recent_futures]
+        previous_alarm_results = [f.result() for f in previous_futures]
     merged_recent_alarms = _merge_related_alarm_results(recent_alarm_results)
     merged_previous_alarms = _merge_related_alarm_results(previous_alarm_results)
     alarm_comparison = _build_alarm_comparison_summary(
