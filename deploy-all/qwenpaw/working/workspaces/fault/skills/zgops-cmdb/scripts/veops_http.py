@@ -187,6 +187,19 @@ def envelope(response: requests.Response) -> dict[str, Any]:
     return {"状态码": response.status_code, "响应体": parse_body(response)}
 
 
+def _is_html_response(response: requests.Response | FallbackResponse) -> bool:
+    """Detect if response is an HTML page (likely login redirect) instead of JSON."""
+    content_type = ""
+    if hasattr(response, "headers"):
+        content_type = response.headers.get("Content-Type", "")
+    if "text/html" in content_type:
+        return True
+    text = response.text if hasattr(response, "text") else ""
+    if text.lstrip().startswith(("<!DOCTYPE", "<html", "<!doctype", "<HTML")):
+        return True
+    return False
+
+
 def fetch_with_auth_fallback(
     session: requests.Session,
     *,
@@ -203,7 +216,8 @@ def fetch_with_auth_fallback(
         url,
         timeout=timeout,
     )
-    if response.status_code not in {401, 403}:
+    # Retry on 401/403 or when response is HTML (session expired, redirected to login page)
+    if response.status_code not in {401, 403} and not _is_html_response(response):
         return response
 
     auth_payload = try_login(session, base_url, username, password)
