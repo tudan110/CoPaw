@@ -128,6 +128,67 @@ def _safe_str(value: Any) -> str:
     return _ALARM_METRIC_HELPERS._safe_str(value)  # noqa: SLF001
 
 
+def _resolve_metric_type_from_id(
+    numeric_id: str,
+    *,
+    api_base_url: str | None = None,
+    token: str | None = None,
+    timeout_seconds: int | None = None,
+) -> str:
+    """将 CMDB 的数字 _type ID 转换为模型名称（如 78 → PostgreSQL）。
+
+    优先使用 VeOps CMDB 接口 /api/v0.1/ci_types 查询，
+    如果 VeOps 环境不可用则使用 INOE 接口。
+    """
+    veops_base = os.getenv("VEOPS_BASE_URL", "").strip().rstrip("/")
+    resolved_timeout = _get_timeout(timeout_seconds)
+
+    if veops_base:
+        url = f"{veops_base}/api/v0.1/ci_types?per_page=200"
+        headers = {
+            "Accept": "application/json",
+            "Accept-Language": "zh",
+        }
+        veops_secret = os.getenv("VEOPS_SECRET", "").strip()
+        if veops_secret:
+            headers["App-Secret"] = veops_secret
+        try:
+            payload, _ = _get_json_with_fallback(
+                url=url,
+                headers=headers,
+                timeout_seconds=resolved_timeout,
+            )
+            ci_types = payload.get("ci_types") or []
+            for item in ci_types:
+                if str(item.get("id")) == numeric_id:
+                    return _safe_str(item.get("name"))
+        except Exception:
+            pass
+
+    # 回退：使用 INOE 接口查询
+    inoe_base = _ALARM_METRIC_HELPERS._normalize_base_url(api_base_url)  # noqa: SLF001
+    inoe_token = _ALARM_METRIC_HELPERS._get_token(token)  # noqa: SLF001
+    url = f"{inoe_base}/api/v0.1/ci_types?per_page=200"
+    headers = {
+        "Accept": "application/json",
+        "Authorization": f"Bearer {inoe_token}",
+    }
+    try:
+        payload, _ = _get_json_with_fallback(
+            url=url,
+            headers=headers,
+            timeout_seconds=resolved_timeout,
+        )
+        ci_types = payload.get("ci_types") or []
+        for item in ci_types:
+            if str(item.get("id")) == numeric_id:
+                return _safe_str(item.get("name"))
+    except Exception:
+        pass
+
+    return ""
+
+
 def _get_page_size(page_size: int | None) -> int:
     if page_size is not None:
         return page_size
@@ -358,6 +419,21 @@ def fetch_all_metric_definitions(
     normalized_metric_type = _safe_str(metric_type)
     if not normalized_metric_type:
         raise ValueError("metric_type 不能为空")
+
+    # 自动映射：如果传入的是纯数字 ID，转换为模型名称
+    if normalized_metric_type.isdigit():
+        resolved_name = _resolve_metric_type_from_id(
+            normalized_metric_type,
+            api_base_url=api_base_url,
+            token=token,
+            timeout_seconds=timeout_seconds,
+        )
+        if not resolved_name:
+            raise ValueError(
+                f"metric-type 值 '{normalized_metric_type}' 在 CMDB 模型列表中未找到对应模型名，"
+                f"请使用模型名称（如 PostgreSQL、mysql、redis）"
+            )
+        normalized_metric_type = resolved_name
 
     resolved_page_size = _get_page_size(page_size)
     if resolved_page_size < 1:
@@ -1272,15 +1348,64 @@ def fetch_metric_data_batch(
 
     source = "live"
     fallback_reason = None
-    response_payload, _transport = _ALARM_METRIC_HELPERS._post_json_with_fallback(  # noqa: SLF001
-        url=url,
-        headers=headers,
-        json_payload=request_payload,
-        timeout_seconds=resolved_timeout,
-    )
+    try:
+        response_payload, _transport = _ALARM_METRIC_HELPERS._post_json_with_fallback(  # noqa: SLF001
+            url=url,
+            headers=headers,
+            json_payload=request_payload,
+            timeout_seconds=resolved_timeout,
+        )
+    except (requests.exceptions.RequestException, ValueError, json.JSONDecodeError) as error:
+        # HTTP 层面的异常（网络超时、HTTP 4xx/5xx 等）
+        error_msg = f"指标数据接口请求失败: {error}"
+        return {
+            "code": 500,
+            "msg": error_msg,
+            "source": "error",
+            "fallbackReason": error_msg,
+            "url": url,
+            "request": request_payload,
+            "resId": normalized_res_id,
+            "apiStatus": "error",
+            "apiErrorDetail": str(error),
+            "metricResults": _build_error_metric_results(metric_definitions),
+            "raw": {},
+        }
+
+    # 检查业务层返回码（HTTP 200 但 JSON body 中 code 非 200）
+    api_code = response_payload.get("code")
+    api_msg = _safe_str(response_payload.get("msg") or response_payload.get("message") or "")
+    if api_code is not None and int(api_code) != 200:
+        error_msg = f"getMetricData 返回 code={api_code}: {api_msg}"
+        return {
+            "code": int(api_code),
+            "msg": error_msg,
+            "source": "error",
+            "fallbackReason": error_msg,
+            "url": url,
+            "request": request_payload,
+            "resId": normalized_res_id,
+            "apiStatus": "error",
+            "apiErrorDetail": error_msg,
+            "metricResults": _build_error_metric_results(metric_definitions),
+            "raw": response_payload,
+        }
+
     data_rows = response_payload.get("data") or []
     if not data_rows:
-        raise ValueError("指标数据接口未返回有效 data")
+        return {
+            "code": 200,
+            "msg": "指标数据接口返回空数据",
+            "source": "live",
+            "fallbackReason": "接口返回 data 为空列表，可能该资源尚未接入采集",
+            "url": url,
+            "request": request_payload,
+            "resId": normalized_res_id,
+            "apiStatus": "empty",
+            "apiErrorDetail": None,
+            "metricResults": _build_error_metric_results(metric_definitions, status="无数据"),
+            "raw": response_payload,
+        }
 
     return {
         "code": 200,
@@ -1290,6 +1415,8 @@ def fetch_metric_data_batch(
         "url": url,
         "request": request_payload,
         "resId": normalized_res_id,
+        "apiStatus": "ok",
+        "apiErrorDetail": None,
         "metricResults": _extract_metric_data_results(
             response_payload,
             metric_definitions=metric_definitions,
@@ -1297,6 +1424,30 @@ def fetch_metric_data_batch(
         ),
         "raw": response_payload,
     }
+
+
+def _build_error_metric_results(
+    metric_definitions: list[dict[str, Any]],
+    status: str = "接口异常",
+) -> list[dict[str, Any]]:
+    """接口异常或无数据时，为每个指标生成占位结果。"""
+    results: list[dict[str, Any]] = []
+    for metric in metric_definitions:
+        code = _safe_str(metric.get("code"))
+        if not code:
+            continue
+        results.append({
+            "metricCode": code,
+            "metricName": _safe_str(metric.get("name")) or code,
+            "latestValue": status,
+            "sampleTime": "-",
+            "minValue": "-",
+            "avgValue": "-",
+            "maxValue": "-",
+            "unit": _safe_str(metric.get("unit")),
+            "source": "error",
+        })
+    return results
 
 
 def inspect_resource_metrics(
@@ -1337,13 +1488,25 @@ def inspect_resource_metrics(
         token=token,
         timeout_seconds=timeout_seconds,
     )
-    metric_data_batch["metricResults"] = _apply_metric_verification(
-        metric_data_batch.get("metricResults") or [],
-        verification_rules,
-    )
+    # 仅在接口正常时应用阈值校验
+    if metric_data_batch.get("apiStatus") == "ok":
+        metric_data_batch["metricResults"] = _apply_metric_verification(
+            metric_data_batch.get("metricResults") or [],
+            verification_rules,
+        )
+
+    # 根据指标数据接口状态决定整体消息
+    api_status = metric_data_batch.get("apiStatus", "ok")
+    if api_status == "error":
+        overall_msg = f"巡检完成（指标数据异常）: {metric_data_batch.get('apiErrorDetail', '未知错误')}"
+    elif api_status == "empty":
+        overall_msg = "巡检完成（指标数据为空，可能该资源尚未接入采集）"
+    else:
+        overall_msg = "查询成功"
+
     result = {
         "code": 200,
-        "msg": "查询成功",
+        "msg": overall_msg,
         "inspectionObject": _safe_str(inspection_object),
         "resourceName": _safe_str(resource_name),
         "metricType": _safe_str(metric_type),
@@ -1677,6 +1840,15 @@ def render_markdown(result: dict[str, Any]) -> str:
         f"- 指标数据来源：`{data_source}`",
         f"- 通知状态：`{_format_notification_status(notification)}`",
         f"- 通知渠道：`{_format_notification_channels(notification, fallback='未发送')}`",
+    ]
+    # 接口状态异常时在摘要区明确标注
+    api_status = _safe_str(metric_batch.get("apiStatus"))
+    api_error_detail = _safe_str(metric_batch.get("apiErrorDetail"))
+    if api_status == "error":
+        lines.append(f"- ⚠️ 接口状态：`异常` — {api_error_detail}")
+    elif api_status == "empty":
+        lines.append("- ⚠️ 接口状态：`数据为空`（可能该资源尚未接入采集）")
+    lines.extend([
         "",
         "## 基本信息",
         "| 字段 | 值 |",
@@ -1693,7 +1865,12 @@ def render_markdown(result: dict[str, Any]) -> str:
         "",
         "## 指标数据",
         _render_metric_data_table(metric_results),
-    ]
+    ])
+    # 接口异常时追加诊断建议
+    if api_status == "error":
+        lines.append("")
+        lines.append("## ⚠️ 接口异常提示")
+        lines.append(f"指标数据接口返回服务端异常（{api_error_detail}），实时指标值暂不可读，建议排查采集链路后重新巡检。")
     if definitions.get("fallbackReason"):
         lines.append("")
         lines.append(f"- 指标定义回退原因：{definitions['fallbackReason']}")
@@ -1708,7 +1885,7 @@ def render_markdown(result: dict[str, Any]) -> str:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="查询巡检对象的全部指标定义与指标数据")
-    parser.add_argument("--metric-type", required=True, help="资源类型，对应 ciType，例如 mysql")
+    parser.add_argument("--metric-type", required=True, help="资源类型，对应 ciType。支持数字 ID（如 78）或模型名称（如 PostgreSQL），数字 ID 会自动转换为模型名称")
     parser.add_argument("--res-id", required=True, help="CMDB 返回的 CI ID")
     parser.add_argument("--inspection-object", default="", help="用户输入的巡检对象")
     parser.add_argument("--resource-name", default="", help="CMDB 确认的资源名称")

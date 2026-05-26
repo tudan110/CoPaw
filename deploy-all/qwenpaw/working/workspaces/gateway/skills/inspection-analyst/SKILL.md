@@ -17,7 +17,7 @@ description: 资源巡检技能。当用户要求巡检、健康检查、查看�
    - `scripts/zgops-cmdb.sh list-models` → 确认目标类型的 `name`（如 `redis`、`mysql`）
    - `scripts/zgops-cmdb.sh fetch "/api/v0.1/ci/s?q=_type:<name>&page=1&count=100"` → 获取实例列表
    - 多实例时列出候选让用户选择
-   - 从选中实例取 `_id` 作为 resId、`_type` 作为 ciType
+   - 从选中实例取 `_id` 作为 resId；ciType 使用 `list-models` 查出的模型名称（如 `mysql`），也可直接传实例的 `_type` 数字 ID（脚本会自动转换）
 3. **查询指标**：调用巡检脚本，批量查询全部指标定义与指标值
 4. **输出结果**：包含拓扑关系、指标数据表、巡检结论
 5. **通知推送**：脚本自动按配置推送到飞书/钉钉/应用
@@ -32,6 +32,15 @@ cd skills/inspection-analyst && python scripts/inspect_resource_metrics.py \
   --inspection-object "<用户巡检对象>" --resource-name "<CMDB确认的资源名>" \
   --output markdown
 ```
+
+### metric-type 参数说明
+
+| 格式 | 示例 | 说明 |
+|------|------|------|
+| 模型名称（推荐） | `PostgreSQL`、`mysql`、`redis` | 直接匹配指标定义接口 |
+| 数字 ID（自动转换） | `78`、`77`、`61` | CMDB 的 `_type` 字段值，脚本自动查询 ci_types 转换为模型名称 |
+
+建议直接使用 CMDB 模型名称（即 `list-models` 输出的"模型名"列），避免额外查询开销。
 
 ## 本地优先原则
 
