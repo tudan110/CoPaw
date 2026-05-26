@@ -380,7 +380,7 @@ def _build_portal_real_alarm_prompt(alarm: dict[str, Any]) -> str:
         severity_line,
         f"告警时间：{str(alarm.get('eventTime') or '').strip()}",
         f"告警摘要：{str(alarm.get('visibleContent') or '').strip()}",
-        "请分析这条活动告警，并继续完成根因分析、影响范围判断、处置建议、自动建单与通知。",
+        "请分析这条活动告警，并继续完成根因分析、影响范围判断、处置建议与通知推送。",
     ]
     return "\n".join(line for line in lines if line and not line.endswith("："))
 

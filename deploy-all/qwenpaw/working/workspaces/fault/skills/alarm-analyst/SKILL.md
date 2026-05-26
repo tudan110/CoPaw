@@ -169,7 +169,7 @@ cd skills/alarm-analyst && python scripts/send_analysis_report.py \
   --root-cause "<根因>" --suggestion "<建议>" --output markdown
 ```
 
-详见 `references/workorder-api.md`。推送成功后通知会发送到配置的渠道（见 `references/notification-protocol.md`）。
+详见 `references/notification-protocol.md`。推送成功后通知会发送到配置的渠道。
 
 ---
 
@@ -196,6 +196,7 @@ cd skills/alarm-analyst && python scripts/send_analysis_report.py \
 处置建议必须根据告警级别（alarmseverity）控制内容层次，**只给用户当下最需要的建议**，避免堆砌过多层次造成信息过载：
 
 **禁止事项**：
+- **禁止自动创建工单**：不要调用工单 API 创建工单，该功能已停用
 - 任何级别的告警中都不要出现"中期加固""长期规划"类建议
 - 不要使用"【紧急止损】""【短期优化】""【中期加固】"等分层标签，直接给出操作步骤
 - 每条建议必须是具体可执行的动作，不要给出笼统的方向性描述
@@ -245,6 +246,5 @@ ALARM_ANALYST_METRIC_PAGE_SIZE=20
 | `rca-cross-layer.md` | 告警涉及跨层复合（级联故障/网络-应用联合/IaaS-PaaS联合/全链路退化） |
 | `portal-card-protocol.md` | 输出需要 Portal 渲染卡片时 |
 | `notification-protocol.md` | 处理通知推送逻辑时 |
-| `workorder-api.md` | 推送分析报告时 |
 
 AI 应根据当前告警场景**按需读取**对应的 reference 文件，不要全部加载。
