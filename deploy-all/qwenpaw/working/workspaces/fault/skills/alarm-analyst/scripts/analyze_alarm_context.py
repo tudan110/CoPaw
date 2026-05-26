@@ -274,6 +274,13 @@ _KNOWN_METRIC_TYPES = frozenset({
     "networkdevice", "mysql", "PostgreSQL", "redis", "operatingsystem",
 })
 
+_ALARM_SEVERITY_MAP = {
+    "1": "紧急",
+    "2": "严重",
+    "3": "普通",
+    "4": "预警",
+}
+
 # CMDB numeric _type → metricType string mapping
 _CI_TYPE_ID_MAP: dict[int, str] = {
     2: "server",
@@ -813,6 +820,7 @@ def analyze_alarm_context(
     *,
     res_id: str,
     alarm_title: str = "",
+    alarm_severity: str = "",
     device_name: str = "",
     manage_ip: str = "",
     event_time: str = "",
@@ -896,6 +904,7 @@ def analyze_alarm_context(
 
     current_alarm = {
         "alarmtitle": alarm_title,
+        "alarmseverity": alarm_severity,
         "devName": device_name,
         "manageIp": manage_ip,
         "eventTime": event_time,
@@ -1017,6 +1026,7 @@ def render_markdown(result: dict[str, Any]) -> str:
         f"- 资源 ID（CI ID）：`{current_alarm.get('resId') or '-'}`",
         f"- 根资源类型（ciType）：`{(topology.get('rootResource') or {}).get('ciType') or '-'}`",
         f"- 告警标题：`{current_alarm.get('alarmtitle') or '-'}`",
+        f"- 告警等级：`{_ALARM_SEVERITY_MAP.get(str(current_alarm.get('alarmseverity', '')).strip(), current_alarm.get('alarmseverity') or '-')}`",
         f"- 设备名称：`{current_alarm.get('devName') or '-'}`",
         f"- 管理 IP：`{current_alarm.get('manageIp') or '-'}`",
         f"- 告警时间：`{current_alarm.get('eventTime') or '-'}`",
@@ -1065,6 +1075,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--device-name", default="", help="当前告警设备名称")
     parser.add_argument("--manage-ip", default="", help="当前告警管理 IP")
     parser.add_argument("--event-time", default="", help="当前告警发生时间，格式 YYYY-MM-DD HH:MM:SS")
+    parser.add_argument("--alarm-severity", default="", help="告警级别（1=紧急 2=严重 3=普通 4=预警）")
     parser.add_argument("--metric-type", default="", help="可选，显式指定指标类型；不传时优先从根资源 ciType 推断")
     parser.add_argument("--window-minutes", type=int, default=DEFAULT_ALARM_WINDOW_MINUTES, help="最近告警查询窗口，默认以告警时间为中心前后 10 分钟")
     parser.add_argument("--compare-begin-time", default="", help="可选，AI 自定义环比窗口开始时间，格式 YYYY-MM-DD HH:MM:SS")
@@ -1082,6 +1093,7 @@ def main() -> None:
         result = analyze_alarm_context(
             res_id=args.res_id,
             alarm_title=args.alarm_title,
+            alarm_severity=args.alarm_severity,
             device_name=args.device_name,
             manage_ip=args.manage_ip,
             event_time=args.event_time,
