@@ -257,14 +257,37 @@ class OrderWorkflowClient:
         )
 
     def get_workorder_detail(self, *, proc_ins_id: str, task_id: str) -> dict[str, Any]:
+        resolved_proc_ins_id = self._resolve_detail_proc_ins_id(
+            proc_ins_id=proc_ins_id,
+            task_id=task_id,
+        )
         return self._request(
             "GET",
             "/flowable/workflow/process/detail",
             params={
-                "procInsId": proc_ins_id,
+                "procInsId": resolved_proc_ins_id,
                 "taskId": task_id,
             },
         )
+
+    def _resolve_detail_proc_ins_id(self, *, proc_ins_id: str, task_id: str) -> str:
+        proc_ins_id = str(proc_ins_id or "").strip()
+        task_id = str(task_id or "").strip()
+        if not task_id or (proc_ins_id and proc_ins_id != task_id):
+            return proc_ins_id
+
+        for list_workorders in (self.list_todo_workorders, self.list_finished_workorders):
+            try:
+                payload = list_workorders(page_size=self.DEFAULT_BATCH_SIZE, fetch_all=True)
+            except Exception:
+                continue
+            for row in payload.get("rows") or []:
+                if str(row.get("taskId") or "").strip() != task_id:
+                    continue
+                resolved = str(row.get("procInsId") or "").strip()
+                if resolved and resolved != "-":
+                    return resolved
+        return proc_ins_id
 
     @staticmethod
     def _build_list_params(

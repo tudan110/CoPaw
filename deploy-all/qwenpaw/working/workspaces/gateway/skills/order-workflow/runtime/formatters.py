@@ -129,11 +129,12 @@ def _format_list_table(rows: list[dict[str, Any]], *, title: str, start_index: i
         for offset, row in enumerate(rows)
     ]
     if is_finished:
-        headers = ["序号", "任务编号", "流程名称", "任务节点", "流程发起人", "接收时间", "审批时间", "耗时"]
+        headers = ["序号", "任务编号", "流程实例ID", "流程名称", "任务节点", "流程发起人", "接收时间", "审批时间", "耗时"]
         table_rows = [
             [
                 item["sequence"],
                 item["taskId"],
+                item["procInsId"],
                 item["processName"],
                 item["taskName"],
                 item["starter"],
@@ -144,11 +145,12 @@ def _format_list_table(rows: list[dict[str, Any]], *, title: str, start_index: i
             for item in normalized
         ]
     else:
-        headers = ["序号", "任务编号", "流程名称", "任务节点", "流程版本", "流程发起人", "接收时间"]
+        headers = ["序号", "任务编号", "流程实例ID", "流程名称", "任务节点", "流程版本", "流程发起人", "接收时间"]
         table_rows = [
             [
                 item["sequence"],
                 item["taskId"],
+                item["procInsId"],
                 item["processName"],
                 item["taskName"],
                 item["version"],
@@ -189,7 +191,7 @@ def _format_detail_light_markdown(
                 "### 表单信息预览",
                 _markdown_table(
                     ["字段", "内容"],
-                    [[field["label"], _trim_cell(field["value"], limit=80)] for field in preview_fields],
+                    [[field["label"], field["value"]] for field in preview_fields],
                 ),
             ]
         )
@@ -588,7 +590,7 @@ def _build_summary_item(
 
 def _compact_summary_value(value: Any) -> str:
     text = _safe_inline(", ".join(str(item) for item in value) if isinstance(value, list) else value)
-    return text if len(text) <= 64 else f"{text[:61]}..."
+    return text if len(text) <= 64 else f"{text[:61]}...（摘要）"
 
 
 def _flatten_preview_fields(sections: list[dict[str, Any]], *, limit: int) -> list[dict[str, str]]:
@@ -630,11 +632,6 @@ def _portal_order_detail_block(detail_payload: dict[str, Any]) -> str:
 
 def _escape_markdown_cell(value: Any) -> str:
     return _safe_inline(value).replace("|", "\\|")
-
-
-def _trim_cell(value: Any, *, limit: int) -> str:
-    text = _safe_inline(value)
-    return text if len(text) <= limit else f"{text[:limit - 3]}..."
 
 
 def _extract_form_fields(form_model: dict[str, Any], form_data: dict[str, Any]) -> list[dict[str, Any]]:

@@ -5,6 +5,7 @@ import type {
   MouseEvent,
   MutableRefObject,
   ReactNode,
+  WheelEvent,
 } from "react";
 import { Component } from "react";
 import type { DigitalEmployee } from "../../types/portal";
@@ -816,6 +817,7 @@ export function EmployeeChatMainPanel({
   isStreaming,
   activeAssistantMessageId,
   onChatMessagesScroll,
+  onChatMessagesWheelCapture,
   onDisposalAction,
   onResourceImportBackToConfirm,
   onResourceImportBuildTopology,
@@ -870,6 +872,7 @@ export function EmployeeChatMainPanel({
   isStreaming: boolean;
   activeAssistantMessageId?: string | null;
   onChatMessagesScroll: () => void;
+  onChatMessagesWheelCapture: (event: WheelEvent<HTMLDivElement>) => void;
   onDisposalAction: AnyFn;
   onResourceImportBackToConfirm: AnyFn;
   onResourceImportBuildTopology: AnyFn;
@@ -942,6 +945,7 @@ export function EmployeeChatMainPanel({
         className="chat-messages"
         ref={chatMessagesRef}
         onScroll={onChatMessagesScroll}
+        onWheelCapture={onChatMessagesWheelCapture}
       >
         {safeMessages.map((message) => (
           <ChatMessageItem

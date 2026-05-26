@@ -1,4 +1,11 @@
-import { useCallback, useMemo } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+} from "react";
 import {
   AgentScopeRuntimeWebUI,
   type IAgentScopeRuntimeWebUIOptions,
@@ -17,6 +24,25 @@ const API_BASE_URL = (import.meta.env.VITE_COPAW_API_BASE_URL || DEFAULT_API_BAS
 );
 const DEFAULT_USER_ID = "default";
 const DEFAULT_CHANNEL = "console";
+const RUNTIME_DESC_SCROLL_SELECTOR =
+  ".qwenpaw-bubble-list-scroll.qwenpaw-bubble-list-order-desc";
+
+const CONNECTION_NOTICE_STYLE: CSSProperties = {
+  position: "absolute",
+  top: 12,
+  left: "50%",
+  transform: "translateX(-50%)",
+  zIndex: 20,
+  maxWidth: "min(720px, calc(100% - 32px))",
+  padding: "8px 12px",
+  borderRadius: 8,
+  color: "#92400e",
+  background: "rgba(251, 191, 36, 0.95)",
+  border: "1px solid rgba(245, 158, 11, 0.35)",
+  boxShadow: "0 10px 30px rgba(15, 23, 42, 0.16)",
+  fontSize: 13,
+  lineHeight: 1.6,
+};
 
 function extractUserMessageText(message: any): string {
   const content = Array.isArray(message?.content) ? message.content : [];
@@ -25,6 +51,36 @@ function extractUserMessageText(message: any): string {
     .map((item: any) => String(item?.text || ""))
     .join("\n")
     .trim();
+}
+
+function canScrollVertically(element: Element, deltaY: number) {
+  if (!(element instanceof HTMLElement)) {
+    return false;
+  }
+  const style = window.getComputedStyle(element);
+  if (!/(auto|scroll)/.test(style.overflowY)) {
+    return false;
+  }
+  const maxScrollTop = element.scrollHeight - element.clientHeight;
+  if (maxScrollTop <= 1) {
+    return false;
+  }
+  return deltaY > 0 ? element.scrollTop < maxScrollTop - 1 : element.scrollTop > 1;
+}
+
+function findNestedVerticalScroller(
+  target: Element | null,
+  boundary: HTMLElement,
+  deltaY: number,
+) {
+  let current: Element | null = target;
+  while (current && current !== boundary) {
+    if (canScrollVertically(current, deltaY)) {
+      return current;
+    }
+    current = current.parentElement;
+  }
+  return null;
 }
 
 export function PortalRemoteRuntimeChat({
@@ -37,6 +93,104 @@ export function PortalRemoteRuntimeChat({
   isDark?: boolean;
 }) {
   const sessionApi = useMemo(() => createPortalRuntimeSessionApi(agentId || undefined), [agentId]);
+  const [connectionNotice, setConnectionNotice] = useState("");
+  const connectionNoticeTimersRef = useRef<number[]>([]);
+  const mountedRef = useRef(true);
+  const shellRef = useRef<HTMLDivElement | null>(null);
+
+  const clearConnectionNoticeTimers = useCallback(() => {
+    connectionNoticeTimersRef.current.forEach((timer) => window.clearTimeout(timer));
+    connectionNoticeTimersRef.current = [];
+  }, []);
+
+  useEffect(
+    () => () => {
+      mountedRef.current = false;
+      clearConnectionNoticeTimers();
+    },
+    [clearConnectionNoticeTimers],
+  );
+
+  useEffect(() => {
+    const root = shellRef.current;
+    if (!root) {
+      return undefined;
+    }
+
+    const cleanupHandlers: Array<() => void> = [];
+    const attachWheelNormalizer = () => {
+      root.querySelectorAll<HTMLElement>(RUNTIME_DESC_SCROLL_SELECTOR).forEach((scrollElement) => {
+        if (scrollElement.dataset.portalWheelNormalized === "true") {
+          return;
+        }
+        scrollElement.dataset.portalWheelNormalized = "true";
+        const handleWheel = (event: WheelEvent) => {
+          if (event.defaultPrevented || !event.deltaY || event.shiftKey) {
+            return;
+          }
+          const target = event.target instanceof Element ? event.target : null;
+          if (
+            target?.closest("textarea,input,select,[contenteditable='true']")
+            || findNestedVerticalScroller(target, scrollElement, event.deltaY)
+          ) {
+            return;
+          }
+
+          const minScrollTop = Math.min(0, scrollElement.clientHeight - scrollElement.scrollHeight);
+          const nextScrollTop = Math.max(
+            minScrollTop,
+            Math.min(0, scrollElement.scrollTop - event.deltaY),
+          );
+          if (Math.abs(nextScrollTop - scrollElement.scrollTop) < 0.5) {
+            return;
+          }
+
+          event.preventDefault();
+          scrollElement.scrollTop = nextScrollTop;
+        };
+        scrollElement.addEventListener("wheel", handleWheel, { passive: false });
+        cleanupHandlers.push(() => {
+          scrollElement.removeEventListener("wheel", handleWheel);
+          delete scrollElement.dataset.portalWheelNormalized;
+        });
+      });
+    };
+
+    attachWheelNormalizer();
+    const observer = new MutationObserver(attachWheelNormalizer);
+    observer.observe(root, { childList: true, subtree: true });
+
+    return () => {
+      observer.disconnect();
+      cleanupHandlers.forEach((cleanup) => cleanup());
+    };
+  }, []);
+
+  const setConnectionNoticeIfMounted = useCallback((notice: string) => {
+    if (mountedRef.current) {
+      setConnectionNotice(notice);
+    }
+  }, []);
+
+  const scheduleConnectionNotices = useCallback(() => {
+    clearConnectionNoticeTimers();
+    setConnectionNoticeIfMounted("");
+    connectionNoticeTimersRef.current = [
+      window.setTimeout(() => {
+        setConnectionNoticeIfMounted("正在等待后端建立模型流式连接，请稍候。");
+      }, 12000),
+      window.setTimeout(() => {
+        setConnectionNoticeIfMounted(
+          "LLM 响应时间较长，可能正在等待上游模型、DNS 解析或自动重试。",
+        );
+      }, 45000),
+      window.setTimeout(() => {
+        setConnectionNoticeIfMounted(
+          "仍未建立可读的模型流，请检查 LLM 服务、DNS 或网络状态；后端可能还在重试。",
+        );
+      }, 90000),
+    ];
+  }, [clearConnectionNoticeTimers, setConnectionNoticeIfMounted]);
 
   const customFetch = useCallback(
     async (data: {
@@ -74,17 +228,29 @@ export function PortalRemoteRuntimeChat({
         }
       }
 
-      return fetch(`${API_BASE_URL}/console/chat`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(agentId ? { "X-Agent-Id": agentId } : {}),
-        },
-        body: JSON.stringify(requestBody),
-        signal: data.signal,
-      });
+      scheduleConnectionNotices();
+      try {
+        return await fetch(`${API_BASE_URL}/console/chat`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...(agentId ? { "X-Agent-Id": agentId } : {}),
+          },
+          body: JSON.stringify(requestBody),
+          signal: data.signal,
+        });
+      } finally {
+        clearConnectionNoticeTimers();
+        setConnectionNoticeIfMounted("");
+      }
     },
-    [agentId, sessionApi],
+    [
+      agentId,
+      clearConnectionNoticeTimers,
+      scheduleConnectionNotices,
+      sessionApi,
+      setConnectionNoticeIfMounted,
+    ],
   );
 
   const options = useMemo(
@@ -148,7 +314,12 @@ export function PortalRemoteRuntimeChat({
   );
 
   return (
-    <div className="portal-runtime-chat-shell">
+    <div ref={shellRef} className="portal-runtime-chat-shell" style={{ position: "relative" }}>
+      {connectionNotice ? (
+        <div style={CONNECTION_NOTICE_STYLE} role="status" aria-live="polite">
+          {connectionNotice}
+        </div>
+      ) : null}
       <ConfigProvider
         {...bailianTheme}
         prefix="qwenpaw"

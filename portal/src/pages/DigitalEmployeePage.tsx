@@ -7,6 +7,7 @@ import {
   useRef,
   useState,
   type ReactNode,
+  type WheelEvent,
 } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import {
@@ -407,6 +408,14 @@ export default function DigitalEmployeePage({
     });
     replyFocusAlignmentHandlesRef.current = { raf: [], timers: [] };
   }, []);
+  const clearPendingReplyFocus = useCallback(() => {
+    clearReplyFocusAlignmentHandles();
+    pendingReplyFocusBaselineRef.current = null;
+    if (pendingReplyFocusExpiryTimerRef.current) {
+      window.clearTimeout(pendingReplyFocusExpiryTimerRef.current);
+      pendingReplyFocusExpiryTimerRef.current = 0;
+    }
+  }, [clearReplyFocusAlignmentHandles]);
   const rememberChatScrollMetrics = useCallback(() => {
     const chatContainer = chatMessagesRef.current;
     if (!chatContainer) {
@@ -1000,6 +1009,9 @@ export default function DigitalEmployeePage({
     const distanceToBottom = maxScrollTop - element.scrollTop;
     const isNearBottom = distanceToBottom <= CHAT_SCROLL_BOTTOM_THRESHOLD_PX;
     const isScrollingDown = element.scrollTop > lastChatScrollTopRef.current + 1;
+    if (isScrollingDown) {
+      clearPendingReplyFocus();
+    }
     const reachedPreviousBottom =
       isStreaming &&
       isScrollingDown &&
@@ -1015,7 +1027,34 @@ export default function DigitalEmployeePage({
         scrollMessagesToBottom("auto");
       });
     }
-  }, [isStreaming, scrollMessagesToBottom]);
+  }, [clearPendingReplyFocus, isStreaming, scrollMessagesToBottom]);
+
+  const handleChatMessagesWheelCapture = useCallback(
+    (event: WheelEvent<HTMLDivElement>) => {
+      const element = chatMessagesRef.current;
+      if (!element || !event.deltaY || event.shiftKey) {
+        return;
+      }
+
+      const target = event.target instanceof Element ? event.target : null;
+      if (target?.closest("textarea,input,select,[contenteditable='true']")) {
+        return;
+      }
+
+      const maxScrollTop = Math.max(0, element.scrollHeight - element.clientHeight);
+      const distanceToBottom = maxScrollTop - element.scrollTop;
+      const isNearBottom = distanceToBottom <= CHAT_SCROLL_BOTTOM_THRESHOLD_PX;
+      clearPendingReplyFocus();
+
+      if (event.deltaY > 0 && isNearBottom) {
+        shouldAutoScrollRef.current = true;
+        return;
+      }
+
+      shouldAutoScrollRef.current = false;
+    },
+    [clearPendingReplyFocus],
+  );
 
   useEffect(() => {
     persistPageTheme(pageTheme);
@@ -1763,6 +1802,7 @@ export default function DigitalEmployeePage({
                     isStreaming={isStreaming}
                     activeAssistantMessageId={activeAssistantMessageIdRef.current}
                     onChatMessagesScroll={handleChatMessagesScroll}
+                    onChatMessagesWheelCapture={handleChatMessagesWheelCapture}
                     onDisposalAction={handleAlarmDisposalOperationRequest}
                     onResourceImportBackToConfirm={handleResourceImportBackToConfirm}
                     onResourceImportBuildTopology={handleResourceImportBuildTopology}

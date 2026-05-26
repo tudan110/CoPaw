@@ -137,14 +137,14 @@ python3 scripts/chat_skill_bridge.py --context-file /tmp/order_context.json
 - “查看待办工单 / 待处理工单”：默认执行 `todo-list` 第 1 页 10 条预览；只有明确要求“全部/全量”时才全量查
 - “查看已办工单 / 已处理工单”：默认执行 `finished-list` 第 1 页 10 条预览；只有明确要求“全部/全量”时才全量查
 - “看这张工单详情”：执行 `detail`
-- “看第 3 条 / 第 3 条详情”：优先按上一条待办/已办列表里的序号定位对应记录，再执行 `detail`
+- “看第 3 条 / 第 3 条详情”：必须按上一条待办/已办列表里的序号定位对应记录，同时取该行 `任务编号` 作为 `taskId`、`流程实例ID` 作为 `procInsId`，再执行 `detail`；禁止把 `任务编号` 同时当作 `procInsId`
 - “帮我创建一张处置工单”：整理结构化 JSON 后执行 `create`
 - 创建时优先收集最少业务字段：问题描述/处置意见，以及 `manageIp`、`deviceName`、`assetId` 三者中的至少一个；其余字段优先自动补齐。
 
 ## 返回要求
 
 - 默认走轻量输出：列表给 10 条纯 markdown 预览表格，详情给 markdown 预览。
-- 列表 markdown 必须带“序号”列，便于后续直接按“第 N 条”继续查询详情。
+- 列表 markdown 必须带“序号”和“流程实例ID”列，便于后续直接按“第 N 条”继续查询详情。
 - 用户明确要求“完整”“全部”时，返回更完整的 markdown 明细，但仍然只走 markdown，不输出 `portal-visualization`。
 - gateway / agent 层如果要补充一句说明，也只能追加在结果前后，不能替换掉结果本体。
 - 如果脚本输出中已经包含 markdown 表格或详情分段，agent 层必须逐字保留，不要重写成另一版摘要，不要压平为一整段文字。

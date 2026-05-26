@@ -13,9 +13,12 @@ pretty-printed to the terminal.
 from __future__ import annotations
 
 import copy
+import asyncio
+import json
 import logging
 import os
 import sys
+from contextlib import suppress
 from datetime import datetime
 from pathlib import Path
 from typing import Any, AsyncGenerator, Dict, List, Optional, Union
@@ -45,6 +48,7 @@ from ..utils import file_url_to_local_path
 
 
 logger = logging.getLogger(__name__)
+CONSOLE_PROGRESS_HEARTBEAT_SECONDS = 10.0
 
 # ANSI colour helpers (degrade gracefully if not a tty)
 _USE_COLOR = hasattr(sys.stdout, "isatty") and sys.stdout.isatty()
@@ -58,6 +62,10 @@ _RESET = "\033[0m" if _USE_COLOR else ""
 
 def _ts() -> str:
     return datetime.now().strftime("%H:%M:%S")
+
+
+def _now_iso() -> str:
+    return datetime.now().isoformat(timespec="seconds")
 
 
 class ConsoleChannel(BaseChannel):
@@ -330,6 +338,29 @@ class ConsoleChannel(BaseChannel):
         logger.info("Usage for session %s (cleaned up): %s", session_id, usage)
         return usage
 
+    def _portal_progress_sse(
+        self,
+        *,
+        stage: str,
+        message: str,
+        session_id: str = "",
+        elapsed_ms: Optional[int] = None,
+        retry_count: Optional[int] = None,
+    ) -> str:
+        payload: Dict[str, Any] = {
+            "object": "portal_progress",
+            "stage": stage,
+            "message": message,
+            "session_id": session_id,
+            "ts": _now_iso(),
+        }
+        if elapsed_ms is not None:
+            payload["elapsed_ms"] = elapsed_ms
+        if retry_count is not None:
+            payload["retry_count"] = retry_count
+        payload = self._sanitize_for_json(payload)
+        return f"data: {json.dumps(payload, ensure_ascii=True, default=str)}\n\n"
+
     async def stream_one(self, payload: Any) -> AsyncGenerator[str, None]:
         """Process one payload and yield SSE-formatted events"""
         if isinstance(payload, dict) and "content_parts" in payload:
@@ -366,57 +397,125 @@ class ConsoleChannel(BaseChannel):
             send_meta.setdefault("bot_prefix", self.bot_prefix)
             last_response = None
             event_count = 0
+            started_at = datetime.now()
+            wait_count = 0
+            first_event_seen = False
 
-            async for event in self._process(request):
-                event_count += 1
-                obj = getattr(event, "object", None)
-                status = getattr(event, "status", None)
-                ev_type = getattr(event, "type", None)
+            yield self._portal_progress_sse(
+                stage="request_received",
+                message="后端已收到请求，正在准备调用 Agent。",
+                session_id=session_id,
+                elapsed_ms=0,
+            )
+            yield self._portal_progress_sse(
+                stage="agent_started",
+                message="Agent 已开始处理，正在等待模型或工具返回事件。",
+                session_id=session_id,
+                elapsed_ms=0,
+            )
 
-                logger.debug(
-                    "console event #%s: object=%s status=%s type=%s",
-                    event_count,
-                    obj,
-                    status,
-                    ev_type,
-                )
-
-                if (
-                    event.object == "response"
-                    and event.status == RunStatus.Completed
-                ):
-                    event_output = event.output
-                    event.output = []
-                    if event_output is not None:
-                        for message in event_output:
-                            event.output.append(message)
-                            media_message = await self._extract_media_message(
-                                message,
-                            )
-                            if media_message:
-                                event.output.append(media_message)
-
-                if obj == "response":
-                    usage_data = self._extract_token_usage(session_id)
-                    if usage_data and hasattr(event, "usage"):
-                        setattr(event, "usage", usage_data)
-
-                data = self._serialize_event_for_sse(event)
-                yield f"data: {data}\n\n"
-
-                if obj == "message" and status == RunStatus.Completed:
-                    media_message = await self._extract_media_message(event)
-                    if media_message:
-                        media_json = self._serialize_event_for_sse(
-                            media_message,
+            event_iter = self._process(request).__aiter__()
+            next_event_task = asyncio.create_task(event_iter.__anext__())
+            try:
+                while True:
+                    done, _ = await asyncio.wait(
+                        {next_event_task},
+                        timeout=CONSOLE_PROGRESS_HEARTBEAT_SECONDS,
+                    )
+                    if not done:
+                        wait_count += 1
+                        elapsed_ms = int(
+                            (datetime.now() - started_at).total_seconds()
+                            * 1000,
                         )
-                        yield f"data: {media_json}\n\n"
+                        stage = (
+                            "waiting_first_event"
+                            if not first_event_seen
+                            else "waiting_next_event"
+                        )
+                        message = (
+                            "后端仍在等待 Agent/LLM 产出首个流式事件。"
+                            if not first_event_seen
+                            else "后端仍在处理，正在等待下一条模型或工具事件。"
+                        )
+                        yield self._portal_progress_sse(
+                            stage=stage,
+                            message=message,
+                            session_id=session_id,
+                            elapsed_ms=elapsed_ms,
+                            retry_count=wait_count,
+                        )
+                        continue
 
-                    parts = self._message_to_content_parts(event)
-                    self._print_parts(parts, ev_type)
+                    try:
+                        event = next_event_task.result()
+                    except StopAsyncIteration:
+                        break
 
-                elif obj == "response":
-                    last_response = event
+                    first_event_seen = True
+                    next_event_task = asyncio.create_task(
+                        event_iter.__anext__(),
+                    )
+                    event_count += 1
+                    obj = getattr(event, "object", None)
+                    status = getattr(event, "status", None)
+                    ev_type = getattr(event, "type", None)
+
+                    logger.debug(
+                        "console event #%s: object=%s status=%s type=%s",
+                        event_count,
+                        obj,
+                        status,
+                        ev_type,
+                    )
+
+                    if (
+                        event.object == "response"
+                        and event.status == RunStatus.Completed
+                    ):
+                        event_output = event.output
+                        event.output = []
+                        if event_output is not None:
+                            for message in event_output:
+                                event.output.append(message)
+                                media_message = (
+                                    await self._extract_media_message(message)
+                                )
+                                if media_message:
+                                    event.output.append(media_message)
+
+                    if obj == "response":
+                        usage_data = self._extract_token_usage(session_id)
+                        if usage_data and hasattr(event, "usage"):
+                            setattr(event, "usage", usage_data)
+
+                    data = self._serialize_event_for_sse(event)
+                    yield f"data: {data}\n\n"
+
+                    if obj == "message" and status == RunStatus.Completed:
+                        media_message = await self._extract_media_message(
+                            event,
+                        )
+                        if media_message:
+                            media_json = self._serialize_event_for_sse(
+                                media_message,
+                            )
+                            yield f"data: {media_json}\n\n"
+
+                        parts = self._message_to_content_parts(event)
+                        self._print_parts(parts, ev_type)
+
+                    elif obj == "response":
+                        last_response = event
+            finally:
+                if not next_event_task.done():
+                    next_event_task.cancel()
+                    with suppress(asyncio.CancelledError):
+                        await next_event_task
+                aclose = getattr(event_iter, "aclose", None)
+                if callable(aclose):
+                    with suppress(Exception):
+                        await aclose()
 
             logger.info(
                 "console stream done: event_count=%s has_response=%s",
