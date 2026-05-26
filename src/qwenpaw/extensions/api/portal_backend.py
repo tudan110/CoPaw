@@ -360,10 +360,24 @@ def _build_portal_real_alarm_prompt(alarm: dict[str, Any]) -> str:
     title = str(alarm.get("title") or "未命名告警").strip() or "未命名告警"
     device_name = str(alarm.get("deviceName") or "").strip() or "--"
     manage_ip = str(alarm.get("manageIp") or "").strip() or "--"
+    severity_map = {
+        "1": "紧急", "2": "严重", "3": "普通", "4": "预警",
+        "critical": "紧急", "urgent": "严重", "warning": "普通", "info": "预警",
+    }
+    raw_severity = str(
+        alarm.get("alarmseverity") or alarm.get("level") or ""
+    ).strip()
+    severity_label = severity_map.get(raw_severity, raw_severity)
+    severity_line = (
+        f"告警等级：{raw_severity}（{severity_label}）"
+        if raw_severity and severity_label != raw_severity
+        else f"告警等级：{severity_label}" if raw_severity else ""
+    )
     lines = [
         f"{title}（{device_name} {manage_ip}）",
         f"告警流水号：{str(alarm.get('alarmId') or alarm.get('id') or '').strip()}",
         f"资源 ID（CI ID）：{str(alarm.get('resId') or '').strip()}",
+        severity_line,
         f"告警时间：{str(alarm.get('eventTime') or '').strip()}",
         f"告警摘要：{str(alarm.get('visibleContent') or '').strip()}",
         "请分析这条活动告警，并继续完成根因分析、影响范围判断、处置建议、自动建单与通知。",

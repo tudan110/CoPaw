@@ -279,6 +279,10 @@ _ALARM_SEVERITY_MAP = {
     "2": "严重",
     "3": "普通",
     "4": "预警",
+    "critical": "紧急",
+    "urgent": "严重",
+    "warning": "普通",
+    "info": "预警",
 }
 
 # CMDB numeric _type → metricType string mapping
