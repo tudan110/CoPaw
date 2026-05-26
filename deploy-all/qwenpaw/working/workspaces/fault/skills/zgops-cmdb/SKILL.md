@@ -43,7 +43,11 @@ description: 用于查询当前 `.env` 配置所指向的 CMDB 环境。当用�
 1. 统一主入口是 `scripts/zgops-cmdb.sh`。
 2. 需要鉴权时，先运行一次 `scripts/zgops-cmdb.sh login`。
    它现在走后台 HTTP 会话，不会再打开桌面浏览器。
-3. 按问题选择最小可用命令：
+3. `fetch` 子命令**只接受 API 路径**，不支持 `--ci-id` 等快捷参数。查询资源必须拼完整路径：
+   - ✅ `scripts/zgops-cmdb.sh fetch "/api/v0.1/ci/s?q=_id:3034&count=1"`
+   - ✅ `scripts/zgops-cmdb.sh fetch "/api/v0.1/ci_relations/s?root_id=3034&level=1,2,3&count=10000"`
+   - ❌ `scripts/zgops-cmdb.sh fetch --ci-id 3034`（不存在此用法）
+4. 按问题选择最小可用命令：
 
 ```bash
 scripts/zgops-cmdb.sh find-project <应用名>
