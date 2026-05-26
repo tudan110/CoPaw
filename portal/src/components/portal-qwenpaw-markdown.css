@@ -1,6 +1,7 @@
 .portal-qwenpaw-markdown {
   color: inherit;
   max-width: 100%;
+  overflow-wrap: anywhere;
 }
 
 .portal-qwenpaw-markdown blockquote {
@@ -75,7 +76,8 @@
   display: block;
   width: max-content;
   max-width: 100%;
-  overflow: auto;
+  overflow-x: auto;
+  overflow-y: hidden;
 }
 
 .portal-qwenpaw-markdown table th {
@@ -89,7 +91,9 @@
 .portal-qwenpaw-markdown table th {
   padding: 0.75em 1.5em;
   border: 1px solid rgba(148, 163, 184, 0.22);
-  white-space: pre;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .portal-qwenpaw-markdown img {

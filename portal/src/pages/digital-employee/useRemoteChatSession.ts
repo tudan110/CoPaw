@@ -47,6 +47,7 @@ import {
 
 const COPAW_USER_ID = "default";
 const COPAW_CHANNEL = "console";
+const REMOTE_WAIT_BLOCK_ID = "portal-remote-waiting-status";
 
 type FaultDisposalHistoryMessage = {
   id?: string;
@@ -73,6 +74,21 @@ function normalizeRemoteChatErrorMessage(error: any) {
     return "模型流式连接中断，请重试当前步骤。";
   }
   return rawMessage || "请稍后重试";
+}
+
+function getPortalProgressSubtitle(stage: string) {
+  switch (stage) {
+    case "request_received":
+      return "请求已进入后端";
+    case "agent_started":
+      return "Agent 已开始处理";
+    case "waiting_first_event":
+      return "等待首个模型事件";
+    case "waiting_next_event":
+      return "等待后续模型事件";
+    default:
+      return stage || "后端进度";
+  }
 }
 
 export function useRemoteChatSession({
@@ -106,6 +122,8 @@ export function useRemoteChatSession({
   const remoteHistoryRequestIdRef = useRef(0);
   const pendingProcessBlocksRef = useRef(new Map());
   const streamProcessBlocksRef = useRef(new Map());
+  const remoteWaitNoticeTimersRef = useRef<number[]>([]);
+  const hasStreamOutputRef = useRef(false);
   const pendingResourceImportGuideRef = useRef(false);
   const flushTimerRef = useRef(0);
   const currentEmployeeRef = useRef(currentEmployee);
@@ -124,6 +142,8 @@ export function useRemoteChatSession({
         window.clearTimeout(flushTimerRef.current);
         flushTimerRef.current = 0;
       }
+      remoteWaitNoticeTimersRef.current.forEach((timer) => window.clearTimeout(timer));
+      remoteWaitNoticeTimersRef.current = [];
       streamAbortRef.current?.abort();
     },
     [],
@@ -182,6 +202,100 @@ export function useRemoteChatSession({
     return frontendMessageId;
   };
 
+  const clearRemoteWaitNoticeTimers = () => {
+    remoteWaitNoticeTimersRef.current.forEach((timer) => window.clearTimeout(timer));
+    remoteWaitNoticeTimersRef.current = [];
+  };
+
+  const stripRemoteWaitBlocks = (blocks: any[] = []) =>
+    blocks.filter((block) => block?.id !== REMOTE_WAIT_BLOCK_ID);
+
+  const setRemoteWaitNotice = (
+    messageId: string,
+    content: string,
+    subtitle = "等待模型响应",
+  ) => {
+    const waitBlock = {
+      id: REMOTE_WAIT_BLOCK_ID,
+      kind: "thinking",
+      title: "正在处理",
+      subtitle,
+      icon: "fa-spinner fa-spin",
+      content,
+      replaceContent: true,
+      defaultOpen: true,
+    };
+    streamProcessBlocksRef.current.set(messageId, [
+      ...stripRemoteWaitBlocks(streamProcessBlocksRef.current.get(messageId) || []),
+      waitBlock,
+    ]);
+    setMessages((prevMessages) =>
+      prevMessages.map((message) =>
+        message.id === messageId
+          ? {
+              ...message,
+              processBlocks: [
+                ...stripRemoteWaitBlocks(message.processBlocks || []),
+                waitBlock,
+              ],
+            }
+          : message,
+      ),
+    );
+  };
+
+  const clearRemoteWaitNotice = (messageId = activeAssistantMessageIdRef.current) => {
+    if (!messageId) {
+      return;
+    }
+    const nextBlocks = stripRemoteWaitBlocks(
+      streamProcessBlocksRef.current.get(messageId) || [],
+    );
+    streamProcessBlocksRef.current.set(messageId, nextBlocks);
+    setMessages((prevMessages) =>
+      prevMessages.map((message) =>
+        message.id === messageId
+          ? {
+              ...message,
+              processBlocks: stripRemoteWaitBlocks(message.processBlocks || []),
+            }
+          : message,
+      ),
+    );
+  };
+
+  const scheduleRemoteWaitNotices = (messageId: string) => {
+    clearRemoteWaitNoticeTimers();
+    setRemoteWaitNotice(
+      messageId,
+      "已收到您的请求，正在创建会话并连接后端模型流。",
+      "请求已提交",
+    );
+    remoteWaitNoticeTimersRef.current = [
+      window.setTimeout(() => {
+        setRemoteWaitNotice(
+          messageId,
+          "后端仍未返回模型内容，正在等待 LLM 建立响应或完成上游调用。",
+          "等待超过 12 秒",
+        );
+      }, 12000),
+      window.setTimeout(() => {
+        setRemoteWaitNotice(
+          messageId,
+          "LLM 响应时间较长，可能正在等待上游模型、DNS 解析、工具调用或后端自动重试。",
+          "等待超过 45 秒",
+        );
+      }, 45000),
+      window.setTimeout(() => {
+        setRemoteWaitNotice(
+          messageId,
+          "仍未收到新的模型内容，请继续等待或检查 LLM 服务、DNS 与网络状态；后端可能仍在重试。",
+          "等待超过 90 秒",
+        );
+      }, 90000),
+    ];
+  };
+
   const ensureAssistantMessage = (backendMessageId: string, employee: any) => {
     const existingState = streamAssistantMapRef.current.get(backendMessageId);
     if (existingState) {
@@ -212,6 +326,11 @@ export function useRemoteChatSession({
       return;
     }
 
+    if (block?.id !== REMOTE_WAIT_BLOCK_ID) {
+      hasStreamOutputRef.current = true;
+      clearRemoteWaitNoticeTimers();
+      clearRemoteWaitNotice(messageId);
+    }
     const queuedBlocks = pendingProcessBlocksRef.current.get(messageId) || [];
     pendingProcessBlocksRef.current.set(
       messageId,
@@ -236,6 +355,9 @@ export function useRemoteChatSession({
       return;
     }
 
+    hasStreamOutputRef.current = true;
+    clearRemoteWaitNoticeTimers();
+    clearRemoteWaitNotice(messageId);
     const responseTexts = streamResponseTextRef.current.get(messageId) || new Map();
     const mergedText = replace
       ? nextText
@@ -394,6 +516,7 @@ export function useRemoteChatSession({
         ? {
             ...message,
             content: fallbackText,
+            processBlocks: stripRemoteWaitBlocks(message.processBlocks || []),
           }
         : message,
       ),
@@ -423,7 +546,10 @@ export function useRemoteChatSession({
     streamMessageMetaRef.current = new Map();
     streamPendingTextRef.current = new Map();
     streamResponseTextRef.current = new Map();
+    hasStreamOutputRef.current = false;
     pendingResourceImportGuideRef.current = false;
+    clearRemoteWaitNoticeTimers();
+    clearRemoteWaitNotice();
     if (!silent && hadActiveStream) {
       finalizePendingResponse("本轮对话已停止。");
     }
@@ -725,6 +851,17 @@ export function useRemoteChatSession({
   }, [hydrateAlarmAnalystCardsForHistory, stopActiveStream]);
 
   const handleRemoteStreamEvent = (event: any, employee: any) => {
+    if (event.object === "portal_progress") {
+      const frontendMessageId = activeAssistantMessageIdRef.current || ensureAgentContainer(employee);
+      clearRemoteWaitNoticeTimers();
+      setRemoteWaitNotice(
+        frontendMessageId,
+        String(event.message || "后端正在处理请求。"),
+        getPortalProgressSubtitle(String(event.stage || "")),
+      );
+      return;
+    }
+
     if (event.object === "message" && event.id) {
       streamMessageMetaRef.current.set(event.id, {
         role: event.role,
@@ -740,6 +877,17 @@ export function useRemoteChatSession({
       setCurrentChatStatus(
         event.status === "completed" ? "idle" : event.status,
       );
+      if (
+        activeAssistantMessageIdRef.current
+        && event.status !== "completed"
+        && !hasStreamOutputRef.current
+      ) {
+        setRemoteWaitNotice(
+          activeAssistantMessageIdRef.current,
+          "后端已建立流式请求，正在等待模型输出内容。",
+          "后端已响应",
+        );
+      }
       return;
     }
 
@@ -863,6 +1011,7 @@ export function useRemoteChatSession({
     pendingResourceImportGuideRef.current = isResourceImportIntent(
       `${normalizedVisibleContent}\n${content}`,
     );
+    hasStreamOutputRef.current = false;
 
     const controller = new AbortController();
     streamAbortRef.current = controller;
@@ -890,6 +1039,8 @@ export function useRemoteChatSession({
       }
 
       setMessages((prevMessages) => [...prevMessages, userMessage]);
+      const waitingAssistantMessageId = ensureAgentContainer(nextEmployee);
+      scheduleRemoteWaitNotices(waitingAssistantMessageId);
 
       let ensuredChat;
       if (!forceNewChat && currentChatIdRef.current && currentSessionIdRef.current) {
@@ -962,6 +1113,7 @@ export function useRemoteChatSession({
       if (streamAbortRef.current === controller) {
         streamAbortRef.current = null;
       }
+      clearRemoteWaitNoticeTimers();
       setIsCreatingChat(false);
       setIsStreaming(false);
       streamAbortNoticeModeRef.current = null;
@@ -969,6 +1121,7 @@ export function useRemoteChatSession({
       streamPendingTextRef.current = new Map();
       streamResponseTextRef.current = new Map();
       streamProcessBlocksRef.current = new Map();
+      hasStreamOutputRef.current = false;
       pendingResourceImportGuideRef.current = false;
       await refreshRemoteSessions(false);
     }
@@ -998,6 +1151,7 @@ export function useRemoteChatSession({
     streamPendingTextRef.current = new Map();
     streamResponseTextRef.current = new Map();
     streamProcessBlocksRef.current = new Map();
+    hasStreamOutputRef.current = false;
     setMessages(initialMessages);
   }, [setMessages, stopActiveStream]);
 

@@ -103,6 +103,7 @@ class OrderWorkflowTests(unittest.TestCase):
                 "rows": [
                     {
                         "taskId": "task-1",
+                        "procInsId": "proc-1",
                         "procDefName": "故障处置工单",
                         "procDefVersion": 7,
                         "startUserName": "xiaok",
@@ -118,10 +119,10 @@ class OrderWorkflowTests(unittest.TestCase):
             title="待办工单",
         )
         self.assertIn("预览第 1 页 1 条", markdown)
-        self.assertIn("| 序号 | 任务编号 | 流程名称 | 任务节点 | 流程版本 | 流程发起人 | 接收时间 |", markdown)
+        self.assertIn("| 序号 | 任务编号 | 流程实例ID | 流程名称 | 任务节点 | 流程版本 | 流程发起人 | 接收时间 |", markdown)
         self.assertIn("故障处置工单", markdown)
         self.assertIn("v7", markdown)
-        self.assertIn("| 1 | task-1 | 故障处置工单 | 人工处置 | v7 | xiaok | 2026-04-23 10:10:07 |", markdown)
+        self.assertIn("| 1 | task-1 | proc-1 | 故障处置工单 | 人工处置 | v7 | xiaok | 2026-04-23 10:10:07 |", markdown)
         self.assertIn("查看第 3 条", markdown)
         self.assertNotIn("### 完整编号", markdown)
         self.assertNotIn("portal-visualization", markdown)
@@ -133,6 +134,7 @@ class OrderWorkflowTests(unittest.TestCase):
                 "rows": [
                     {
                         "taskId": "task-2",
+                        "procInsId": "proc-2",
                         "procDefName": "故障处置工单",
                         "startUserName": "xiaok",
                         "taskName": "人工处置",
@@ -144,10 +146,10 @@ class OrderWorkflowTests(unittest.TestCase):
             },
             title="已办工单",
         )
-        self.assertIn("| 序号 | 任务编号 | 流程名称 | 任务节点 | 流程发起人 | 接收时间 | 审批时间 | 耗时 |", markdown)
+        self.assertIn("| 序号 | 任务编号 | 流程实例ID | 流程名称 | 任务节点 | 流程发起人 | 接收时间 | 审批时间 | 耗时 |", markdown)
         self.assertIn("2026-04-23 11:56:31", markdown)
         self.assertIn("1小时30分54秒", markdown)
-        self.assertIn("| 1 | task-2 | 故障处置工单 | 人工处置 | xiaok | 2026-04-23 10:25:37 | 2026-04-23 11:56:31 | 1小时30分54秒 |", markdown)
+        self.assertIn("| 1 | task-2 | proc-2 | 故障处置工单 | 人工处置 | xiaok | 2026-04-23 10:25:37 | 2026-04-23 11:56:31 | 1小时30分54秒 |", markdown)
         self.assertNotIn("### 完整编号", markdown)
         self.assertNotIn("portal-visualization", markdown)
 
@@ -158,6 +160,7 @@ class OrderWorkflowTests(unittest.TestCase):
                 "rows": [
                     {
                         "taskId": "task-3",
+                        "procInsId": "proc-3",
                         "procDefName": "故障处置工单",
                         "procDefVersion": 7,
                         "startUserName": "xiaok",
@@ -169,7 +172,7 @@ class OrderWorkflowTests(unittest.TestCase):
             title="待办工单",
             lightweight=False,
         )
-        self.assertIn("| 1 | task-3 | 故障处置工单 | 人工处置 | v7 | xiaok | 2026-04-23 10:10:07 |", markdown)
+        self.assertIn("| 1 | task-3 | proc-3 | 故障处置工单 | 人工处置 | v7 | xiaok | 2026-04-23 10:10:07 |", markdown)
         self.assertNotIn("portal-visualization", markdown)
 
     def test_list_markdown_uses_global_index_for_later_pages(self) -> None:
@@ -181,6 +184,7 @@ class OrderWorkflowTests(unittest.TestCase):
                 "rows": [
                     {
                         "taskId": "task-11",
+                        "procInsId": "proc-11",
                         "procDefName": "故障处置工单",
                         "procDefVersion": 7,
                         "startUserName": "xiaok",
@@ -191,9 +195,13 @@ class OrderWorkflowTests(unittest.TestCase):
             },
             title="待办工单",
         )
-        self.assertIn("| 11 | task-11 | 故障处置工单 | 人工处置 | v7 | xiaok | 2026-04-23 10:10:07 |", markdown)
+        self.assertIn("| 11 | task-11 | proc-11 | 故障处置工单 | 人工处置 | v7 | xiaok | 2026-04-23 10:10:07 |", markdown)
 
     def test_detail_markdown_renders_light_preview(self) -> None:
+        long_alarm_text = (
+            "设备id:18，判断关系为：or，采集结果[ping_percent_packet_loss]=100.0，"
+            "阈值范围[70, +∞)，满足条件=true"
+        )
         markdown = format_detail_markdown(
             {
                 "data": {
@@ -217,6 +225,7 @@ class OrderWorkflowTests(unittest.TestCase):
                             "title": "告警列表",
                             "formData": {
                                 "alarmTitle": "云包异常",
+                                "additionalText": long_alarm_text,
                                 "deviceName": "DKCZZ-HUAWEI-DCLEAF-1",
                                 "manageIp": "172.27.34.15",
                             },
@@ -230,7 +239,7 @@ class OrderWorkflowTests(unittest.TestCase):
                                     {
                                         "type": "textarea",
                                         "formItemFlag": True,
-                                        "options": {"name": "locationInfo", "label": "定位信息"},
+                                        "options": {"name": "additionalText", "label": "告警原始报文"},
                                     },
                                 ]
                             },
@@ -260,6 +269,8 @@ class OrderWorkflowTests(unittest.TestCase):
         )
         self.assertIn("### 表单信息预览", markdown)
         self.assertIn("| 字段 | 内容 |", markdown)
+        self.assertIn(long_alarm_text, markdown)
+        self.assertNotIn("满足条件=tru...", markdown)
         self.assertIn("### 流转记录", markdown)
         self.assertIn("1. `开始`", markdown)
         self.assertIn("2. `人工办理`", markdown)
@@ -344,6 +355,39 @@ class OrderWorkflowTests(unittest.TestCase):
         self.assertEqual([row["taskId"] for row in payload["rows"]], ["task-1", "task-2", "task-3"])
         self.assertTrue(payload["fetchedAll"])
         self.assertEqual(request_mock.call_count, 2)
+
+    def test_detail_resolves_proc_ins_id_when_task_id_was_reused(self) -> None:
+        client = OrderWorkflowClient(
+            OrderWorkflowConfig(
+                base_url="http://example.com",
+                authorization="token",
+            )
+        )
+        with mock.patch.object(
+            client,
+            "_request",
+            side_effect=[
+                {
+                    "total": 1,
+                    "rows": [
+                        {
+                            "taskId": "task-1",
+                            "procInsId": "proc-real",
+                        }
+                    ],
+                },
+                {"data": {"processName": "故障处置工单"}},
+            ],
+        ) as request_mock:
+            payload = client.get_workorder_detail(
+                proc_ins_id="task-1",
+                task_id="task-1",
+            )
+
+        self.assertEqual(payload["data"]["processName"], "故障处置工单")
+        detail_call = request_mock.call_args_list[-1]
+        self.assertEqual(detail_call.kwargs["params"]["procInsId"], "proc-real")
+        self.assertEqual(detail_call.kwargs["params"]["taskId"], "task-1")
 
     def test_client_uses_default_route_base_url(self) -> None:
         client = OrderWorkflowClient(
