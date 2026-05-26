@@ -51,6 +51,19 @@ except ImportError:
 DEFAULT_NOTIFY_TIMEOUT_SECONDS = 8
 ALLOWED_OUTPUTS = {"json", "markdown"}
 
+_SEVERITY_MAP = {
+    "1": "紧急",
+    "2": "严重",
+    "3": "普通",
+    "4": "预警",
+}
+
+
+def _normalize_severity(raw: str) -> str:
+    """将告警级别数字转为中文名称，已是中文则原样返回。"""
+    s = str(raw).strip()
+    return _SEVERITY_MAP.get(s, s) if s else "-"
+
 
 def _load_skill_env() -> None:
     if not HAS_DOTENV:
@@ -213,7 +226,7 @@ def _build_notification_context(
         "device_name": _safe_str(alarm.get("deviceName")) or "-",
         "manage_ip": _safe_str(alarm.get("manageIp")) or "-",
         "alarm_id": _safe_str(alarm.get("alarmId")) or "-",
-        "level": _safe_str(alarm.get("level")) or "-",
+        "level": _normalize_severity(alarm.get("level", "")),
         "root_cause": root_cause,
         "suggestions": suggestions,
         "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -677,7 +690,7 @@ def build_report_payload(args: argparse.Namespace) -> dict[str, Any]:
             "deviceName": _safe_str(args.device_name),
             "manageIp": _safe_str(args.manage_ip),
             "assetId": _safe_str(args.asset_id),
-            "level": _safe_str(args.level),
+            "level": _normalize_severity(args.level),
             "status": _safe_str(args.status),
             "eventTime": _safe_str(args.event_time),
         },
