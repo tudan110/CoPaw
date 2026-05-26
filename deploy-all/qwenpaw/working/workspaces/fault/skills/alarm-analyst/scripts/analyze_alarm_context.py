@@ -251,13 +251,28 @@ def _resource_name(item: dict[str, Any]) -> str:
 def _resource_ci_type(item: dict[str, Any]) -> str:
     ci_type = _safe_str(item.get("ci_type"))
     if ci_type:
+        # If ci_type is already a recognized metricType, use directly
+        if ci_type in _KNOWN_METRIC_TYPES:
+            return ci_type
+        # Otherwise try _type numeric mapping (it maps to metricType strings)
+        raw_type = item.get("_type")
+        if raw_type is not None and str(raw_type).isdigit():
+            mapped = _CI_TYPE_ID_MAP.get(int(raw_type), "")
+            if mapped:
+                return mapped
+        # Fall back to original ci_type even if not in known list
         return ci_type
-    # Fallback: resolve numeric _type to model name
+    # No ci_type field, try numeric _type
     raw_type = item.get("_type")
     if raw_type is not None and str(raw_type).isdigit():
         return _CI_TYPE_ID_MAP.get(int(raw_type), "")
     return ""
 
+
+_KNOWN_METRIC_TYPES = frozenset({
+    "server", "network", "database", "middleware", "os",
+    "networkdevice", "mysql", "PostgreSQL", "redis", "operatingsystem",
+})
 
 # CMDB numeric _type → metricType string mapping
 _CI_TYPE_ID_MAP: dict[int, str] = {
@@ -267,7 +282,7 @@ _CI_TYPE_ID_MAP: dict[int, str] = {
     6: "middleware",
     17: "os",
     54: "networkdevice",
-    61: "redis",
+    61: "middleware",  # Redis
     77: "mysql",
     78: "PostgreSQL",
 }
