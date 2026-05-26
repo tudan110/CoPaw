@@ -68,6 +68,7 @@ description: 面向单条活动告警或单个应用故障现象驱动的故障�
 
 ### 关键约束
 
+- **禁止用 `chat_with_agent` 查询指标数据**：不要通过跨智能体调用 query 智能体来查询指标，直接使用本技能的 `get_metric_definitions.py` + `getMetricData` 脚本。跨智能体调用开销极大（常超时 5-10 分钟），且本地脚本完全能满足需求
 - **本地查拓扑优先**：先用 `zgops-cmdb.sh fetch` 或链路告警提取对端信息，不要首选 `chat_with_agent(query)` 查拓扑（跨智能体调用可能超时 60s+）
 - **跨智能体调用只做补充**：如果本地 CMDB 拓扑为空且链路告警也无法推断对端，才发起 `chat_with_agent`，且用 `submit_to_agent` 后台模式，不阻塞主流程
 - **对端设备告警批量查**：多个 CI ID 的告警查询是独立的，必须并行发出（脚本内部已实现并行）
