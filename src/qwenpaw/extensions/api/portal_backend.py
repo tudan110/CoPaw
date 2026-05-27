@@ -3345,11 +3345,11 @@ async def list_alarm_registry_records(
                 or search_term in str(r.get("resId", "")).lower()
             ]
 
-        # Sort by eventTime descending, then by updatedAt descending
+        # Sort by eventTime descending, then by handledAt descending
         items.sort(
             key=lambda r: (
                 r.get("eventTime", "") or "",
-                r.get("updatedAt", "") or "",
+                r.get("handledAt", "") or r.get("takenOverAt", "") or r.get("updatedAt", "") or "",
             ),
             reverse=True,
         )
@@ -3449,7 +3449,7 @@ async def export_alarm_registry_records(
         items.sort(
             key=lambda r: (
                 r.get("eventTime", "") or "",
-                r.get("updatedAt", "") or "",
+                r.get("handledAt", "") or r.get("takenOverAt", "") or r.get("updatedAt", "") or "",
             ),
             reverse=True,
         )
