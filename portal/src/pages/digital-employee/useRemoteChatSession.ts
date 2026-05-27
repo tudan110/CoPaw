@@ -10,6 +10,7 @@ import {
   createChat,
   getChatHistory,
   listChats,
+  reconnectChat,
   stopChat,
   streamChat,
 } from "../../api/copawChat";
@@ -89,6 +90,20 @@ function getPortalProgressSubtitle(stage: string) {
     default:
       return stage || "后端进度";
   }
+}
+
+function isRunningRemoteStatus(status: unknown) {
+  return String(status || "").toLowerCase() === "running";
+}
+
+function findLastAgentMessage(messages: any[] = []) {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (message?.type === "agent") {
+      return message;
+    }
+  }
+  return null;
 }
 
 export function useRemoteChatSession({
@@ -262,6 +277,57 @@ export function useRemoteChatSession({
           : message,
       ),
     );
+  };
+
+  const seedStreamStateFromMessages = (messages: any[] = []) => {
+    streamAssistantMapRef.current = new Map();
+    streamMessageMetaRef.current = new Map();
+    streamPendingTextRef.current = new Map();
+    streamResponseTextRef.current = new Map();
+    streamProcessBlocksRef.current = new Map();
+    pendingProcessBlocksRef.current = new Map();
+
+    const lastAgentMessage = findLastAgentMessage(messages);
+    if (!lastAgentMessage?.id) {
+      activeAssistantMessageIdRef.current = null;
+      hasStreamOutputRef.current = false;
+      return null;
+    }
+
+    const frontendMessageId = String(lastAgentMessage.id);
+    activeAssistantMessageIdRef.current = frontendMessageId;
+    streamProcessBlocksRef.current.set(
+      frontendMessageId,
+      lastAgentMessage.processBlocks || [],
+    );
+
+    const responseTexts = new Map<string, string>();
+    for (const block of lastAgentMessage.processBlocks || []) {
+      if (block?.kind === "response" && block?.id && block?.content) {
+        responseTexts.set(String(block.id), String(block.content));
+      }
+    }
+
+    const backendMessageId = String(
+      lastAgentMessage.enhancementSourceMessageId ||
+      lastAgentMessage.backendMessageId ||
+      "",
+    );
+    if (backendMessageId) {
+      streamAssistantMapRef.current.set(backendMessageId, {
+        frontendId: frontendMessageId,
+      });
+      if (lastAgentMessage.content && !responseTexts.has(backendMessageId)) {
+        responseTexts.set(backendMessageId, String(lastAgentMessage.content));
+      }
+    }
+
+    streamResponseTextRef.current.set(frontendMessageId, responseTexts);
+    hasStreamOutputRef.current = Boolean(
+      lastAgentMessage.content ||
+      (lastAgentMessage.processBlocks || []).some((block: any) => block?.id !== REMOTE_WAIT_BLOCK_ID),
+    );
+    return frontendMessageId;
   };
 
   const scheduleRemoteWaitNotices = (messageId: string) => {
@@ -761,6 +827,73 @@ export function useRemoteChatSession({
     }
   }, [refreshRemoteSessions]);
 
+  const reconnectRunningChat = useCallback(async ({
+    agentId,
+    employee,
+    sessionId,
+    chatId,
+    messages,
+  }: {
+    agentId: string;
+    employee: any;
+    sessionId: string;
+    chatId: string;
+    messages: any[];
+  }) => {
+    const normalizedSessionId = String(sessionId || "").trim();
+    if (!normalizedSessionId || !agentId || !employee) {
+      return;
+    }
+
+    const frontendMessageId = seedStreamStateFromMessages(messages);
+    const controller = new AbortController();
+    streamAbortRef.current = controller;
+    streamAbortNoticeModeRef.current = null;
+    currentChatIdRef.current = chatId;
+    currentSessionIdRef.current = normalizedSessionId;
+    isStreamingRef.current = true;
+    currentChatStatusRef.current = "running";
+    setIsStreaming(true);
+    setCurrentChatStatus("running");
+
+    if (frontendMessageId && !hasStreamOutputRef.current) {
+      setRemoteWaitNotice(
+        frontendMessageId,
+        "已重新连接正在运行的对话，等待后续模型或工具事件。",
+        "已重新连接",
+      );
+    }
+
+    try {
+      await reconnectChat(agentId, {
+        sessionId: normalizedSessionId,
+        signal: controller.signal,
+        onEvent: (event) => handleRemoteStreamEvent(event, employee),
+      });
+      finalizePendingResponse("");
+      setCurrentChatStatus("idle");
+    } catch (error: any) {
+      if (!controller.signal.aborted) {
+        console.warn("Failed to reconnect running chat:", error);
+        setCurrentChatStatus("idle");
+      }
+    } finally {
+      if (streamAbortRef.current === controller) {
+        streamAbortRef.current = null;
+      }
+      clearRemoteWaitNoticeTimers();
+      isStreamingRef.current = false;
+      setIsStreaming(false);
+      streamAbortNoticeModeRef.current = null;
+      streamMessageMetaRef.current = new Map();
+      streamPendingTextRef.current = new Map();
+      streamResponseTextRef.current = new Map();
+      streamProcessBlocksRef.current = new Map();
+      hasStreamOutputRef.current = false;
+      await refreshRemoteSessions(false);
+    }
+  }, [finalizePendingResponse, refreshRemoteSessions]);
+
   const handleSelectRemoteHistory = useCallback(async (session: any) => {
     const nextEmployee = currentEmployeeRef.current;
     const nextRemoteAgentId = remoteAgentIdRef.current;
@@ -837,18 +970,35 @@ export function useRemoteChatSession({
         });
       }
 
+      const selectedSessionId = enhancementSessionId || session.sessionId || "";
+      const selectedStatus =
+        isRunningRemoteStatus(history.status) || isRunningRemoteStatus(session.status)
+          ? "running"
+          : history.status || session.status || "idle";
       setCurrentChatId(session.id);
-      setCurrentSessionId(enhancementSessionId || session.sessionId || "");
-      setCurrentChatStatus(history.status || session.status || "idle");
+      setCurrentSessionId(selectedSessionId);
+      setCurrentChatStatus(selectedStatus);
       currentChatMetaRef.current = session?.meta || history?.meta || null;
       setMessages(nextMessages);
       setHistoryVisible(false);
+
+      if (isRunningRemoteStatus(selectedStatus)) {
+        window.setTimeout(() => {
+          void reconnectRunningChat({
+            agentId: nextRemoteAgentId,
+            employee: nextEmployee,
+            sessionId: selectedSessionId,
+            chatId: session.id,
+            messages: nextMessages || [],
+          });
+        }, 0);
+      }
     } catch (error: any) {
       setHistoryError(error.message || "获取聊天历史失败");
     } finally {
       setHistoryLoading(false);
     }
-  }, [hydrateAlarmAnalystCardsForHistory, stopActiveStream]);
+  }, [hydrateAlarmAnalystCardsForHistory, reconnectRunningChat, stopActiveStream]);
 
   const handleRemoteStreamEvent = (event: any, employee: any) => {
     if (event.object === "portal_progress") {
@@ -1015,6 +1165,8 @@ export function useRemoteChatSession({
 
     const controller = new AbortController();
     streamAbortRef.current = controller;
+    isStreamingRef.current = true;
+    currentChatStatusRef.current = "running";
     setIsStreaming(true);
     setCurrentChatStatus("running");
 
@@ -1115,6 +1267,7 @@ export function useRemoteChatSession({
       }
       clearRemoteWaitNoticeTimers();
       setIsCreatingChat(false);
+      isStreamingRef.current = false;
       setIsStreaming(false);
       streamAbortNoticeModeRef.current = null;
       streamMessageMetaRef.current = new Map();
