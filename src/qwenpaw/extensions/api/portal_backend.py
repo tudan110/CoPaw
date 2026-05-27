@@ -123,6 +123,8 @@ PORTAL_REAL_ALARM_MAX_ACTIVE_ANALYSES = max(
     1,
     int(os.getenv("QWENPAW_PORTAL_REAL_ALARM_MAX_ACTIVE_ANALYSES", "1").strip() or "1"),
 )
+PORTAL_REAL_ALARM_DEDUP_WINDOW_SECONDS = 120.0
+_portal_real_alarm_last_sent: dict[str, float] = {}
 PORTAL_REAL_ALARM_AUTO_TAKEOVER_TASK: asyncio.Task | None = None
 PORTAL_REAL_ALARM_REFRESH_TASK: asyncio.Task | None = None
 PORTAL_REAL_ALARM_REFRESH_LIMIT = 0
@@ -619,7 +621,15 @@ async def _ensure_portal_real_alarm_sessions(
                         chat.user_id,
                     )
                     has_history = _portal_real_alarm_has_history(state)
-                    should_start = not has_history
+                    if has_history:
+                        should_start = False
+                    else:
+                        # No AI reply yet – check dedup window to decide
+                        # whether this is a stuck session (allow retry) or
+                        # a message that was just sent (skip duplicate).
+                        last_sent = _portal_real_alarm_last_sent.get(session_id, 0.0)
+                        elapsed = time.monotonic() - last_sent
+                        should_start = elapsed > PORTAL_REAL_ALARM_DEDUP_WINDOW_SECONDS
                 else:
                     should_start = False
 
@@ -658,6 +668,8 @@ async def _ensure_portal_real_alarm_sessions(
                 _build_portal_real_alarm_payload(session_id, alarm),
                 console_channel.stream_one,
             )
+            # Record send time for dedup window
+            _portal_real_alarm_last_sent[session_id] = time.monotonic()
             if started:
                 _update_portal_real_alarm_registry_safe(
                     alarm=alarm,
