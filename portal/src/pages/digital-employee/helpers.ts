@@ -976,21 +976,17 @@ export function unwrapPortalAlarmAnalystCardContent(content: string) {
     const segments = normalized.split(/\n---\n/);
     const markerIndex = segments.findIndex((segment) => segment.includes(PORTAL_ALARM_ANALYST_CARD_MARKER));
     if (markerIndex !== -1) {
-      let fallback = "";
-      for (const segment of segments.slice(markerIndex + 1)) {
-        const candidate = segment.trim();
-        if (!candidate) {
-          continue;
+      const afterMarker = segments.slice(markerIndex + 1).filter((s) => s.trim());
+      if (afterMarker.length > 0) {
+        // Look for a segment that contains the report heading
+        const reportIdx = afterMarker.findIndex((s) => /(?:^|\n)##+\s*.*告警分析报告/u.test(s));
+        if (reportIdx !== -1) {
+          // Join from the report heading segment onwards so the
+          // summary table (which may be in a later segment) is kept.
+          return afterMarker.slice(reportIdx).join("\n\n");
         }
-        if (!fallback) {
-          fallback = candidate;
-        }
-        if (/(?:^|\n)##+\s*.*告警分析报告/u.test(candidate)) {
-          return candidate;
-        }
-      }
-      if (fallback) {
-        return fallback;
+        // No explicit report heading — rejoin all segments after marker
+        return afterMarker.join("\n\n");
       }
     }
   }
