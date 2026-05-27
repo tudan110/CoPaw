@@ -63,6 +63,10 @@ from qwenpaw.extensions.portal_real_alarm_registry import (
     reset_zombie_analyzing_records,
     update_alarm_record,
 )
+from qwenpaw.extensions.portal_alarm_analyst_card_store import (
+    load_cards_for_chat as _load_cards_for_chat_from_db,
+    save_card as _save_card_to_db,
+)
 from qwenpaw.extensions.integrations.alarm_workorders.query_alarm_workorders import (
     query_alarm_workorders,
 )
@@ -1520,10 +1524,42 @@ async def _load_portal_alarm_analyst_cards(
     session_id: str,
     user_id: str = "default",
 ) -> dict[str, dict[str, dict]]:
+    """Load cards from SQLite, falling back to session state for migration."""
+    # Try SQLite first (new path)
+    db_records = _load_cards_for_chat_from_db_by_session(session_id)
+    if db_records:
+        return db_records
+
+    # Fallback: read from legacy session state and migrate to SQLite
     _workspace, session = await _get_workspace_and_session(request)
     state = await session.get_session_state_dict(session_id, user_id)
     records = state.get("portal_alarm_analyst_cards", {}).get("records", {})
-    return records if isinstance(records, dict) else {}
+    if not isinstance(records, dict) or not records:
+        return {}
+
+    # Migrate existing cards to SQLite
+    for chat_id, msgs in records.items():
+        if not isinstance(msgs, dict):
+            continue
+        for message_id, card in msgs.items():
+            if isinstance(card, dict):
+                _save_card_to_db(
+                    chat_id=chat_id,
+                    message_id=message_id,
+                    card=card,
+                    session_id=session_id,
+                )
+    return records
+
+
+def _load_cards_for_chat_from_db_by_session(
+    session_id: str,
+) -> dict[str, dict[str, dict]]:
+    """Load all cards for a session from SQLite."""
+    from qwenpaw.extensions.portal_alarm_analyst_card_store import (
+        load_all_cards_for_session,
+    )
+    return load_all_cards_for_session(session_id)
 
 
 async def _save_portal_alarm_analyst_cards(
@@ -1533,6 +1569,20 @@ async def _save_portal_alarm_analyst_cards(
     records: dict[str, dict[str, dict]],
     user_id: str = "default",
 ) -> None:
+    """Save cards to SQLite (primary) and session state (backward compat)."""
+    # Save to SQLite
+    for chat_id, msgs in records.items():
+        if not isinstance(msgs, dict):
+            continue
+        for message_id, card in msgs.items():
+            if isinstance(card, dict):
+                _save_card_to_db(
+                    chat_id=chat_id,
+                    message_id=message_id,
+                    card=card,
+                    session_id=session_id,
+                )
+    # Also write to session state for backward compatibility
     _workspace, session = await _get_workspace_and_session(request)
     await session.update_session_state(
         session_id,
@@ -2489,6 +2539,20 @@ async def list_portal_alarm_analyst_cards(
     try:
         if not hasattr(request.app.state, "multi_agent_manager"):
             return AlarmAnalystCardListResponse(cards=[]).model_dump(by_alias=True)
+
+        # Fast path: load from SQLite directly by chat_id
+        db_chat_records = _load_cards_for_chat_from_db(chat_id)
+        if db_chat_records:
+            cards = []
+            for payload in db_chat_records.values():
+                shaped = _shape_alarm_analyst_card_payload(payload)
+                if shaped:
+                    cards.append(shaped)
+            return AlarmAnalystCardListResponse(
+                cards=[AlarmAnalystCard.model_validate(card) for card in cards],
+            ).model_dump(by_alias=True)
+
+        # Fallback: load from session state (triggers migration)
         records = await _load_portal_alarm_analyst_cards(request, session_id=session_id)
         cards = _list_alarm_analyst_cards_for_chat(records, chat_id)
         return AlarmAnalystCardListResponse(
