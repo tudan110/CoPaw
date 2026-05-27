@@ -165,9 +165,11 @@ RCA 结论形成后，必须推送分析报告通知（不是可选的）：
 ```bash
 cd skills/alarm-analyst && python scripts/send_analysis_report.py \
   --alarm-id <alarmId> --alarm-title "<标题>" \
-  --device-name <设备名> --manage-ip <IP> \
+  --device-name <设备名> --manage-ip <IP> --level <告警等级> \
   --root-cause "<根因>" --suggestion "<建议>" --output markdown
 ```
+
+> **`--level` 必传**：从告警信息中提取等级值（如 `urgent`、`3`、`严重` 等均可），不传则通知中显示为"-"。
 
 详见 `references/notification-protocol.md`。推送成功后通知会发送到配置的渠道。
 
