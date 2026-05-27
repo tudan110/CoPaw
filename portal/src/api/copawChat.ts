@@ -375,6 +375,31 @@ export async function streamChat(
   }
 }
 
+export function reconnectChat(
+  agentId: string | undefined,
+  {
+    sessionId,
+    signal,
+    onEvent,
+  }: {
+    sessionId: string;
+    signal?: AbortSignal;
+    onEvent?: (event: Record<string, any>) => void;
+  },
+) {
+  return streamChat(
+    agentId,
+    {
+      reconnect: true,
+      session_id: sessionId,
+      user_id: "default",
+      channel: "console",
+      stream: true,
+    },
+    { signal, onEvent },
+  );
+}
+
 function parseSseChunk(chunk: string): Record<string, any> | null {
   const lines = chunk
     .split(/\r?\n/)
