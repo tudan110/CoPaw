@@ -192,16 +192,23 @@ else
 
     # 逐个 cherry-pick 新提交并重写作者
     FAILED=0
-    for COMMIT_SHA in $(git rev-list --reverse "$LAST_SYNCED_SHA".."$LATEST_SHA"); do
+    for COMMIT_SHA in $(git rev-list --reverse --first-parent "$LAST_SYNCED_SHA".."$LATEST_SHA"); do
         ORIG_AUTHOR=$(git log -1 --format='%an' "$COMMIT_SHA")
         MAPPED=$(map_author "$ORIG_AUTHOR")
         NEW_NAME="${MAPPED%%|*}"
         NEW_EMAIL="${MAPPED##*|}"
 
-        if ! git cherry-pick --allow-empty "$COMMIT_SHA" >/dev/null 2>&1; then
+        # 检查是否为 merge commit
+        PARENT_COUNT=$(git cat-file -p "$COMMIT_SHA" | grep -c "^parent")
+        CHERRY_PICK_OPTS="--allow-empty"
+        if [ "$PARENT_COUNT" -gt 1 ]; then
+            CHERRY_PICK_OPTS="$CHERRY_PICK_OPTS -m 1"
+        fi
+
+        if ! git cherry-pick $CHERRY_PICK_OPTS "$COMMIT_SHA" >/dev/null 2>&1; then
             # 冲突时尝试用 theirs 策略
             if ! git cherry-pick --abort 2>/dev/null; then true; fi
-            if ! git cherry-pick --allow-empty --strategy=recursive -X theirs "$COMMIT_SHA" >/dev/null 2>&1; then
+            if ! git cherry-pick $CHERRY_PICK_OPTS --strategy=recursive -X theirs "$COMMIT_SHA" >/dev/null 2>&1; then
                 print_error "Cherry-pick 失败: $COMMIT_SHA ($(git log -1 --format='%s' "$COMMIT_SHA"))"
                 print_error "请使用全量同步: ./sync-to-internal.sh --full"
                 git cherry-pick --abort 2>/dev/null || true
