@@ -217,11 +217,17 @@ fi
 
 sync_console_assets "$CONSOLE_DIST" "$CONSOLE_PACKAGE_DIR"
 
+# 禁用匿名遥测数据收集
+TELEMETRY_MARKER="$WORKING_DIR/.telemetry_collected"
+if [ ! -f "$TELEMETRY_MARKER" ]; then
+    echo '{"opted_out": true}' > "$TELEMETRY_MARKER"
+fi
+
 # 初始化配置（如果需要）
 CONFIG_FILE="$WORKING_DIR/config.json"
 if [ ! -f "$CONFIG_FILE" ]; then
     echo "[5/5] 初始化配置..."
-    "$PYTHON_BIN" -m qwenpaw init --defaults
+    "$PYTHON_BIN" -m qwenpaw init --defaults --accept-security
 else
     echo "[5/5] 配置已存在，跳过初始化"
 fi
