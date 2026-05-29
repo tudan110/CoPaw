@@ -237,8 +237,8 @@ def _build_notification_context(
     }
 
 
-def _build_notification_markdown_lines(context: dict[str, str]) -> list[str]:
-    return [
+def _build_notification_markdown_lines(context: dict[str, str], abnormal_metrics: list[dict[str, str]] | None = None) -> list[str]:
+    lines = [
         "**AI告警分析报告**",
         "",
         f"- **标题**：{context['title']}",
@@ -251,18 +251,28 @@ def _build_notification_markdown_lines(context: dict[str, str]) -> list[str]:
         f"- **等级**：{context['level']}",
         f"- **根因方向**：{context['root_cause']}",
         f"- **处置建议**：{context['suggestions']}",
+    ]
+    if abnormal_metrics:
+        lines.append("")
+        lines.append("- **异常指标**：")
+        for m in abnormal_metrics:
+            unit = f" {m['unit']}" if m.get("unit") else ""
+            reason = f"（{m['reason']}）" if m.get("reason") else ""
+            lines.append(f"  - {m['name']}：{m['value']}{unit}{reason}")
+    lines.extend([
         f"- **分析时间**：{context['created_at']}",
         "",
         "> 此报告为 AI 自动生成，请尽快跟进处置。",
-    ]
+    ])
+    return lines
 
 
 def _build_notification_markdown_text(context: dict[str, str]) -> str:
     return "\n".join(_build_notification_markdown_lines(context))
 
 
-def _build_notification_plain_text_lines(context: dict[str, str]) -> list[str]:
-    return [
+def _build_notification_plain_text_lines(context: dict[str, str], abnormal_metrics: list[dict[str, str]] | None = None) -> list[str]:
+    lines = [
         "AI告警分析报告",
         f"标题：{context['title']}",
         f"摘要：{context['summary']}",
@@ -270,25 +280,34 @@ def _build_notification_plain_text_lines(context: dict[str, str]) -> list[str]:
         f"等级：{context['level']}",
         f"根因方向：{context['root_cause']}",
         f"处置建议：{context['suggestions']}",
+    ]
+    if abnormal_metrics:
+        lines.append("异常指标：")
+        for m in abnormal_metrics:
+            unit = f" {m['unit']}" if m.get("unit") else ""
+            reason = f"（{m['reason']}）" if m.get("reason") else ""
+            lines.append(f"  - {m['name']}：{m['value']}{unit}{reason}")
+    lines.extend([
         f"分析时间：{context['created_at']}",
         "此报告为 AI 自动生成，请尽快跟进处置。",
-    ]
+    ])
+    return lines
 
 
-def _build_app_notify_payload(context: dict[str, str]) -> dict[str, Any]:
+def _build_app_notify_payload(context: dict[str, str], abnormal_metrics: list[dict[str, str]] | None = None) -> dict[str, Any]:
     return {
         "title": "AI告警分析报告",
-        "content": "\n".join(_build_notification_plain_text_lines(context)),
+        "content": "\n".join(_build_notification_plain_text_lines(context, abnormal_metrics)),
         "type": "text",
     }
 
 
-def _build_dingtalk_notify_payload(context: dict[str, str]) -> dict[str, Any]:
+def _build_dingtalk_notify_payload(context: dict[str, str], abnormal_metrics: list[dict[str, str]] | None = None) -> dict[str, Any]:
     payload: dict[str, Any] = {
         "msgtype": "markdown",
         "markdown": {
             "title": _safe_str(context.get("title")) or "AI告警分析报告",
-            "text": "\n".join(_build_notification_markdown_lines(context)),
+            "text": "\n".join(_build_notification_markdown_lines(context, abnormal_metrics)),
         },
     }
     if _get_notify_mention_all():
@@ -296,7 +315,7 @@ def _build_dingtalk_notify_payload(context: dict[str, str]) -> dict[str, Any]:
     return payload
 
 
-def _build_feishu_notify_payload(context: dict[str, str]) -> dict[str, Any]:
+def _build_feishu_notify_payload(context: dict[str, str], abnormal_metrics: list[dict[str, str]] | None = None) -> dict[str, Any]:
     suggestion_lines = [
         f"- {item.strip()}"
         for item in context["suggestions"].split("；")
@@ -368,20 +387,38 @@ def _build_feishu_notify_payload(context: dict[str, str]) -> dict[str, Any]:
                     "content": "**处置建议**\n" + "\n".join(suggestion_lines),
                 },
             },
-            {
-                "tag": "note",
-                "elements": [
-                    {
-                        "tag": "plain_text",
-                        "content": f"告警编号：{context['alarm_id']}",
-                    },
-                    {
-                        "tag": "plain_text",
-                        "content": f"分析时间：{context['created_at']}",
-                    },
-                ],
-            },
         ]
+    )
+    if abnormal_metrics:
+        metric_lines = []
+        for m in abnormal_metrics:
+            unit = f" {m['unit']}" if m.get("unit") else ""
+            reason = f"（{m['reason']}）" if m.get("reason") else ""
+            metric_lines.append(f"- {m['name']}：{m['value']}{unit}{reason}")
+        elements.extend([
+            {"tag": "hr"},
+            {
+                "tag": "div",
+                "text": {
+                    "tag": "lark_md",
+                    "content": "**异常指标**\n" + "\n".join(metric_lines),
+                },
+            },
+        ])
+    elements.append(
+        {
+            "tag": "note",
+            "elements": [
+                {
+                    "tag": "plain_text",
+                    "content": f"告警编号：{context['alarm_id']}",
+                },
+                {
+                    "tag": "plain_text",
+                    "content": f"分析时间：{context['created_at']}",
+                },
+            ],
+        }
     )
     payload: dict[str, Any] = {
         "msg_type": "interactive",
@@ -547,13 +584,14 @@ def _notify_analysis_report(
         }
 
     context = _build_notification_context(payload)
+    abnormal_metrics = (payload.get("analysis") or {}).get("abnormalMetrics") or []
     channels: list[dict[str, Any]] = []
     if app_push_url:
         channels.append(
             _send_app_push(
                 channel_name="app",
                 push_url=app_push_url,
-                payload=_build_app_notify_payload(context),
+                payload=_build_app_notify_payload(context, abnormal_metrics),
             )
         )
     if dingtalk_webhook_url:
@@ -561,7 +599,7 @@ def _notify_analysis_report(
             _send_json_webhook(
                 channel_name="dingtalk",
                 webhook_url=_build_dingtalk_signed_webhook_url(dingtalk_webhook_url),
-                payload=_build_dingtalk_notify_payload(context),
+                payload=_build_dingtalk_notify_payload(context, abnormal_metrics),
                 success_predicate=lambda data: str(data.get("errcode", "")) == "0",
             )
         )
@@ -570,7 +608,7 @@ def _notify_analysis_report(
             _send_json_webhook(
                 channel_name="feishu",
                 webhook_url=feishu_webhook_url,
-                payload=_build_feishu_notify_payload(context),
+                payload=_build_feishu_notify_payload(context, abnormal_metrics),
                 success_predicate=lambda data: str(data.get("StatusCode", "")) == "0"
                 or str(data.get("code", "")) == "0",
             )
@@ -661,6 +699,33 @@ def _default_report_title(alarm_title: str) -> str:
     return f"AI分析 · {title}"
 
 
+def _parse_abnormal_metrics(raw: str) -> list[dict[str, str]]:
+    """Parse --abnormal-metrics-json into a list of metric dicts."""
+    if not raw or not raw.strip():
+        return []
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError:
+        return []
+    if not isinstance(parsed, list):
+        return []
+    result: list[dict[str, str]] = []
+    for item in parsed:
+        if not isinstance(item, dict):
+            continue
+        name = _safe_str(item.get("name") or item.get("metricName") or "")
+        if not name:
+            continue
+        result.append({
+            "name": name,
+            "code": _safe_str(item.get("code") or item.get("metricCode") or ""),
+            "value": _safe_str(item.get("value") or item.get("latestValue") or ""),
+            "unit": _safe_str(item.get("unit") or ""),
+            "reason": _safe_str(item.get("reason") or item.get("异常说明") or ""),
+        })
+    return result
+
+
 def _normalize_ai_alarm_title(alarm_title: str) -> str:
     title = _safe_str(alarm_title) or "故障告警"
     title = re.sub(r"^\s*AI\s*创建\s*[·:：-]?\s*", "", title)
@@ -681,6 +746,7 @@ def build_report_payload(args: argparse.Namespace) -> dict[str, Any]:
     alarm_id = _require_alarm_id(args.alarm_id)
     alarm_title = _normalize_ai_alarm_title(_safe_str(args.alarm_title))
     analysis_summary = _safe_str(args.analysis_summary) or "AI 已完成根因分析"
+    abnormal_metrics = _parse_abnormal_metrics(getattr(args, "abnormal_metrics_json", ""))
 
     return {
         "alarmId": alarm_id,
@@ -702,6 +768,7 @@ def build_report_payload(args: argparse.Namespace) -> dict[str, Any]:
             "summary": analysis_summary,
             "rootCause": _safe_str(args.root_cause),
             "suggestions": suggestions,
+            "abnormalMetrics": abnormal_metrics,
         },
     }
 
@@ -760,6 +827,11 @@ def _build_parser() -> argparse.ArgumentParser:
         "--suggestions-json",
         default="",
         help='JSON 数组格式的处置建议，例如 ["排查长事务","检查阻塞链"]',
+    )
+    parser.add_argument(
+        "--abnormal-metrics-json",
+        default="",
+        help='JSON 数组格式的异常指标，例如 [{"name":"CPU IO等待","code":"cpu_iowait","value":"85.3","unit":"%","reason":"远超正常水平"}]',
     )
     parser.add_argument("--metric-type", default="mysql", help="资源类型，例如 mysql")
     parser.add_argument("--chat-id", default="", help="当前故障会话 ID（可选）")

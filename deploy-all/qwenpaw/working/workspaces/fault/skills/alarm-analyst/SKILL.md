@@ -139,6 +139,8 @@ cd skills/alarm-analyst && python scripts/analyze_alarm_context.py \
 
 ⚠️ **不要在脚本返回 ciType 为空时手动重跑 `get_metric_definitions.py`**——脚本已内置回退逻辑。如果脚本仍返回指标数为 0，说明该资源类型确实无指标定义，直接进入下一步。
 
+**异常指标识别**：脚本返回的 `metricDataResults` 包含所有查询到的指标值，AI 必须结合告警上下文判断哪些指标存在异常（如与告警有因果关系、值偏离正常范围等），并在最终报告的 `## 异常指标` 章节中以表格形式列出。不要列出所有指标，只列出判断为异常的指标，并附带简要异常说明。
+
 如果只需单独查指标：
 
 ```bash
@@ -166,10 +168,13 @@ RCA 结论形成后，必须推送分析报告通知（不是可选的）：
 cd skills/alarm-analyst && python scripts/send_analysis_report.py \
   --alarm-id <alarmId> --alarm-title "<标题>" \
   --device-name <设备名> --manage-ip <IP> --level <告警等级> \
-  --root-cause "<根因>" --suggestion "<建议>" --output markdown
+  --root-cause "<根因>" --suggestion "<建议>" \
+  --abnormal-metrics-json '[{"name":"指标名","code":"metric_code","value":"85.3","unit":"%","reason":"异常说明"}]' \
+  --output markdown
 ```
 
 > **`--level` 必传**：从告警信息中提取等级值（如 `urgent`、`3`、`严重` 等均可），不传则通知中显示为"-"。
+> **`--abnormal-metrics-json` 可选**：传入 AI 判断的异常指标 JSON 数组，通知中会展示。如无异常指标可不传。
 
 详见 `references/notification-protocol.md`。推送成功后通知会发送到配置的渠道。
 
@@ -185,9 +190,10 @@ cd skills/alarm-analyst && python scripts/send_analysis_report.py \
 4. 拓扑关联资源告警查询结果
 5. 指标采集与分析
 6. 根因判断与影响范围
-7. 处置建议
-8. 通知推送结果
-9. 恢复验证与状态回写
+7. 异常指标（AI 从全部指标中筛选出与告警相关的异常项）
+8. 处置建议
+9. 通知推送结果
+10. 恢复验证与状态回写
 
 最终必须追加 `📊 总结` 小节，包含：置信度（百分比，第一行）、故障性质、根因方向、影响范围、优先动作、关联资源告警查询状态、通知状态。
 
