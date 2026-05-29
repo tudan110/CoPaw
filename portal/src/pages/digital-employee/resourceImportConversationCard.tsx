@@ -34,6 +34,17 @@ type ResourceImportFileSummary = {
   size: number;
 };
 
+type ResourceImportRecordIssue = NonNullable<ResourceImportRecord["issues"]>[number];
+type ResourceImportRequiredIssue = ResourceImportRecordIssue & {
+  previewKey: string;
+  ciType: string;
+  recordName: string;
+  sourceLabel: string;
+};
+type ResourceImportDefaultedRequiredIssue = ResourceImportRequiredIssue & {
+  defaultValue: string;
+};
+
 export type ResourceImportFlowPayload = {
   flowId: string;
   stage: ResourceImportFlowStage;
@@ -347,8 +358,129 @@ function getVisibleAttributeDefinitions(
   });
 }
 
+function getRequiredAttributeDefinitions(
+  preview: ResourceImportPreview | null | undefined,
+  ciType: string,
+) {
+  const typeMeta = getCiTypeMeta(preview, ciType);
+  if (!typeMeta) {
+    return [];
+  }
+  const systemGeneratedUniqueKey = typeMeta?.system_generated_unique_key
+    ? String(typeMeta.unique_key || "").trim()
+    : "";
+  const requiredDefinitions = (typeMeta.attributeDefinitions || []).filter((definition) => {
+    const fieldName = String(definition.name || "").trim();
+    if (!fieldName || !definition.required) {
+      return false;
+    }
+    return !(systemGeneratedUniqueKey && fieldName === systemGeneratedUniqueKey);
+  });
+  if (requiredDefinitions.length) {
+    return requiredDefinitions;
+  }
+  const uniqueKey = String(typeMeta.unique_key || "").trim();
+  if (!uniqueKey || systemGeneratedUniqueKey) {
+    return [];
+  }
+  return [{
+    name: uniqueKey,
+    alias: getAttributeLabel(uniqueKey),
+    required: true,
+  }];
+}
+
 function getChoiceOptions(definition?: ResourceImportCiTypeAttributeDefinition | null) {
   return definition?.choices || [];
+}
+
+function isServerDefaultMacro(value: unknown) {
+  return String(value ?? "").trim().startsWith("$");
+}
+
+function cleanDefaultValue(value: unknown) {
+  const cleaned = String(value ?? "").trim();
+  return cleaned && !isServerDefaultMacro(cleaned) ? cleaned : "";
+}
+
+function getAttributeDefaultValue(definition?: ResourceImportCiTypeAttributeDefinition | null) {
+  if (!definition) {
+    return "";
+  }
+  const rawDefault = definition.default;
+  if (rawDefault && typeof rawDefault === "object" && !Array.isArray(rawDefault)) {
+    const defaultObject = rawDefault as Record<string, unknown>;
+    for (const key of ["default", "value", "label"]) {
+      const value = cleanDefaultValue(defaultObject[key]);
+      if (value) {
+        return value;
+      }
+    }
+  } else if (Array.isArray(rawDefault)) {
+    for (const item of rawDefault) {
+      const value = cleanDefaultValue(item);
+      if (value) {
+        return value;
+      }
+    }
+  } else {
+    const value = cleanDefaultValue(rawDefault);
+    if (value) {
+      return value;
+    }
+  }
+
+  const fieldName = String(definition.name || "").trim().toLowerCase();
+  const fieldAlias = String(definition.alias || "").trim();
+  if (fieldName === "status" || fieldAlias === "资产状态") {
+    const onlineOption = (definition.choices || []).find(
+      (option) => option.value === "在线" || option.label === "在线",
+    );
+    if (onlineOption) {
+      return onlineOption.value || onlineOption.label || "";
+    }
+    const firstOption = (definition.choices || []).find((option) => option.value || option.label);
+    return firstOption?.value || firstOption?.label || "";
+  }
+  return "";
+}
+
+function hasEffectiveAttributeDefault(definition?: ResourceImportCiTypeAttributeDefinition | null) {
+  const defaultValue = getAttributeDefaultValue(definition);
+  if (!defaultValue) {
+    return false;
+  }
+  if (!definition?.is_choice) {
+    return true;
+  }
+  const options = definition.choices || [];
+  return !options.length || options.some((option) => option.value === defaultValue || option.label === defaultValue);
+}
+
+function requiredFieldNeedsManualValue(
+  record: ResourceImportRecord,
+  field: string,
+  definition?: ResourceImportCiTypeAttributeDefinition | null,
+) {
+  if (!definition?.required) {
+    return false;
+  }
+  return isEmptyValue(getRecordFieldValue(record, field)) && !hasEffectiveAttributeDefault(definition);
+}
+
+function getRequiredDefaultMessage(
+  record: ResourceImportRecord,
+  field: string,
+  definition?: ResourceImportCiTypeAttributeDefinition | null,
+) {
+  if (!definition?.required || !isEmptyValue(getRecordFieldValue(record, field))) {
+    return "";
+  }
+  const defaultValue = getAttributeDefaultValue(definition);
+  if (!defaultValue || !hasEffectiveAttributeDefault(definition)) {
+    return "";
+  }
+  return `未填写将使用模型默认值：${defaultValue}`;
 }
 
 type ResourceImportStructureItem = NonNullable<
@@ -1674,6 +1806,14 @@ function buildStandardExportRows(group: ResourceImportGroup) {
         .filter(([key, value]) => key && !key.startsWith("_") && !isEmptyValue(value))
         .map(([key, value]) => [key, value]),
     ) as Record<string, unknown>;
+    Object.entries(record.attributes || {}).forEach(([key, value]) => {
+      if (key && !key.startsWith("_") && !isEmptyValue(value)) {
+        base[key] = value;
+      }
+    });
+    if (!isEmptyValue(record.name)) {
+      base.name = record.name;
+    }
 
     return {
       ci_type: record.ciType,
@@ -1685,6 +1825,37 @@ function buildStandardExportRows(group: ResourceImportGroup) {
       source_row: sourceRow.rowIndex ?? "",
     };
   });
+}
+
+function getRequiredExportFieldKeys(
+  preview: ResourceImportPreview | null | undefined,
+  group: ResourceImportGroup,
+) {
+  const ciTypes = Array.from(
+    new Set([group.ciType, ...group.records.map((record) => record.ciType)].filter(Boolean)),
+  );
+  return Array.from(
+    new Set(
+      ciTypes.flatMap((ciType) =>
+        getRequiredAttributeDefinitions(preview, ciType)
+          .map((definition) => definition.name)
+          .filter(Boolean),
+      ),
+    ),
+  );
+}
+
+function buildMissingRequiredExportRows(
+  preview: ResourceImportPreview | null | undefined,
+  groups: ResourceImportGroup[],
+) {
+  return getRequiredModelIssues(preview, groups).map((issue) => ({
+    model: issue.ciType,
+    record: issue.recordName,
+    source: issue.sourceLabel,
+    missing_field: issue.field,
+    message: issue.message,
+  }));
 }
 
 function buildWorkbookFieldDictionary(
@@ -1710,6 +1881,7 @@ function buildWorkbookFieldDictionary(
         field: definition.name,
         label: definition.alias || getAttributeLabel(definition.name),
         required: definition.required ? "是" : "否",
+        default_value: getAttributeDefaultValue(definition),
         is_list: definition.is_list ? "是" : "否",
         is_choice: definition.is_choice ? "是" : "否",
       }));
@@ -1748,7 +1920,10 @@ function downloadConfirmationData(
     const rows = buildStandardExportRows(group);
     const fieldKeys = sortExportFieldKeys(
       Array.from(
-        new Set(rows.flatMap((row) => Object.keys(row).filter((key) => !isEmptyValue(row[key])))),
+        new Set([
+          ...rows.flatMap((row) => Object.keys(row).filter((key) => !isEmptyValue(row[key]))),
+          ...getRequiredExportFieldKeys(preview, group),
+        ]),
       ),
     );
     const normalizedRows = rows.map((row) => Object.fromEntries(fieldKeys.map((key) => [key, row[key] ?? ""])));
@@ -1759,6 +1934,15 @@ function downloadConfirmationData(
       workbook,
       worksheet,
       sanitizeWorksheetName(`${group.label}-${group.ciType}`, usedSheetNames),
+    );
+  }
+
+  const missingRequiredRows = buildMissingRequiredExportRows(preview, groups);
+  if (missingRequiredRows.length) {
+    XLSX.utils.book_append_sheet(
+      workbook,
+      XLSX.utils.json_to_sheet(missingRequiredRows),
+      sanitizeWorksheetName("缺失必填字段", usedSheetNames),
     );
   }
 
@@ -1774,8 +1958,110 @@ function downloadConfirmationData(
   XLSX.writeFile(workbook, "resource-import-confirmation.xlsx");
 }
 
-function getRecordIssues(record: ResourceImportRecord) {
-  return record.issues || [];
+function getRecordRequiredModelIssues(
+  preview: ResourceImportPreview | null | undefined,
+  record: ResourceImportRecord,
+) {
+  if (!record.selected || (record.importAction || "create") === "skip") {
+    return [];
+  }
+  return getRequiredAttributeDefinitions(preview, record.ciType)
+    .filter((definition) => requiredFieldNeedsManualValue(record, definition.name, definition))
+    .map((definition): ResourceImportRecordIssue => ({
+      field: definition.name,
+      level: "blocking",
+      message: `缺少必填字段：${definition.alias || getAttributeLabel(definition.name)}`,
+    }));
+}
+
+function dedupeRecordIssues(issues: ResourceImportRecordIssue[]) {
+  const seen = new Set<string>();
+  return issues.filter((issue) => {
+    const key = `${normalizeIssueFieldName(issue.field)}::${issue.message}`;
+    if (seen.has(key)) {
+      return false;
+    }
+    seen.add(key);
+    return true;
+  });
+}
+
+function getRecordIssues(
+  record: ResourceImportRecord,
+  preview?: ResourceImportPreview | null,
+) {
+  return dedupeRecordIssues([
+    ...(record.issues || []),
+    ...getRecordRequiredModelIssues(preview, record),
+  ]);
+}
+
+function getRequiredModelIssues(
+  preview: ResourceImportPreview | null | undefined,
+  groups: ResourceImportGroup[],
+): ResourceImportRequiredIssue[] {
+  return groups.flatMap((group) =>
+    group.records.flatMap((record) =>
+      getRecordRequiredModelIssues(preview, record).map((issue) => ({
+        ...issue,
+        previewKey: record.previewKey,
+        ciType: record.ciType || group.ciType,
+        recordName: getDisplayName(record),
+        sourceLabel: buildRecordSource(record),
+      })),
+    ),
+  );
+}
+
+function getDefaultedRequiredModelIssues(
+  preview: ResourceImportPreview | null | undefined,
+  groups: ResourceImportGroup[],
+): ResourceImportDefaultedRequiredIssue[] {
+  return groups.flatMap((group) =>
+    group.records.flatMap((record) =>
+      getRequiredAttributeDefinitions(preview, record.ciType)
+        .map((definition) => {
+          const message = getRequiredDefaultMessage(record, definition.name, definition);
+          if (!message) {
+            return null;
+          }
+          return {
+            field: definition.name,
+            level: "info",
+            message,
+            previewKey: record.previewKey,
+            ciType: record.ciType || group.ciType,
+            recordName: getDisplayName(record),
+            sourceLabel: buildRecordSource(record),
+            defaultValue: getAttributeDefaultValue(definition),
+          } satisfies ResourceImportDefaultedRequiredIssue;
+        })
+        .filter((item): item is ResourceImportDefaultedRequiredIssue => Boolean(item)),
+    ),
+  );
+}
+
+function getDefaultedRequiredModelMessage(issues: ResourceImportDefaultedRequiredIssue[]) {
+  if (!issues.length) {
+    return "";
+  }
+  const recordCount = new Set(issues.map((issue) => issue.previewKey)).size;
+  return `有 ${recordCount} 条记录的 ${issues.length} 个必填字段将使用 CMDB 模型默认值。`;
+}
+
+function getRequiredModelBlockingMessage(issues: ResourceImportRequiredIssue[]) {
+  if (!issues.length) {
+    return "";
+  }
+  const recordCount = new Set(issues.map((issue) => issue.previewKey)).size;
+  return `当前数据缺少 CMDB 模型必填字段：${recordCount} 条记录、${issues.length} 个字段需要补齐。`;
+}
+
+function getMetadataBlockingMessage(preview: ResourceImportPreview | null | undefined) {
+  if (!preview || preview.metadataConnected !== false) {
+    return "";
+  }
+  return "当前未连接实时 CMDB 模型，无法按目标环境校验必填字段。请恢复 CMDB 连接后重新解析文件。";
 }
 
 function normalizeIssueFieldName(field: string) {
@@ -1818,10 +2104,10 @@ function fieldNeedsAttention(
   if (getFieldIssues(record, field).length) {
     return true;
   }
-  const value = field === "name" ? record.name : record.attributes?.[field];
-  if (definition?.required && isEmptyValue(value)) {
+  if (requiredFieldNeedsManualValue(record, field, definition)) {
     return true;
   }
+  const value = field === "name" ? record.name : record.attributes?.[field];
   if (field === "name" && isEmptyValue(value)) {
     return true;
   }
@@ -1837,8 +2123,11 @@ function getFieldAttentionMessage(
   if (issueMessage) {
     return issueMessage;
   }
+  if (requiredFieldNeedsManualValue(record, field, definition)) {
+    return `${definition?.alias || getAttributeLabel(field)} 为空，请补充`;
+  }
   const value = field === "name" ? record.name : record.attributes?.[field];
-  if ((definition?.required || field === "name") && isEmptyValue(value)) {
+  if (field === "name" && isEmptyValue(value)) {
     return `${definition?.alias || getAttributeLabel(field)} 为空，请补充`;
   }
   return "";
@@ -2056,7 +2345,6 @@ function IntroStage({
 }) {
   const [metadata, setMetadata] = useState<ResourceImportMetadata | null>(null);
   const [startPayload, setStartPayload] = useState<ResourceImportStartPayload | null>(null);
-  const [error, setError] = useState("");
   const [dragActive, setDragActive] = useState(false);
 
   const fallbackStartPayload: ResourceImportStartPayload = {
@@ -2074,7 +2362,7 @@ function IntroStage({
       })
       .catch((err) => {
         if (!cancelled) {
-          setError(extractErrorMessage(err) || "CMDB 元数据加载失败");
+          console.warn("[resource-import] CMDB metadata load failed; using fallback intro copy", err);
         }
       });
     void getResourceImportStart(agentId || undefined)
@@ -2138,8 +2426,6 @@ function IntroStage({
       }}
     >
       <div className="resource-import-stage">
-        {error ? <div className="resource-import-inline-error">{error}</div> : null}
-
         {introPayload.copyBlocks.map((block) => (
           <div key={block.title} className="resource-import-copy-block">
             <strong>{block.title}</strong>
@@ -3101,6 +3387,19 @@ function ConfirmStage({
     });
     return new Map(entries);
   }, [batchEditorColumns, flow.preview, resourceGroups]);
+  const batchColumnDefaultMap = useMemo(() => {
+    const entries = batchEditorColumns.map((column) => {
+      const usesDefault = resourceGroups.some((group) =>
+        group.records.some((record) => {
+          const definition = getVisibleAttributeDefinitions(flow.preview || null, record.ciType, record)
+            .find((item) => item.name === column.key);
+          return Boolean(getRequiredDefaultMessage(record, column.key, definition));
+        }),
+      );
+      return [column.key, usesDefault] as const;
+    });
+    return new Map(entries);
+  }, [batchEditorColumns, flow.preview, resourceGroups]);
   const uniqueKeyPlans = useMemo(
     () => getUniqueKeyResolutionPlans(flow.preview || null, resourceGroups),
     [flow.preview, resourceGroups],
@@ -3116,6 +3415,17 @@ function ConfirmStage({
   const unresolvedUniqueKeyMessage = unresolvedUniqueKeyCount
     ? "请先补全模型唯一标识后再继续，避免最后导入时报错。"
     : "";
+  const requiredModelIssues = useMemo(
+    () => getRequiredModelIssues(flow.preview || null, resourceGroups),
+    [flow.preview, resourceGroups],
+  );
+  const requiredModelBlockingMessage = getRequiredModelBlockingMessage(requiredModelIssues);
+  const defaultedRequiredIssues = useMemo(
+    () => getDefaultedRequiredModelIssues(flow.preview || null, resourceGroups),
+    [flow.preview, resourceGroups],
+  );
+  const defaultedRequiredMessage = getDefaultedRequiredModelMessage(defaultedRequiredIssues);
+  const metadataBlockingMessage = getMetadataBlockingMessage(flow.preview || null);
 
   useEffect(() => {
     if (!editorOpen || !editorFocusPreviewKey) {
@@ -3306,6 +3616,42 @@ function ConfirmStage({
               <li key={`${issue.fileName || issue.sheetName || "issue"}-${index}`}>{issue.message}</li>
             ))}
           </ul>
+        </div>
+      ) : null}
+      {requiredModelIssues.length ? (
+        <div className="resource-import-inline-error">
+          <strong>{requiredModelBlockingMessage}</strong>
+          <ul className="resource-import-issue-list">
+            {requiredModelIssues.slice(0, 10).map((issue, index) => (
+              <li key={`${issue.previewKey}-${issue.field}-${index}`}>
+                {issue.sourceLabel} / {issue.recordName}：{issue.message}
+              </li>
+            ))}
+          </ul>
+          {requiredModelIssues.length > 10 ? (
+            <div>还有 {requiredModelIssues.length - 10} 个缺失字段，请在“统一编辑全部数据”中补齐。</div>
+          ) : null}
+        </div>
+      ) : null}
+      {defaultedRequiredIssues.length ? (
+        <div className="resource-import-inline-notice resource-import-inline-notice-default">
+          <strong>{defaultedRequiredMessage}</strong>
+          <ul className="resource-import-issue-list">
+            {defaultedRequiredIssues.slice(0, 5).map((issue, index) => (
+              <li key={`${issue.previewKey}-${issue.field}-default-${index}`}>
+                {issue.sourceLabel} / {issue.recordName}：{getAttributeLabel(issue.field)} {issue.message}
+              </li>
+            ))}
+          </ul>
+          {defaultedRequiredIssues.length > 5 ? (
+            <div>还有 {defaultedRequiredIssues.length - 5} 个默认值字段已在“统一编辑全部数据”中标注。</div>
+          ) : null}
+        </div>
+      ) : null}
+      {metadataBlockingMessage ? (
+        <div className="resource-import-inline-error">
+          <strong>{metadataBlockingMessage}</strong>
+          {flow.preview?.metadataMessage ? <div>{flow.preview.metadataMessage}</div> : null}
         </div>
       ) : null}
 
@@ -3576,7 +3922,11 @@ function ConfirmStage({
                 </thead>
                 <tbody>
                   {group.records.map((record) => {
-                    const recordIssues = getRecordIssues(record);
+                    const recordIssues = getRecordIssues(record, flow.preview || null);
+                    const recordDefaultedIssues = getDefaultedRequiredModelIssues(flow.preview || null, [{
+                      ...group,
+                      records: [record],
+                    }]);
                     return (
                       <tr
                         key={record.previewKey}
@@ -3609,6 +3959,11 @@ function ConfirmStage({
                                   数据不完整 {recordIssues.length}
                                 </span>
                               ) : null}
+                              {recordDefaultedIssues.length ? (
+                                <span className="resource-import-alert-tag info">
+                                  默认值 {recordDefaultedIssues.length}
+                                </span>
+                              ) : null}
                             </div>
                             {recordIssues.length ? (
                               <small className="resource-import-inline-issue">
@@ -3618,6 +3973,11 @@ function ConfirmStage({
                             {record.autoFilledHints?.length ? (
                               <small className="resource-import-inline-autofill">
                                 {formatAutoFilledHint(record.autoFilledHints)}
+                              </small>
+                            ) : null}
+                            {recordDefaultedIssues.length ? (
+                              <small className="resource-import-inline-default">
+                                {recordDefaultedIssues[0]?.field} {recordDefaultedIssues[0]?.message}
                               </small>
                             ) : null}
                           </div>
@@ -3676,7 +4036,7 @@ function ConfirmStage({
           <button
             type="button"
             className="primary"
-            disabled={flow.locked || Boolean(blockingAnalysisMessage) || Boolean(unresolvedUniqueKeyMessage)}
+            disabled={flow.locked || Boolean(blockingAnalysisMessage) || Boolean(unresolvedUniqueKeyMessage) || Boolean(requiredModelBlockingMessage) || Boolean(metadataBlockingMessage)}
             onClick={() => {
               const nextPreview = syncPreviewWithCurrentData(flow.preview || null, resourceGroups, relations);
               onBuildTopology({
@@ -3694,7 +4054,11 @@ function ConfirmStage({
                 ? "当前解析不完整，禁止继续"
                 : unresolvedUniqueKeyMessage
                   ? "请先补全唯一标识"
-                  : "确认数据，建立关系 →"}
+                  : requiredModelBlockingMessage
+                    ? "请先补齐必填字段"
+                    : metadataBlockingMessage
+                      ? "请先连接 CMDB 模型"
+                      : "确认数据，建立关系 →"}
           </button>
         </div>
       </div>
@@ -3713,6 +4077,33 @@ function ConfirmStage({
             </div>
 
             <div className="resource-import-batch-editor">
+              {requiredModelIssues.length ? (
+                <div className="resource-import-inline-error resource-import-editor-issue-summary">
+                  <strong>{requiredModelBlockingMessage}</strong>
+                  <ul className="resource-import-issue-list">
+                    {requiredModelIssues.slice(0, 5).map((issue, index) => (
+                      <li key={`editor-${issue.previewKey}-${issue.field}-${index}`}>
+                        {issue.sourceLabel} / {issue.recordName}：{issue.message}
+                      </li>
+                    ))}
+                  </ul>
+                  {requiredModelIssues.length > 5 ? (
+                    <div>还有 {requiredModelIssues.length - 5} 个字段已在下方红色单元格标出。</div>
+                  ) : null}
+                </div>
+              ) : null}
+              {defaultedRequiredIssues.length ? (
+                <div className="resource-import-inline-notice resource-import-inline-notice-default resource-import-editor-issue-summary">
+                  <strong>{defaultedRequiredMessage}</strong>
+                  <ul className="resource-import-issue-list">
+                    {defaultedRequiredIssues.slice(0, 5).map((issue, index) => (
+                      <li key={`editor-${issue.previewKey}-${issue.field}-default-${index}`}>
+                        {issue.sourceLabel} / {issue.recordName}：{getAttributeLabel(issue.field)} {issue.message}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
               {batchEditorScrollWidth > batchEditorViewportWidth ? (
                 <div className="resource-import-batch-editor-scroll-tip">
                   左右字段较多，可直接拖动下方横向滚动条查看右侧列。
@@ -3738,15 +4129,16 @@ function ConfirmStage({
                       <th>分组</th>
                       <th>资源类型</th>
                       <th>导入策略</th>
-                      <th className={batchColumnAttentionMap.get("name") ? "attention-head" : ""}>名称</th>
+                      <th className={batchColumnAttentionMap.get("name") ? "attention-head" : batchColumnDefaultMap.get("name") ? "default-head" : ""}>名称</th>
                       {batchEditorColumns
                         .filter((column) => column.key !== "name")
                         .map((column) => (
                           <th
                             key={column.key}
-                            className={batchColumnAttentionMap.get(column.key) ? "attention-head" : ""}
+                            className={batchColumnAttentionMap.get(column.key) ? "attention-head" : batchColumnDefaultMap.get(column.key) ? "default-head" : ""}
                           >
                             {column.label}
+                            {batchColumnDefaultMap.get(column.key) ? <span>默认</span> : null}
                           </th>
                         ))}
                     </tr>
@@ -3760,7 +4152,7 @@ function ConfirmStage({
                           record,
                         );
                         const definitionMap = new Map(attributeDefinitions.map((item) => [item.name, item]));
-                        const recordIssues = getRecordIssues(record);
+                        const recordIssues = getRecordIssues(record, flow.preview || null);
                         return (
                           <tr
                             key={`editor-${record.previewKey}`}
@@ -3825,6 +4217,9 @@ function ConfirmStage({
                                   }))
                                 }
                               />
+                              {getFieldAttentionMessage(record, "name") ? (
+                                <div className="resource-import-cell-issue">{getFieldAttentionMessage(record, "name")}</div>
+                              ) : null}
                             </td>
                             {batchEditorColumns
                               .filter((column) => column.key !== "name")
@@ -3834,12 +4229,13 @@ function ConfirmStage({
                                 const currentValue = record.attributes[column.key] || "";
                                 const isAttention = fieldNeedsAttention(record, column.key, definition);
                                 const attentionMessage = getFieldAttentionMessage(record, column.key, definition);
+                                const defaultMessage = getRequiredDefaultMessage(record, column.key, definition);
                                 return (
-                                  <td key={`${record.previewKey}-${column.key}`} className={isAttention ? "attention-cell" : ""}>
+                                  <td key={`${record.previewKey}-${column.key}`} className={isAttention ? "attention-cell" : defaultMessage ? "default-cell" : ""}>
                                     {choiceOptions.length ? (
                                       <select
                                         value={currentValue}
-                                        title={attentionMessage}
+                                        title={attentionMessage || defaultMessage}
                                         onChange={(event) =>
                                           updateRecord(record.previewKey, (current) => ({
                                             ...current,
@@ -3860,7 +4256,7 @@ function ConfirmStage({
                                     ) : (
                                       <input
                                         value={currentValue}
-                                        title={attentionMessage}
+                                        title={attentionMessage || defaultMessage}
                                         onChange={(event) =>
                                           updateRecord(record.previewKey, (current) => ({
                                             ...current,
@@ -3872,6 +4268,12 @@ function ConfirmStage({
                                         }
                                       />
                                     )}
+                                    {attentionMessage ? (
+                                      <div className="resource-import-cell-issue">{attentionMessage}</div>
+                                    ) : null}
+                                    {!attentionMessage && defaultMessage ? (
+                                      <div className="resource-import-cell-default">{defaultMessage}</div>
+                                    ) : null}
                                   </td>
                                 );
                               })}
@@ -3913,6 +4315,12 @@ function TopologyStage({
   const [relations, setRelations] = useState<ResourceImportRelation[]>(flow.relations || []);
   const blockingAnalysisIssues = getBlockingAnalysisIssues(flow.preview);
   const blockingAnalysisMessage = getBlockingAnalysisMessage(flow.preview);
+  const requiredModelIssues = useMemo(
+    () => getRequiredModelIssues(flow.preview || null, flow.resourceGroups || []),
+    [flow.preview, flow.resourceGroups],
+  );
+  const requiredModelBlockingMessage = getRequiredModelBlockingMessage(requiredModelIssues);
+  const metadataBlockingMessage = getMetadataBlockingMessage(flow.preview || null);
   const [topologyFullscreen, setTopologyFullscreen] = useState(false);
 
   useEffect(() => {
@@ -4124,6 +4532,24 @@ function TopologyStage({
             </ul>
           </div>
         ) : null}
+        {requiredModelIssues.length ? (
+          <div className="resource-import-inline-error">
+            <strong>{requiredModelBlockingMessage}</strong>
+            <ul className="resource-import-issue-list">
+              {requiredModelIssues.slice(0, 10).map((issue, index) => (
+                <li key={`${issue.previewKey}-${issue.field}-${index}`}>
+                  {issue.sourceLabel} / {issue.recordName}：{issue.message}
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+        {metadataBlockingMessage ? (
+          <div className="resource-import-inline-error">
+            <strong>{metadataBlockingMessage}</strong>
+            {flow.preview?.metadataMessage ? <div>{flow.preview.metadataMessage}</div> : null}
+          </div>
+        ) : null}
         <section className="resource-import-section topology">
           <div className="resource-import-section-title">🧠 智能拓扑推断</div>
           <div className="resource-import-topology-summary">
@@ -4230,7 +4656,7 @@ function TopologyStage({
             <button
               type="button"
               className="primary"
-              disabled={flow.locked || Boolean(blockingAnalysisMessage)}
+              disabled={flow.locked || Boolean(blockingAnalysisMessage) || Boolean(requiredModelBlockingMessage) || Boolean(metadataBlockingMessage)}
               onClick={() => {
                 const nextPreview = syncPreviewWithCurrentData(flow.preview || null, flow.resourceGroups || [], relations);
                 onSubmitImport({
@@ -4242,7 +4668,15 @@ function TopologyStage({
                 });
               }}
             >
-              {flow.locked ? "导入任务已启动" : blockingAnalysisMessage ? "当前解析不完整，禁止导入" : "确认导入CMDB"}
+              {flow.locked
+                ? "导入任务已启动"
+                : blockingAnalysisMessage
+                  ? "当前解析不完整，禁止导入"
+                  : requiredModelBlockingMessage
+                    ? "请先补齐必填字段"
+                    : metadataBlockingMessage
+                      ? "请先连接 CMDB 模型"
+                      : "确认导入CMDB"}
             </button>
           ) : null}
         </div>
