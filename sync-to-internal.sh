@@ -114,7 +114,17 @@ if [ "$SYNC_MODE" = "incremental" ]; then
                 print_info "没有新的提交需要同步（已是最新）"
                 exit 0
             fi
-            print_info "增量同步模式：发现 $NEW_COMMITS 个新提交"
+            # 检测是否有大型 merge（如合并上游分支）
+            FIRST_PARENT_COMMITS=$(git rev-list --count --first-parent "$LAST_SYNCED_SHA".."$LATEST_SHA")
+            MERGE_THRESHOLD=20
+            if [ "$NEW_COMMITS" -gt "$MERGE_THRESHOLD" ] && [ "$FIRST_PARENT_COMMITS" -lt "$NEW_COMMITS" ]; then
+                MERGE_EXTRA=$((NEW_COMMITS - FIRST_PARENT_COMMITS))
+                print_warn "检测到大型 merge：主线 $FIRST_PARENT_COMMITS 个提交，合并引入 $MERGE_EXTRA 个提交"
+                print_warn "自动切换为全量同步以保留完整历史"
+                SYNC_MODE="full"
+            else
+                print_info "增量同步模式：发现 $NEW_COMMITS 个新提交"
+            fi
         else
             print_warn "上次同步记录无效，自动切换为全量同步"
             SYNC_MODE="full"
