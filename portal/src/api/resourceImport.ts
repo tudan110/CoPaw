@@ -81,11 +81,11 @@ async function requestPortalApi<T = unknown>(
 }
 
 export function getResourceImportMetadata(agentId?: string) {
-  return requestPortalApi<ResourceImportMetadata>("/resource-import/metadata", {}, undefined, agentId);
+  return requestPortalApi<ResourceImportMetadata>("/resource-import/metadata", {}, null, agentId);
 }
 
 export function getResourceImportStart(agentId?: string) {
-  return requestPortalApi<ResourceImportStartPayload>("/resource-import/start", {}, undefined, agentId);
+  return requestPortalApi<ResourceImportStartPayload>("/resource-import/start", {}, null, agentId);
 }
 
 export function startResourceImportPreview(files: File[], agentId?: string) {

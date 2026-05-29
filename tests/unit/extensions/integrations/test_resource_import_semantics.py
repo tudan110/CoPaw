@@ -147,6 +147,90 @@ def test_ci_types_from_preview_snapshot_preserves_runtime_metadata() -> None:
     ]
 
 
+def test_import_preflight_reports_required_fields_before_cmdb_login(monkeypatch) -> None:
+    def fail_if_called(cls):  # noqa: ANN001
+        raise AssertionError("CMDB client should not be opened when offline preflight fails")
+
+    monkeypatch.setattr(resource_import.VeopsCmdbClient, "from_skill_env", classmethod(fail_if_called))
+
+    result = resource_import.import_preview_to_cmdb(
+        {
+            "preview": {
+                "metadataConnected": True,
+                "ciTypeMetadata": {
+                    "networkdevice": {
+                        "name": "networkdevice",
+                        "alias": "网络设备",
+                        "unique_key": "dev_no",
+                        "attributes": ["dev_no", "dev_name"],
+                        "attributeDefinitions": [
+                            {"name": "dev_no", "alias": "设备编码", "required": True},
+                            {"name": "dev_name", "alias": "设备名称", "required": False},
+                        ],
+                    }
+                },
+            },
+            "resourceGroups": [
+                {
+                    "ciType": "networkdevice",
+                    "records": [
+                        {
+                            "previewKey": "row::bad.xlsx::Sheet1::1",
+                            "ciType": "networkdevice",
+                            "name": "device-a",
+                            "selected": True,
+                            "attributes": {"dev_name": "device-a"},
+                            "analysisAttributes": {},
+                            "sourceAttributes": {},
+                        }
+                    ],
+                }
+            ],
+            "relations": [],
+        }
+    )
+
+    assert result["status"] == "failed"
+    assert result["failed"] == 1
+    assert "设备编码" in result["resourceResults"][0]["message"]
+
+
+def test_import_preflight_blocks_disconnected_metadata_before_cmdb_login(monkeypatch) -> None:
+    def fail_if_called(cls):  # noqa: ANN001
+        raise AssertionError("CMDB client should not be opened when metadata is disconnected")
+
+    monkeypatch.setattr(resource_import.VeopsCmdbClient, "from_skill_env", classmethod(fail_if_called))
+
+    result = resource_import.import_preview_to_cmdb(
+        {
+            "preview": {
+                "metadataConnected": False,
+                "metadataMessage": "CMDB 元数据不可用",
+                "ciTypeMetadata": {},
+            },
+            "resourceGroups": [
+                {
+                    "ciType": "networkdevice",
+                    "records": [
+                        {
+                            "previewKey": "row::bad.xlsx::Sheet1::1",
+                            "ciType": "networkdevice",
+                            "name": "device-a",
+                            "selected": True,
+                            "attributes": {"name": "device-a"},
+                        }
+                    ],
+                }
+            ],
+            "relations": [],
+        }
+    )
+
+    assert result["status"] == "failed"
+    assert result["failed"] == 1
+    assert "未连接实时 CMDB 模型" in result["resourceResults"][0]["message"]
+
+
 def test_build_confirmed_cmdb_attributes_only_keeps_allowed_model_fields() -> None:
     type_template = {
         "name": "redis",
@@ -272,6 +356,42 @@ def test_server_default_macro_is_not_filled_into_create_payload() -> None:
     assert resource_import._validate_required_cmdb_attributes(
         type_template=docker_template,
         source_attributes={"name": "10.253.0.1"},
+        cmdb_attributes=filled,
+    ) == []
+
+
+def test_required_status_with_model_default_does_not_block_import() -> None:
+    network_template = {
+        "name": "networkdevice",
+        "unique_key": "dev_no",
+        "attributeDefinitions": [
+            {
+                "name": "dev_no",
+                "alias": "设备编码",
+                "required": True,
+                "is_choice": False,
+            },
+            {
+                "name": "status",
+                "alias": "资产状态",
+                "required": True,
+                "is_choice": True,
+                "choices": _choices("在线", "下线"),
+                "default": {"default": "在线"},
+            },
+        ],
+    }
+
+    filled = resource_import._autofill_deterministic_cmdb_attributes(
+        canonical_attributes={"dev_no": "TESTZG-BJ-BJ-WLKJC-A-1.MCN.MX.ATN980C"},
+        type_template=network_template,
+        cmdb_attributes={"dev_no": "TESTZG-BJ-BJ-WLKJC-A-1.MCN.MX.ATN980C"},
+    )
+
+    assert filled["status"] == "在线"
+    assert resource_import._validate_required_cmdb_attributes(
+        type_template=network_template,
+        source_attributes={"dev_no": "TESTZG-BJ-BJ-WLKJC-A-1.MCN.MX.ATN980C"},
         cmdb_attributes=filled,
     ) == []
 

@@ -76,6 +76,12 @@
   color: #9a3412;
 }
 
+.resource-import-inline-notice-default {
+  background: rgba(240, 253, 250, 0.95);
+  border: 1px solid rgba(20, 184, 166, 0.22);
+  color: #0f766e;
+}
+
 .resource-import-inline-error {
   background: rgba(239, 68, 68, 0.08);
   color: #b91c1c;
@@ -496,6 +502,15 @@
   color: #b91c1c;
 }
 
+.resource-import-alert-tag.info {
+  background: rgba(20, 184, 166, 0.12);
+  color: #0f766e;
+}
+
+.resource-import-inline-default {
+  color: #0f766e;
+}
+
 .resource-import-action-pill.success {
   background: rgba(34, 197, 94, 0.12);
   color: #15803d;
@@ -755,6 +770,10 @@
   padding: 0 20px 20px;
 }
 
+.resource-import-editor-issue-summary {
+  margin: 0;
+}
+
 .resource-import-batch-editor-scroll-tip {
   position: sticky;
   top: 64px;
@@ -825,6 +844,20 @@
   background: rgba(254, 242, 242, 0.92);
 }
 
+.resource-import-batch-editor-table th.default-head {
+  color: #0f766e;
+  background: rgba(240, 253, 250, 0.94);
+}
+
+.resource-import-batch-editor-table th.default-head span {
+  display: inline-flex;
+  margin-left: 6px;
+  padding: 1px 5px;
+  border-radius: 999px;
+  background: rgba(20, 184, 166, 0.12);
+  font-size: 10px;
+}
+
 .resource-import-batch-editor-table tr.needs-attention {
   background: rgba(254, 242, 242, 0.36);
 }
@@ -843,6 +876,30 @@
   border-color: rgba(239, 68, 68, 0.45);
   background: rgba(254, 242, 242, 0.78);
   box-shadow: inset 0 0 0 1px rgba(239, 68, 68, 0.08);
+}
+
+.resource-import-batch-editor-table td.default-cell input,
+.resource-import-batch-editor-table td.default-cell select {
+  border-color: rgba(20, 184, 166, 0.3);
+  background: rgba(240, 253, 250, 0.76);
+}
+
+.resource-import-cell-issue {
+  margin-top: 4px;
+  max-width: 220px;
+  color: #b91c1c;
+  font-size: 11px;
+  line-height: 1.35;
+  white-space: normal;
+}
+
+.resource-import-cell-default {
+  margin-top: 4px;
+  max-width: 220px;
+  color: #0f766e;
+  font-size: 11px;
+  line-height: 1.35;
+  white-space: normal;
 }
 
 .resource-import-batch-editor-table input,

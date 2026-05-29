@@ -6,6 +6,7 @@ export interface ResourceImportCiTypeAttributeDefinition {
   is_choice?: boolean;
   is_list?: boolean;
   default_show?: boolean;
+  default?: unknown;
   value_type?: string;
   choices?: Array<{
     value: string;
@@ -196,6 +197,8 @@ export interface ResourceImportPreview {
     fileName?: string;
     sheetName?: string;
   }>;
+  metadataConnected?: boolean;
+  metadataMessage?: string;
   resourceGroups: ResourceImportGroup[];
   relations: ResourceImportRelation[];
   logs: string[];

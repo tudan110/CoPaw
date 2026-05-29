@@ -6406,48 +6406,16 @@ def _preflight_import_resources(
             pending_choice_values=pending_choice_values,
         )
         unique_key = _get_import_required_unique_key(type_template)
+        blocking_attribute_issues: list[str] = []
         if not display_name and not _clean_text(cmdb_attributes.get(unique_key)):
-            LOGGER.warning(
-                "resource-import preflight failed: %s",
-                json.dumps(
-                    {
-                        **_build_import_record_debug_context(
-                            record=record,
-                            ci_type=ci_type,
-                            import_action=import_action,
-                            source_attributes=attributes,
-                            cmdb_attributes=cmdb_attributes,
-                            type_template=type_template,
-                        ),
-                        "reason": "missing_display_name_and_unique_key",
-                    },
-                    ensure_ascii=False,
-                    default=str,
-                ),
-            )
-            results.append({"previewKey": preview_key, "status": "failed", "message": "缺少资源名称或模型唯一标识，无法导入"})
-            continue
-        if unique_key and not _clean_text(cmdb_attributes.get(unique_key)):
-            LOGGER.warning(
-                "resource-import preflight failed: %s",
-                json.dumps(
-                    {
-                        **_build_import_record_debug_context(
-                            record=record,
-                            ci_type=ci_type,
-                            import_action=import_action,
-                            source_attributes=attributes,
-                            cmdb_attributes=cmdb_attributes,
-                            type_template=type_template,
-                        ),
-                        "reason": "missing_required_unique_key",
-                    },
-                    ensure_ascii=False,
-                    default=str,
-                ),
-            )
-            results.append({"previewKey": preview_key, "status": "failed", "message": f"缺少模型唯一标识字段：{_resolve_attribute_label(type_template, unique_key)}"})
-            continue
+            blocking_attribute_issues.append("缺少资源名称或模型唯一标识，无法导入")
+        unique_key_definition = _find_attribute_definition(type_template, unique_key) if unique_key else None
+        if (
+            unique_key
+            and not _clean_text(cmdb_attributes.get(unique_key))
+            and not bool((unique_key_definition or {}).get("required"))
+        ):
+            blocking_attribute_issues.append(f"缺少模型唯一标识字段：{_resolve_attribute_label(type_template, unique_key)}")
 
         required_attribute_issues = _validate_required_cmdb_attributes(
             type_template=type_template,
@@ -6455,7 +6423,10 @@ def _preflight_import_resources(
             cmdb_attributes=cmdb_attributes,
             pending_choice_values=pending_choice_values,
         )
-        if required_attribute_issues:
+        for issue in required_attribute_issues:
+            if issue not in blocking_attribute_issues:
+                blocking_attribute_issues.append(issue)
+        if blocking_attribute_issues:
             LOGGER.warning(
                 "resource-import preflight failed: %s",
                 json.dumps(
@@ -6469,13 +6440,13 @@ def _preflight_import_resources(
                             type_template=type_template,
                         ),
                         "reason": "missing_required_attributes",
-                        "requiredIssues": required_attribute_issues,
+                        "requiredIssues": blocking_attribute_issues,
                     },
                     ensure_ascii=False,
                     default=str,
                 ),
             )
-            results.append({"previewKey": preview_key, "status": "failed", "message": "；".join(required_attribute_issues)})
+            results.append({"previewKey": preview_key, "status": "failed", "message": "；".join(blocking_attribute_issues)})
             continue
 
         preview_key_str = str(record.get("previewKey") or "")
@@ -7915,6 +7886,8 @@ async def preview_resource_import(
                 for item in model_templates
                 if item.get("name")
             },
+            "metadataConnected": bool(metadata.get("connected")),
+            "metadataMessage": _clean_text(metadata.get("message")),
             # Snapshot the allowed-relation rules so import_preview_to_cmdb can
             # skip the second per-type get_ci_type_relations fan-out (~10s
             # serial HTTP for ~9 distinct ci_types). The set is serialized as
@@ -8532,6 +8505,73 @@ def invalidate_resource_import_metadata_cache() -> None:
             pass
 
 
+def _load_resource_import_metadata_from_client(client: VeopsCmdbClient) -> dict[str, Any]:
+    ci_types = client.get_ci_types()
+    ci_type_groups = client.get_ci_type_groups()
+    relation_types = client.get_relation_types()
+    attribute_library = client.get_attribute_library()
+    attributes_map: dict[str, list[str]] = {}
+    attribute_definitions_map: dict[str, list[dict[str, Any]]] = {}
+    parent_type_map: dict[str, list[dict[str, Any]]] = {}
+
+    worker_count = min(_METADATA_FETCH_CONCURRENCY, max(1, len(ci_types)))
+    with ThreadPoolExecutor(max_workers=worker_count) as executor:
+        results = list(
+            executor.map(lambda item: _fetch_ci_type_details(client, item), ci_types)
+        )
+
+    for result in results:
+        if result is None:
+            continue
+        name, attr_names, attr_defs, parent_types = result
+        attributes_map[name] = attr_names
+        attribute_definitions_map[name] = attr_defs
+        parent_type_map[name] = parent_types
+
+    metadata = {
+        "supportedFormats": DEFAULT_SUPPORTED_FORMATS,
+        "ciTypes": [
+            {
+                "id": item.get("id"),
+                "name": item.get("name"),
+                "alias": item.get("alias"),
+                "unique_key": item.get("unique_key"),
+                "attributes": attributes_map.get(str(item.get("name") or ""), ["name"]),
+                "attributeDefinitions": attribute_definitions_map.get(str(item.get("name") or ""), []),
+                "parentTypes": parent_type_map.get(str(item.get("name") or ""), []),
+                "system_generated_unique_key": _is_system_generated_unique_key(
+                    {
+                        "unique_key": item.get("unique_key"),
+                        "attributeDefinitions": attribute_definitions_map.get(str(item.get("name") or ""), []),
+                    }
+                ),
+            }
+            for item in ci_types
+        ],
+        "ciTypeGroups": [
+            _normalize_group_snapshot(item)
+            for item in ci_type_groups
+            if isinstance(item, dict) and _clean_text(item.get("name"))
+        ] or _build_default_ci_type_groups(ci_types),
+        "attributeLibrary": [
+            {
+                "id": item.get("id"),
+                "name": _clean_text(item.get("name")),
+                "alias": _clean_text(item.get("alias")) or _clean_text(item.get("name")),
+                "value_type": _clean_text(item.get("value_type")),
+                "is_choice": bool(item.get("is_choice")),
+                "is_list": bool(item.get("is_list")),
+            }
+            for item in attribute_library
+            if _clean_text(item.get("name"))
+        ],
+        "relationTypes": [item.get("name") for item in relation_types if item.get("name")] or DEFAULT_RELATION_TYPES,
+        "connected": True,
+        "message": "已连接 CMDB，模板来自实时模型元数据",
+    }
+    return _enrich_resource_import_metadata(metadata)
+
+
 def _fetch_ci_type_details(
     client: VeopsCmdbClient,
     item: dict[str, Any],
@@ -8609,70 +8649,7 @@ def load_resource_import_metadata() -> dict[str, Any]:
     try:
         client = VeopsCmdbClient.from_skill_env()
         client.login()
-        ci_types = client.get_ci_types()
-        ci_type_groups = client.get_ci_type_groups()
-        relation_types = client.get_relation_types()
-        attribute_library = client.get_attribute_library()
-        attributes_map: dict[str, list[str]] = {}
-        attribute_definitions_map: dict[str, list[dict[str, Any]]] = {}
-        parent_type_map: dict[str, list[dict[str, Any]]] = {}
-
-        worker_count = min(_METADATA_FETCH_CONCURRENCY, max(1, len(ci_types)))
-        with ThreadPoolExecutor(max_workers=worker_count) as executor:
-            results = list(
-                executor.map(lambda item: _fetch_ci_type_details(client, item), ci_types)
-            )
-
-        for result in results:
-            if result is None:
-                continue
-            name, attr_names, attr_defs, parent_types = result
-            attributes_map[name] = attr_names
-            attribute_definitions_map[name] = attr_defs
-            parent_type_map[name] = parent_types
-
-        metadata.update(
-            {
-                "ciTypes": [
-                    {
-                        "id": item.get("id"),
-                        "name": item.get("name"),
-                        "alias": item.get("alias"),
-                        "unique_key": item.get("unique_key"),
-                        "attributes": attributes_map.get(str(item.get("name") or ""), ["name"]),
-                        "attributeDefinitions": attribute_definitions_map.get(str(item.get("name") or ""), []),
-                        "parentTypes": parent_type_map.get(str(item.get("name") or ""), []),
-                        "system_generated_unique_key": _is_system_generated_unique_key(
-                            {
-                                "unique_key": item.get("unique_key"),
-                                "attributeDefinitions": attribute_definitions_map.get(str(item.get("name") or ""), []),
-                            }
-                        ),
-                    }
-                    for item in ci_types
-                ],
-                "ciTypeGroups": [
-                    _normalize_group_snapshot(item)
-                    for item in ci_type_groups
-                    if isinstance(item, dict) and _clean_text(item.get("name"))
-                ] or _build_default_ci_type_groups(ci_types),
-                "attributeLibrary": [
-                    {
-                        "id": item.get("id"),
-                        "name": _clean_text(item.get("name")),
-                        "alias": _clean_text(item.get("alias")) or _clean_text(item.get("name")),
-                        "value_type": _clean_text(item.get("value_type")),
-                        "is_choice": bool(item.get("is_choice")),
-                        "is_list": bool(item.get("is_list")),
-                    }
-                    for item in attribute_library
-                    if _clean_text(item.get("name"))
-                ],
-                "relationTypes": [item.get("name") for item in relation_types if item.get("name")] or DEFAULT_RELATION_TYPES,
-                "connected": True,
-                "message": "已连接 CMDB，模板来自实时模型元数据",
-            }
-        )
+        metadata.update(_load_resource_import_metadata_from_client(client))
     except Exception as exc:  # noqa: BLE001
         metadata["message"] = f"CMDB 元数据不可用，已降级为默认模板：{exc}"
     finally:
@@ -8729,8 +8706,141 @@ def _ci_types_from_preview_snapshot(preview: dict[str, Any] | None) -> list[dict
     return items
 
 
+def _offline_preflight_import_resources(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    """Validate selected records using the preview's CMDB model snapshot.
+
+    This runs before opening a live CMDB session so obvious data-shape
+    failures are returned even when the target CMDB is currently down.
+    """
+
+    preview = payload.get("preview") if isinstance(payload.get("preview"), dict) else {}
+    resource_groups = payload.get("resourceGroups") or []
+    if not isinstance(resource_groups, list):
+        return []
+
+    selected_records = [
+        record
+        for group in resource_groups
+        if isinstance(group, dict)
+        for record in (group.get("records") or [])
+        if isinstance(record, dict)
+        and record.get("selected", True)
+        and (_clean_text(record.get("importAction")) or "create") != "skip"
+    ]
+    if not selected_records:
+        return []
+
+    if preview.get("metadataConnected") is False:
+        message = (
+            "当前预览未连接实时 CMDB 模型，无法按目标环境校验必填字段。"
+            "请恢复 CMDB 连接后重新解析文件。"
+        )
+        return [
+            {
+                "previewKey": record.get("previewKey"),
+                "status": "failed",
+                "message": message,
+            }
+            for record in selected_records
+        ]
+
+    preview_ci_types = _ci_types_from_preview_snapshot(preview)
+    if not preview_ci_types:
+        return []
+
+    type_templates = {
+        item["name"]: item
+        for item in preview_ci_types
+        if item.get("name")
+    }
+    structure_selected_model_map = _build_structure_selected_model_map(preview)
+    ordered_records = _ordered_selected_records(
+        resource_groups,
+        payload.get("relations") or [],
+        type_templates=type_templates,
+    )
+    pending_choice_values = _collect_pending_choice_values(
+        type_templates=type_templates,
+        ordered_records=ordered_records,
+    )
+    results: list[dict[str, Any]] = []
+    for record in ordered_records:
+        ci_type = _resolve_payload_ci_type(
+            record.get("ciType"),
+            type_templates=type_templates,
+            structure_selected_model_map=structure_selected_model_map,
+        )
+        preview_key = record.get("previewKey")
+        if not ci_type or ci_type == "unknown":
+            results.append({"previewKey": preview_key, "status": "failed", "message": "资源类型未确认，无法导入"})
+            continue
+
+        type_template = type_templates.get(ci_type, {})
+        if not type_template:
+            results.append({"previewKey": preview_key, "status": "failed", "message": f"目标模型 {ci_type} 不存在或尚未创建完成，当前不能导入"})
+            continue
+
+        attributes = {
+            key: value
+            for key, value in _merged_resource_attributes(record).items()
+            if _clean_text(value)
+        }
+        confirmed_cmdb_attributes = _build_confirmed_cmdb_attributes(
+            record=record,
+            type_template=type_template,
+        )
+        display_name = _clean_text(record.get("name")) or _resolve_record_display_name(attributes, type_template)
+        if display_name and not _resolve_record_display_name(confirmed_cmdb_attributes, type_template):
+            fallback_field = _resolve_cmdb_attribute_name(type_template, "name")
+            if fallback_field and _find_attribute_definition(type_template, fallback_field):
+                confirmed_cmdb_attributes.setdefault(fallback_field, display_name)
+
+        supplemental_cmdb_attributes = _build_cmdb_attributes(
+            ci_type=ci_type,
+            canonical_attributes=attributes,
+            type_template=type_template,
+            pending_choice_values=pending_choice_values,
+        )
+        cmdb_attributes = {
+            **supplemental_cmdb_attributes,
+            **confirmed_cmdb_attributes,
+        }
+        cmdb_attributes = _normalize_cmdb_attribute_values(
+            ci_type=ci_type,
+            type_template=type_template,
+            source_attributes=attributes,
+            cmdb_attributes=cmdb_attributes,
+            pending_choice_values=pending_choice_values,
+        )
+        unique_key = _get_import_required_unique_key(type_template)
+        blocking_attribute_issues: list[str] = []
+        if not display_name and not _clean_text(cmdb_attributes.get(unique_key)):
+            blocking_attribute_issues.append("缺少资源名称或模型唯一标识，无法导入")
+        unique_key_definition = _find_attribute_definition(type_template, unique_key) if unique_key else None
+        if (
+            unique_key
+            and not _clean_text(cmdb_attributes.get(unique_key))
+            and not bool((unique_key_definition or {}).get("required"))
+        ):
+            blocking_attribute_issues.append(f"缺少模型唯一标识字段：{_resolve_attribute_label(type_template, unique_key)}")
+
+        required_attribute_issues = _validate_required_cmdb_attributes(
+            type_template=type_template,
+            source_attributes=attributes,
+            cmdb_attributes=cmdb_attributes,
+            pending_choice_values=pending_choice_values,
+        )
+        for issue in required_attribute_issues:
+            if issue not in blocking_attribute_issues:
+                blocking_attribute_issues.append(issue)
+        if blocking_attribute_issues:
+            results.append({"previewKey": preview_key, "status": "failed", "message": "；".join(blocking_attribute_issues)})
+
+    return results
+
+
 def import_preview_to_cmdb(payload: dict[str, Any]) -> dict[str, Any]:
-    client = VeopsCmdbClient.from_skill_env()
+    client: VeopsCmdbClient | None = None
     report = {
         "status": "success",
         "created": 0,
@@ -8748,29 +8858,28 @@ def import_preview_to_cmdb(payload: dict[str, Any]) -> dict[str, Any]:
     created_relation_ids: list[Any] = []
     try:
         _validate_preview_analysis_for_import(payload.get("preview") or {})
+        offline_preflight_results = _offline_preflight_import_resources(payload)
+        if offline_preflight_results:
+            report["failed"] += len(offline_preflight_results)
+            report["resourceResults"].extend(offline_preflight_results)
+            report["status"] = "failed"
+            report["error"] = "导入预检失败，未连接 CMDB 前已发现数据缺失"
+            return report
+
+        client = VeopsCmdbClient.from_skill_env()
         client.login()
         report["structureResults"] = _prepare_import_structure(client, payload)
         client.get_relation_types()
-        preview_ci_types = _ci_types_from_preview_snapshot(payload.get("preview") or {})
-        if preview_ci_types:
-            type_templates = {
-                item["name"]: item
-                for item in preview_ci_types
-                if item.get("name")
-            }
-            LOGGER.info(
-                "resource-import using preview ciTypeMetadata snapshot for import: models=%s",
-                sorted(type_templates.keys()),
-            )
-        else:
-            type_templates = {
-                item["name"]: item
-                for item in load_resource_import_metadata().get("ciTypes", [])
-                if item.get("name")
-            }
-            LOGGER.warning(
-                "resource-import preview missing ciTypeMetadata; falling back to live/default metadata for import",
-            )
+        live_metadata = _load_resource_import_metadata_from_client(client)
+        type_templates = {
+            item["name"]: item
+            for item in live_metadata.get("ciTypes", [])
+            if item.get("name")
+        }
+        LOGGER.info(
+            "resource-import using live CMDB metadata for import preflight: models=%s",
+            sorted(type_templates.keys()),
+        )
         structure_selected_model_map = _build_structure_selected_model_map(payload.get("preview") or {})
         resource_type_map = {
             str(record.get("previewKey")): _resolve_payload_ci_type(
@@ -9149,7 +9258,8 @@ def import_preview_to_cmdb(payload: dict[str, Any]) -> dict[str, Any]:
         rollback_errors: list[str] = []
         for relation_id in reversed(created_relation_ids):
             try:
-                client.delete_relation(relation_id)
+                if client:
+                    client.delete_relation(relation_id)
                 report["rollbackResults"].append(
                     {"kind": "relation", "id": relation_id, "status": "rolled_back", "message": "已回滚本次创建的关系"}
                 )
@@ -9157,7 +9267,8 @@ def import_preview_to_cmdb(payload: dict[str, Any]) -> dict[str, Any]:
                 rollback_errors.append(f"回滚关系 {relation_id} 失败: {rollback_exc}")
         for ci_id in reversed(created_ci_ids):
             try:
-                client.delete_ci(ci_id)
+                if client:
+                    client.delete_ci(ci_id)
                 report["rollbackResults"].append(
                     {"kind": "ci", "id": ci_id, "status": "rolled_back", "message": "已回滚本次创建的资源"}
                 )
@@ -9165,7 +9276,8 @@ def import_preview_to_cmdb(payload: dict[str, Any]) -> dict[str, Any]:
                 rollback_errors.append(f"回滚资源 {ci_id} 失败: {rollback_exc}")
         for snapshot in reversed(updated_ci_snapshots):
             try:
-                client.update_ci(snapshot.get("ciId"), snapshot.get("ciType") or "", snapshot.get("attributes") or {})
+                if client:
+                    client.update_ci(snapshot.get("ciId"), snapshot.get("ciType") or "", snapshot.get("attributes") or {})
                 report["rollbackResults"].append(
                     {"kind": "ci-update", "id": snapshot.get("ciId"), "status": "rolled_back", "message": "已回滚本次更新的资源"}
                 )
@@ -9178,5 +9290,6 @@ def import_preview_to_cmdb(payload: dict[str, Any]) -> dict[str, Any]:
         elif created_ci_ids or created_relation_ids or updated_ci_snapshots:
             report["error"] += "；已自动回滚本次已写入的数据"
     finally:
-        client.close()
+        if client:
+            client.close()
     return report
