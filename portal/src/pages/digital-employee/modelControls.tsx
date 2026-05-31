@@ -286,46 +286,23 @@ export function AdvancedModelEntry({
   onOpenChannels: () => void;
   onOpenInbox: () => void;
 }) {
-  const [collapsed, setCollapsed] = useState(true);
+  const [configOpen, setConfigOpen] = useState(true);
+  const [workbenchOpen, setWorkbenchOpen] = useState(true);
+  const [opsOpen, setOpsOpen] = useState(true);
 
   return (
-    <div className={collapsed ? "sidebar-advanced collapsed" : "sidebar-advanced expanded"}>
+    <div className="sidebar-advanced expanded">
+      {/* ⚡ 配置中心 */}
       <button
-        className={collapsed ? "sidebar-advanced-header collapsed" : "sidebar-advanced-header"}
-        onClick={() => setCollapsed((prev) => !prev)}
+        className={configOpen ? "sidebar-advanced-header" : "sidebar-advanced-header collapsed"}
+        onClick={() => setConfigOpen((prev) => !prev)}
       >
-        <span className="sidebar-advanced-header-title">高级功能</span>
+        <span className="sidebar-advanced-header-title">⚡ 配置中心</span>
         <span className="sidebar-advanced-header-arrow">
-          <i className={`fas ${collapsed ? "fa-chevron-right" : "fa-chevron-down"}`} />
+          <i className={`fas ${configOpen ? "fa-chevron-down" : "fa-chevron-right"}`} />
         </span>
       </button>
-      <div className={collapsed ? "sidebar-advanced-grid collapsed" : "sidebar-advanced-grid"}>
-        <button
-          className={isOpsExpertActive ? "sidebar-advanced-item active" : "sidebar-advanced-item"}
-          onClick={onOpenOpsExpert}
-        >
-          <div className="sidebar-advanced-item-icon">
-            <span role="img" aria-label="ops-expert">
-              🧑‍💻
-            </span>
-          </div>
-          <div className="sidebar-advanced-item-name">运维专家</div>
-          <div className="sidebar-advanced-item-desc">数字员工专家库</div>
-          <div className="sidebar-advanced-item-meta">垂直领域专家</div>
-        </button>
-        <button
-          className={isCronJobsActive ? "sidebar-advanced-item active" : "sidebar-advanced-item"}
-          onClick={onOpenCronJobs}
-        >
-          <div className="sidebar-advanced-item-icon">
-            <span role="img" aria-label="cron-jobs">
-              ⏰
-            </span>
-          </div>
-          <div className="sidebar-advanced-item-name">定时任务</div>
-          <div className="sidebar-advanced-item-desc">任务调度中心</div>
-          <div className="sidebar-advanced-item-meta">创建 / 启停 / 立即执行</div>
-        </button>
+      <div className={configOpen ? "sidebar-advanced-grid" : "sidebar-advanced-grid collapsed"}>
         <button
           className={isActive ? "sidebar-advanced-item active" : "sidebar-advanced-item"}
           onClick={onOpenConfig}
@@ -370,19 +347,6 @@ export function AdvancedModelEntry({
           <div className="sidebar-advanced-item-meta">搜索 / 新增 / 编辑 / 删除</div>
         </button>
         <button
-          className={isFdeWorkbenchActive ? "sidebar-advanced-item active" : "sidebar-advanced-item"}
-          onClick={onOpenFdeWorkbench}
-        >
-          <div className="sidebar-advanced-item-icon">
-            <span role="img" aria-label="fde-workbench">
-              🛠️
-            </span>
-          </div>
-          <div className="sidebar-advanced-item-name">交付工作台</div>
-          <div className="sidebar-advanced-item-desc">FDE 把需求变成技能</div>
-          <div className="sidebar-advanced-item-meta">访谈 / 生成 / 自检 / 安装</div>
-        </button>
-        <button
           className={isKnowledgeBaseActive ? "sidebar-advanced-item active" : "sidebar-advanced-item"}
           onClick={onOpenKnowledgeBase}
         >
@@ -392,45 +356,6 @@ export function AdvancedModelEntry({
           <div className="sidebar-advanced-item-name">知识库管理</div>
           <div className="sidebar-advanced-item-desc">知识库助手资料库</div>
           <div className="sidebar-advanced-item-meta">上传 / 检索 / 沉淀 / 索引</div>
-        </button>
-        <button
-          className={isTokenUsageActive ? "sidebar-advanced-item active" : "sidebar-advanced-item"}
-          onClick={onOpenTokenUsage}
-        >
-          <div className="sidebar-advanced-item-icon">
-            <span role="img" aria-label="token-usage">
-              📊
-            </span>
-          </div>
-          <div className="sidebar-advanced-item-name">Token统计</div>
-          <div className="sidebar-advanced-item-desc">资源消耗分析</div>
-          <div className="sidebar-advanced-item-meta">按模型 / 日期统计</div>
-        </button>
-        <button
-          className={isTracesActive ? "sidebar-advanced-item active" : "sidebar-advanced-item"}
-          onClick={onOpenTraces}
-        >
-          <div className="sidebar-advanced-item-icon">
-            <span role="img" aria-label="traces">
-              🔍
-            </span>
-          </div>
-          <div className="sidebar-advanced-item-name">追溯中心</div>
-          <div className="sidebar-advanced-item-desc">操作步骤全部留痕</div>
-          <div className="sidebar-advanced-item-meta">会话 / 工具 / 推理 / 异常</div>
-        </button>
-        <button
-          className={isAlarmRegistryActive ? "sidebar-advanced-item active" : "sidebar-advanced-item"}
-          onClick={onOpenAlarmRegistry}
-        >
-          <div className="sidebar-advanced-item-icon">
-            <span role="img" aria-label="alarm-registry">
-              🚨
-            </span>
-          </div>
-          <div className="sidebar-advanced-item-name">告警台账</div>
-          <div className="sidebar-advanced-item-desc">告警处置状态一览</div>
-          <div className="sidebar-advanced-item-meta">列表 / 状态 / 导出</div>
         </button>
         <button
           className={isChannelsActive ? "sidebar-advanced-item active" : "sidebar-advanced-item"}
@@ -446,17 +371,69 @@ export function AdvancedModelEntry({
           <div className="sidebar-advanced-item-meta">钉钉 / 飞书 / Telegram</div>
         </button>
         <button
-          className={isInboxActive ? "sidebar-advanced-item active" : "sidebar-advanced-item"}
-          onClick={onOpenInbox}
+          className={isSettingsActive ? "sidebar-advanced-item active" : "sidebar-advanced-item"}
+          onClick={onOpenSettings}
         >
           <div className="sidebar-advanced-item-icon">
-            <span role="img" aria-label="inbox">
-              📬
+            <span role="img" aria-label="settings">
+              ⚙️
             </span>
           </div>
-          <div className="sidebar-advanced-item-name">收件箱</div>
-          <div className="sidebar-advanced-item-desc">统一查看任务通知与心跳</div>
-          <div className="sidebar-advanced-item-meta">消息 / 未读 / 追踪</div>
+          <div className="sidebar-advanced-item-name">设置</div>
+          <div className="sidebar-advanced-item-desc">对话与界面偏好</div>
+          <div className="sidebar-advanced-item-meta">过程记录 / 默认展开</div>
+        </button>
+      </div>
+
+      {/* 🖥️ 工作台 */}
+      <button
+        className={workbenchOpen ? "sidebar-advanced-header" : "sidebar-advanced-header collapsed"}
+        onClick={() => setWorkbenchOpen((prev) => !prev)}
+      >
+        <span className="sidebar-advanced-header-title">🖥️ 工作台</span>
+        <span className="sidebar-advanced-header-arrow">
+          <i className={`fas ${workbenchOpen ? "fa-chevron-down" : "fa-chevron-right"}`} />
+        </span>
+      </button>
+      <div className={workbenchOpen ? "sidebar-advanced-grid" : "sidebar-advanced-grid collapsed"}>
+        <button
+          className={isOpsExpertActive ? "sidebar-advanced-item active" : "sidebar-advanced-item"}
+          onClick={onOpenOpsExpert}
+        >
+          <div className="sidebar-advanced-item-icon">
+            <span role="img" aria-label="ops-expert">
+              🧑‍💻
+            </span>
+          </div>
+          <div className="sidebar-advanced-item-name">运维专家</div>
+          <div className="sidebar-advanced-item-desc">数字员工专家库</div>
+          <div className="sidebar-advanced-item-meta">垂直领域专家</div>
+        </button>
+        <button
+          className={isFdeWorkbenchActive ? "sidebar-advanced-item active" : "sidebar-advanced-item"}
+          onClick={onOpenFdeWorkbench}
+        >
+          <div className="sidebar-advanced-item-icon">
+            <span role="img" aria-label="fde-workbench">
+              🛠️
+            </span>
+          </div>
+          <div className="sidebar-advanced-item-name">交付工作台</div>
+          <div className="sidebar-advanced-item-desc">FDE 把需求变成技能</div>
+          <div className="sidebar-advanced-item-meta">访谈 / 生成 / 自检 / 安装</div>
+        </button>
+        <button
+          className={isCliActive ? "sidebar-advanced-item active" : "sidebar-advanced-item"}
+          onClick={onOpenCli}
+        >
+          <div className="sidebar-advanced-item-icon">
+            <span role="img" aria-label="cli">
+              💻
+            </span>
+          </div>
+          <div className="sidebar-advanced-item-name">CLI终端</div>
+          <div className="sidebar-advanced-item-desc">命令行交互界面</div>
+          <div className="sidebar-advanced-item-meta">help / use / ask / run</div>
         </button>
         <button
           className={isInspirationActive ? "sidebar-advanced-item active" : "sidebar-advanced-item"}
@@ -497,31 +474,83 @@ export function AdvancedModelEntry({
           <div className="sidebar-advanced-item-desc">已上架的定制应用</div>
           <div className="sidebar-advanced-item-meta">浏览 / 启动 / 统一入口</div>
         </button>
+      </div>
+
+      {/* 📊 运维中枢 */}
+      <button
+        className={opsOpen ? "sidebar-advanced-header" : "sidebar-advanced-header collapsed"}
+        onClick={() => setOpsOpen((prev) => !prev)}
+      >
+        <span className="sidebar-advanced-header-title">📊 运维中枢</span>
+        <span className="sidebar-advanced-header-arrow">
+          <i className={`fas ${opsOpen ? "fa-chevron-down" : "fa-chevron-right"}`} />
+        </span>
+      </button>
+      <div className={opsOpen ? "sidebar-advanced-grid" : "sidebar-advanced-grid collapsed"}>
         <button
-          className={isCliActive ? "sidebar-advanced-item active" : "sidebar-advanced-item"}
-          onClick={onOpenCli}
+          className={isCronJobsActive ? "sidebar-advanced-item active" : "sidebar-advanced-item"}
+          onClick={onOpenCronJobs}
         >
           <div className="sidebar-advanced-item-icon">
-            <span role="img" aria-label="cli">
-              💻
+            <span role="img" aria-label="cron-jobs">
+              ⏰
             </span>
           </div>
-          <div className="sidebar-advanced-item-name">CLI终端</div>
-          <div className="sidebar-advanced-item-desc">命令行交互界面</div>
-          <div className="sidebar-advanced-item-meta">help / use / ask / run</div>
+          <div className="sidebar-advanced-item-name">定时任务</div>
+          <div className="sidebar-advanced-item-desc">任务调度中心</div>
+          <div className="sidebar-advanced-item-meta">创建 / 启停 / 立即执行</div>
         </button>
         <button
-          className={isSettingsActive ? "sidebar-advanced-item active" : "sidebar-advanced-item"}
-          onClick={onOpenSettings}
+          className={isAlarmRegistryActive ? "sidebar-advanced-item active" : "sidebar-advanced-item"}
+          onClick={onOpenAlarmRegistry}
         >
           <div className="sidebar-advanced-item-icon">
-            <span role="img" aria-label="settings">
-              ⚙️
+            <span role="img" aria-label="alarm-registry">
+              🚨
             </span>
           </div>
-          <div className="sidebar-advanced-item-name">设置</div>
-          <div className="sidebar-advanced-item-desc">对话与界面偏好</div>
-          <div className="sidebar-advanced-item-meta">过程记录 / 默认展开</div>
+          <div className="sidebar-advanced-item-name">告警台账</div>
+          <div className="sidebar-advanced-item-desc">告警处置状态一览</div>
+          <div className="sidebar-advanced-item-meta">列表 / 状态 / 导出</div>
+        </button>
+        <button
+          className={isTracesActive ? "sidebar-advanced-item active" : "sidebar-advanced-item"}
+          onClick={onOpenTraces}
+        >
+          <div className="sidebar-advanced-item-icon">
+            <span role="img" aria-label="traces">
+              🔍
+            </span>
+          </div>
+          <div className="sidebar-advanced-item-name">追溯中心</div>
+          <div className="sidebar-advanced-item-desc">操作步骤全部留痕</div>
+          <div className="sidebar-advanced-item-meta">会话 / 工具 / 推理 / 异常</div>
+        </button>
+        <button
+          className={isTokenUsageActive ? "sidebar-advanced-item active" : "sidebar-advanced-item"}
+          onClick={onOpenTokenUsage}
+        >
+          <div className="sidebar-advanced-item-icon">
+            <span role="img" aria-label="token-usage">
+              📊
+            </span>
+          </div>
+          <div className="sidebar-advanced-item-name">Token统计</div>
+          <div className="sidebar-advanced-item-desc">资源消耗分析</div>
+          <div className="sidebar-advanced-item-meta">按模型 / 日期统计</div>
+        </button>
+        <button
+          className={isInboxActive ? "sidebar-advanced-item active" : "sidebar-advanced-item"}
+          onClick={onOpenInbox}
+        >
+          <div className="sidebar-advanced-item-icon">
+            <span role="img" aria-label="inbox">
+              📬
+            </span>
+          </div>
+          <div className="sidebar-advanced-item-name">收件箱</div>
+          <div className="sidebar-advanced-item-desc">统一查看任务通知与心跳</div>
+          <div className="sidebar-advanced-item-meta">消息 / 未读 / 追踪</div>
         </button>
       </div>
     </div>
