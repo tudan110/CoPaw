@@ -285,3 +285,130 @@
 .alarm-registry-pagination-jump input:focus {
   border-color: var(--portal-primary, #3b82f6);
 }
+
+/* ─── Dark theme ─────────────────────────────────────────────────── */
+
+.portal-digital-employee.theme-dark .alarm-registry-stats-bar {
+  background: rgba(30, 41, 59, 0.7);
+  border: 1px solid rgba(71, 85, 105, 0.4);
+  color: #94a3b8;
+}
+
+.portal-digital-employee.theme-dark .alarm-registry-stat strong {
+  color: #e2e8f0;
+}
+
+.portal-digital-employee.theme-dark .alarm-registry-tab {
+  border-color: rgba(71, 85, 105, 0.4);
+  color: #94a3b8;
+}
+.portal-digital-employee.theme-dark .alarm-registry-tab:hover {
+  background: rgba(51, 65, 85, 0.5);
+}
+.portal-digital-employee.theme-dark .alarm-registry-tab.active {
+  color: #fff;
+}
+
+.portal-digital-employee.theme-dark .alarm-registry-search-input {
+  background: rgba(15, 23, 42, 0.88);
+  border-color: rgba(71, 85, 105, 0.4);
+  color: #e2e8f0;
+}
+
+.portal-digital-employee.theme-dark .alarm-registry-btn {
+  background: rgba(30, 41, 59, 0.88);
+  border-color: rgba(71, 85, 105, 0.4);
+  color: #cbd5e1;
+}
+
+.portal-digital-employee.theme-dark .alarm-registry-error {
+  background: rgba(239, 68, 68, 0.12);
+  color: #f87171;
+}
+
+.portal-digital-employee.theme-dark .alarm-registry-table-wrapper {
+  border-color: rgba(71, 85, 105, 0.4);
+}
+
+.portal-digital-employee.theme-dark .alarm-registry-table thead {
+  background: rgba(15, 23, 42, 0.8);
+}
+.portal-digital-employee.theme-dark .alarm-registry-table th {
+  color: #94a3b8;
+  border-color: rgba(71, 85, 105, 0.4);
+}
+.portal-digital-employee.theme-dark .alarm-registry-table td {
+  color: #cbd5e1;
+  border-color: rgba(71, 85, 105, 0.3);
+}
+.portal-digital-employee.theme-dark .alarm-registry-table tr:hover td {
+  background: rgba(51, 65, 85, 0.4);
+}
+
+.portal-digital-employee.theme-dark .alarm-registry-action-btn {
+  border-color: rgba(71, 85, 105, 0.4);
+}
+.portal-digital-employee.theme-dark .alarm-registry-action-btn.tone-green:hover {
+  background: rgba(22, 163, 74, 0.15);
+}
+.portal-digital-employee.theme-dark .alarm-registry-action-btn.tone-slate:hover {
+  background: rgba(71, 85, 105, 0.3);
+}
+.portal-digital-employee.theme-dark .alarm-registry-action-btn.tone-blue:hover {
+  background: rgba(59, 130, 246, 0.15);
+}
+
+.portal-digital-employee.theme-dark .alarm-registry-status-badge.tone-blue {
+  background: rgba(59, 130, 246, 0.18);
+  color: #93c5fd;
+}
+.portal-digital-employee.theme-dark .alarm-registry-status-badge.tone-amber {
+  background: rgba(217, 119, 6, 0.18);
+  color: #fcd34d;
+}
+.portal-digital-employee.theme-dark .alarm-registry-status-badge.tone-cyan {
+  background: rgba(8, 145, 178, 0.18);
+  color: #67e8f9;
+}
+.portal-digital-employee.theme-dark .alarm-registry-status-badge.tone-green {
+  background: rgba(22, 163, 74, 0.18);
+  color: #86efac;
+}
+.portal-digital-employee.theme-dark .alarm-registry-status-badge.tone-red {
+  background: rgba(239, 68, 68, 0.18);
+  color: #fca5a5;
+}
+.portal-digital-employee.theme-dark .alarm-registry-status-badge.tone-slate {
+  background: rgba(71, 85, 105, 0.3);
+  color: #94a3b8;
+}
+
+.portal-digital-employee.theme-dark .alarm-registry-pagination {
+  background: rgba(15, 23, 42, 0.9);
+  border-color: rgba(71, 85, 105, 0.4);
+  color: #94a3b8;
+}
+.portal-digital-employee.theme-dark .alarm-registry-pagination button {
+  border-color: rgba(71, 85, 105, 0.4);
+  color: #94a3b8;
+}
+.portal-digital-employee.theme-dark .alarm-registry-pagination button:hover:not(:disabled) {
+  border-color: #60a5fa;
+  color: #60a5fa;
+}
+.portal-digital-employee.theme-dark .alarm-registry-pagination-size {
+  background: rgba(15, 23, 42, 0.88);
+  border-color: rgba(71, 85, 105, 0.4);
+  color: #cbd5e1;
+}
+.portal-digital-employee.theme-dark .alarm-registry-pagination-jump {
+  color: #64748b;
+}
+.portal-digital-employee.theme-dark .alarm-registry-pagination-jump input {
+  background: rgba(15, 23, 42, 0.88);
+  border-color: rgba(71, 85, 105, 0.4);
+  color: #e2e8f0;
+}
+.portal-digital-employee.theme-dark .alarm-registry-cell-title {
+  color: #e2e8f0;
+}
