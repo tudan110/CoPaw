@@ -230,6 +230,7 @@ export function AdvancedModelEntry({
   isTracesActive,
   isAlarmRegistryActive,
   isChannelsActive,
+  isInboxActive,
   onOpenNlCustomization,
   onOpenAppMarket,
   onOpenConfig,
@@ -246,6 +247,7 @@ export function AdvancedModelEntry({
   onOpenTraces,
   onOpenAlarmRegistry,
   onOpenChannels,
+  onOpenInbox,
 }: {
   activeModelLabel: string;
   activeProviderName: string;
@@ -265,6 +267,7 @@ export function AdvancedModelEntry({
   isTracesActive?: boolean;
   isAlarmRegistryActive?: boolean;
   isChannelsActive?: boolean;
+  isInboxActive?: boolean;
   onOpenNlCustomization: () => void;
   onOpenAppMarket: () => void;
   onOpenConfig: () => void;
@@ -281,6 +284,7 @@ export function AdvancedModelEntry({
   onOpenTraces: () => void;
   onOpenAlarmRegistry: () => void;
   onOpenChannels: () => void;
+  onOpenInbox: () => void;
 }) {
   const [collapsed, setCollapsed] = useState(true);
 
@@ -440,6 +444,19 @@ export function AdvancedModelEntry({
           <div className="sidebar-advanced-item-name">频道配置</div>
           <div className="sidebar-advanced-item-desc">管理消息接入频道</div>
           <div className="sidebar-advanced-item-meta">钉钉 / 飞书 / Telegram</div>
+        </button>
+        <button
+          className={isInboxActive ? "sidebar-advanced-item active" : "sidebar-advanced-item"}
+          onClick={onOpenInbox}
+        >
+          <div className="sidebar-advanced-item-icon">
+            <span role="img" aria-label="inbox">
+              📬
+            </span>
+          </div>
+          <div className="sidebar-advanced-item-name">收件箱</div>
+          <div className="sidebar-advanced-item-desc">统一查看任务通知与心跳</div>
+          <div className="sidebar-advanced-item-meta">消息 / 未读 / 追踪</div>
         </button>
         <button
           className={isInspirationActive ? "sidebar-advanced-item active" : "sidebar-advanced-item"}

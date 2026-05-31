@@ -121,6 +121,10 @@ export default function App() {
         path="/channels"
         element={renderDeferredPage(<DigitalEmployeePage forcedSection="channels" />)}
       />
+      <Route
+        path="/inbox"
+        element={renderDeferredPage(<DigitalEmployeePage forcedSection="inbox" />)}
+      />
       <Route path="/employee/:employeeId" element={renderDeferredPage(<DigitalEmployeePage />)} />
       <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

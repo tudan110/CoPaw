@@ -166,6 +166,7 @@ const ChannelsPanel = lazyNamed(
   () => import("./digital-employee/channelsPanel"),
   "ChannelsPanel",
 );
+const InboxPanel = lazyNamed(() => import("./digital-employee/inboxPanel"), "InboxPanel");
 
 const panelLoadingFallback = (
   <div className="history-empty" style={{ minHeight: 280 }}>
@@ -233,6 +234,7 @@ export default function DigitalEmployeePage({
   const isTracesMode = activeAdvancedPanel === "traces";
   const isAlarmRegistryMode = activeAdvancedPanel === "alarm-registry";
   const isChannelsMode = activeAdvancedPanel === "channels";
+  const isInboxMode = activeAdvancedPanel === "inbox";
   const isPortalHome = !selectedEmployee;
   const isPortalHomeChat = isPortalHome && currentView === "chat" && !activeAdvancedPanel;
   const isAlarmWorkbenchMode = Boolean(
@@ -1491,6 +1493,7 @@ export default function DigitalEmployeePage({
             isTracesActive={isTracesMode}
             isAlarmRegistryActive={isAlarmRegistryMode}
             isChannelsActive={isChannelsMode}
+            isInboxActive={isInboxMode}
             onOpenTraces={() =>
               updateCurrentEmployeeRoute({
                 panel: "traces",
@@ -1504,6 +1507,11 @@ export default function DigitalEmployeePage({
             onOpenChannels={() =>
               updateCurrentEmployeeRoute({
                 panel: "channels",
+              })
+            }
+            onOpenInbox={() =>
+              updateCurrentEmployeeRoute({
+                panel: "inbox",
               })
             }
             onOpenAppMarket={() =>
@@ -1553,7 +1561,7 @@ export default function DigitalEmployeePage({
 
         <div
           className={
-            isModelConfigMode || isSettingsMode || isTokenUsageMode || isOpsExpertMode || isMcpMode || isSkillPoolMode || isFdeWorkbenchMode || isKnowledgeBaseMode || isInspirationMode || isCliMode || isResourceImportMode || isNlCustomizationMode || isAppMarketMode || isTracesMode || isAlarmRegistryMode || isChannelsMode
+            isModelConfigMode || isSettingsMode || isTokenUsageMode || isOpsExpertMode || isMcpMode || isSkillPoolMode || isFdeWorkbenchMode || isKnowledgeBaseMode || isInspirationMode || isCliMode || isResourceImportMode || isNlCustomizationMode || isAppMarketMode || isTracesMode || isAlarmRegistryMode || isChannelsMode || isInboxMode
               ? `main-content advanced-page-mode${isKnowledgeBaseMode ? " knowledge-base-page-mode" : ""}`
               : currentView === "chat"
                 ? "main-content"
@@ -1675,6 +1683,8 @@ export default function DigitalEmployeePage({
             }} />)
           ) : isChannelsMode ? (
             renderDeferredPanel(<ChannelsPanel />)
+          ) : isInboxMode ? (
+            renderDeferredPanel(<InboxPanel />)
           ) : isResourceImportMode ? (
             renderDeferredPanel(<ResourceImportPanel />)
           ) : (
