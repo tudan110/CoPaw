@@ -229,6 +229,7 @@ export function AdvancedModelEntry({
   isAppMarketActive,
   isTracesActive,
   isAlarmRegistryActive,
+  isChannelsActive,
   onOpenNlCustomization,
   onOpenAppMarket,
   onOpenConfig,
@@ -244,6 +245,7 @@ export function AdvancedModelEntry({
   onOpenCli,
   onOpenTraces,
   onOpenAlarmRegistry,
+  onOpenChannels,
 }: {
   activeModelLabel: string;
   activeProviderName: string;
@@ -262,6 +264,7 @@ export function AdvancedModelEntry({
   isAppMarketActive?: boolean;
   isTracesActive?: boolean;
   isAlarmRegistryActive?: boolean;
+  isChannelsActive?: boolean;
   onOpenNlCustomization: () => void;
   onOpenAppMarket: () => void;
   onOpenConfig: () => void;
@@ -277,6 +280,7 @@ export function AdvancedModelEntry({
   onOpenCli: () => void;
   onOpenTraces: () => void;
   onOpenAlarmRegistry: () => void;
+  onOpenChannels: () => void;
 }) {
   const [collapsed, setCollapsed] = useState(true);
 
@@ -423,6 +427,19 @@ export function AdvancedModelEntry({
           <div className="sidebar-advanced-item-name">告警台账</div>
           <div className="sidebar-advanced-item-desc">告警处置状态一览</div>
           <div className="sidebar-advanced-item-meta">列表 / 状态 / 导出</div>
+        </button>
+        <button
+          className={isChannelsActive ? "sidebar-advanced-item active" : "sidebar-advanced-item"}
+          onClick={onOpenChannels}
+        >
+          <div className="sidebar-advanced-item-icon">
+            <span role="img" aria-label="channels">
+              📡
+            </span>
+          </div>
+          <div className="sidebar-advanced-item-name">频道配置</div>
+          <div className="sidebar-advanced-item-desc">管理消息接入频道</div>
+          <div className="sidebar-advanced-item-meta">钉钉 / 飞书 / Telegram</div>
         </button>
         <button
           className={isInspirationActive ? "sidebar-advanced-item active" : "sidebar-advanced-item"}

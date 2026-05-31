@@ -117,6 +117,10 @@ export default function App() {
         path="/alarm-registry"
         element={renderDeferredPage(<DigitalEmployeePage forcedSection="alarm-registry" />)}
       />
+      <Route
+        path="/channels"
+        element={renderDeferredPage(<DigitalEmployeePage forcedSection="channels" />)}
+      />
       <Route path="/employee/:employeeId" element={renderDeferredPage(<DigitalEmployeePage />)} />
       <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
