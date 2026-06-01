@@ -26,11 +26,11 @@
 > | 原地址 | 4A 环境 | 北京环境 | 大装置环境 | 生产环境 | 本地测试环境 |
 > |--------|---------|----------|------------|----------|--------------|
 > | `http://172.28.75.4:30080` | `http://10.141.245.15:30080` | `http://10.3.39.246:30080` | `http://172.28.75.4:30080` | `http://gateway:8080` | 不替换 |
-> | `http://192.168.130.51:30080` | `http://10.141.245.15:30080` | `http://10.3.39.246:30080` | `http://172.28.75.4:30080` | `http://gateway:8080` | 不替换 |
-> | `http://192.168.130.51:30081` | `http://10.141.245.15:30081` | `http://10.3.39.246:30081` | `http://172.28.75.4:30081` | 不替换 | 不替换 |
-> | `http://192.168.130.51:31089` | `http://10.141.245.15:31089` | `http://10.3.39.246:31089` | `http://172.28.75.4:31089` | 不替换 | 不替换 |
-> | `http://192.168.130.51:30001` | `http://10.141.245.15:3000` | `http://10.3.39.246:3000` | `http://172.28.75.4:3000` | 不替换 | 不替换 |
-> | `http://192.168.130.51:3101` | `http://10.141.245.15:3101` | `http://10.3.39.246:3101` | `http://172.28.75.4:3101` | 不替换 | 不替换 |
+> | `http://192.168.134.96:30080` | `http://10.141.245.15:30080` | `http://10.3.39.246:30080` | `http://172.28.75.4:30080` | `http://gateway:8080` | 不替换 |
+> | `http://192.168.134.96:30081` | `http://10.141.245.15:30081` | `http://10.3.39.246:30081` | `http://172.28.75.4:30081` | 不替换 | 不替换 |
+> | `http://192.168.134.96:31089` | `http://10.141.245.15:31089` | `http://10.3.39.246:31089` | `http://172.28.75.4:31089` | 不替换 | 不替换 |
+> | `http://192.168.134.96:30001` | `http://10.141.245.15:3000` | `http://10.3.39.246:3000` | `http://172.28.75.4:3000` | 不替换 | 不替换 |
+> | `http://192.168.134.96:3101` | `http://10.141.245.15:3101` | `http://10.3.39.246:3101` | `http://172.28.75.4:3101` | 不替换 | 不替换 |
 
 ### 1. 清理旧版目录和文件
 
@@ -186,14 +186,14 @@ if [ "$SHOULD_REPLACE_SERVICE_URLS" = true ]; then
     -print0 | while IFS= read -r -d '' file; do
       if [ "$TARGET_ENV_NAME" = "生产环境" ]; then
         sed -i '' "s|http://172.28.75.4:30080|http://gateway:8080|g" "$file"
-        sed -i '' "s|http://192.168.130.51:30080|http://gateway:8080|g" "$file"
+        sed -i '' "s|http://192.168.134.96:30080|http://gateway:8080|g" "$file"
       else
         sed -i '' "s|http://172.28.75.4:30080|http://$TARGET_HOST:30080|g" "$file"
-        sed -i '' "s|http://192.168.130.51:30080|http://$TARGET_HOST:30080|g" "$file"
-        sed -i '' "s|http://192.168.130.51:30081|http://$TARGET_HOST:30081|g" "$file"
-        sed -i '' "s|http://192.168.130.51:31089|http://$TARGET_HOST:31089|g" "$file"
-        sed -i '' "s|http://192.168.130.51:30001|http://$TARGET_HOST:3000|g" "$file"
-        sed -i '' "s|http://192.168.130.51:3101|http://$TARGET_HOST:3101|g" "$file"
+        sed -i '' "s|http://192.168.134.96:30080|http://$TARGET_HOST:30080|g" "$file"
+        sed -i '' "s|http://192.168.134.96:30081|http://$TARGET_HOST:30081|g" "$file"
+        sed -i '' "s|http://192.168.134.96:31089|http://$TARGET_HOST:31089|g" "$file"
+        sed -i '' "s|http://192.168.134.96:30001|http://$TARGET_HOST:3000|g" "$file"
+        sed -i '' "s|http://192.168.134.96:3101|http://$TARGET_HOST:3101|g" "$file"
       fi
     done
 
@@ -413,14 +413,14 @@ replace_service_urls() {
     -print0 | while IFS= read -r -d '' file; do
       if [ "$TARGET_ENV_NAME" = "生产环境" ]; then
         sed -i '' "s|http://172.28.75.4:30080|http://gateway:8080|g" "$file"
-        sed -i '' "s|http://192.168.130.51:30080|http://gateway:8080|g" "$file"
+        sed -i '' "s|http://192.168.134.96:30080|http://gateway:8080|g" "$file"
       else
         sed -i '' "s|http://172.28.75.4:30080|http://$TARGET_HOST:30080|g" "$file"
-        sed -i '' "s|http://192.168.130.51:30080|http://$TARGET_HOST:30080|g" "$file"
-        sed -i '' "s|http://192.168.130.51:30081|http://$TARGET_HOST:30081|g" "$file"
-        sed -i '' "s|http://192.168.130.51:31089|http://$TARGET_HOST:31089|g" "$file"
-        sed -i '' "s|http://192.168.130.51:30001|http://$TARGET_HOST:3000|g" "$file"
-        sed -i '' "s|http://192.168.130.51:3101|http://$TARGET_HOST:3101|g" "$file"
+        sed -i '' "s|http://192.168.134.96:30080|http://$TARGET_HOST:30080|g" "$file"
+        sed -i '' "s|http://192.168.134.96:30081|http://$TARGET_HOST:30081|g" "$file"
+        sed -i '' "s|http://192.168.134.96:31089|http://$TARGET_HOST:31089|g" "$file"
+        sed -i '' "s|http://192.168.134.96:30001|http://$TARGET_HOST:3000|g" "$file"
+        sed -i '' "s|http://192.168.134.96:3101|http://$TARGET_HOST:3101|g" "$file"
       fi
     done
 }
@@ -549,7 +549,7 @@ grep "/app/working" deploy-all/qwenpaw/data/qwenpaw/config.json | head -5
 grep -r "~/.qwenpaw\|~/.copaw\|/Users/.*/\.\(qwenpaw\|copaw\)" deploy-all/qwenpaw/data/qwenpaw || echo "No local paths found"
 
 # 检查旧环境地址是否已清理
-grep -r "192\.168\.130\.51" deploy-all/qwenpaw/data/qwenpaw && echo "仍有旧地址，请继续检查" || echo "192.168.130.51 已清理"
+grep -r "192\.168\.130\.51" deploy-all/qwenpaw/data/qwenpaw && echo "仍有旧地址，请继续检查" || echo "192.168.134.96 已清理"
 
 # 如果本次是 4A 环境，再额外确认 172.28.75.4:30080 已替换
 grep -r "172\.28\.75\.4:30080" deploy-all/qwenpaw/data/qwenpaw && echo "若目标是 4A，请继续检查剩余 30080 地址" || echo "30080 地址已按需替换"

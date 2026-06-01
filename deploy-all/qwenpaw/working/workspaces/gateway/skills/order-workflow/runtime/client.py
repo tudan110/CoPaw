@@ -94,7 +94,7 @@ class OrderWorkflowConfig:
         base_url = (
             os.getenv("ORDER_API_BASE_URL", "").strip()
             or os.getenv("INOE_API_BASE_URL", "").strip()
-            or "http://192.168.130.51:30081"
+            or "http://192.168.134.96:30081"
         )
         authorization = (
             os.getenv("ORDER_AUTHORIZATION", "").strip()

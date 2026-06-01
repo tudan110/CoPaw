@@ -79,7 +79,7 @@ helm install cnos-inoe-agent ./deploy-all/helm/cnos-inoe-agent \
 # 实际部署示例 -- 大装置
 helm install cnos-inoe-agent ./cnos-inoe-agent-1.0.0.tgz -n cnos-iomp \
   --set-string digital-workforce-portal.env.PORTAL_APP_TITLE="智观 AI" \
-  --set-string qwenpaw.env.INOE_API_BASE_URL="http://192.168.130.51:30080"
+  --set-string qwenpaw.env.INOE_API_BASE_URL="http://192.168.134.96:30080"
 
 # 实际部署示例 -- 北京环境
 helm install cnos-inoe-agent ./cnos-inoe-agent-1.0.0.tgz -n cnos-iomp \
@@ -94,7 +94,7 @@ helm install cnos-inoe-agent ./cnos-inoe-agent-1.0.0.tgz -n cnos-iomp \
 ```bash
 helm install cnos-inoe-agent ./cnos-inoe-agent-1.0.0.tgz -n cnos-iomp \
   --set-string digital-workforce-portal.env.PORTAL_APP_TITLE="智观 AI" \
-  --set-string qwenpaw.env.INOE_API_BASE_URL="http://192.168.130.51:30080" \
+  --set-string qwenpaw.env.INOE_API_BASE_URL="http://192.168.134.96:30080" \
   --set-string qwenpaw.env.INOE_API_TOKEN="<your_jwt_token>" \
   --set-string qwenpaw.env.INOE_API_TIMEOUT="60" \
   --set-string qwenpaw.env.QWENPAW_PORTAL_REAL_ALARM_ROUTE_TIMEOUT="5" \
@@ -109,7 +109,7 @@ helm install cnos-inoe-agent ./cnos-inoe-agent-1.0.0.tgz -n cnos-iomp \
 | 变量 | 说明 | 默认值 |
 |------|------|--------|
 | `PORTAL_APP_TITLE` | Portal 页面标题 | - |
-| `INOE_API_BASE_URL` | 智观告警平台接口地址 | `http://192.168.130.51:30080` |
+| `INOE_API_BASE_URL` | 智观告警平台接口地址 | `http://192.168.134.96:30080` |
 | `INOE_API_TOKEN` | 智观平台 JWT Token | - |
 | `INOE_API_TIMEOUT` | 接口请求超时(秒) | `60` |
 | `QWENPAW_PORTAL_REAL_ALARM_ROUTE_TIMEOUT` | Portal 告警列表前台等待超时(秒) | `5` |

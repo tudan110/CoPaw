@@ -348,23 +348,23 @@ class OrderWorkflowTests(unittest.TestCase):
     def test_client_uses_default_route_base_url(self) -> None:
         client = OrderWorkflowClient(
             OrderWorkflowConfig(
-                base_url="http://192.168.130.51:30081",
+                base_url="http://192.168.134.96:30081",
                 authorization="token",
             )
         )
-        self.assertEqual(client.config.base_url, "http://192.168.130.51:30081")
+        self.assertEqual(client.config.base_url, "http://192.168.134.96:30081")
 
     def test_config_falls_back_to_inoe_env(self) -> None:
         with mock.patch.dict(
             "os.environ",
             {
-                "INOE_API_BASE_URL": "http://192.168.130.51:30080",
+                "INOE_API_BASE_URL": "http://192.168.134.96:30080",
                 "INOE_API_TOKEN": "inoe-token",
             },
             clear=True,
         ):
             config = OrderWorkflowConfig.from_env()
-        self.assertEqual(config.base_url, "http://192.168.130.51:30080")
+        self.assertEqual(config.base_url, "http://192.168.134.96:30080")
         self.assertEqual(config.authorization, "inoe-token")
 
     def test_normalize_create_payload_accepts_lightweight_form_fields(self) -> None:

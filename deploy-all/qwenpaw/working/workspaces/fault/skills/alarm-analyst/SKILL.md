@@ -232,7 +232,7 @@ cd skills/alarm-analyst && python scripts/send_analysis_report.py \
 `.env` 最小配置：
 
 ```bash
-INOE_API_BASE_URL=http://192.168.130.51:30080
+INOE_API_BASE_URL=http://192.168.134.96:30080
 INOE_API_TOKEN=your_jwt_token_here
 ALARM_ANALYST_METRIC_TIMEOUT_SECONDS=120
 ALARM_ANALYST_METRIC_PAGE_SIZE=20
