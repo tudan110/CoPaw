@@ -1166,6 +1166,9 @@ export function normalizeMarkdownDisplayContent(
     .replace(/<br\s*\/?>/gi, "  \n")
     .replace(/\n{3,}/g, "\n\n");
 
+  // Fix markdown tables: trailing spaces before \n break table row parsing
+  normalized = fixMarkdownTableLineBreaks(normalized);
+
   if (isStreaming) {
     normalized = normalized
       .replace(/```echarts\s*[\s\S]*?```/gi, "")
@@ -1316,6 +1319,102 @@ function normalizeOperationalMarkdownSections(content: string) {
   let normalized = String(content || "");
   normalized = normalizeEvidencePipeTable(normalized);
   return normalized;
+}
+
+/**
+ * Fix markdown table rows that have trailing spaces before newlines.
+ * Markdown tables require bare `\n` between rows — `  \n` (soft break) breaks parsing.
+ * Also detects inline pipe-table content (all on one line) and splits into proper rows.
+ */
+function fixMarkdownTableLineBreaks(content: string) {
+  const lines = content.split("\n");
+  const result: string[] = [];
+
+  for (let i = 0; i < lines.length; i++) {
+    const trimmed = lines[i].trimEnd();
+
+    // Detect a line that looks like an inline table (multiple | separated cells with --- separator)
+    // e.g. "| A | B | C |---|---|---| val1 | val2 | val3 |"
+    if (/\|[^|]+\|.*\|[-\s|]+\|.*\|[^|]+\|/.test(trimmed) && (trimmed.match(/\|/g) || []).length >= 8) {
+      const expanded = expandInlinePipeTable(trimmed);
+      if (expanded) {
+        result.push(expanded);
+        continue;
+      }
+    }
+
+    // For lines that are part of a table (start with |), strip trailing spaces
+    if (/^\s*\|/.test(trimmed)) {
+      result.push(trimmed);
+    } else {
+      result.push(lines[i]);
+    }
+  }
+
+  // Also fix: table rows separated by "  \n" (two trailing spaces = soft break)
+  // Re-join then fix sequences where a table row ends with trailing spaces before \n
+  let joined = result.join("\n");
+  joined = joined.replace(/(\|)\s+\n(\s*\|)/g, "$1\n$2");
+  return joined;
+}
+
+/**
+ * Expand a single-line pipe table into proper multi-line markdown table.
+ * Handles patterns like: "| H1 | H2 | H3 |---|---|---| v1 | v2 | v3 | v4 | v5 | v6 |"
+ */
+function expandInlinePipeTable(line: string): string | null {
+  const trimmed = line.trim();
+
+  // Split by | and filter empties
+  const cells = trimmed.split("|").map(c => c.trim());
+  // Remove leading/trailing empty from split
+  if (cells[0] === "") cells.shift();
+  if (cells[cells.length - 1] === "") cells.pop();
+
+  if (cells.length < 3) return null;
+
+  // Find separator row cells (all dashes)
+  const sepStart = cells.findIndex(c => /^-{2,}$/.test(c));
+  if (sepStart < 1) return null;
+
+  // Count how many consecutive separator cells
+  let sepEnd = sepStart;
+  while (sepEnd < cells.length && /^-{2,}$/.test(cells[sepEnd])) {
+    sepEnd++;
+  }
+
+  const colCount = sepEnd - sepStart;
+  if (colCount < 2) return null;
+
+  const headers = cells.slice(sepStart - colCount, sepStart);
+  if (headers.length !== colCount) {
+    // Fallback: headers are the first N cells
+    const headerCells = cells.slice(0, sepStart);
+    if (headerCells.length !== colCount) return null;
+    const dataCells = cells.slice(sepEnd);
+    const rows: string[] = [];
+    rows.push(`| ${headerCells.join(" | ")} |`);
+    rows.push(`| ${Array(colCount).fill("---").join(" | ")} |`);
+    for (let i = 0; i < dataCells.length; i += colCount) {
+      const row = dataCells.slice(i, i + colCount);
+      if (row.length === colCount) {
+        rows.push(`| ${row.join(" | ")} |`);
+      }
+    }
+    return rows.length > 2 ? rows.join("\n") : null;
+  }
+
+  const dataCells = cells.slice(sepEnd);
+  const rows: string[] = [];
+  rows.push(`| ${headers.join(" | ")} |`);
+  rows.push(`| ${Array(colCount).fill("---").join(" | ")} |`);
+  for (let i = 0; i < dataCells.length; i += colCount) {
+    const row = dataCells.slice(i, i + colCount);
+    if (row.length === colCount) {
+      rows.push(`| ${row.join(" | ")} |`);
+    }
+  }
+  return rows.length > 2 ? rows.join("\n") : null;
 }
 
 function normalizeEvidencePipeTable(content: string) {
