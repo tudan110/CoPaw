@@ -347,17 +347,6 @@ export function AdvancedModelEntry({
           <div className="sidebar-advanced-item-meta">搜索 / 新增 / 编辑 / 删除</div>
         </button>
         <button
-          className={isKnowledgeBaseActive ? "sidebar-advanced-item active" : "sidebar-advanced-item"}
-          onClick={onOpenKnowledgeBase}
-        >
-          <div className="sidebar-advanced-item-icon">
-            <i className="fas fa-book-open" aria-label="knowledge-base" />
-          </div>
-          <div className="sidebar-advanced-item-name">知识库管理</div>
-          <div className="sidebar-advanced-item-desc">知识库助手资料库</div>
-          <div className="sidebar-advanced-item-meta">上传 / 检索 / 沉淀 / 索引</div>
-        </button>
-        <button
           className={isChannelsActive ? "sidebar-advanced-item active" : "sidebar-advanced-item"}
           onClick={onOpenChannels}
         >
@@ -385,17 +374,28 @@ export function AdvancedModelEntry({
         </button>
       </div>
 
-      {/* 🖥️ 工作台 */}
+      {/* 🧰 能力工坊 */}
       <button
         className={workbenchOpen ? "sidebar-advanced-header" : "sidebar-advanced-header collapsed"}
         onClick={() => setWorkbenchOpen((prev) => !prev)}
       >
-        <span className="sidebar-advanced-header-title">🖥️ 工作台</span>
+        <span className="sidebar-advanced-header-title">🧰 能力工坊</span>
         <span className="sidebar-advanced-header-arrow">
           <i className={`fas ${workbenchOpen ? "fa-chevron-down" : "fa-chevron-right"}`} />
         </span>
       </button>
       <div className={workbenchOpen ? "sidebar-advanced-grid" : "sidebar-advanced-grid collapsed"}>
+        <button
+          className={isKnowledgeBaseActive ? "sidebar-advanced-item active" : "sidebar-advanced-item"}
+          onClick={onOpenKnowledgeBase}
+        >
+          <div className="sidebar-advanced-item-icon">
+            <i className="fas fa-book-open" aria-label="knowledge-base" />
+          </div>
+          <div className="sidebar-advanced-item-name">知识库管理</div>
+          <div className="sidebar-advanced-item-desc">知识库助手资料库</div>
+          <div className="sidebar-advanced-item-meta">上传 / 检索 / 沉淀 / 索引</div>
+        </button>
         <button
           className={isOpsExpertActive ? "sidebar-advanced-item active" : "sidebar-advanced-item"}
           onClick={onOpenOpsExpert}
