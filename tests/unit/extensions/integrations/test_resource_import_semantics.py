@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+
 from qwenpaw.extensions.integrations.zgops_cmdb import resource_import
 
 
@@ -59,6 +61,33 @@ def test_match_field_with_metadata_uses_real_attribute_aliases() -> None:
     # exists on this CI type, so the value is written instead of dropped.
     assert target_field == "listen_port"
     assert confidence in {"medium", "high"}
+
+
+def test_export_helper_sheets_are_classified_as_notes() -> None:
+    assert resource_import._looks_like_note_sheet("导出说明", ["标题", "内容"])
+    assert resource_import._looks_like_note_sheet("缺失必填字段", ["模型", "资源", "缺失字段"])
+    assert resource_import._looks_like_note_sheet("字段字典", ["模型", "字段", "是否必填"])
+
+
+def test_note_sheet_mapping_skips_llm() -> None:
+    class ExplodingLlmClient:
+        async def map_sheet_headers(self, **_kwargs: object) -> dict[str, object]:
+            raise AssertionError("system helper sheets must not call LLM mapping")
+
+    plan, mode = asyncio.run(
+        resource_import._resolve_sheet_mapping_plan(
+            sheet_name="字段字典",
+            rows=[{"字段": "资产状态", "是否必填": "是", "_sheet": "字段字典"}],
+            alias_index={},
+            model_templates=[],
+            metadata={},
+            llm_client=ExplodingLlmClient(),
+        )
+    )
+
+    assert plan.sheet_kind == "note"
+    assert plan.mappings == {}
+    assert "跳过字段语义映射" in mode
 
 
 def test_semantic_lexical_score_can_use_model_attribute_texts() -> None:
@@ -229,6 +258,62 @@ def test_import_preflight_blocks_disconnected_metadata_before_cmdb_login(monkeyp
     assert result["status"] == "failed"
     assert result["failed"] == 1
     assert "未连接实时 CMDB 模型" in result["resourceResults"][0]["message"]
+
+
+def test_import_preflight_metadata_uses_cache_without_structure_changes(monkeypatch) -> None:
+    cached = {
+        "connected": True,
+        "ciTypes": [{"name": "networkdevice", "unique_key": "dev_no"}],
+        "semanticModelCatalog": [],
+        "semanticFieldCatalog": {},
+    }
+
+    monkeypatch.setattr(resource_import, "_resource_import_metadata_env_signature", lambda: "env")
+    monkeypatch.setattr(resource_import, "_read_resource_import_metadata_cache", lambda env: cached)
+
+    def fail_live_load(_client):  # noqa: ANN001
+        raise AssertionError("warm import preflight should use metadata cache")
+
+    monkeypatch.setattr(resource_import, "_load_resource_import_metadata_from_client", fail_live_load)
+
+    metadata, source = resource_import._load_import_preflight_metadata(object(), [])
+
+    assert source == "cache"
+    assert metadata is cached
+
+
+def test_import_preflight_metadata_refreshes_after_model_creation(monkeypatch) -> None:
+    cached = {
+        "connected": True,
+        "ciTypes": [{"name": "old", "unique_key": "name"}],
+        "semanticModelCatalog": [],
+        "semanticFieldCatalog": {},
+    }
+    live = {
+        "connected": True,
+        "ciTypes": [{"name": "new_model", "unique_key": "name"}],
+        "semanticModelCatalog": [],
+        "semanticFieldCatalog": {},
+    }
+    writes = []
+
+    monkeypatch.setattr(resource_import, "_resource_import_metadata_env_signature", lambda: "env")
+    monkeypatch.setattr(resource_import, "_read_resource_import_metadata_cache", lambda env: cached)
+    monkeypatch.setattr(resource_import, "_load_resource_import_metadata_from_client", lambda _client: live)
+    monkeypatch.setattr(
+        resource_import,
+        "_write_resource_import_metadata_cache",
+        lambda env, metadata: writes.append((env, metadata)),
+    )
+
+    metadata, source = resource_import._load_import_preflight_metadata(
+        object(),
+        [{"kind": "model", "status": "created"}],
+    )
+
+    assert source == "live"
+    assert metadata is live
+    assert writes == [("env", live)]
 
 
 def test_build_confirmed_cmdb_attributes_only_keeps_allowed_model_fields() -> None:

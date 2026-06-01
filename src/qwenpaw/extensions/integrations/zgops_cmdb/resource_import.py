@@ -649,7 +649,20 @@ RESOURCE_VALUE_FIELDS = PRIMARY_RESOURCE_FIELDS | {
     "environment",
     "description",
 }
-EXCLUDED_SHEET_KEYWORDS = ("测试", "说明", "readme", "示例", "样例")
+EXCLUDED_SHEET_KEYWORDS = (
+    "测试",
+    "说明",
+    "readme",
+    "示例",
+    "样例",
+    "导出说明",
+    "缺失必填字段",
+    "字段字典",
+    "missing_required",
+    "missing required",
+    "field_dictionary",
+    "field dictionary",
+)
 RELATION_SHEET_KEYWORDS = ("relation", "relations", "关系", "拓扑", "链路", "依赖", "mapping")
 RESOURCE_IMPORT_LLM_STEP_TIMEOUT_SECONDS = float(
     os.environ.get("RESOURCE_IMPORT_LLM_STEP_TIMEOUT", "45"),
@@ -3579,7 +3592,8 @@ def _sheet_llm_timeout_seconds(*, row_count: int, header_count: int) -> float:
 
 def _looks_like_note_sheet(sheet_name: str, headers: list[str]) -> bool:
     normalized_sheet_name = _clean_text(sheet_name)
-    if any(token in normalized_sheet_name for token in EXCLUDED_SHEET_KEYWORDS):
+    normalized_sheet_name_lower = normalized_sheet_name.lower()
+    if any(_clean_text(token).lower() in normalized_sheet_name_lower for token in EXCLUDED_SHEET_KEYWORDS):
         return True
     normalized_headers = {_normalize_header(header) for header in headers}
     note_header_groups = [
@@ -3590,6 +3604,19 @@ def _looks_like_note_sheet(sheet_name: str, headers: list[str]) -> bool:
         if all(_normalize_header(item) in normalized_headers for item in group):
             return True
     return False
+
+
+def _build_note_sheet_plan(reason: str = "系统辅助 sheet，已跳过字段语义映射") -> tuple[SheetMappingPlan, str]:
+    return (
+        SheetMappingPlan(
+            sheet_kind="note",
+            default_ci_type="",
+            mappings={},
+            reason=reason,
+            mapping_details={},
+        ),
+        reason,
+    )
 
 
 def _looks_like_relation_sheet(sheet_name: str, headers: list[str]) -> bool:
@@ -3644,6 +3671,9 @@ async def _resolve_sheet_mapping_plan(
     retry_count_override: int | None = None,
 ) -> tuple[SheetMappingPlan, str]:
     headers = sorted({key for row in rows for key in row.keys() if key != "_sheet"})
+    if _looks_like_note_sheet(sheet_name, headers):
+        return _build_note_sheet_plan()
+
     type_template_map = {
         _clean_text(item.get("name")): item
         for item in model_templates
@@ -3658,13 +3688,7 @@ async def _resolve_sheet_mapping_plan(
         max(sheet_timeout_seconds + 15.0, sheet_timeout_seconds * 1.25),
     )
     default_ci_type = _sheet_name_hint(sheet_name, alias_index)
-    heuristic_sheet_kind = (
-        "note"
-        if _looks_like_note_sheet(sheet_name, headers)
-        else "relation"
-        if _looks_like_relation_sheet(sheet_name, headers)
-        else "asset"
-    )
+    heuristic_sheet_kind = "relation" if _looks_like_relation_sheet(sheet_name, headers) else "asset"
     heuristic_mappings = {
         header: (
             _match_relation_field(header)
@@ -7354,6 +7378,31 @@ async def preview_resource_import(
             filename = str(item.get("filename") or "")
             sheet_name = str(item.get("sheetName") or "")
             sheet_rows = item.get("sheetRows") or []
+            headers = sorted(
+                {
+                    str(key)
+                    for _, row in sheet_rows
+                    for key in row.keys()
+                    if key != "_sheet"
+                }
+            )
+            if _looks_like_note_sheet(sheet_name, headers):
+                plan, mapping_mode = _build_note_sheet_plan()
+                _emit_progress(
+                    progress_callback,
+                    stage="sheet_mapping",
+                    message=(
+                        f"跳过 {filename} / {sheet_name} "
+                        f"({index + 1}/{max(total_sheet_count, 1)})，识别为系统辅助页，跳过字段语义映射"
+                    ),
+                    percent=12 + int(index / max(total_sheet_count, 1) * 60),
+                )
+                return {
+                    **item,
+                    "index": index,
+                    "plan": plan,
+                    "mappingMode": mapping_mode,
+                }
             llm_target = "将调用 LLM 做字段语义映射"
             if not managed_llm_client:
                 llm_target = "当前未连接 LLM，将使用规则映射兜底"
@@ -8665,6 +8714,47 @@ def load_resource_import_metadata() -> dict[str, Any]:
     return enriched
 
 
+def _enrich_cached_resource_import_metadata(cached: dict[str, Any]) -> dict[str, Any]:
+    if "semanticModelCatalog" in cached and "semanticFieldCatalog" in cached:
+        return cached
+    return _enrich_resource_import_metadata(cached)
+
+
+def _structure_results_require_live_metadata(structure_results: list[dict[str, Any]]) -> bool:
+    return any(
+        isinstance(item, dict)
+        and item.get("kind") == "model"
+        and item.get("status") == "created"
+        for item in structure_results
+    )
+
+
+def _load_import_preflight_metadata(
+    client: VeopsCmdbClient,
+    structure_results: list[dict[str, Any]],
+) -> tuple[dict[str, Any], str]:
+    """Load CMDB model metadata for final import preflight.
+
+    Normal imports should use the 24h metadata cache to avoid paying the full
+    per-CI-type schema fan-out on every import. If this import created a model,
+    the cache is necessarily stale, so refresh from the active client and write
+    the new snapshot back to cache.
+    """
+
+    env_signature = _resource_import_metadata_env_signature()
+    if not _structure_results_require_live_metadata(structure_results):
+        with _METADATA_CACHE_LOCK:
+            cached = _read_resource_import_metadata_cache(env_signature)
+        if cached is not None:
+            return _enrich_cached_resource_import_metadata(cached), "cache"
+
+    metadata = _load_resource_import_metadata_from_client(client)
+    if metadata.get("connected"):
+        with _METADATA_CACHE_LOCK:
+            _write_resource_import_metadata_cache(env_signature, metadata)
+    return metadata, "live"
+
+
 def _ci_types_from_preview_snapshot(preview: dict[str, Any] | None) -> list[dict[str, Any]]:
     if not isinstance(preview, dict):
         return []
@@ -8870,14 +8960,18 @@ def import_preview_to_cmdb(payload: dict[str, Any]) -> dict[str, Any]:
         client.login()
         report["structureResults"] = _prepare_import_structure(client, payload)
         client.get_relation_types()
-        live_metadata = _load_resource_import_metadata_from_client(client)
+        import_metadata, import_metadata_source = _load_import_preflight_metadata(
+            client,
+            report["structureResults"],
+        )
         type_templates = {
             item["name"]: item
-            for item in live_metadata.get("ciTypes", [])
+            for item in import_metadata.get("ciTypes", [])
             if item.get("name")
         }
         LOGGER.info(
-            "resource-import using live CMDB metadata for import preflight: models=%s",
+            "resource-import using %s CMDB metadata for import preflight: models=%s",
+            import_metadata_source,
             sorted(type_templates.keys()),
         )
         structure_selected_model_map = _build_structure_selected_model_map(payload.get("preview") or {})

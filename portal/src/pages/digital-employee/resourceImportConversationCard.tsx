@@ -468,6 +468,58 @@ function requiredFieldNeedsManualValue(
   return isEmptyValue(getRecordFieldValue(record, field)) && !hasEffectiveAttributeDefault(definition);
 }
 
+function normalizeChoiceToken(value: string) {
+  return String(value || "").trim().toLowerCase().replace(/[\s_\-/:]+/g, "");
+}
+
+function formatChoiceOptions(definition?: ResourceImportCiTypeAttributeDefinition | null) {
+  return (definition?.choices || [])
+    .map((option) => String(option.label || option.value || "").trim())
+    .filter(Boolean)
+    .join(" / ");
+}
+
+function requiredChoiceNeedsManualValue(
+  record: ResourceImportRecord,
+  field: string,
+  definition?: ResourceImportCiTypeAttributeDefinition | null,
+) {
+  if (!definition?.required || !definition.is_choice) {
+    return false;
+  }
+  const value = getRecordFieldValue(record, field);
+  if (isEmptyValue(value)) {
+    return false;
+  }
+  const choices = definition.choices || [];
+  if (!choices.length) {
+    return false;
+  }
+  const normalizedValue = normalizeChoiceToken(value);
+  return !choices.some((option) => {
+    const optionValue = String(option.value || "").trim();
+    const optionLabel = String(option.label || "").trim();
+    return (
+      value === optionValue
+      || normalizeChoiceToken(optionValue) === normalizedValue
+      || (optionLabel && (value === optionLabel || normalizeChoiceToken(optionLabel) === normalizedValue))
+    );
+  });
+}
+
+function getRequiredChoiceManualMessage(
+  record: ResourceImportRecord,
+  field: string,
+  definition?: ResourceImportCiTypeAttributeDefinition | null,
+) {
+  if (!requiredChoiceNeedsManualValue(record, field, definition)) {
+    return "";
+  }
+  const value = getRecordFieldValue(record, field);
+  const optionText = formatChoiceOptions(definition);
+  return `${definition?.alias || getAttributeLabel(field)} 的值 ${value} 不在系统预定义值中${optionText ? `，可选值：${optionText}` : ""}`;
+}
+
 function getRequiredDefaultMessage(
   record: ResourceImportRecord,
   field: string,
@@ -1853,6 +1905,7 @@ function buildMissingRequiredExportRows(
     model: issue.ciType,
     record: issue.recordName,
     source: issue.sourceLabel,
+    issue_type: issue.message.startsWith("缺少必填字段") ? "缺失" : "值不合法",
     missing_field: issue.field,
     message: issue.message,
   }));
@@ -1965,13 +2018,25 @@ function getRecordRequiredModelIssues(
   if (!record.selected || (record.importAction || "create") === "skip") {
     return [];
   }
-  return getRequiredAttributeDefinitions(preview, record.ciType)
-    .filter((definition) => requiredFieldNeedsManualValue(record, definition.name, definition))
-    .map((definition): ResourceImportRecordIssue => ({
-      field: definition.name,
-      level: "blocking",
-      message: `缺少必填字段：${definition.alias || getAttributeLabel(definition.name)}`,
-    }));
+  return getRequiredAttributeDefinitions(preview, record.ciType).flatMap((definition) => {
+    const label = definition.alias || getAttributeLabel(definition.name);
+    if (requiredFieldNeedsManualValue(record, definition.name, definition)) {
+      return [{
+        field: definition.name,
+        level: "blocking",
+        message: `缺少必填字段：${label}`,
+      } satisfies ResourceImportRecordIssue];
+    }
+    const choiceMessage = getRequiredChoiceManualMessage(record, definition.name, definition);
+    if (choiceMessage) {
+      return [{
+        field: definition.name,
+        level: "blocking",
+        message: choiceMessage,
+      } satisfies ResourceImportRecordIssue];
+    }
+    return [];
+  });
 }
 
 function dedupeRecordIssues(issues: ResourceImportRecordIssue[]) {
@@ -2054,7 +2119,7 @@ function getRequiredModelBlockingMessage(issues: ResourceImportRequiredIssue[]) 
     return "";
   }
   const recordCount = new Set(issues.map((issue) => issue.previewKey)).size;
-  return `当前数据缺少 CMDB 模型必填字段：${recordCount} 条记录、${issues.length} 个字段需要补齐。`;
+  return `当前数据存在 CMDB 模型必填字段问题：${recordCount} 条记录、${issues.length} 个字段需要补齐或修正。`;
 }
 
 function getMetadataBlockingMessage(preview: ResourceImportPreview | null | undefined) {
@@ -2107,6 +2172,9 @@ function fieldNeedsAttention(
   if (requiredFieldNeedsManualValue(record, field, definition)) {
     return true;
   }
+  if (requiredChoiceNeedsManualValue(record, field, definition)) {
+    return true;
+  }
   const value = field === "name" ? record.name : record.attributes?.[field];
   if (field === "name" && isEmptyValue(value)) {
     return true;
@@ -2125,6 +2193,10 @@ function getFieldAttentionMessage(
   }
   if (requiredFieldNeedsManualValue(record, field, definition)) {
     return `${definition?.alias || getAttributeLabel(field)} 为空，请补充`;
+  }
+  const choiceMessage = getRequiredChoiceManualMessage(record, field, definition);
+  if (choiceMessage) {
+    return choiceMessage;
   }
   const value = field === "name" ? record.name : record.attributes?.[field];
   if (field === "name" && isEmptyValue(value)) {
@@ -3629,7 +3701,7 @@ function ConfirmStage({
             ))}
           </ul>
           {requiredModelIssues.length > 10 ? (
-            <div>还有 {requiredModelIssues.length - 10} 个缺失字段，请在“统一编辑全部数据”中补齐。</div>
+            <div>还有 {requiredModelIssues.length - 10} 个字段问题，请在“统一编辑全部数据”中补齐或修正。</div>
           ) : null}
         </div>
       ) : null}
