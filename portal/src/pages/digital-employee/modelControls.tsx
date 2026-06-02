@@ -229,6 +229,7 @@ export function AdvancedModelEntry({
   isAppMarketActive,
   isTracesActive,
   isAlarmRegistryActive,
+  isAppArtifactsActive,
   isChannelsActive,
   isInboxActive,
   onOpenNlCustomization,
@@ -246,6 +247,7 @@ export function AdvancedModelEntry({
   onOpenCli,
   onOpenTraces,
   onOpenAlarmRegistry,
+  onOpenAppArtifacts,
   onOpenChannels,
   onOpenInbox,
 }: {
@@ -266,6 +268,7 @@ export function AdvancedModelEntry({
   isAppMarketActive?: boolean;
   isTracesActive?: boolean;
   isAlarmRegistryActive?: boolean;
+  isAppArtifactsActive?: boolean;
   isChannelsActive?: boolean;
   isInboxActive?: boolean;
   onOpenNlCustomization: () => void;
@@ -283,6 +286,7 @@ export function AdvancedModelEntry({
   onOpenCli: () => void;
   onOpenTraces: () => void;
   onOpenAlarmRegistry: () => void;
+  onOpenAppArtifacts: () => void;
   onOpenChannels: () => void;
   onOpenInbox: () => void;
 }) {
@@ -473,6 +477,19 @@ export function AdvancedModelEntry({
           <div className="sidebar-advanced-item-name">应用中心</div>
           <div className="sidebar-advanced-item-desc">已上架的定制应用</div>
           <div className="sidebar-advanced-item-meta">浏览 / 启动 / 统一入口</div>
+        </button>
+        <button
+          className={isAppArtifactsActive ? "sidebar-advanced-item active" : "sidebar-advanced-item"}
+          onClick={onOpenAppArtifacts}
+        >
+          <div className="sidebar-advanced-item-icon">
+            <span role="img" aria-label="app-artifacts">
+              🎨
+            </span>
+          </div>
+          <div className="sidebar-advanced-item-name">成果应用</div>
+          <div className="sidebar-advanced-item-desc">AI 生成的页面与卡片</div>
+          <div className="sidebar-advanced-item-meta">发布 / 预览 / 管理</div>
         </button>
       </div>
 

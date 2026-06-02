@@ -162,6 +162,10 @@ const AlarmRegistryPanel = lazyNamed(
   () => import("./digital-employee/alarmRegistryPanel"),
   "AlarmRegistryPanel",
 );
+const AppArtifactsPanel = lazyNamed(
+  () => import("./digital-employee/appArtifactsPanel"),
+  "AppArtifactsPanel",
+);
 const ChannelsPanel = lazyNamed(
   () => import("./digital-employee/channelsPanel"),
   "ChannelsPanel",
@@ -233,6 +237,7 @@ export default function DigitalEmployeePage({
   const isAppMarketMode = activeAdvancedPanel === "app-market";
   const isTracesMode = activeAdvancedPanel === "traces";
   const isAlarmRegistryMode = activeAdvancedPanel === "alarm-registry";
+  const isAppArtifactsMode = activeAdvancedPanel === "app-artifacts";
   const isChannelsMode = activeAdvancedPanel === "channels";
   const isInboxMode = activeAdvancedPanel === "inbox";
   const isPortalHome = !selectedEmployee;
@@ -1492,6 +1497,7 @@ export default function DigitalEmployeePage({
             isAppMarketActive={isAppMarketMode}
             isTracesActive={isTracesMode}
             isAlarmRegistryActive={isAlarmRegistryMode}
+            isAppArtifactsActive={isAppArtifactsMode}
             isChannelsActive={isChannelsMode}
             isInboxActive={isInboxMode}
             onOpenTraces={() =>
@@ -1502,6 +1508,11 @@ export default function DigitalEmployeePage({
             onOpenAlarmRegistry={() =>
               updateCurrentEmployeeRoute({
                 panel: "alarm-registry",
+              })
+            }
+            onOpenAppArtifacts={() =>
+              updateCurrentEmployeeRoute({
+                panel: "app-artifacts",
               })
             }
             onOpenChannels={() =>
@@ -1561,7 +1572,7 @@ export default function DigitalEmployeePage({
 
         <div
           className={
-            isModelConfigMode || isSettingsMode || isTokenUsageMode || isOpsExpertMode || isMcpMode || isSkillPoolMode || isFdeWorkbenchMode || isKnowledgeBaseMode || isInspirationMode || isCliMode || isResourceImportMode || isNlCustomizationMode || isAppMarketMode || isTracesMode || isAlarmRegistryMode || isChannelsMode || isInboxMode
+            isModelConfigMode || isSettingsMode || isTokenUsageMode || isOpsExpertMode || isMcpMode || isSkillPoolMode || isFdeWorkbenchMode || isKnowledgeBaseMode || isInspirationMode || isCliMode || isResourceImportMode || isNlCustomizationMode || isAppMarketMode || isTracesMode || isAlarmRegistryMode || isAppArtifactsMode || isChannelsMode || isInboxMode
               ? `main-content advanced-page-mode${isKnowledgeBaseMode ? " knowledge-base-page-mode" : ""}`
               : currentView === "chat"
                 ? "main-content"
@@ -1681,6 +1692,8 @@ export default function DigitalEmployeePage({
                 });
               }
             }} />)
+          ) : isAppArtifactsMode ? (
+            renderDeferredPanel(<AppArtifactsPanel />)
           ) : isChannelsMode ? (
             renderDeferredPanel(<ChannelsPanel />)
           ) : isInboxMode ? (
