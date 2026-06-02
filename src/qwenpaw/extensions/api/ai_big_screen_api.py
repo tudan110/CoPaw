@@ -76,13 +76,13 @@ def get_ai_big_screen(screen_id: str) -> AiBigScreenResponse:
 
 
 @router.post("/{screen_id}/patch", response_model=AiBigScreenPatchResponse)
-def patch_ai_big_screen(
+async def patch_ai_big_screen(
     screen_id: str,
     payload: AiBigScreenPatchRequest,
 ) -> AiBigScreenPatchResponse:
     try:
         return AiBigScreenPatchResponse(
-            **patch_screen_asset(screen_id=screen_id, request=payload),
+            **await patch_screen_asset(screen_id=screen_id, request=payload),
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

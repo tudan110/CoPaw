@@ -1,9 +1,12 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
+import asyncio
+
 from fastapi import FastAPI
 
 from qwenpaw.extensions import ai_big_screen_registry as registry
+from qwenpaw.extensions.api import ai_big_screen_service
 from qwenpaw.extensions.api.ai_big_screen_api import (
     generate_ai_big_screen_draft,
     get_ai_big_screen,
@@ -28,6 +31,17 @@ def _patch_registry_path(monkeypatch, tmp_path) -> None:
         "AI_BIG_SCREEN_REGISTRY_PATH",
         tmp_path / "ai_big_screen" / "registry.json",
     )
+
+
+def _patch_ai_plan(monkeypatch, plan: dict) -> None:
+    async def _fake_plan(**kwargs):
+        return ai_big_screen_service._normalize_patch_plan(
+            plan,
+            screen=kwargs["screen"],
+            selected_component_id=kwargs["selected_component_id"],
+        )
+
+    monkeypatch.setattr(ai_big_screen_service, "_build_patch_plan_with_ai", _fake_plan)
 
 
 def test_ai_big_screen_generate_persist_publish_and_get(monkeypatch, tmp_path) -> None:
@@ -63,7 +77,8 @@ def test_ai_big_screen_generate_persist_publish_and_get(monkeypatch, tmp_path) -
     )
     assert publish_response.screen["status"] == "published"
     target_types = {item["type"] for item in publish_response.publishTargets}
-    assert {"external-link", "iframe"}.issubset(target_types)
+    assert {"external-link", "iframe", "portal-center"}.issubset(target_types)
+    assert any(item["url"] == "/big-screens" for item in publish_response.publishTargets)
 
     detail_response = get_ai_big_screen(screen_id)
     detail = detail_response.screen
@@ -74,6 +89,22 @@ def test_ai_big_screen_generate_persist_publish_and_get(monkeypatch, tmp_path) -
 
 def test_ai_big_screen_patch_component_visual_config(monkeypatch, tmp_path) -> None:
     _patch_registry_path(monkeypatch, tmp_path)
+    _patch_ai_plan(
+        monkeypatch,
+        {
+            "summary": "颜色调整为暖色；标题改为今日重点风险",
+            "operations": [
+                {
+                    "type": "setComponentPalette",
+                    "palette": "warm",
+                },
+                {
+                    "type": "setComponentTitle",
+                    "title": "今日重点风险",
+                },
+            ],
+        },
+    )
 
     draft_screen = generate_ai_big_screen_draft(
         AiBigScreenDraftRequest(
@@ -87,13 +118,15 @@ def test_ai_big_screen_patch_component_visual_config(monkeypatch, tmp_path) -> N
 
     screen_id = saved_screen["id"]
     selected_component_id = saved_screen["components"][0]["id"]
-    patch_response = patch_ai_big_screen(
-        screen_id,
-        AiBigScreenPatchRequest(
-            baseVersionId="v1",
-            selectedComponentId=selected_component_id,
-            instruction="颜色暖一点，标题改成今日重点风险",
-            requestedBy="portal-test",
+    patch_response = asyncio.run(
+        patch_ai_big_screen(
+            screen_id,
+            AiBigScreenPatchRequest(
+                baseVersionId="v1",
+                selectedComponentId=selected_component_id,
+                instruction="颜色暖一点，标题改成今日重点风险",
+                requestedBy="portal-test",
+            ),
         ),
     )
 
@@ -113,6 +146,65 @@ def test_ai_big_screen_patch_component_visual_config(monkeypatch, tmp_path) -> N
     assert (
         patched_screen["versions"][0]["configSnapshot"]["components"][0]["title"]
         != selected_component["title"]
+    )
+
+
+def test_ai_big_screen_patch_aesthetic_instruction_changes_visible_style(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    _patch_registry_path(monkeypatch, tmp_path)
+    _patch_ai_plan(
+        monkeypatch,
+        {
+            "summary": "视觉风格调整为领导驾驶舱风格",
+            "operations": [
+                {
+                    "type": "setThemePalette",
+                    "palette": "executive",
+                },
+                {
+                    "type": "setComponentPalette",
+                    "componentIds": "*",
+                    "palette": "executive",
+                    "emphasis": "strong",
+                },
+            ],
+        },
+    )
+
+    draft_screen = generate_ai_big_screen_draft(
+        AiBigScreenDraftRequest(
+            prompt="领导驾驶舱，关注告警、工单、资源",
+            requestedBy="portal-test",
+        ),
+    ).screen
+    saved_screen = save_ai_big_screen(
+        AiBigScreenSaveRequest(screen=draft_screen, requestedBy="portal-test"),
+    ).screen
+
+    patch_response = asyncio.run(
+        patch_ai_big_screen(
+            saved_screen["id"],
+            AiBigScreenPatchRequest(
+                baseVersionId="v1",
+                selectedComponentId=saved_screen["components"][0]["id"],
+                instruction="这个大屏太丑了，帮我修改一下颜色，让它更适合领导看",
+                requestedBy="portal-test",
+            ),
+        ),
+    )
+
+    patched_screen = patch_response.screen
+    assert "视觉风格调整为领导驾驶舱风格" in patch_response.summary
+    assert patched_screen["theme"]["palette"] == "executive"
+    assert all(
+        item["visualConfig"]["palette"] == "executive"
+        for item in patched_screen["components"]
+    )
+    assert all(
+        item["visualConfig"]["emphasis"] == "strong"
+        for item in patched_screen["components"]
     )
 
 

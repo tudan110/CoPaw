@@ -7,6 +7,7 @@ import { lazyWithRetry } from "./utils/lazyWithRetry";
 const AgentCenterPage = lazyWithRetry(() => import("./pages/AgentCenterPage"));
 const KnowledgeBaseEmbedPage = lazyWithRetry(() => import("./pages/KnowledgeBaseEmbedPage"));
 const AiBigScreenViewPage = lazyWithRetry(() => import("./pages/AiBigScreenViewPage"));
+const AiBigScreenGalleryPage = lazyWithRetry(() => import("./pages/AiBigScreenGalleryPage"));
 
 const routeFallback = (
   <div
@@ -53,6 +54,10 @@ export default function App() {
       <Route
         path="/big-screen/:screenId"
         element={renderDeferredPage(<AiBigScreenViewPage />)}
+      />
+      <Route
+        path="/big-screens"
+        element={renderDeferredPage(<AiBigScreenGalleryPage />)}
       />
       <Route path="/agent-center" element={renderDeferredPage(<AgentCenterPage />)} />
       <Route

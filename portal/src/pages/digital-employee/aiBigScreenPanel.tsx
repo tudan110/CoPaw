@@ -157,7 +157,7 @@ export function AiBigScreenPanel() {
         visibility: "internal",
       });
       setScreen(response.screen);
-      setNotice("大屏已发布，可以通过链接打开或嵌入其他系统。");
+      setNotice("大屏已发布，已进入展示中心，也可以通过链接打开或嵌入其他系统。");
       await loadCatalog();
     } catch (requestError) {
       setError(extractErrorMessage(requestError) || "发布大屏失败");
@@ -171,6 +171,10 @@ export function AiBigScreenPanel() {
       return;
     }
     window.open(externalTarget.url, "_blank", "noopener,noreferrer");
+  };
+
+  const handleOpenGallery = () => {
+    window.open("/big-screens", "_blank", "noopener,noreferrer");
   };
 
   return (
@@ -210,7 +214,7 @@ export function AiBigScreenPanel() {
               id="ai-big-screen-edit"
               value={editInstruction}
               onChange={(event) => setEditInstruction(event.target.value)}
-              placeholder="例如：颜色暖一点，标题改成今日重点风险"
+              placeholder="例如：这个大屏太丑了，帮我调成更适合领导看的风格"
               rows={4}
             />
             <button
@@ -247,6 +251,13 @@ export function AiBigScreenPanel() {
               onClick={handleOpenPublished}
             >
               打开发布链接
+            </button>
+            <button
+              type="button"
+              className="secondary-btn"
+              onClick={handleOpenGallery}
+            >
+              打开展示中心
             </button>
           </section>
 

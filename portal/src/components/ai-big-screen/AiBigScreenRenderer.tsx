@@ -46,7 +46,13 @@ function buildChartOption(component: AiBigScreenComponent) {
   const series = numberArray(data.series);
   const isBar = component.type === "bar-chart";
   const palette = String(component.visualConfig?.palette || "professional");
-  const color = palette === "warm" ? "#f97316" : palette === "cool" ? "#38bdf8" : "#60a5fa";
+  const color = palette === "warm"
+    ? "#f97316"
+    : palette === "cool"
+      ? "#38bdf8"
+      : palette === "executive"
+        ? "#f59e0b"
+        : "#60a5fa";
 
   return {
     backgroundColor: "transparent",
@@ -75,6 +81,11 @@ function buildChartOption(component: AiBigScreenComponent) {
       },
     ],
   };
+}
+
+function safeClassToken(value: unknown, fallback: string) {
+  const token = String(value || fallback).toLowerCase().replace(/[^a-z0-9_-]/g, "");
+  return token || fallback;
 }
 
 function renderMetric(component: AiBigScreenComponent) {
@@ -156,6 +167,7 @@ export function AiBigScreenRenderer({
   interactive = false,
   onSelectComponent,
 }: AiBigScreenRendererProps) {
+  const themePalette = safeClassToken(screen.theme?.palette, "professional");
   const sortedComponents = useMemo(
     () => [...(screen.components || [])].sort((left, right) => {
       const leftPosition = left.layoutPosition || {};
@@ -167,7 +179,7 @@ export function AiBigScreenRenderer({
   );
 
   return (
-    <section className="ai-big-screen-shell">
+    <section className={`ai-big-screen-shell theme-${themePalette}`}>
       <header className="ai-big-screen-header">
         <div>
           <p>AI Big Screen</p>
@@ -182,11 +194,15 @@ export function AiBigScreenRenderer({
       <div className="ai-big-screen-canvas">
         {sortedComponents.map((component) => {
           const selected = component.id === selectedComponentId;
+          const componentPalette = safeClassToken(component.visualConfig?.palette, "professional");
+          const componentEmphasis = safeClassToken(component.visualConfig?.emphasis, "standard");
           return (
             <article
               key={component.id}
               className={[
                 "ai-big-screen-card",
+                `palette-${componentPalette}`,
+                `emphasis-${componentEmphasis}`,
                 selected ? "selected" : "",
                 interactive ? "interactive" : "",
               ].filter(Boolean).join(" ")}

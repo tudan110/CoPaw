@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import copy
+import json
 import re
 import uuid
 from datetime import datetime, timedelta, timezone, tzinfo
 from typing import Any, Mapping
 
+from qwenpaw.exceptions import ProviderError
 from qwenpaw.extensions import ai_big_screen_registry as registry
 from qwenpaw.extensions.api.ai_big_screen_models import (
     AiBigScreenDraftRequest,
@@ -216,6 +218,13 @@ def publish_screen_asset(
     normalized_visibility = str(visibility or "internal").strip() or "internal"
     publish_targets = [
         {
+            "type": "portal-center",
+            "url": "/big-screens",
+            "visibility": normalized_visibility,
+            "createdAt": now,
+            "createdBy": requested_by,
+        },
+        {
             "type": "external-link",
             "url": f"/big-screen/{screen_id}",
             "visibility": normalized_visibility,
@@ -248,7 +257,15 @@ def publish_screen_asset(
     return {"screen": saved, "publishTargets": publish_targets}
 
 
-def patch_screen_asset(
+AI_BIG_SCREEN_CONFIGURE_LLM_MESSAGE = (
+    "未配置默认大模型，请先到“模型配置”里设置默认 LLM 后再修改 AI 大屏。"
+)
+
+_ALLOWED_PALETTES = {"professional", "warm", "cool", "executive"}
+_ALLOWED_COMPONENT_TYPES = {"metric-card", "line-chart", "bar-chart", "table", "topology", "text"}
+
+
+async def patch_screen_asset(
     *,
     screen_id: str,
     request: AiBigScreenPatchRequest,
@@ -264,47 +281,16 @@ def patch_screen_asset(
 
     selected_component_id = str(request.selectedComponentId or "").strip()
     selected_index = _find_component_index(components, selected_component_id)
-    if selected_index < 0:
+    if selected_component_id and selected_index < 0:
         raise ValueError(f"未找到组件：{selected_component_id}")
 
-    component = dict(components[selected_index])
-    visual_config = (
-        dict(component.get("visualConfig"))
-        if isinstance(component.get("visualConfig"), dict)
-        else {}
+    plan = await _build_patch_plan_with_ai(
+        screen=screen,
+        selected_component_id=selected_component_id,
+        instruction=instruction,
     )
-    query_params = (
-        dict(component.get("queryParams"))
-        if isinstance(component.get("queryParams"), dict)
-        else {}
-    )
-    changes: list[str] = []
+    summary = _apply_patch_plan(screen=screen, plan=plan)
 
-    if "暖色" in instruction or "暖一点" in instruction or "暖" in instruction:
-        visual_config["palette"] = "warm"
-        changes.append("颜色调整为暖色")
-    if "冷色" in instruction:
-        visual_config["palette"] = "cool"
-        changes.append("颜色调整为冷色")
-    if "柱状" in instruction and component.get("type") in {"line-chart", "bar-chart"}:
-        component["type"] = "bar-chart"
-        changes.append("图表类型调整为柱状图")
-    if "折线" in instruction and component.get("type") in {"line-chart", "bar-chart"}:
-        component["type"] = "line-chart"
-        changes.append("图表类型调整为折线图")
-    if "最近 7 天" in instruction or "近7天" in instruction or "7天" in instruction:
-        query_params["timeRange"] = "last_7_days"
-        changes.append("时间范围调整为最近 7 天")
-
-    next_title = _extract_title_instruction(instruction)
-    if next_title:
-        component["title"] = next_title
-        changes.append(f"标题改为{next_title}")
-
-    component["visualConfig"] = visual_config
-    component["queryParams"] = query_params
-    components[selected_index] = component
-    screen["components"] = components
     screen["aiConversationContext"] = {
         **(
             screen.get("aiConversationContext")
@@ -316,7 +302,8 @@ def patch_screen_asset(
     }
 
     version_id = f"v{len(screen.get('versions') or []) + 1}"
-    summary = "；".join(changes) if changes else "记录自然语言修改请求，配置保持不变"
+    if not summary:
+        summary = "AI 已理解请求，但未生成可执行的大屏配置变更"
     version = _build_version(
         screen=screen,
         version_id=version_id,
@@ -326,6 +313,99 @@ def patch_screen_asset(
     screen["versions"] = [*(screen.get("versions") or []), version]
     saved = registry.save_screen(screen=screen, requested_by=request.requestedBy)
     return {"screen": saved, "version": version, "summary": summary}
+
+
+async def _build_patch_plan_with_ai(
+    *,
+    screen: Mapping[str, Any],
+    selected_component_id: str,
+    instruction: str,
+) -> dict[str, Any]:
+    from qwenpaw.agents.model_factory import create_model_and_formatter
+
+    component_catalog = [
+        {
+            "id": str(item.get("id") or ""),
+            "type": str(item.get("type") or ""),
+            "title": str(item.get("title") or ""),
+            "pluginId": str(item.get("pluginId") or ""),
+            "visualConfig": copy.deepcopy(item.get("visualConfig") or {}),
+            "queryParams": copy.deepcopy(item.get("queryParams") or {}),
+        }
+        for item in screen.get("components", [])
+        if isinstance(item, dict)
+    ]
+    messages = [
+        {
+            "role": "system",
+            "content": (
+                "你是 AI 运维大屏配置设计助手。"
+                "你只输出严格 JSON，不要输出 Markdown、代码块或解释。"
+                "你的任务是根据用户自然语言，对当前大屏生成结构化 patch plan，"
+                "由后端执行，不允许生成前端源码、SQL 或任意脚本。"
+                "JSON 固定字段：summary, operations。"
+                "operations 是数组，每项 type 只能是："
+                "setThemePalette、setComponentPalette、setComponentType、"
+                "setComponentTitle、setComponentQueryParams。"
+                "palette 只能是 professional、warm、cool、executive；"
+                "component type 只能是 metric-card、line-chart、bar-chart、table、topology、text。"
+                "componentIds 必须来自用户给定组件清单；如果用户在说整个大屏，"
+                "可以对多个 componentIds 生效。"
+                "如果用户说太丑、美化、高级、领导看、换颜色但没指定具体颜色，"
+                "优先使用 executive。"
+            ),
+        },
+        {
+            "role": "user",
+            "content": json.dumps(
+                {
+                    "instruction": instruction,
+                    "selectedComponentId": selected_component_id,
+                    "screen": {
+                        "id": screen.get("id"),
+                        "name": screen.get("name"),
+                        "theme": screen.get("theme"),
+                        "components": component_catalog,
+                    },
+                    "outputExample": {
+                        "summary": "视觉风格调整为领导驾驶舱风格",
+                        "operations": [
+                            {
+                                "type": "setThemePalette",
+                                "palette": "executive",
+                            },
+                            {
+                                "type": "setComponentPalette",
+                                "componentIds": ["component-1"],
+                                "palette": "executive",
+                                "emphasis": "strong",
+                            },
+                        ],
+                    },
+                },
+                ensure_ascii=False,
+            ),
+        },
+    ]
+
+    try:
+        model, _ = create_model_and_formatter()
+    except ProviderError as exc:
+        raise _map_provider_error(exc) from exc
+    except Exception as exc:
+        raise ValueError(f"默认大模型初始化失败：{_extract_exception_message(exc)}") from exc
+
+    try:
+        response_text = await _consume_model_response(model, messages)
+    except ProviderError as exc:
+        raise ValueError(f"默认大模型调用失败：{_extract_exception_message(exc)}") from exc
+    except Exception as exc:
+        raise ValueError(f"默认大模型调用失败：{_extract_exception_message(exc)}") from exc
+
+    parsed = _parse_llm_json_payload(response_text)
+    if not isinstance(parsed, dict):
+        raise ValueError("默认大模型未返回可执行的大屏配置 JSON，请重新描述修改要求。")
+    return _normalize_patch_plan(parsed, screen=screen, selected_component_id=selected_component_id)
 
 
 def _build_components(prompt: str) -> list[dict[str, Any]]:
@@ -452,11 +532,251 @@ def _find_component_index(components: list[Any], component_id: str) -> int:
     return -1
 
 
-def _extract_title_instruction(instruction: str) -> str:
-    match = re.search(r"标题(?:改成|改为|换成)\s*([^，,。；;]+)", instruction)
-    if not match:
+def _map_provider_error(exc: ProviderError) -> ValueError:
+    message = _extract_exception_message(exc)
+    if "No active model configured" in message:
+        return ValueError(AI_BIG_SCREEN_CONFIGURE_LLM_MESSAGE)
+    return ValueError(f"默认大模型不可用：{message}")
+
+
+async def _consume_model_response(model: Any, messages: list[dict[str, str]]) -> str:
+    response = await model(messages)
+    if hasattr(response, "__aiter__"):
+        accumulated = ""
+        async for chunk in response:
+            text = _extract_model_text(chunk)
+            if text:
+                accumulated = text
+        return accumulated
+    return _extract_model_text(response)
+
+
+def _extract_model_text(payload: Any) -> str:
+    if payload is None:
         return ""
-    return match.group(1).strip().strip("\"'")
+    if isinstance(payload, str):
+        return payload
+    if isinstance(payload, list):
+        return "\n".join(filter(None, (_extract_model_text(item) for item in payload)))
+    if isinstance(payload, dict):
+        for key in ("text", "content", "response", "message"):
+            value = payload.get(key)
+            if value:
+                return _extract_model_text(value)
+        return ""
+
+    text = getattr(payload, "text", None)
+    if text:
+        return _extract_model_text(text)
+    content = getattr(payload, "content", None)
+    if content:
+        return _extract_model_text(content)
+    message = getattr(payload, "message", None)
+    if message:
+        return _extract_model_text(message)
+    return str(payload)
+
+
+def _extract_exception_message(exc: Exception) -> str:
+    message = str(exc).strip()
+    return message or exc.__class__.__name__
+
+
+def _parse_llm_json_payload(raw_text: str) -> dict[str, Any] | None:
+    text = str(raw_text or "").strip()
+    if not text:
+        return None
+
+    fenced_match = re.search(r"```(?:json)?\s*(\{.*\})\s*```", text, flags=re.DOTALL)
+    candidate = fenced_match.group(1) if fenced_match else text
+    if not candidate.startswith("{"):
+        start = candidate.find("{")
+        end = candidate.rfind("}")
+        if start >= 0 and end > start:
+            candidate = candidate[start : end + 1]
+    try:
+        parsed = json.loads(candidate)
+    except json.JSONDecodeError:
+        return None
+    return parsed if isinstance(parsed, dict) else None
+
+
+def _normalize_patch_plan(
+    plan: Mapping[str, Any],
+    *,
+    screen: Mapping[str, Any],
+    selected_component_id: str,
+) -> dict[str, Any]:
+    allowed_component_ids = {
+        str(item.get("id") or "")
+        for item in screen.get("components", [])
+        if isinstance(item, dict) and str(item.get("id") or "")
+    }
+    operations: list[dict[str, Any]] = []
+    raw_operations = plan.get("operations")
+    for raw_operation in raw_operations if isinstance(raw_operations, list) else []:
+        if not isinstance(raw_operation, dict):
+            continue
+        operation_type = str(raw_operation.get("type") or "").strip()
+        normalized = _normalize_patch_operation(
+            operation_type=operation_type,
+            operation=raw_operation,
+            allowed_component_ids=allowed_component_ids,
+            selected_component_id=selected_component_id,
+        )
+        if normalized:
+            operations.append(normalized)
+    return {
+        "summary": str(plan.get("summary") or "").strip(),
+        "operations": operations,
+    }
+
+
+def _normalize_patch_operation(
+    *,
+    operation_type: str,
+    operation: Mapping[str, Any],
+    allowed_component_ids: set[str],
+    selected_component_id: str,
+) -> dict[str, Any]:
+    if operation_type == "setThemePalette":
+        palette = _normalize_palette(operation.get("palette"))
+        return {"type": operation_type, "palette": palette} if palette else {}
+
+    component_ids = _normalize_component_ids(
+        operation.get("componentIds"),
+        allowed_component_ids=allowed_component_ids,
+        selected_component_id=selected_component_id,
+    )
+    if operation_type == "setComponentPalette":
+        palette = _normalize_palette(operation.get("palette"))
+        if not palette or not component_ids:
+            return {}
+        emphasis = str(operation.get("emphasis") or "").strip()
+        return {
+            "type": operation_type,
+            "componentIds": component_ids,
+            "palette": palette,
+            "emphasis": emphasis if emphasis in {"standard", "strong"} else "",
+        }
+    if operation_type == "setComponentType":
+        component_type = str(operation.get("componentType") or "").strip()
+        if component_type not in _ALLOWED_COMPONENT_TYPES or not component_ids:
+            return {}
+        return {
+            "type": operation_type,
+            "componentIds": component_ids,
+            "componentType": component_type,
+        }
+    if operation_type == "setComponentTitle":
+        title = str(operation.get("title") or "").strip()
+        if not title or not component_ids:
+            return {}
+        return {"type": operation_type, "componentIds": component_ids[:1], "title": title[:80]}
+    if operation_type == "setComponentQueryParams":
+        query_params = operation.get("queryParams")
+        if not isinstance(query_params, dict) or not component_ids:
+            return {}
+        return {
+            "type": operation_type,
+            "componentIds": component_ids,
+            "queryParams": copy.deepcopy(query_params),
+        }
+    return {}
+
+
+def _normalize_component_ids(
+    raw_component_ids: Any,
+    *,
+    allowed_component_ids: set[str],
+    selected_component_id: str,
+) -> list[str]:
+    if raw_component_ids == "*":
+        return sorted(allowed_component_ids)
+    if isinstance(raw_component_ids, str):
+        values = [raw_component_ids]
+    elif isinstance(raw_component_ids, list):
+        values = [str(item) for item in raw_component_ids]
+    else:
+        values = [selected_component_id] if selected_component_id else []
+    return [
+        item
+        for item in values
+        if item in allowed_component_ids
+    ]
+
+
+def _normalize_palette(value: Any) -> str:
+    palette = str(value or "").strip()
+    return palette if palette in _ALLOWED_PALETTES else ""
+
+
+def _apply_patch_plan(*, screen: dict[str, Any], plan: Mapping[str, Any]) -> str:
+    components = screen.get("components")
+    if not isinstance(components, list):
+        return ""
+
+    for operation in plan.get("operations", []) if isinstance(plan.get("operations"), list) else []:
+        if not isinstance(operation, dict):
+            continue
+        operation_type = operation.get("type")
+        if operation_type == "setThemePalette":
+            theme = screen.get("theme")
+            screen["theme"] = dict(theme) if isinstance(theme, dict) else {}
+            screen["theme"]["palette"] = operation.get("palette")
+            continue
+
+        component_ids = operation.get("componentIds")
+        target_ids = component_ids if isinstance(component_ids, list) else []
+        for index, component in enumerate(components):
+            if not isinstance(component, dict):
+                continue
+            if str(component.get("id") or "") not in target_ids:
+                continue
+            components[index] = _apply_component_operation(component, operation)
+
+    screen["components"] = components
+    return str(plan.get("summary") or "").strip()
+
+
+def _apply_component_operation(
+    component: Mapping[str, Any],
+    operation: Mapping[str, Any],
+) -> dict[str, Any]:
+    next_component = dict(component)
+    operation_type = operation.get("type")
+    if operation_type == "setComponentPalette":
+        visual_config = _component_visual_config(next_component)
+        visual_config["palette"] = operation.get("palette")
+        emphasis = str(operation.get("emphasis") or "").strip()
+        if emphasis:
+            visual_config["emphasis"] = emphasis
+        next_component["visualConfig"] = visual_config
+    elif operation_type == "setComponentType":
+        component_type = str(operation.get("componentType") or "").strip()
+        if component_type in _ALLOWED_COMPONENT_TYPES:
+            next_component["type"] = component_type
+    elif operation_type == "setComponentTitle":
+        title = str(operation.get("title") or "").strip()
+        if title:
+            next_component["title"] = title
+    elif operation_type == "setComponentQueryParams":
+        query_params = _component_query_params(next_component)
+        patch_params = operation.get("queryParams")
+        if isinstance(patch_params, dict):
+            query_params.update(copy.deepcopy(patch_params))
+            next_component["queryParams"] = query_params
+    return next_component
+
+
+def _component_visual_config(component: Mapping[str, Any]) -> dict[str, Any]:
+    visual_config = component.get("visualConfig")
+    return dict(visual_config) if isinstance(visual_config, dict) else {}
+
+
+def _component_query_params(component: Mapping[str, Any]) -> dict[str, Any]:
+    query_params = component.get("queryParams")
+    return dict(query_params) if isinstance(query_params, dict) else {}
 
 
 def _validate_screen(screen: Mapping[str, Any]) -> None:
