@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+import time
 
 from fastapi import FastAPI
 
@@ -70,8 +71,16 @@ def _default_draft_plan() -> dict:
                 "queryParams": {"scope": "all"},
                 "layoutPosition": {"x": 0, "y": 4, "w": 4, "h": 3},
             },
+            {
+                "title": "今日工单",
+                "description": "今日告警工单和处置状态。",
+                "capabilityId": "workorders",
+                "visualType": "table",
+                "queryParams": {"timeRange": "today", "limit": 20},
+                "layoutPosition": {"x": 4, "y": 4, "w": 8, "h": 3},
+            },
         ],
-        "summary": "已组合系统日志、系统告警和 CMDB 资源信息。",
+        "summary": "已组合系统日志、系统告警、今日工单和 CMDB 资源信息。",
     }
 
 
@@ -110,6 +119,16 @@ def _patch_draft_plan(monkeypatch, plan: dict | None = None) -> list[tuple[str, 
                 "value": 32,
                 "unit": "项",
                 "trend": "来自 CMDB/资源接口",
+            }
+        if capability_id == "workorders":
+            return {
+                "source": "portal-alarm-workorder-api",
+                "sourceStatus": "live",
+                "columns": [
+                    {"key": "workorderNo", "label": "工单号"},
+                    {"key": "title", "label": "标题"},
+                ],
+                "rows": [{"workorderNo": "WO-1", "title": "CPU 高"}],
             }
         return {"source": "unsupported", "sourceStatus": "unavailable"}
 
@@ -301,10 +320,11 @@ def test_ai_big_screen_plugins_route_returns_builtin_catalog() -> None:
 
     capabilities = response.items
     domains = {item["domain"] for item in capabilities}
-    assert {"log", "alarm", "resource"}.issubset(domains)
+    assert {"log", "alarm", "workorder", "resource"}.issubset(domains)
     capability_ids = {item["id"] for item in capabilities}
     assert "system-logs" in capability_ids
     assert "real-alarms" in capability_ids
+    assert "workorders" in capability_ids
     assert "cmdb-resources" in capability_ids
 
 
@@ -321,7 +341,7 @@ def test_ai_big_screen_draft_combines_logs_alarms_and_cmdb(monkeypatch, tmp_path
 
     capability_ids = {item["pluginId"] for item in draft_screen["dataBindings"]}
     assert {"system-logs", "real-alarms", "cmdb-resources"}.issubset(capability_ids)
-    assert {item[0] for item in calls} == {"system-logs", "real-alarms", "cmdb-resources"}
+    assert {"system-logs", "real-alarms", "cmdb-resources"}.issubset({item[0] for item in calls})
     assert any(
         capability_id == "system-logs" and query_params["lookbackMinutes"] == 15
         for capability_id, query_params in calls
@@ -374,6 +394,95 @@ def test_ai_big_screen_real_alarm_capability_uses_minute_window(monkeypatch) -> 
     assert data["source"] == "portal-real-alarm-api"
     assert data["sourceStatus"] == "live"
     assert data["rows"][0]["title"] == "CPU 高"
+
+
+def test_ai_big_screen_workorder_capability_uses_alarm_workorder_provider(monkeypatch) -> None:
+    captured = {}
+
+    def _fake_query_alarm_workorders(limit):
+        captured["limit"] = limit
+        return {
+            "source": "live",
+            "total": 1,
+            "items": [
+                {
+                    "workorderNo": "WO-20260602-001",
+                    "title": "CPU 高",
+                    "status": "待处理",
+                    "severity": "严重",
+                    "eventTime": "2026-06-02 16:05:00",
+                },
+            ],
+        }
+
+    monkeypatch.setattr(
+        "qwenpaw.extensions.integrations.alarm_workorders.query_alarm_workorders.query_alarm_workorders",
+        _fake_query_alarm_workorders,
+    )
+
+    data = ai_big_screen_service._execute_data_capability(
+        "workorders",
+        {"timeRange": "today", "limit": 6},
+    )
+
+    assert captured == {"limit": 6}
+    assert data["source"] == "portal-alarm-workorder-api"
+    assert data["sourceStatus"] == "live"
+    assert data["timeRange"] == "today"
+    assert data["rows"][0]["workorderNo"] == "WO-20260602-001"
+
+
+def test_ai_big_screen_draft_combines_logs_alarms_workorders_and_cmdb(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    _patch_registry_path(monkeypatch, tmp_path)
+    calls = _patch_draft_plan(monkeypatch)
+
+    draft_screen = _await_if_needed(generate_ai_big_screen_draft(
+        AiBigScreenDraftRequest(
+            prompt="我想要一个大屏，包含15分钟的系统日志、系统告警、今日工单和CMDB中的资源信息",
+            requestedBy="portal-test",
+        ),
+    )).screen
+
+    capability_ids = {item["pluginId"] for item in draft_screen["dataBindings"]}
+    assert {"system-logs", "real-alarms", "workorders", "cmdb-resources"}.issubset(capability_ids)
+    assert {"system-logs", "real-alarms", "workorders", "cmdb-resources"}.issubset(
+        {item[0] for item in calls},
+    )
+    workorder_component = next(
+        component for component in draft_screen["components"] if component["pluginId"] == "workorders"
+    )
+    assert workorder_component["queryParams"]["timeRange"] == "today"
+    assert workorder_component["data"]["source"] == "portal-alarm-workorder-api"
+
+
+def test_ai_big_screen_hydrates_data_capabilities_concurrently(monkeypatch) -> None:
+    def _slow_execute(capability_id: str, query_params: dict) -> dict:
+        time.sleep(0.08)
+        return {"source": capability_id, "sourceStatus": "live"}
+
+    monkeypatch.setattr(ai_big_screen_service, "_execute_data_capability", _slow_execute)
+    components = [
+        {
+            "id": f"component-{index}",
+            "pluginId": capability_id,
+            "capabilityId": capability_id,
+            "queryParams": {},
+        }
+        for index, capability_id in enumerate(
+            ["system-logs", "real-alarms", "workorders", "cmdb-resources"],
+            start=1,
+        )
+    ]
+
+    started = time.monotonic()
+    hydrated = asyncio.run(ai_big_screen_service._hydrate_components_with_data(components))
+    elapsed = time.monotonic() - started
+
+    assert [item["id"] for item in hydrated] == [item["id"] for item in components]
+    assert elapsed < 0.24
 
 
 def test_ai_big_screen_router_registers_contract_paths() -> None:

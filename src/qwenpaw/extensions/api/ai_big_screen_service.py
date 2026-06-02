@@ -73,6 +73,20 @@ DATA_CAPABILITIES: list[dict[str, Any]] = [
         "examplePrompts": ["CMDB资源信息", "资产资源概览"],
     },
     {
+        "id": "workorders",
+        "name": "工单信息",
+        "domain": "workorder",
+        "description": "调用告警工单接口读取当前工单和处置对象。",
+        "inputSchema": {"timeRange": "today", "limit": 20},
+        "outputSchema": {"columns": "array", "rows": "array", "total": "number"},
+        "supportedVisuals": ["table", "metric-card", "bar-chart"],
+        "permissionScope": "workorder:read",
+        "cachePolicy": {"ttlSeconds": 120},
+        "refreshPolicy": {"intervalSeconds": 120},
+        "dataSource": "portal-alarm-workorder-api",
+        "examplePrompts": ["今日工单", "待处理工单", "工单处置情况"],
+    },
+    {
         "id": "alarm-top5",
         "name": "告警对象 Top5",
         "domain": "alarm",
@@ -682,6 +696,7 @@ def _extract_semantic_capability_ids(prompt: str) -> list[str]:
     checks = [
         ("system-logs", ("日志", "log", "logs")),
         ("real-alarms", ("告警", "报警", "alarm", "alarms")),
+        ("workorders", ("工单", "workorder", "ticket", "tickets")),
         ("cmdb-resources", ("cmdb", "资源", "资产", "resource", "asset")),
         ("topology-impact", ("拓扑", "链路", "影响范围", "topology")),
     ]
@@ -703,18 +718,21 @@ def _extract_lookback_minutes(prompt: str) -> int:
 
 
 async def _hydrate_components_with_data(components: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    hydrated: list[dict[str, Any]] = []
-    for component in components:
-        next_component = dict(component)
-        capability_id = str(component.get("capabilityId") or component.get("pluginId") or "")
-        query_params = _component_query_params(component)
-        next_component["data"] = await asyncio.to_thread(
-            _execute_data_capability,
-            capability_id,
-            query_params,
-        )
-        hydrated.append(next_component)
-    return hydrated
+    if not components:
+        return []
+    return list(await asyncio.gather(*(_hydrate_component_with_data(component) for component in components)))
+
+
+async def _hydrate_component_with_data(component: dict[str, Any]) -> dict[str, Any]:
+    next_component = dict(component)
+    capability_id = str(component.get("capabilityId") or component.get("pluginId") or "")
+    query_params = _component_query_params(component)
+    next_component["data"] = await asyncio.to_thread(
+        _execute_data_capability,
+        capability_id,
+        query_params,
+    )
+    return next_component
 
 
 def _execute_data_capability(capability_id: str, query_params: dict[str, Any]) -> dict[str, Any]:
@@ -725,6 +743,8 @@ def _execute_data_capability(capability_id: str, query_params: dict[str, Any]) -
             return _query_real_alarms(query_params)
         if capability_id == "cmdb-resources":
             return _query_cmdb_resources(query_params)
+        if capability_id == "workorders":
+            return _query_workorders(query_params)
         if capability_id == "alarm-top5":
             return _query_alarm_top5(query_params)
         if capability_id == "topology-impact":
@@ -781,6 +801,9 @@ def _query_real_alarms(query_params: Mapping[str, Any]) -> dict[str, Any]:
         "sourceStatus": "live" if rows else "empty",
         "lookbackMinutes": lookback_minutes,
         "total": int(payload.get("total") or len(rows)),
+        "value": int(payload.get("total") or len(rows)),
+        "unit": "起",
+        "trend": f"最近 {lookback_minutes} 分钟活动告警",
         "columns": [
             {"key": "eventTime", "label": "时间"},
             {"key": "level", "label": "级别"},
@@ -816,6 +839,33 @@ def _query_cmdb_resources(query_params: Mapping[str, Any]) -> dict[str, Any]:
         ],
         "rows": rows,
         "raw": data,
+    }
+
+
+def _query_workorders(query_params: Mapping[str, Any]) -> dict[str, Any]:
+    from qwenpaw.extensions.integrations.alarm_workorders.query_alarm_workorders import (
+        query_alarm_workorders,
+    )
+
+    limit = max(1, min(100, _safe_int(query_params.get("limit"), 20)))
+    payload = query_alarm_workorders(limit=limit)
+    rows = list(payload.get("items") or [])
+    return {
+        "source": "portal-alarm-workorder-api",
+        "sourceStatus": "live" if rows else "empty",
+        "timeRange": str(query_params.get("timeRange") or "today"),
+        "total": int(payload.get("total") or len(rows)),
+        "value": int(payload.get("total") or len(rows)),
+        "unit": "单",
+        "trend": "今日工单" if str(query_params.get("timeRange") or "today") == "today" else "工单查询结果",
+        "columns": [
+            {"key": "workorderNo", "label": "工单号"},
+            {"key": "title", "label": "标题"},
+            {"key": "status", "label": "状态"},
+            {"key": "severity", "label": "级别"},
+            {"key": "eventTime", "label": "时间"},
+        ],
+        "rows": rows[:limit],
     }
 
 

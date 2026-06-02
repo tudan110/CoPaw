@@ -9,6 +9,7 @@ import type {
 } from "../types/aiBigScreen";
 
 const AI_BIG_SCREEN_TIMEOUT_MS = 45000;
+const AI_BIG_SCREEN_GENERATION_TIMEOUT_MS = 180000;
 
 export function listAiBigScreenPlugins() {
   return requestPortalApi<AiBigScreenPluginsResponse>(
@@ -40,7 +41,7 @@ export function generateAiBigScreenDraft(payload: {
       },
       body: JSON.stringify(payload),
     },
-    AI_BIG_SCREEN_TIMEOUT_MS,
+    AI_BIG_SCREEN_GENERATION_TIMEOUT_MS,
   );
 }
 
@@ -84,7 +85,7 @@ export function patchAiBigScreen(
       },
       body: JSON.stringify(payload),
     },
-    AI_BIG_SCREEN_TIMEOUT_MS,
+    AI_BIG_SCREEN_GENERATION_TIMEOUT_MS,
   );
 }
 
