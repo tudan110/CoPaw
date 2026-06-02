@@ -386,8 +386,8 @@ def _build_portal_real_alarm_prompt(alarm: dict[str, Any]) -> str:
         severity_line,
         f"告警时间：{str(alarm.get('eventTime') or '').strip()}",
         f"告警摘要：{str(alarm.get('visibleContent') or '').strip()}",
-        "请分析这条活动告警，并继续完成根因分析、影响范围判断、处置建议与通知推送。",
-        "通知推送内容必须包含异常指标表格（指标名称、指标编码、最新值、单位、异常说明），异常指标放在处置建议前面，不可省略。",
+        "请分析这条活动告警，并继续完成异常指标分析、根因分析、影响范围判断、处置建议与通知推送。",
+        "通知推送内容的章节顺序必须严格按照：异常指标 → 根因方向 → 处置建议。不允许调换顺序，不可省略异常指标。",
     ]
     return "\n".join(line for line in lines if line and not line.endswith("："))
 

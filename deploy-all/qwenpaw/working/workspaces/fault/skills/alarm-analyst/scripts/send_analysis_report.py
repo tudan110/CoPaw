@@ -249,8 +249,6 @@ def _build_notification_markdown_lines(context: dict[str, str], abnormal_metrics
             f"{context['alarm_id']}"
         ),
         f"- **等级**：{context['level']}",
-        f"- **根因方向**：{context['root_cause']}",
-        f"- **处置建议**：{context['suggestions']}",
     ]
     if abnormal_metrics:
         lines.append("")
@@ -259,7 +257,10 @@ def _build_notification_markdown_lines(context: dict[str, str], abnormal_metrics
             unit = f" {m['unit']}" if m.get("unit") else ""
             reason = f"（{m['reason']}）" if m.get("reason") else ""
             lines.append(f"  - {m['name']}：{m['value']}{unit}{reason}")
+        lines.append("")
     lines.extend([
+        f"- **根因方向**：{context['root_cause']}",
+        f"- **处置建议**：{context['suggestions']}",
         f"- **分析时间**：{context['created_at']}",
         "",
         "> 此报告为 AI 自动生成，请尽快跟进处置。",
@@ -278,8 +279,6 @@ def _build_notification_plain_text_lines(context: dict[str, str], abnormal_metri
         f"摘要：{context['summary']}",
         f"资源：{context['device_name']} / {context['manage_ip']} / 告警编号: {context['alarm_id']}",
         f"等级：{context['level']}",
-        f"根因方向：{context['root_cause']}",
-        f"处置建议：{context['suggestions']}",
     ]
     if abnormal_metrics:
         lines.append("异常指标：")
@@ -288,6 +287,8 @@ def _build_notification_plain_text_lines(context: dict[str, str], abnormal_metri
             reason = f"（{m['reason']}）" if m.get("reason") else ""
             lines.append(f"  - {m['name']}：{m['value']}{unit}{reason}")
     lines.extend([
+        f"根因方向：{context['root_cause']}",
+        f"处置建议：{context['suggestions']}",
         f"分析时间：{context['created_at']}",
         "此报告为 AI 自动生成，请尽快跟进处置。",
     ])
@@ -372,19 +373,7 @@ def _build_feishu_notify_payload(context: dict[str, str], abnormal_metrics: list
                 "tag": "div",
                 "text": {
                     "tag": "lark_md",
-                    "content": (
-                        "**摘要**\n"
-                        f"{context['summary']}\n\n"
-                        f"**根因方向**\n{context['root_cause']}"
-                    ),
-                },
-            },
-            {"tag": "hr"},
-            {
-                "tag": "div",
-                "text": {
-                    "tag": "lark_md",
-                    "content": "**处置建议**\n" + "\n".join(suggestion_lines),
+                    "content": f"**摘要**\n{context['summary']}",
                 },
             },
         ]
@@ -405,6 +394,24 @@ def _build_feishu_notify_payload(context: dict[str, str], abnormal_metrics: list
                 },
             },
         ])
+    elements.extend([
+        {"tag": "hr"},
+        {
+            "tag": "div",
+            "text": {
+                "tag": "lark_md",
+                "content": f"**根因方向**\n{context['root_cause']}",
+            },
+        },
+        {"tag": "hr"},
+        {
+            "tag": "div",
+            "text": {
+                "tag": "lark_md",
+                "content": "**处置建议**\n" + "\n".join(suggestion_lines),
+            },
+        },
+    ])
     elements.append(
         {
             "tag": "note",
