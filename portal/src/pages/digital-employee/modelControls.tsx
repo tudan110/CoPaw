@@ -488,6 +488,19 @@ export function AdvancedModelEntry({
       </button>
       <div className={opsOpen ? "sidebar-advanced-grid" : "sidebar-advanced-grid collapsed"}>
         <button
+          className={isInboxActive ? "sidebar-advanced-item active" : "sidebar-advanced-item"}
+          onClick={onOpenInbox}
+        >
+          <div className="sidebar-advanced-item-icon">
+            <span role="img" aria-label="inbox">
+              📬
+            </span>
+          </div>
+          <div className="sidebar-advanced-item-name">收件箱</div>
+          <div className="sidebar-advanced-item-desc">统一查看任务通知与心跳</div>
+          <div className="sidebar-advanced-item-meta">消息 / 未读 / 追踪</div>
+        </button>
+        <button
           className={isCronJobsActive ? "sidebar-advanced-item active" : "sidebar-advanced-item"}
           onClick={onOpenCronJobs}
         >
@@ -499,19 +512,6 @@ export function AdvancedModelEntry({
           <div className="sidebar-advanced-item-name">定时任务</div>
           <div className="sidebar-advanced-item-desc">任务调度中心</div>
           <div className="sidebar-advanced-item-meta">创建 / 启停 / 立即执行</div>
-        </button>
-        <button
-          className={isAlarmRegistryActive ? "sidebar-advanced-item active" : "sidebar-advanced-item"}
-          onClick={onOpenAlarmRegistry}
-        >
-          <div className="sidebar-advanced-item-icon">
-            <span role="img" aria-label="alarm-registry">
-              🚨
-            </span>
-          </div>
-          <div className="sidebar-advanced-item-name">告警台账</div>
-          <div className="sidebar-advanced-item-desc">告警处置状态一览</div>
-          <div className="sidebar-advanced-item-meta">列表 / 状态 / 导出</div>
         </button>
         <button
           className={isTracesActive ? "sidebar-advanced-item active" : "sidebar-advanced-item"}
@@ -527,6 +527,19 @@ export function AdvancedModelEntry({
           <div className="sidebar-advanced-item-meta">会话 / 工具 / 推理 / 异常</div>
         </button>
         <button
+          className={isAlarmRegistryActive ? "sidebar-advanced-item active" : "sidebar-advanced-item"}
+          onClick={onOpenAlarmRegistry}
+        >
+          <div className="sidebar-advanced-item-icon">
+            <span role="img" aria-label="alarm-registry">
+              🚨
+            </span>
+          </div>
+          <div className="sidebar-advanced-item-name">告警台账</div>
+          <div className="sidebar-advanced-item-desc">告警处置状态一览</div>
+          <div className="sidebar-advanced-item-meta">列表 / 状态 / 导出</div>
+        </button>
+        <button
           className={isTokenUsageActive ? "sidebar-advanced-item active" : "sidebar-advanced-item"}
           onClick={onOpenTokenUsage}
         >
@@ -538,19 +551,6 @@ export function AdvancedModelEntry({
           <div className="sidebar-advanced-item-name">Token统计</div>
           <div className="sidebar-advanced-item-desc">资源消耗分析</div>
           <div className="sidebar-advanced-item-meta">按模型 / 日期统计</div>
-        </button>
-        <button
-          className={isInboxActive ? "sidebar-advanced-item active" : "sidebar-advanced-item"}
-          onClick={onOpenInbox}
-        >
-          <div className="sidebar-advanced-item-icon">
-            <span role="img" aria-label="inbox">
-              📬
-            </span>
-          </div>
-          <div className="sidebar-advanced-item-name">收件箱</div>
-          <div className="sidebar-advanced-item-desc">统一查看任务通知与心跳</div>
-          <div className="sidebar-advanced-item-meta">消息 / 未读 / 追踪</div>
         </button>
       </div>
     </div>
