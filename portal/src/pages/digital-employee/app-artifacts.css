@@ -243,6 +243,23 @@
   background: #2563eb;
 }
 
+.app-artifacts-btn-edit {
+  padding: 4px 10px;
+  border-radius: 5px;
+  border: 1px solid #8b5cf6;
+  background: #fff;
+  color: #8b5cf6;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.app-artifacts-btn-edit:hover {
+  background: #f5f3ff;
+  border-color: #7c3aed;
+  color: #7c3aed;
+}
+
 .app-artifacts-btn-delete {
   padding: 4px 10px;
   border-radius: 5px;

@@ -1698,9 +1698,15 @@ export default function DigitalEmployeePage({
               }
             }} />)
           ) : isAppArtifactsMode ? (
-            renderDeferredPanel(<AppArtifactsPanel onOpenWorkbench={() => navigate("/app-workbench")} />)
+            renderDeferredPanel(<AppArtifactsPanel
+              onOpenWorkbench={() => navigate("/app-workbench")}
+              onEditApp={(appId) => navigate(`/app-workbench?edit=${appId}`)}
+            />)
           ) : isAppWorkbenchMode ? (
-            renderDeferredPanel(<AppWorkbenchPanel onBack={() => navigate("/app-artifacts")} />)
+            renderDeferredPanel(<AppWorkbenchPanel
+              onBack={() => navigate("/app-artifacts")}
+              editAppId={routeSearchParams.get("edit") || undefined}
+            />)
           ) : isChannelsMode ? (
             renderDeferredPanel(<ChannelsPanel />)
           ) : isInboxMode ? (

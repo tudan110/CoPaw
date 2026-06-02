@@ -59,7 +59,10 @@ async function deleteArtifact(id: string): Promise<void> {
   }
 }
 
-export function AppArtifactsPanel({ onOpenWorkbench }: { onOpenWorkbench?: () => void }) {
+export function AppArtifactsPanel({ onOpenWorkbench, onEditApp }: {
+  onOpenWorkbench?: () => void;
+  onEditApp?: (appId: string) => void;
+}) {
   const [items, setItems] = useState<AppArtifact[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -210,6 +213,15 @@ export function AppArtifactsPanel({ onOpenWorkbench }: { onOpenWorkbench?: () =>
                     >
                       打开
                     </button>
+                    {onEditApp && (
+                      <button
+                        className="app-artifacts-btn-edit"
+                        onClick={() => onEditApp(item.id)}
+                        title="编辑应用"
+                      >
+                        编辑
+                      </button>
+                    )}
                     <button
                       className="app-artifacts-btn-delete"
                       onClick={() => handleDelete(item.id, item.title)}

@@ -127,14 +127,25 @@ function buildPreviewUrl(html: string): string {
 
 export function AppWorkbenchPanel({
   onBack,
+  editAppId,
 }: {
   onBack?: () => void;
+  editAppId?: string;
 }) {
   /* ---- chat state ---- */
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputValue, setInputValue] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
   const chatEndRef = useRef<HTMLDivElement | null>(null);
+
+  /* ---- editing state ---- */
+  const [editingApp, setEditingApp] = useState<{
+    id: string;
+    title: string;
+    description: string;
+    type: "app" | "widget" | "dashboard";
+    tags: string[];
+  } | null>(null);
 
   /* ---- session ---- */
   const chatIdRef = useRef("");
@@ -168,6 +179,39 @@ export function AppWorkbenchPanel({
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
+
+  /* ---- load existing app for editing ---- */
+  useEffect(() => {
+    if (!editAppId) return;
+    (async () => {
+      try {
+        // Fetch app metadata
+        const metaRes = await fetch(`/portal-api/app-artifacts/${editAppId}`);
+        if (!metaRes.ok) return;
+        const meta = await metaRes.json();
+        setEditingApp({
+          id: meta.id,
+          title: meta.title,
+          description: meta.description || "",
+          type: meta.type || "app",
+          tags: meta.tags || [],
+        });
+        setPublishTitle(meta.title || "");
+        setPublishDesc(meta.description || "");
+        setPublishType(meta.type || "app");
+        setPublishTags((meta.tags || []).join(", "));
+
+        // Fetch HTML content for preview
+        const htmlRes = await fetch(`/portal-api/app-artifacts/${editAppId}/preview`);
+        if (!htmlRes.ok) return;
+        const html = await htmlRes.text();
+        if (html) {
+          setPreviewHtml(html);
+          setPreviewUrl(buildPreviewUrl(html));
+        }
+      } catch {}
+    })();
+  }, [editAppId]);
 
   /* ---- revoke blob on change ---- */
   useEffect(() => {
@@ -409,29 +453,50 @@ export function AppWorkbenchPanel({
     if (!previewHtml || !publishTitle.trim()) return;
     setPublishing(true);
     try {
-      const response = await fetch("/portal-api/app-artifacts", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          title: publishTitle.trim(),
-          description: publishDesc.trim(),
-          html_content: previewHtml,
-          type: publishType,
-          tags: publishTags
-            .split(/[,，\s]+/)
-            .map((t) => t.trim())
-            .filter(Boolean),
-        }),
-      });
+      const tags = publishTags
+        .split(/[,，\s]+/)
+        .map((t) => t.trim())
+        .filter(Boolean);
+
+      let response: Response;
+      if (editingApp) {
+        // Update existing app
+        response = await fetch(`/portal-api/app-artifacts/${editingApp.id}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            title: publishTitle.trim(),
+            description: publishDesc.trim(),
+            html_content: previewHtml,
+            tags,
+          }),
+        });
+      } else {
+        // Create new app
+        response = await fetch("/portal-api/app-artifacts", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            title: publishTitle.trim(),
+            description: publishDesc.trim(),
+            html_content: previewHtml,
+            type: publishType,
+            tags,
+          }),
+        });
+      }
       if (!response.ok) throw new Error(`发布失败: ${response.status}`);
       const data = await response.json();
-      setPublishResult({ url: data.url, title: data.title });
+      setPublishResult({ url: data.url || `/portal-api/app-artifacts/${data.id}/preview`, title: data.title });
+      if (!editingApp) {
+        setEditingApp({ id: data.id, title: data.title, description: data.description || "", type: data.type, tags: data.tags || [] });
+      }
     } catch (error: any) {
       alert(`发布失败：${error.message}`);
     } finally {
       setPublishing(false);
     }
-  }, [previewHtml, publishTitle, publishDesc, publishType, publishTags]);
+  }, [previewHtml, publishTitle, publishDesc, publishType, publishTags, editingApp]);
 
   /* ================================================================ */
   /*  New session                                                      */
@@ -472,7 +537,7 @@ export function AppWorkbenchPanel({
           )}
           <h2 className="app-workbench__title">
             <i className="fas fa-wand-magic-sparkles" />
-            AI 应用开发工作台
+            {editingApp ? `编辑 · ${editingApp.title}` : "AI 应用开发工作台"}
           </h2>
         </div>
         <div className="app-workbench__header-right">
@@ -646,7 +711,7 @@ export function AppWorkbenchPanel({
             {publishResult ? (
               <>
                 <div className="app-workbench__modal-header">
-                  <h3>🎉 发布成功</h3>
+                  <h3>🎉 {editingApp ? "更新成功" : "发布成功"}</h3>
                 </div>
                 <div className="app-workbench__modal-body">
                   <p>应用「{publishResult.title}」已成功发布！</p>
@@ -671,7 +736,7 @@ export function AppWorkbenchPanel({
             ) : (
               <>
                 <div className="app-workbench__modal-header">
-                  <h3>发布应用</h3>
+                  <h3>{editingApp ? "更新应用" : "发布应用"}</h3>
                   <button
                     className="app-workbench__modal-close"
                     onClick={() => setPublishOpen(false)}
@@ -737,7 +802,7 @@ export function AppWorkbenchPanel({
                     onClick={() => void handlePublish()}
                     disabled={publishing || !publishTitle.trim()}
                   >
-                    {publishing ? "发布中..." : "确认发布"}
+                    {publishing ? (editingApp ? "更新中..." : "发布中...") : (editingApp ? "确认更新" : "确认发布")}
                   </button>
                 </div>
               </>
