@@ -226,6 +226,7 @@ export function AdvancedModelEntry({
   isInspirationActive,
   isCliActive,
   isNlCustomizationActive,
+  isAiBigScreenActive,
   isAppMarketActive,
   isTracesActive,
   isAlarmRegistryActive,
@@ -233,6 +234,7 @@ export function AdvancedModelEntry({
   isChannelsActive,
   isInboxActive,
   onOpenNlCustomization,
+  onOpenAiBigScreen,
   onOpenAppMarket,
   onOpenConfig,
   onOpenSettings,
@@ -265,6 +267,7 @@ export function AdvancedModelEntry({
   isInspirationActive?: boolean;
   isCliActive?: boolean;
   isNlCustomizationActive?: boolean;
+  isAiBigScreenActive?: boolean;
   isAppMarketActive?: boolean;
   isTracesActive?: boolean;
   isAlarmRegistryActive?: boolean;
@@ -272,6 +275,7 @@ export function AdvancedModelEntry({
   isChannelsActive?: boolean;
   isInboxActive?: boolean;
   onOpenNlCustomization: () => void;
+  onOpenAiBigScreen: () => void;
   onOpenAppMarket: () => void;
   onOpenConfig: () => void;
   onOpenSettings: () => void;
@@ -464,6 +468,19 @@ export function AdvancedModelEntry({
           <div className="sidebar-advanced-item-name">轻应用工坊</div>
           <div className="sidebar-advanced-item-desc">轻应用生成与管理</div>
           <div className="sidebar-advanced-item-meta">预览 / 发布 / 版本留档</div>
+        </button>
+        <button
+          className={isAiBigScreenActive ? "sidebar-advanced-item active" : "sidebar-advanced-item"}
+          onClick={onOpenAiBigScreen}
+        >
+          <div className="sidebar-advanced-item-icon">
+            <span role="img" aria-label="ai-big-screen">
+              🖥️
+            </span>
+          </div>
+          <div className="sidebar-advanced-item-name">AI大屏工坊</div>
+          <div className="sidebar-advanced-item-desc">自然语言定制运维大屏</div>
+          <div className="sidebar-advanced-item-meta">生成 / 修改 / 发布</div>
         </button>
         <button
           className={isAppMarketActive ? "sidebar-advanced-item active" : "sidebar-advanced-item"}
