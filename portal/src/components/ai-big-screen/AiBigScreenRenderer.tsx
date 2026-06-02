@@ -42,17 +42,25 @@ function numberArray(value: unknown): number[] {
 
 function buildChartOption(component: AiBigScreenComponent) {
   const data = component.data || {};
-  const categories = stringArray(data.categories);
-  const series = numberArray(data.series);
+  const rows = Array.isArray(data.rows) ? data.rows as Array<Record<string, unknown>> : [];
+  const categories = stringArray(data.categories).length
+    ? stringArray(data.categories)
+    : rows.map((row) => String(row.name || row.title || row.eventTime || "--")).slice(0, 12);
+  const series = numberArray(data.series).length
+    ? numberArray(data.series)
+    : rows.map((row) => numberValue(row.value ?? row.count ?? row.total)).slice(0, 12);
   const isBar = component.type === "bar-chart";
   const palette = String(component.visualConfig?.palette || "professional");
-  const color = palette === "warm"
-    ? "#f97316"
-    : palette === "cool"
-      ? "#38bdf8"
-      : palette === "executive"
-        ? "#f59e0b"
-        : "#60a5fa";
+  const colorByPalette: Record<string, string> = {
+    warm: "#f97316",
+    cool: "#38bdf8",
+    executive: "#f59e0b",
+    industrial: "#22c55e",
+    aurora: "#2dd4bf",
+    mono: "#cbd5e1",
+    professional: "#60a5fa",
+  };
+  const color = colorByPalette[palette] || colorByPalette.professional;
 
   return {
     backgroundColor: "transparent",
@@ -96,32 +104,59 @@ function renderMetric(component: AiBigScreenComponent) {
         {String(data.value ?? "--")}
         <span>{String(data.unit || "")}</span>
       </div>
-      <div className="ai-big-screen-metric-trend">{String(data.trend || "暂无趋势")}</div>
+      <div className="ai-big-screen-metric-trend">
+        {String(data.trend || data.message || "暂无趋势")}
+      </div>
     </div>
   );
 }
 
+function getTableColumns(component: AiBigScreenComponent) {
+  const columns = Array.isArray(component.data?.columns)
+    ? component.data?.columns as Array<Record<string, unknown>>
+    : [];
+  if (columns.length) {
+    return columns
+      .map((column) => ({
+        key: String(column.key || ""),
+        label: String(column.label || column.key || ""),
+      }))
+      .filter((column) => column.key);
+  }
+  return [
+    { key: "name", label: "事项" },
+    { key: "count", label: "数量" },
+    { key: "risk", label: "风险" },
+  ];
+}
+
 function renderTable(component: AiBigScreenComponent) {
   const rows = Array.isArray(component.data?.rows) ? component.data?.rows as Array<Record<string, unknown>> : [];
+  const columns = getTableColumns(component);
   return (
-    <table className="ai-big-screen-table">
-      <thead>
-        <tr>
-          <th>事项</th>
-          <th>数量</th>
-          <th>风险</th>
-        </tr>
-      </thead>
-      <tbody>
-        {rows.map((row, index) => (
-          <tr key={`${String(row.name || "row")}-${index}`}>
-            <td>{String(row.name || "--")}</td>
-            <td>{String(row.count ?? "--")}</td>
-            <td>{String(row.risk || "--")}</td>
+    <div className="ai-big-screen-table-wrap">
+      <table className="ai-big-screen-table">
+        <thead>
+          <tr>
+            {columns.map((column) => <th key={column.key}>{column.label}</th>)}
           </tr>
-        ))}
-      </tbody>
-    </table>
+        </thead>
+        <tbody>
+          {rows.map((row, index) => (
+            <tr key={`${String(row.id || row.name || row.title || "row")}-${index}`}>
+              {columns.map((column) => (
+                <td key={column.key}>{String(row[column.key] ?? "--")}</td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {!rows.length ? (
+        <div className="ai-big-screen-empty-data">
+          {String(component.data?.message || "当前窗口暂无数据")}
+        </div>
+      ) : null}
+    </div>
   );
 }
 
@@ -161,6 +196,20 @@ function renderComponentBody(component: AiBigScreenComponent) {
   return <div className="ai-big-screen-text">{String(component.description || "")}</div>;
 }
 
+function getSourceStatusLabel(component: AiBigScreenComponent) {
+  const status = String(component.data?.sourceStatus || "");
+  if (status === "live") {
+    return "实时";
+  }
+  if (status === "empty") {
+    return "暂无";
+  }
+  if (status === "unavailable") {
+    return "未接入";
+  }
+  return "数据";
+}
+
 export function AiBigScreenRenderer({
   screen,
   selectedComponentId = "",
@@ -196,6 +245,7 @@ export function AiBigScreenRenderer({
           const selected = component.id === selectedComponentId;
           const componentPalette = safeClassToken(component.visualConfig?.palette, "professional");
           const componentEmphasis = safeClassToken(component.visualConfig?.emphasis, "standard");
+          const sourceStatus = safeClassToken(component.data?.sourceStatus, "unknown");
           return (
             <article
               key={component.id}
@@ -225,7 +275,9 @@ export function AiBigScreenRenderer({
                   <h2>{component.title}</h2>
                   <p>{component.description}</p>
                 </div>
-                <span>{component.pluginId || "custom"}</span>
+                <span className={`ai-big-screen-source-badge status-${sourceStatus}`}>
+                  {getSourceStatusLabel(component)}
+                </span>
               </div>
               <div className="ai-big-screen-card-body">
                 {renderComponentBody(component)}

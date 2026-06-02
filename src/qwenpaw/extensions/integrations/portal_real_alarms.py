@@ -154,16 +154,24 @@ def _normalize_alarm_row(row: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def query_portal_real_alarms(limit: int, now: datetime | None = None) -> dict[str, Any]:
+def query_portal_real_alarms(
+    limit: int,
+    now: datetime | None = None,
+    lookback_minutes: int | None = None,
+) -> dict[str, Any]:
     safe_limit = max(1, min(int(limit or DEFAULT_REAL_ALARM_LIMIT), MAX_REAL_ALARM_LIMIT))
     current_time = now or datetime.now(timezone.utc)
-    lookback_hours = float(
-        EnvVarLoader.get_str(
-            "PORTAL_REAL_ALARM_LOOKBACK_HOURS",
-            str(DEFAULT_REAL_ALARM_LOOKBACK_HOURS),
-        ).strip() or str(DEFAULT_REAL_ALARM_LOOKBACK_HOURS)
-    )
-    begin_time = _format_dt(current_time - timedelta(hours=max(1, lookback_hours)))
+    if lookback_minutes is not None:
+        lookback_delta = timedelta(minutes=max(1, int(lookback_minutes)))
+    else:
+        lookback_hours = float(
+            EnvVarLoader.get_str(
+                "PORTAL_REAL_ALARM_LOOKBACK_HOURS",
+                str(DEFAULT_REAL_ALARM_LOOKBACK_HOURS),
+            ).strip() or str(DEFAULT_REAL_ALARM_LOOKBACK_HOURS)
+        )
+        lookback_delta = timedelta(hours=max(1, lookback_hours))
+    begin_time = _format_dt(current_time - lookback_delta)
     end_time = _format_dt(current_time)
 
     try:

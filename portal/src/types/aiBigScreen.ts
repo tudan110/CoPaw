@@ -12,6 +12,7 @@ export interface AiBigScreenComponent {
   description?: string;
   layoutPosition?: AiBigScreenLayoutPosition;
   pluginId?: string;
+  capabilityId?: string;
   queryParams?: Record<string, unknown>;
   visualConfig?: Record<string, unknown>;
   refreshInterval?: number;

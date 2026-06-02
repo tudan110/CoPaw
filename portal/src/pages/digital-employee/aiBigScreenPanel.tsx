@@ -34,7 +34,7 @@ function getExternalTarget(screen: AiBigScreenApp | null): AiBigScreenPublishTar
 }
 
 export function AiBigScreenPanel() {
-  const [prompt, setPrompt] = useState("领导驾驶舱，关注今日告警、待处理工单、资源利用率和重点系统健康度");
+  const [prompt, setPrompt] = useState("我想要一个大屏，包含15分钟的系统日志、系统告警，以及CMDB中的资源信息");
   const [editInstruction, setEditInstruction] = useState("");
   const [screen, setScreen] = useState<AiBigScreenApp | null>(null);
   const [screens, setScreens] = useState<AiBigScreenApp[]>([]);
@@ -181,7 +181,7 @@ export function AiBigScreenPanel() {
     <div className="ai-big-screen-panel">
       <div className="portal-model-page-header">
         <div className="portal-model-page-title">
-          AI 大屏工坊 <small>自然语言生成、修改和发布运维大屏</small>
+          AI 大屏工坊 <small>数据驱动的大屏设计与发布</small>
         </div>
       </div>
 
@@ -207,14 +207,14 @@ export function AiBigScreenPanel() {
 
           <section className="ai-big-screen-control">
             <div className="ai-big-screen-control-head">
-              <label htmlFor="ai-big-screen-edit">组件修改</label>
+              <label htmlFor="ai-big-screen-edit">选中区域修改</label>
               <span>{selectedComponent ? selectedComponent.title : "未选择"}</span>
             </div>
             <textarea
               id="ai-big-screen-edit"
               value={editInstruction}
               onChange={(event) => setEditInstruction(event.target.value)}
-              placeholder="例如：这个大屏太丑了，帮我调成更适合领导看的风格"
+              placeholder="例如：这个区域颜色太冷，换成更有温度的风格"
               rows={4}
             />
             <button
@@ -223,7 +223,7 @@ export function AiBigScreenPanel() {
               disabled={!screen || !selectedComponentId || saving}
               onClick={() => void handlePatch()}
             >
-              {saving ? "处理中..." : "修改选中组件"}
+              {saving ? "处理中..." : "修改选中区域"}
             </button>
           </section>
 
@@ -289,10 +289,13 @@ export function AiBigScreenPanel() {
           </section>
 
           <section className="ai-big-screen-library">
-            <h3>内置数据插件</h3>
+            <h3>可用数据能力</h3>
             <div className="ai-big-screen-plugin-tags">
               {plugins.map((plugin) => (
-                <span key={plugin.id}>{plugin.name}</span>
+                <span key={plugin.id}>
+                  <strong>{plugin.name}</strong>
+                  <small>{plugin.domain}</small>
+                </span>
               ))}
             </div>
           </section>

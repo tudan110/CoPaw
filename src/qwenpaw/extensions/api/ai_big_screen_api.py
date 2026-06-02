@@ -39,11 +39,11 @@ def list_ai_big_screens(
 
 
 @router.post("/draft", response_model=AiBigScreenResponse)
-def generate_ai_big_screen_draft(
+async def generate_ai_big_screen_draft(
     payload: AiBigScreenDraftRequest,
 ) -> AiBigScreenResponse:
     try:
-        return AiBigScreenResponse(screen=build_screen_draft(payload))
+        return AiBigScreenResponse(screen=await build_screen_draft(payload))
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:

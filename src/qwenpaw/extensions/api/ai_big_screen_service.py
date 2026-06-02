@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import copy
 import json
 import re
@@ -28,145 +29,105 @@ def _now_iso() -> str:
     return datetime.now(_default_timezone()).isoformat()
 
 
-BUILTIN_PLUGINS: list[dict[str, Any]] = [
+DATA_CAPABILITIES: list[dict[str, Any]] = [
     {
-        "id": "alarm-overview",
-        "name": "今日告警总览",
+        "id": "system-logs",
+        "name": "系统日志",
+        "domain": "log",
+        "description": "读取当前系统后端运行日志，用于排查近期运行状态。",
+        "inputSchema": {"lookbackMinutes": 15, "limit": 50},
+        "outputSchema": {"columns": "array", "rows": "array", "sourceStatus": "string"},
+        "supportedVisuals": ["table", "text"],
+        "permissionScope": "system-log:read",
+        "cachePolicy": {"ttlSeconds": 30},
+        "refreshPolicy": {"intervalSeconds": 30},
+        "dataSource": "backend-log",
+        "examplePrompts": ["最近15分钟系统日志", "看一下系统日志"],
+    },
+    {
+        "id": "real-alarms",
+        "name": "系统告警",
         "domain": "alarm",
-        "description": "统计今日活跃告警、严重告警和处置趋势。",
-        "inputSchema": {"timeRange": "today"},
-        "outputSchema": {"value": "number", "unit": "起", "trend": "string"},
-        "supportedVisuals": ["metric-card"],
+        "description": "调用资源告警接口读取指定时间窗口内的活动告警。",
+        "inputSchema": {"lookbackMinutes": 15, "limit": 100},
+        "outputSchema": {"columns": "array", "rows": "array", "total": "number"},
+        "supportedVisuals": ["table", "metric-card", "bar-chart"],
         "permissionScope": "alarm:read",
         "cachePolicy": {"ttlSeconds": 60},
         "refreshPolicy": {"intervalSeconds": 60},
-        "dataSource": "builtin-sample",
-        "sampleData": {"value": 128, "unit": "起", "trend": "较昨日 -12%"},
-        "examplePrompts": ["今日告警总览", "领导驾驶舱告警数量"],
+        "dataSource": "portal-real-alarm-api",
+        "examplePrompts": ["最近15分钟告警", "当前活动告警"],
     },
     {
-        "id": "alarm-trend",
-        "name": "P1/P2 告警趋势",
+        "id": "cmdb-resources",
+        "name": "CMDB 资源信息",
+        "domain": "resource",
+        "description": "调用资源/资产概览接口读取 CMDB 资源统计和资源状态。",
+        "inputSchema": {"scope": "all"},
+        "outputSchema": {"value": "number", "unit": "string", "rows": "array"},
+        "supportedVisuals": ["metric-card", "table", "bar-chart"],
+        "permissionScope": "resource:read",
+        "cachePolicy": {"ttlSeconds": 120},
+        "refreshPolicy": {"intervalSeconds": 120},
+        "dataSource": "portal-asset-overview-api",
+        "examplePrompts": ["CMDB资源信息", "资产资源概览"],
+    },
+    {
+        "id": "alarm-top5",
+        "name": "告警对象 Top5",
         "domain": "alarm",
-        "description": "按时间展示高优先级告警趋势。",
-        "inputSchema": {"timeRange": "last_7_days"},
-        "outputSchema": {"categories": "string[]", "series": "number[]"},
-        "supportedVisuals": ["line-chart", "bar-chart"],
+        "description": "调用告警统计接口读取告警对象排行。",
+        "inputSchema": {"limit": 5},
+        "outputSchema": {"categories": "array", "series": "array", "rows": "array"},
+        "supportedVisuals": ["bar-chart", "table"],
         "permissionScope": "alarm:read",
         "cachePolicy": {"ttlSeconds": 120},
         "refreshPolicy": {"intervalSeconds": 120},
-        "dataSource": "builtin-sample",
-        "sampleData": {
-            "categories": ["周一", "周二", "周三", "周四", "周五", "周六", "周日"],
-            "series": [18, 22, 16, 28, 24, 14, 12],
-        },
-        "examplePrompts": ["最近 7 天告警趋势", "P1/P2 告警曲线"],
-    },
-    {
-        "id": "workorder-risk",
-        "name": "待处理工单风险",
-        "domain": "workorder",
-        "description": "展示待处理工单和超时风险。",
-        "inputSchema": {"status": "pending"},
-        "outputSchema": {"rows": "array"},
-        "supportedVisuals": ["table", "bar-chart", "metric-card"],
-        "permissionScope": "workorder:read",
-        "cachePolicy": {"ttlSeconds": 180},
-        "refreshPolicy": {"intervalSeconds": 180},
-        "dataSource": "builtin-sample",
-        "sampleData": {
-            "rows": [
-                {"name": "数据库连接异常", "count": 12, "risk": "高"},
-                {"name": "接口超时", "count": 9, "risk": "中"},
-                {"name": "磁盘容量预警", "count": 7, "risk": "中"},
-            ],
-        },
-        "examplePrompts": ["待处理工单", "工单超时风险"],
-    },
-    {
-        "id": "resource-utilization",
-        "name": "资源利用率 TopN",
-        "domain": "resource",
-        "description": "展示 CPU、内存、存储等资源利用率 TopN。",
-        "inputSchema": {"resourceType": "host", "metric": "cpu"},
-        "outputSchema": {"categories": "string[]", "series": "number[]"},
-        "supportedVisuals": ["bar-chart", "table"],
-        "permissionScope": "resource:read",
-        "cachePolicy": {"ttlSeconds": 180},
-        "refreshPolicy": {"intervalSeconds": 180},
-        "dataSource": "builtin-sample",
-        "sampleData": {
-            "categories": ["核心库主机", "订单服务", "网关节点", "监控节点", "批处理集群"],
-            "series": [91, 86, 78, 73, 69],
-        },
-        "examplePrompts": ["资源利用率", "容量风险 TopN"],
-    },
-    {
-        "id": "system-health",
-        "name": "重点系统健康度",
-        "domain": "health",
-        "description": "展示重点业务系统健康率和风险状态。",
-        "inputSchema": {"scope": "key_systems"},
-        "outputSchema": {"value": "number", "unit": "%", "trend": "string"},
-        "supportedVisuals": ["metric-card", "bar-chart"],
-        "permissionScope": "resource:read",
-        "cachePolicy": {"ttlSeconds": 180},
-        "refreshPolicy": {"intervalSeconds": 180},
-        "dataSource": "builtin-sample",
-        "sampleData": {"value": 96, "unit": "%", "trend": "稳定"},
-        "examplePrompts": ["重点系统健康度", "业务健康率"],
+        "dataSource": "portal-alarm-statistics-api",
+        "examplePrompts": ["告警排行", "告警最多的资源"],
     },
     {
         "id": "topology-impact",
         "name": "拓扑影响范围",
         "domain": "topology",
-        "description": "展示当前风险对象的上下游影响范围。",
-        "inputSchema": {"scope": "active_risk"},
+        "description": "调用拓扑接口读取资源拓扑和影响关系。",
+        "inputSchema": {"scope": "active"},
         "outputSchema": {"nodes": "array"},
-        "supportedVisuals": ["topology"],
+        "supportedVisuals": ["topology", "table"],
         "permissionScope": "topology:read",
-        "cachePolicy": {"ttlSeconds": 300},
-        "refreshPolicy": {"intervalSeconds": 300},
-        "dataSource": "builtin-sample",
-        "sampleData": {
-            "nodes": [
-                {"name": "核心交易", "status": "warning"},
-                {"name": "网关集群", "status": "normal"},
-                {"name": "数据库主库", "status": "critical"},
-            ],
-        },
-        "examplePrompts": ["拓扑影响范围", "风险影响链路"],
+        "cachePolicy": {"ttlSeconds": 180},
+        "refreshPolicy": {"intervalSeconds": 180},
+        "dataSource": "portal-topology-api",
+        "examplePrompts": ["拓扑影响范围", "资源链路影响"],
     },
 ]
 
 
 def list_builtin_plugins() -> list[dict[str, Any]]:
-    return [copy.deepcopy(item) for item in BUILTIN_PLUGINS]
+    return [copy.deepcopy(item) for item in DATA_CAPABILITIES]
 
 
-def build_screen_draft(request: AiBigScreenDraftRequest) -> dict[str, Any]:
+async def build_screen_draft(request: AiBigScreenDraftRequest) -> dict[str, Any]:
     prompt = str(request.prompt or "").strip()
     if not prompt:
         raise ValueError("prompt 不能为空")
 
     screen_id = f"screen-{uuid.uuid4().hex[:10]}"
-    title = str(request.title or "").strip() or "AI 运维驾驶舱"
+    requested_title = str(request.title or "").strip()
     now = _now_iso()
-    components = _build_components(prompt)
+    raw_plan = await _build_screen_plan_with_ai(prompt=prompt, title=requested_title)
+    plan = _normalize_screen_plan(raw_plan, prompt=prompt, title=requested_title)
+    components = await _hydrate_components_with_data(plan["components"])
     data_bindings = [_build_binding(component) for component in components]
     screen = {
         "schemaVersion": SCREEN_SCHEMA_VERSION,
         "id": screen_id,
-        "name": title,
-        "description": f"由自然语言生成：{prompt}",
+        "name": plan["name"],
+        "description": plan["description"] or f"由自然语言生成：{prompt}",
         "owner": str(request.requestedBy or "portal").strip() or "portal",
         "status": "draft",
-        "layout": {"type": "grid", "columns": 12, "rowHeight": 84},
-        "theme": {
-            "mode": "dark",
-            "palette": "professional",
-            "density": "dashboard",
-        },
+        "layout": plan["layout"],
+        "theme": plan["theme"],
         "components": components,
         "dataBindings": data_bindings,
         "permissions": {"visibility": "private", "roles": []},
@@ -175,6 +136,8 @@ def build_screen_draft(request: AiBigScreenDraftRequest) -> dict[str, Any]:
         "aiConversationContext": {
             "sourcePrompt": prompt,
             "lastInstruction": "",
+            "generationSummary": plan["summary"],
+            "dataCapabilities": [item["pluginId"] for item in data_bindings],
         },
         "createdAt": now,
         "updatedAt": now,
@@ -258,10 +221,10 @@ def publish_screen_asset(
 
 
 AI_BIG_SCREEN_CONFIGURE_LLM_MESSAGE = (
-    "未配置默认大模型，请先到“模型配置”里设置默认 LLM 后再修改 AI 大屏。"
+    "未配置默认大模型，请先到“模型配置”里设置默认 LLM 后再生成或修改 AI 大屏。"
 )
 
-_ALLOWED_PALETTES = {"professional", "warm", "cool", "executive"}
+_ALLOWED_PALETTES = {"professional", "warm", "cool", "executive", "industrial", "aurora", "mono"}
 _ALLOWED_COMPONENT_TYPES = {"metric-card", "line-chart", "bar-chart", "table", "topology", "text"}
 
 
@@ -408,74 +371,583 @@ async def _build_patch_plan_with_ai(
     return _normalize_patch_plan(parsed, screen=screen, selected_component_id=selected_component_id)
 
 
-def _build_components(prompt: str) -> list[dict[str, Any]]:
-    selected_plugins = _select_plugins(prompt)
-    components: list[dict[str, Any]] = []
-    positions = [
-        {"x": 0, "y": 0, "w": 3, "h": 2},
-        {"x": 3, "y": 0, "w": 5, "h": 3},
-        {"x": 8, "y": 0, "w": 4, "h": 3},
-        {"x": 0, "y": 3, "w": 4, "h": 3},
-        {"x": 4, "y": 3, "w": 4, "h": 3},
-        {"x": 8, "y": 3, "w": 4, "h": 3},
+async def _build_screen_plan_with_ai(*, prompt: str, title: str) -> dict[str, Any]:
+    from qwenpaw.agents.model_factory import create_model_and_formatter
+
+    capabilities = [
+        {
+            "id": str(item.get("id") or ""),
+            "name": str(item.get("name") or ""),
+            "domain": str(item.get("domain") or ""),
+            "description": str(item.get("description") or ""),
+            "inputSchema": copy.deepcopy(item.get("inputSchema") or {}),
+            "supportedVisuals": copy.deepcopy(item.get("supportedVisuals") or []),
+            "dataSource": str(item.get("dataSource") or ""),
+        }
+        for item in DATA_CAPABILITIES
     ]
-    type_by_plugin = {
-        "alarm-overview": "metric-card",
-        "alarm-trend": "line-chart",
-        "workorder-risk": "table",
-        "resource-utilization": "bar-chart",
-        "system-health": "metric-card",
-        "topology-impact": "topology",
-    }
-    for index, plugin in enumerate(selected_plugins):
-        plugin_id = str(plugin["id"])
-        sample_data = copy.deepcopy(plugin.get("sampleData") or {})
-        components.append(
-            {
-                "id": f"component-{index + 1}-{uuid.uuid4().hex[:6]}",
-                "type": type_by_plugin.get(plugin_id, "metric-card"),
-                "title": str(plugin["name"]),
-                "description": str(plugin.get("description") or ""),
-                "layoutPosition": positions[index % len(positions)],
-                "pluginId": plugin_id,
-                "queryParams": copy.deepcopy(plugin.get("inputSchema") or {}),
-                "visualConfig": {"palette": "professional", "emphasis": "standard"},
-                "refreshInterval": int(
-                    (plugin.get("refreshPolicy") or {}).get("intervalSeconds") or 180,
-                ),
-                "interactions": {"selectable": True},
-                "data": sample_data,
-            },
+    messages = [
+        {
+            "role": "system",
+            "content": (
+                "你是面向运维场景的 AI 大屏产品设计师和数据需求分析师。"
+                "你必须先理解用户语义中真正需要的数据，再从给定 dataCapabilities 中选择能力。"
+                "同一句话出现多个数据对象时必须全部覆盖，例如日志和告警要生成两个独立数据需求。"
+                "你需要创造性设计版式、标题、描述、视觉调性和组件组合，但不得输出前端源码、SQL、脚本或未授权接口。"
+                "只输出严格 JSON，不要输出 Markdown、解释或代码块。"
+                "JSON 字段固定为：name, description, theme, layout, components, summary。"
+                "theme.palette 只能是 professional、industrial、aurora、mono、warm、cool、executive。"
+                "components 是数组；每项必须包含 title, description, capabilityId, visualType, queryParams, layoutPosition。"
+                "capabilityId 必须来自 dataCapabilities；visualType 必须是 metric-card、line-chart、bar-chart、table、topology、text。"
+                "queryParams 只写普通 JSON 参数。layoutPosition 使用 12 列网格 x,y,w,h。"
+            ),
+        },
+        {
+            "role": "user",
+            "content": json.dumps(
+                {
+                    "prompt": prompt,
+                    "titleOverride": title,
+                    "dataCapabilities": capabilities,
+                    "outputExample": {
+                        "name": "15分钟运行态势",
+                        "description": "围绕近期日志、告警和资源状态的实时大屏。",
+                        "theme": {
+                            "mode": "dark",
+                            "palette": "industrial",
+                            "density": "dashboard",
+                        },
+                        "layout": {"type": "grid", "columns": 12, "rowHeight": 84},
+                        "components": [
+                            {
+                                "title": "15分钟系统日志",
+                                "description": "最近 15 分钟系统运行日志。",
+                                "capabilityId": "system-logs",
+                                "visualType": "table",
+                                "queryParams": {"lookbackMinutes": 15, "limit": 50},
+                                "layoutPosition": {"x": 0, "y": 0, "w": 6, "h": 4},
+                            },
+                            {
+                                "title": "15分钟系统告警",
+                                "description": "最近 15 分钟活动告警。",
+                                "capabilityId": "real-alarms",
+                                "visualType": "table",
+                                "queryParams": {"lookbackMinutes": 15, "limit": 80},
+                                "layoutPosition": {"x": 6, "y": 0, "w": 6, "h": 4},
+                            },
+                        ],
+                        "summary": "覆盖日志和告警两个实时数据需求。",
+                    },
+                },
+                ensure_ascii=False,
+            ),
+        },
+    ]
+
+    try:
+        model, _ = create_model_and_formatter()
+    except ProviderError as exc:
+        raise _map_provider_error(exc) from exc
+    except Exception as exc:
+        raise ValueError(f"默认大模型初始化失败：{_extract_exception_message(exc)}") from exc
+
+    try:
+        response_text = await _consume_model_response(model, messages)
+    except ProviderError as exc:
+        raise ValueError(f"默认大模型调用失败：{_extract_exception_message(exc)}") from exc
+    except Exception as exc:
+        raise ValueError(f"默认大模型调用失败：{_extract_exception_message(exc)}") from exc
+
+    parsed = _parse_llm_json_payload(response_text)
+    if not isinstance(parsed, dict):
+        raise ValueError("默认大模型未返回可执行的大屏方案 JSON，请重新描述大屏需求。")
+    return parsed
+
+
+def _normalize_screen_plan(
+    plan: Mapping[str, Any],
+    *,
+    prompt: str,
+    title: str,
+) -> dict[str, Any]:
+    inferred_lookback_minutes = _extract_lookback_minutes(prompt)
+    normalized_components = [
+        _normalize_plan_component(
+            component,
+            index=index,
+            inferred_lookback_minutes=inferred_lookback_minutes,
         )
-    return components
+        for index, component in enumerate(
+            plan.get("components") if isinstance(plan.get("components"), list) else []
+        )
+        if isinstance(component, dict)
+    ]
+    normalized_components = [item for item in normalized_components if item]
+    normalized_components = _ensure_semantic_capabilities(
+        prompt=prompt,
+        components=normalized_components,
+        inferred_lookback_minutes=inferred_lookback_minutes,
+    )
+    if not normalized_components:
+        raise ValueError("默认大模型没有生成可执行的数据能力组件，请重新描述需要展示的数据。")
 
-
-def _select_plugins(prompt: str) -> list[dict[str, Any]]:
-    selected: list[dict[str, Any]] = []
-    normalized = prompt.lower()
-    keywords = {
-        "alarm-overview": ("告警", "报警", "alarm"),
-        "alarm-trend": ("趋势", "p1", "p2", "7 天", "7天"),
-        "workorder-risk": ("工单", "超时", "待处理"),
-        "resource-utilization": ("资源", "容量", "cpu", "内存", "利用率"),
-        "system-health": ("健康", "系统", "业务"),
-        "topology-impact": ("拓扑", "影响", "链路"),
+    requested_title = str(title or "").strip()
+    plan_name = str(plan.get("name") or "").strip()
+    return {
+        "name": requested_title or plan_name or "AI 实时运维大屏",
+        "description": str(plan.get("description") or "").strip(),
+        "theme": _normalize_theme(plan.get("theme")),
+        "layout": _normalize_layout(plan.get("layout")),
+        "components": normalized_components,
+        "summary": str(plan.get("summary") or "").strip(),
     }
-    by_id = {str(item["id"]): item for item in BUILTIN_PLUGINS}
-    for plugin_id, terms in keywords.items():
-        if any(term in prompt or term in normalized for term in terms):
-            selected.append(copy.deepcopy(by_id[plugin_id]))
-    for fallback_id in (
-        "alarm-overview",
-        "alarm-trend",
-        "workorder-risk",
-        "resource-utilization",
-    ):
-        if len(selected) >= 4:
-            break
-        if not any(item["id"] == fallback_id for item in selected):
-            selected.append(copy.deepcopy(by_id[fallback_id]))
-    return selected
+
+
+def _normalize_plan_component(
+    component: Mapping[str, Any],
+    *,
+    index: int,
+    inferred_lookback_minutes: int,
+) -> dict[str, Any]:
+    capability_id = str(
+        component.get("capabilityId")
+        or component.get("pluginId")
+        or component.get("dataCapabilityId")
+        or "",
+    ).strip()
+    capability = _plugin_by_id(capability_id)
+    if not capability:
+        return {}
+
+    supported_visuals = [
+        str(item)
+        for item in capability.get("supportedVisuals", [])
+        if str(item) in _ALLOWED_COMPONENT_TYPES
+    ]
+    requested_type = str(component.get("visualType") or component.get("type") or "").strip()
+    component_type = requested_type if requested_type in supported_visuals else ""
+    if not component_type:
+        component_type = supported_visuals[0] if supported_visuals else "table"
+
+    query_params = _normalize_query_params(
+        component.get("queryParams"),
+        capability=capability,
+        inferred_lookback_minutes=inferred_lookback_minutes,
+    )
+    return {
+        "id": f"component-{index + 1}-{uuid.uuid4().hex[:6]}",
+        "type": component_type,
+        "title": (str(component.get("title") or "").strip() or str(capability["name"]))[:80],
+        "description": (
+            str(component.get("description") or "").strip()
+            or str(capability.get("description") or "")
+        )[:220],
+        "layoutPosition": _normalize_layout_position(component.get("layoutPosition"), index),
+        "pluginId": capability_id,
+        "capabilityId": capability_id,
+        "queryParams": query_params,
+        "visualConfig": _normalize_visual_config(component.get("visualConfig")),
+        "refreshInterval": int((capability.get("refreshPolicy") or {}).get("intervalSeconds") or 120),
+        "interactions": {"selectable": True, "selectionMode": "region"},
+        "data": {},
+    }
+
+
+def _normalize_theme(raw_theme: Any) -> dict[str, Any]:
+    theme = raw_theme if isinstance(raw_theme, dict) else {}
+    palette = _normalize_palette(theme.get("palette")) or "industrial"
+    return {
+        "mode": "dark",
+        "palette": palette,
+        "density": str(theme.get("density") or "dashboard").strip() or "dashboard",
+    }
+
+
+def _normalize_layout(raw_layout: Any) -> dict[str, Any]:
+    layout = raw_layout if isinstance(raw_layout, dict) else {}
+    return {
+        "type": "grid",
+        "columns": 12,
+        "rowHeight": max(64, min(120, _safe_int(layout.get("rowHeight"), 84))),
+    }
+
+
+def _normalize_layout_position(raw_position: Any, index: int) -> dict[str, int]:
+    position = raw_position if isinstance(raw_position, dict) else {}
+    fallback_positions = [
+        {"x": 0, "y": 0, "w": 6, "h": 4},
+        {"x": 6, "y": 0, "w": 6, "h": 4},
+        {"x": 0, "y": 4, "w": 4, "h": 3},
+        {"x": 4, "y": 4, "w": 4, "h": 3},
+        {"x": 8, "y": 4, "w": 4, "h": 3},
+        {"x": 0, "y": 7, "w": 12, "h": 4},
+    ]
+    fallback = fallback_positions[index % len(fallback_positions)]
+    x = max(0, min(11, _safe_int(position.get("x"), fallback["x"])))
+    w = max(1, min(12 - x, _safe_int(position.get("w"), fallback["w"])))
+    return {
+        "x": x,
+        "y": max(0, _safe_int(position.get("y"), fallback["y"])),
+        "w": w,
+        "h": max(1, min(8, _safe_int(position.get("h"), fallback["h"]))),
+    }
+
+
+def _normalize_visual_config(raw_visual_config: Any) -> dict[str, str]:
+    visual_config = raw_visual_config if isinstance(raw_visual_config, dict) else {}
+    palette = _normalize_palette(visual_config.get("palette")) or "industrial"
+    emphasis = str(visual_config.get("emphasis") or "standard").strip()
+    return {
+        "palette": palette,
+        "emphasis": emphasis if emphasis in {"standard", "strong"} else "standard",
+    }
+
+
+def _normalize_query_params(
+    raw_query_params: Any,
+    *,
+    capability: Mapping[str, Any],
+    inferred_lookback_minutes: int,
+) -> dict[str, Any]:
+    query_params = copy.deepcopy(capability.get("inputSchema") or {})
+    if isinstance(raw_query_params, dict):
+        query_params.update(copy.deepcopy(raw_query_params))
+    if "lookbackMinutes" in query_params:
+        query_params["lookbackMinutes"] = max(
+            1,
+            min(24 * 60, _safe_int(query_params.get("lookbackMinutes"), inferred_lookback_minutes)),
+        )
+    if inferred_lookback_minutes and str(capability.get("id") or "") in {"system-logs", "real-alarms"}:
+        query_params["lookbackMinutes"] = inferred_lookback_minutes
+    if "limit" in query_params:
+        query_params["limit"] = max(1, min(200, _safe_int(query_params.get("limit"), 50)))
+    return query_params
+
+
+def _ensure_semantic_capabilities(
+    *,
+    prompt: str,
+    components: list[dict[str, Any]],
+    inferred_lookback_minutes: int,
+) -> list[dict[str, Any]]:
+    present = {str(item.get("capabilityId") or item.get("pluginId") or "") for item in components}
+    next_components = list(components)
+    for capability_id in _extract_semantic_capability_ids(prompt):
+        if capability_id in present:
+            continue
+        next_components.append(
+            _build_semantic_component(
+                capability_id=capability_id,
+                index=len(next_components),
+                inferred_lookback_minutes=inferred_lookback_minutes,
+            ),
+        )
+        present.add(capability_id)
+    return next_components
+
+
+def _build_semantic_component(
+    *,
+    capability_id: str,
+    index: int,
+    inferred_lookback_minutes: int,
+) -> dict[str, Any]:
+    capability = _plugin_by_id(capability_id)
+    if not capability:
+        return {}
+    visual_type = (capability.get("supportedVisuals") or ["table"])[0]
+    title_prefix = f"{inferred_lookback_minutes}分钟" if inferred_lookback_minutes else ""
+    title = f"{title_prefix}{capability['name']}"
+    component = {
+        "title": title,
+        "description": capability.get("description") or "",
+        "capabilityId": capability_id,
+        "visualType": visual_type,
+        "queryParams": copy.deepcopy(capability.get("inputSchema") or {}),
+        "layoutPosition": _normalize_layout_position({}, index),
+        "visualConfig": {"palette": "industrial", "emphasis": "standard"},
+    }
+    if inferred_lookback_minutes and capability_id in {"system-logs", "real-alarms"}:
+        component["queryParams"]["lookbackMinutes"] = inferred_lookback_minutes
+    return _normalize_plan_component(
+        component,
+        index=index,
+        inferred_lookback_minutes=inferred_lookback_minutes,
+    )
+
+
+def _extract_semantic_capability_ids(prompt: str) -> list[str]:
+    normalized = str(prompt or "").lower()
+    capability_ids: list[str] = []
+    checks = [
+        ("system-logs", ("日志", "log", "logs")),
+        ("real-alarms", ("告警", "报警", "alarm", "alarms")),
+        ("cmdb-resources", ("cmdb", "资源", "资产", "resource", "asset")),
+        ("topology-impact", ("拓扑", "链路", "影响范围", "topology")),
+    ]
+    for capability_id, terms in checks:
+        if any(term in normalized for term in terms):
+            capability_ids.append(capability_id)
+    return capability_ids
+
+
+def _extract_lookback_minutes(prompt: str) -> int:
+    normalized = str(prompt or "")
+    minute_match = re.search(r"(\d{1,4})\s*分钟", normalized)
+    if minute_match:
+        return max(1, min(24 * 60, int(minute_match.group(1))))
+    hour_match = re.search(r"(\d{1,3})\s*(?:小时|钟头)", normalized)
+    if hour_match:
+        return max(1, min(24 * 60, int(hour_match.group(1)) * 60))
+    return 15
+
+
+async def _hydrate_components_with_data(components: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    hydrated: list[dict[str, Any]] = []
+    for component in components:
+        next_component = dict(component)
+        capability_id = str(component.get("capabilityId") or component.get("pluginId") or "")
+        query_params = _component_query_params(component)
+        next_component["data"] = await asyncio.to_thread(
+            _execute_data_capability,
+            capability_id,
+            query_params,
+        )
+        hydrated.append(next_component)
+    return hydrated
+
+
+def _execute_data_capability(capability_id: str, query_params: dict[str, Any]) -> dict[str, Any]:
+    try:
+        if capability_id == "system-logs":
+            return _query_system_logs(query_params)
+        if capability_id == "real-alarms":
+            return _query_real_alarms(query_params)
+        if capability_id == "cmdb-resources":
+            return _query_cmdb_resources(query_params)
+        if capability_id == "alarm-top5":
+            return _query_alarm_top5(query_params)
+        if capability_id == "topology-impact":
+            return _query_topology_impact(query_params)
+    except Exception as exc:  # noqa: BLE001
+        return {
+            "source": _plugin_by_id(capability_id).get("dataSource") or "unknown",
+            "sourceStatus": "unavailable",
+            "message": f"{type(exc).__name__}: {_extract_exception_message(exc)}",
+        }
+    return {
+        "source": "unsupported",
+        "sourceStatus": "unavailable",
+        "message": f"未接入数据能力：{capability_id}",
+    }
+
+
+def _query_system_logs(query_params: Mapping[str, Any]) -> dict[str, Any]:
+    from qwenpaw.app.runner.daemon_commands import run_daemon_logs
+
+    limit = max(1, min(200, _safe_int(query_params.get("limit"), 50)))
+    raw_text = run_daemon_logs(lines=limit)
+    content = _extract_fenced_content(raw_text)
+    rows = [
+        _normalize_log_line(line)
+        for line in content.splitlines()
+        if line.strip()
+    ][:limit]
+    source_status = "live" if rows else "empty"
+    if content.startswith("(Log file not found") or content.startswith("(Error reading log"):
+        source_status = "unavailable"
+    return {
+        "source": "backend-log",
+        "sourceStatus": source_status,
+        "lookbackMinutes": _safe_int(query_params.get("lookbackMinutes"), 15),
+        "columns": [
+            {"key": "time", "label": "时间"},
+            {"key": "level", "label": "级别"},
+            {"key": "message", "label": "日志内容"},
+        ],
+        "rows": rows,
+    }
+
+
+def _query_real_alarms(query_params: Mapping[str, Any]) -> dict[str, Any]:
+    from qwenpaw.extensions.integrations.portal_real_alarms import query_portal_real_alarms
+
+    limit = max(1, min(200, _safe_int(query_params.get("limit"), 100)))
+    lookback_minutes = max(1, min(24 * 60, _safe_int(query_params.get("lookbackMinutes"), 15)))
+    payload = query_portal_real_alarms(limit=limit, lookback_minutes=lookback_minutes)
+    rows = list(payload.get("items") or [])
+    return {
+        "source": "portal-real-alarm-api",
+        "sourceStatus": "live" if rows else "empty",
+        "lookbackMinutes": lookback_minutes,
+        "total": int(payload.get("total") or len(rows)),
+        "columns": [
+            {"key": "eventTime", "label": "时间"},
+            {"key": "level", "label": "级别"},
+            {"key": "title", "label": "告警"},
+            {"key": "deviceName", "label": "资源"},
+            {"key": "manageIp", "label": "IP"},
+        ],
+        "rows": rows[:limit],
+    }
+
+
+def _query_cmdb_resources(query_params: Mapping[str, Any]) -> dict[str, Any]:
+    from qwenpaw.extensions.integrations.portal_monitoring_overview import query_asset_overview
+
+    envelope = query_asset_overview()
+    source_status = _envelope_source_status(envelope)
+    data = envelope.get("data") if isinstance(envelope, dict) else None
+    message = str(envelope.get("msg") or "接口不可用") if isinstance(envelope, dict) else "接口不可用"
+    rows = _build_metric_rows(data)
+    value = _first_numeric_value(data)
+    if value is None:
+        value = len(rows)
+    return {
+        "source": "portal-asset-overview-api",
+        "sourceStatus": source_status,
+        "scope": str(query_params.get("scope") or "all"),
+        "value": value,
+        "unit": "项",
+        "trend": "来自 CMDB/资源概览接口" if source_status == "live" else message,
+        "columns": [
+            {"key": "name", "label": "指标"},
+            {"key": "value", "label": "值"},
+        ],
+        "rows": rows,
+        "raw": data,
+    }
+
+
+def _query_alarm_top5(query_params: Mapping[str, Any]) -> dict[str, Any]:
+    from qwenpaw.extensions.integrations.portal_monitoring_overview import query_alarm_top5
+
+    limit = max(1, min(20, _safe_int(query_params.get("limit"), 5)))
+    envelope = query_alarm_top5()
+    data = envelope.get("data") if isinstance(envelope, dict) else None
+    rows = _build_metric_rows(data)[:limit]
+    return {
+        "source": "portal-alarm-statistics-api",
+        "sourceStatus": _envelope_source_status(envelope),
+        "columns": [
+            {"key": "name", "label": "对象"},
+            {"key": "value", "label": "数量"},
+        ],
+        "rows": rows,
+        "categories": [str(row.get("name") or "") for row in rows],
+        "series": [_safe_int(row.get("value"), 0) for row in rows],
+    }
+
+
+def _query_topology_impact(query_params: Mapping[str, Any]) -> dict[str, Any]:
+    from qwenpaw.extensions.integrations.portal_monitoring_overview import query_topology
+
+    envelope = query_topology()
+    data = envelope.get("data") if isinstance(envelope, dict) else None
+    nodes = _build_topology_nodes(data)
+    return {
+        "source": "portal-topology-api",
+        "sourceStatus": _envelope_source_status(envelope),
+        "scope": str(query_params.get("scope") or "active"),
+        "nodes": nodes,
+        "raw": data,
+    }
+
+
+def _extract_fenced_content(raw_text: str) -> str:
+    match = re.search(r"```\s*(.*?)\s*```", str(raw_text or ""), flags=re.DOTALL)
+    return match.group(1) if match else str(raw_text or "")
+
+
+def _normalize_log_line(line: str) -> dict[str, str]:
+    text = line.strip()
+    level = "INFO"
+    level_match = re.search(r"\b(ERROR|WARN|WARNING|INFO|DEBUG|TRACE|CRITICAL)\b", text, re.I)
+    if level_match:
+        level = level_match.group(1).upper()
+    time_match = re.search(r"\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}", text)
+    return {
+        "time": time_match.group(0) if time_match else "--",
+        "level": level,
+        "message": text[:500],
+    }
+
+
+def _envelope_source_status(envelope: Any) -> str:
+    if not isinstance(envelope, dict):
+        return "unavailable"
+    code = _safe_int(envelope.get("code"), 200)
+    if code >= 400:
+        return "unavailable"
+    data = envelope.get("data")
+    if data in (None, [], {}):
+        return "empty"
+    return "live"
+
+
+def _build_metric_rows(data: Any, *, prefix: str = "", limit: int = 12) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    if isinstance(data, dict):
+        for key, value in data.items():
+            label = f"{prefix}.{key}" if prefix else str(key)
+            if isinstance(value, (str, int, float, bool)) or value is None:
+                rows.append({"name": label, "value": "--" if value is None else value})
+            elif isinstance(value, list):
+                rows.append({"name": label, "value": len(value)})
+            elif isinstance(value, dict):
+                rows.extend(_build_metric_rows(value, prefix=label, limit=limit - len(rows)))
+            if len(rows) >= limit:
+                break
+    elif isinstance(data, list):
+        for index, item in enumerate(data[:limit]):
+            if isinstance(item, dict):
+                name = item.get("name") or item.get("title") or item.get("resName") or f"item-{index + 1}"
+                value = (
+                    item.get("value")
+                    or item.get("count")
+                    or item.get("total")
+                    or item.get("num")
+                    or 0
+                )
+                rows.append({"name": str(name), "value": value})
+            else:
+                rows.append({"name": f"item-{index + 1}", "value": str(item)})
+    return rows[:limit]
+
+
+def _first_numeric_value(data: Any) -> int | float | None:
+    if isinstance(data, (int, float)):
+        return data
+    if isinstance(data, dict):
+        for key in ("total", "count", "assetTotal", "resourceTotal", "hostTotal", "value"):
+            value = data.get(key)
+            if isinstance(value, (int, float)):
+                return value
+        for value in data.values():
+            nested = _first_numeric_value(value)
+            if nested is not None:
+                return nested
+    if isinstance(data, list):
+        return len(data)
+    return None
+
+
+def _build_topology_nodes(data: Any) -> list[dict[str, str]]:
+    rows = _build_metric_rows(data, limit=18)
+    return [
+        {
+            "name": str(row.get("name") or "--"),
+            "status": "warning" if index == 0 else "normal",
+        }
+        for index, row in enumerate(rows)
+    ]
+
+
+def _safe_int(value: Any, fallback: int) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return fallback
 
 
 def _build_binding(component: Mapping[str, Any]) -> dict[str, Any]:
@@ -494,7 +966,7 @@ def _build_binding(component: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def _plugin_by_id(plugin_id: str) -> dict[str, Any]:
-    for plugin in BUILTIN_PLUGINS:
+    for plugin in DATA_CAPABILITIES:
         if plugin["id"] == plugin_id:
             return copy.deepcopy(plugin)
     return {}
