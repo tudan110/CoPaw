@@ -47,13 +47,54 @@ function uid() {
 
 /** Extract the last ```html ... ``` code block from markdown content. */
 function extractHtmlBlock(text: string): string | null {
-  const re = /```html\s*\n([\s\S]*?)```/g;
-  let lastMatch: string | null = null;
+  // Try ```html blocks first
+  const htmlRe = /```html\s*\n([\s\S]*?)```/g;
+  let lastHtml: string | null = null;
   let m: RegExpExecArray | null;
-  while ((m = re.exec(text)) !== null) {
-    lastMatch = m[1].trim();
+  while ((m = htmlRe.exec(text)) !== null) {
+    lastHtml = m[1].trim();
   }
-  return lastMatch;
+  if (lastHtml) return lastHtml;
+
+  // Try ```echarts blocks — wrap in a full HTML page
+  const echartsRe = /```echarts\s*\n([\s\S]*?)```/g;
+  let lastEcharts: string | null = null;
+  while ((m = echartsRe.exec(text)) !== null) {
+    lastEcharts = m[1].trim();
+  }
+  if (lastEcharts) {
+    return wrapEchartsHtml(lastEcharts);
+  }
+
+  return null;
+}
+
+/** Wrap an ECharts option JSON into a standalone HTML page. */
+function wrapEchartsHtml(optionJson: string): string {
+  return `<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>ECharts Preview</title>
+<script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"><\/script>
+<style>
+html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #fff; }
+#chart { width: 100%; height: 100%; }
+</style>
+</head>
+<body>
+<div id="chart"></div>
+<script>
+(function(){
+  var chart = echarts.init(document.getElementById('chart'));
+  var option = ${optionJson};
+  chart.setOption(option);
+  window.addEventListener('resize', function(){ chart.resize(); });
+})();
+<\/script>
+</body>
+</html>`;
 }
 
 /** Build a sandboxed data-URI or blob URL for the HTML to render in iframe. */
