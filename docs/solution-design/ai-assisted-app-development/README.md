@@ -164,7 +164,102 @@ server {
 4. 返回访问 URL：`https://portal.example.com/artifacts/{app-id}/`
 5. 前端 nginx 直接 serve 该文件，无需额外处理
 
-## 五、关键技术问题
+## 五、数据存储设计
+
+### 5.1 存储目录结构
+
+所有数据统一存放在工作目录 `~/.qwenpaw/extensions/app-artifacts/` 下：
+
+```
+~/.qwenpaw/extensions/app-artifacts/
+├── artifacts.db              ← SQLite 数据库（结构化元数据）
+├── html/                     ← HTML 文件存储（nginx serve 的目标目录）
+│   ├── {app-id}/
+│   │   └── index.html
+│   ├── {app-id-2}/
+│   │   └── index.html
+│   └── ...
+└── thumbnails/               ← 应用缩略图（可选，后期）
+```
+
+### 5.2 存储职责划分
+
+| 数据 | 存储方式 | 说明 |
+|------|---------|------|
+| 应用元数据 | SQLite `artifacts.db` | 标题、作者、创建时间、状态、类型、描述 |
+| 应用版本记录 | SQLite `artifacts.db` | 版本号、发布时间、关联 HTML 路径 |
+| 卡片配置 | SQLite `artifacts.db` | 参数 schema（JSON）、支持的尺寸规格 |
+| 仪表盘布局 | SQLite `artifacts.db` | 包含哪些卡片、布局 JSON、各卡片参数 |
+| 开发会话关联 | SQLite `artifacts.db` | 应用 ID ↔ 会话 ID 映射，支持迭代修改 |
+| HTML 文件 | 文件系统 `html/` | 实际页面文件，nginx 直接 serve |
+| 缩略图 | 文件系统 `thumbnails/` | 应用市场列表展示用（后期） |
+
+### 5.3 SQLite 表结构设计（初版）
+
+```sql
+-- 应用/卡片主表
+CREATE TABLE apps (
+    id TEXT PRIMARY KEY,              -- UUID 或短 ID
+    title TEXT NOT NULL,              -- 应用标题
+    description TEXT,                 -- 应用描述
+    type TEXT NOT NULL DEFAULT 'app', -- app | widget | dashboard
+    status TEXT NOT NULL DEFAULT 'published', -- draft | published | offline
+    author TEXT,                      -- 创建者
+    session_id TEXT,                  -- 关联的开发会话 ID（用于迭代）
+    html_path TEXT,                   -- HTML 文件相对路径
+    config JSON,                      -- 配置信息（卡片参数 schema、尺寸等）
+    tags TEXT,                        -- 标签（逗号分隔）
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 版本记录
+CREATE TABLE app_versions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    app_id TEXT NOT NULL REFERENCES apps(id),
+    version INTEGER NOT NULL,         -- 版本号（递增）
+    html_path TEXT NOT NULL,          -- 该版本的 HTML 文件路径
+    changelog TEXT,                   -- 变更说明
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 仪表盘布局（仪表盘由多个卡片组成）
+CREATE TABLE dashboard_items (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    dashboard_id TEXT NOT NULL REFERENCES apps(id),  -- 仪表盘 app ID
+    widget_id TEXT NOT NULL REFERENCES apps(id),     -- 卡片 app ID
+    position_x INTEGER NOT NULL DEFAULT 0,           -- 网格列位置
+    position_y INTEGER NOT NULL DEFAULT 0,           -- 网格行位置
+    width INTEGER NOT NULL DEFAULT 1,                -- 占几列
+    height INTEGER NOT NULL DEFAULT 1,               -- 占几行
+    config JSON                                      -- 该卡片在此仪表盘中的参数配置
+);
+
+-- 索引
+CREATE INDEX idx_apps_type ON apps(type);
+CREATE INDEX idx_apps_status ON apps(status);
+CREATE INDEX idx_app_versions_app_id ON app_versions(app_id);
+CREATE INDEX idx_dashboard_items_dashboard_id ON dashboard_items(dashboard_id);
+```
+
+### 5.4 设计说明
+
+**为什么用 SQLite**：
+- 应用元数据需要查询、过滤、分页，关系型数据库最合适
+- SQLite 零部署成本，单文件嵌入后端服务即可
+- QwenPaw 项目中已有 SQLite 使用惯例
+- 数据量级（几百~几千个应用）完全在 SQLite 承载范围内
+
+**为什么 HTML 文件单独存储**：
+- nginx 需要直接 serve 文件目录，不能从数据库读
+- 文件可能较大（含内嵌图表库、CSS 等）
+- 文件系统层面方便做备份和清理
+
+**nginx 指向关系**：
+- nginx 的 `/artifacts/` location alias 指向 `~/.qwenpaw/extensions/app-artifacts/html/`
+- Helm 部署时通过 PVC 挂载该目录到前端 Pod
+
+## 六、关键技术问题
 
 ### 5.1 页面内 JS 调接口的鉴权与代理
 
@@ -206,7 +301,7 @@ AI 在生成页面时根据用户需求场景自动选择合适策略。
 - **沙箱校验**：生成后在沙箱中运行校验，确保无语法错误
 - **安全审查**：检查生成的代码不包含危险操作（XSS、外部请求等）
 
-## 六、实施路径
+## 七、实施路径
 
 ### Phase 1：MVP — 静态 HTML 生成与发布
 
@@ -261,7 +356,7 @@ AI 在生成页面时根据用户需求场景自动选择合适策略。
 - 应用审批发布流程
 - 访问统计与运营分析
 
-## 七、可复用卡片组件（Widget）
+## 八、可复用卡片组件（Widget）
 
 ### 7.1 概念定义
 
@@ -371,7 +466,7 @@ AI：[自动选取 4 个卡片，组装为 2x2 布局的仪表盘]
 | 懒加载 | 仪表盘中卡片按可视区域懒加载，避免同时请求过多接口 |
 | 统一刷新 | 仪表盘级别的全局刷新按钮，触发所有卡片重新加载数据 |
 
-## 八、与已有方案的衔接
+## 九、与已有方案的衔接
 
 `html-artifact-publishing-service` 方案文档中描述的独立发布服务作为**远期演进目标**保留，适用于多系统接入、多租户隔离、海量应用管理等场景。
 
