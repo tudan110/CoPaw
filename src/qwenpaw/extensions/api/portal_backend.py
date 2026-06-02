@@ -37,6 +37,9 @@ from qwenpaw.extensions.api.natural_language_customization_api import (
 from qwenpaw.extensions.api.notification_settings_api import (
     router as notification_settings_router,
 )
+from qwenpaw.extensions.api.app_artifacts_api import (
+    router as app_artifacts_router,
+)
 from qwenpaw.extensions.api.qiming_openai_adapter import (
     router as qiming_openai_adapter_router,
 )
@@ -95,6 +98,7 @@ from qwenpaw.app.channels.base import ContentType, TextContent
 router = APIRouter(prefix="/api/portal", tags=["portal"])
 router.include_router(nl_customization_router)
 router.include_router(notification_settings_router)
+router.include_router(app_artifacts_router)
 router.include_router(qiming_openai_adapter_router)
 router.include_router(xingchen_openai_adapter_router)
 app = FastAPI(title="Portal Backend")
