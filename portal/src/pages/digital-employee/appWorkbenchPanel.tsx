@@ -37,6 +37,24 @@ const AGENT_ID = "gateway";
 const COPAW_USER_ID = "default";
 const COPAW_CHANNEL = "console";
 
+const WORKBENCH_SYSTEM_PREFIX = `你现在处于「AI 应用开发工作台」模式。用户会描述想要的应用、图表或页面，你需要生成**完整的、可独立运行的 HTML 文件**。
+
+要求：
+1. 始终返回一个 \`\`\`html 代码块，包含完整的 <!DOCTYPE html> 页面
+2. 所有依赖（CSS/JS库）通过 CDN 引入（ECharts、Chart.js、Tailwind CSS 等）
+3. 页面应当美观、响应式、包含示例数据
+4. 如果用户要求修改，在之前的基础上修改并返回完整的新版 HTML
+5. 用中文回复说明，但代码注释可以用中英文
+
+可用的 CDN 库参考：
+- ECharts: https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js
+- Tailwind CSS: https://cdn.tailwindcss.com
+- Chart.js: https://cdn.jsdelivr.net/npm/chart.js
+- D3.js: https://cdn.jsdelivr.net/npm/d3@7
+- Animate.css: https://cdn.jsdelivr.net/npm/animate.css
+
+用户需求：`;
+
 /* ------------------------------------------------------------------ */
 /*  Helpers                                                            */
 /* ------------------------------------------------------------------ */
@@ -281,12 +299,19 @@ export function AppWorkbenchPanel({
   /*  Send message                                                     */
   /* ================================================================ */
 
+  const isFirstMessageRef = useRef(true);
+
   const sendMessage = useCallback(async () => {
     const content = inputValue.trim();
     if (!content || isStreaming) return;
 
     setInputValue("");
     appendMessage({ id: uid(), role: "user", content });
+
+    // Prepend system instructions on first message of a session
+    const effectiveContent = isFirstMessageRef.current
+      ? `${WORKBENCH_SYSTEM_PREFIX}${content}`
+      : content;
 
     // Reset streaming state
     assistantMapRef.current = new Map();
@@ -311,6 +336,8 @@ export function AppWorkbenchPanel({
         sessionIdRef.current = chat.session_id;
       }
 
+      isFirstMessageRef.current = false;
+
       await streamChat(
         AGENT_ID,
         {
@@ -318,7 +345,7 @@ export function AppWorkbenchPanel({
             {
               role: "user",
               type: "message",
-              content: [{ type: "text", text: content, status: "created" }],
+              content: [{ type: "text", text: effectiveContent, status: "created" }],
             },
           ],
           session_id: sessionIdRef.current,
@@ -413,6 +440,7 @@ export function AppWorkbenchPanel({
   const handleNewSession = useCallback(() => {
     chatIdRef.current = "";
     sessionIdRef.current = "";
+    isFirstMessageRef.current = true;
     setMessages([]);
     setPreviewHtml("");
     setPreviewUrl("");
