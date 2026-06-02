@@ -1,6 +1,10 @@
 .app-artifacts-panel {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
   padding: 24px 28px;
-  max-width: 1200px;
+  overflow-y: auto;
 }
 
 .app-artifacts-toolbar {

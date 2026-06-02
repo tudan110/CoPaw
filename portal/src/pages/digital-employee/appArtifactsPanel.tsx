@@ -45,7 +45,7 @@ async function fetchArtifacts(params: {
   if (params.page) searchParams.set("page", String(params.page));
   searchParams.set("status", "published");
 
-  const response = await fetch(`/api/portal/app-artifacts?${searchParams.toString()}`);
+  const response = await fetch(`/portal-api/app-artifacts?${searchParams.toString()}`);
   if (!response.ok) {
     throw new Error(`请求失败: ${response.status}`);
   }
@@ -53,7 +53,7 @@ async function fetchArtifacts(params: {
 }
 
 async function deleteArtifact(id: string): Promise<void> {
-  const response = await fetch(`/api/portal/app-artifacts/${id}`, { method: "DELETE" });
+  const response = await fetch(`/portal-api/app-artifacts/${id}`, { method: "DELETE" });
   if (!response.ok) {
     throw new Error(`删除失败: ${response.status}`);
   }
