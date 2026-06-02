@@ -109,3 +109,8 @@ export interface AiBigScreenPublishResponse {
   screen: AiBigScreenApp;
   publishTargets: AiBigScreenPublishTarget[];
 }
+
+export interface AiBigScreenDeleteResponse {
+  screenId: string;
+  deleted: boolean;
+}

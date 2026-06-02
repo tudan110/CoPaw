@@ -104,6 +104,39 @@ def get_screen(
     raise ValueError(f"未找到大屏：{normalized_id}")
 
 
+def delete_screen(
+    *,
+    screen_id: str,
+    path: str | Path | None = None,
+) -> dict[str, Any]:
+    normalized_id = str(screen_id or "").strip()
+    if not normalized_id:
+        raise ValueError("screenId 不能为空")
+
+    registry_path = _resolve_registry_path(path)
+    with _REGISTRY_LOCK:
+        payload = _read_registry_unlocked(registry_path)
+        deleted: dict[str, Any] | None = None
+        next_items: list[dict[str, Any]] = []
+        for item in payload.get("items", []):
+            if not isinstance(item, dict):
+                continue
+            item_id = str(item.get("id") or "").strip()
+            if item_id == normalized_id and deleted is None:
+                deleted = dict(item)
+                continue
+            next_items.append(dict(item))
+
+        if deleted is None:
+            raise ValueError(f"未找到大屏：{normalized_id}")
+
+        payload["items"] = next_items
+        payload["version"] = AI_BIG_SCREEN_REGISTRY_VERSION
+        payload["updatedAt"] = _local_now_iso()
+        _write_json_atomic(registry_path, payload)
+    return deleted
+
+
 def save_screen(
     *,
     screen: Mapping[str, Any],

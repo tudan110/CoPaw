@@ -5,6 +5,7 @@ import copy
 import json
 import re
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone, tzinfo
 from typing import Any, Mapping
 
@@ -182,6 +183,14 @@ def list_screen_assets(*, limit: int = 50) -> list[dict[str, Any]]:
 
 def get_screen_asset(*, screen_id: str) -> dict[str, Any]:
     return registry.get_screen(screen_id=screen_id)
+
+
+def delete_screen_asset(*, screen_id: str) -> dict[str, Any]:
+    deleted = registry.delete_screen(screen_id=screen_id)
+    return {
+        "screenId": str(deleted.get("id") or screen_id),
+        "deleted": True,
+    }
 
 
 def publish_screen_asset(
@@ -720,18 +729,24 @@ def _extract_lookback_minutes(prompt: str) -> int:
 async def _hydrate_components_with_data(components: list[dict[str, Any]]) -> list[dict[str, Any]]:
     if not components:
         return []
-    return list(await asyncio.gather(*(_hydrate_component_with_data(component) for component in components)))
+    max_workers = max(1, min(8, len(components)))
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = [
+            executor.submit(_hydrate_component_with_data_sync, component)
+            for component in components
+        ]
+        return [future.result() for future in futures]
 
 
 async def _hydrate_component_with_data(component: dict[str, Any]) -> dict[str, Any]:
+    return _hydrate_component_with_data_sync(component)
+
+
+def _hydrate_component_with_data_sync(component: dict[str, Any]) -> dict[str, Any]:
     next_component = dict(component)
     capability_id = str(component.get("capabilityId") or component.get("pluginId") or "")
     query_params = _component_query_params(component)
-    next_component["data"] = await asyncio.to_thread(
-        _execute_data_capability,
-        capability_id,
-        query_params,
-    )
+    next_component["data"] = _execute_data_capability(capability_id, query_params)
     return next_component
 
 

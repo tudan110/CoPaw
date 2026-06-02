@@ -5,13 +5,15 @@ import asyncio
 import inspect
 import time
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 
 from qwenpaw.extensions import ai_big_screen_registry as registry
 from qwenpaw.extensions.api import ai_big_screen_service
 from qwenpaw.extensions.api.ai_big_screen_api import (
+    delete_ai_big_screen,
     generate_ai_big_screen_draft,
     get_ai_big_screen,
+    list_ai_big_screens,
     list_ai_big_screen_plugins,
     patch_ai_big_screen,
     publish_ai_big_screen,
@@ -39,6 +41,17 @@ def _await_if_needed(value):
     if inspect.isawaitable(value):
         return asyncio.run(value)
     return value
+
+
+def _methods_by_path(routes) -> dict[str, set[str]]:
+    methods: dict[str, set[str]] = {}
+    for route in routes:
+        path = getattr(route, "path", "")
+        route_methods = getattr(route, "methods", None)
+        if not path or not route_methods:
+            continue
+        methods.setdefault(path, set()).update(route_methods)
+    return methods
 
 
 def _default_draft_plan() -> dict:
@@ -190,6 +203,37 @@ def test_ai_big_screen_generate_persist_publish_and_get(monkeypatch, tmp_path) -
     assert detail["id"] == screen_id
     assert detail["status"] == "published"
     assert len(detail["publishTargets"]) >= 2
+
+
+def test_ai_big_screen_saved_asset_can_be_deleted(monkeypatch, tmp_path) -> None:
+    _patch_registry_path(monkeypatch, tmp_path)
+    draft_screen = {
+        "id": "screen-delete-test",
+        "name": "可删除大屏",
+        "components": [
+            {
+                "id": "component-delete-test",
+                "title": "删除测试指标",
+                "type": "metric-card",
+            },
+        ],
+    }
+    saved_screen = save_ai_big_screen(
+        AiBigScreenSaveRequest(screen=draft_screen, requestedBy="portal-test"),
+    ).screen
+    screen_id = saved_screen["id"]
+
+    delete_response = delete_ai_big_screen(screen_id)
+
+    assert delete_response.deleted is True
+    assert delete_response.screenId == screen_id
+    assert all(item["id"] != screen_id for item in list_ai_big_screens().items)
+    try:
+        get_ai_big_screen(screen_id)
+    except HTTPException as exc:
+        assert exc.status_code == 404
+    else:
+        raise AssertionError("deleted AI big screen should not be readable")
 
 
 def test_ai_big_screen_patch_component_visual_config(monkeypatch, tmp_path) -> None:
@@ -489,17 +533,22 @@ def test_ai_big_screen_router_registers_contract_paths() -> None:
     app = FastAPI()
     app.include_router(ai_big_screen_router, prefix="/api/portal")
     paths = {route.path for route in app.routes}
+    methods = _methods_by_path(app.routes)
 
     assert "/api/portal/ai-big-screens" in paths
     assert "/api/portal/ai-big-screens/draft" in paths
     assert "/api/portal/ai-big-screens/plugins" in paths
+    assert "/api/portal/ai-big-screens/{screen_id}" in paths
     assert "/api/portal/ai-big-screens/{screen_id}/patch" in paths
     assert "/api/portal/ai-big-screens/{screen_id}/publish" in paths
+    assert "DELETE" in methods["/api/portal/ai-big-screens/{screen_id}"]
 
 
 def test_portal_backend_includes_ai_big_screen_router() -> None:
     paths = {route.path for route in portal_backend_router.routes}
+    methods = _methods_by_path(portal_backend_router.routes)
 
     assert "/api/portal/ai-big-screens" in paths
     assert "/api/portal/ai-big-screens/draft" in paths
     assert "/api/portal/ai-big-screens/plugins" in paths
+    assert "DELETE" in methods["/api/portal/ai-big-screens/{screen_id}"]

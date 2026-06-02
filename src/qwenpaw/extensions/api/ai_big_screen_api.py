@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+from typing import Annotated
+
 from fastapi import APIRouter, HTTPException, Query
 
 from qwenpaw.extensions.api.ai_big_screen_models import (
+    AiBigScreenDeleteResponse,
     AiBigScreenDraftRequest,
     AiBigScreenListResponse,
     AiBigScreenPatchRequest,
@@ -15,6 +18,7 @@ from qwenpaw.extensions.api.ai_big_screen_models import (
 )
 from qwenpaw.extensions.api.ai_big_screen_service import (
     build_screen_draft,
+    delete_screen_asset,
     get_screen_asset,
     list_builtin_plugins,
     list_screen_assets,
@@ -33,7 +37,7 @@ def list_ai_big_screen_plugins() -> AiBigScreenPluginsResponse:
 
 @router.get("", response_model=AiBigScreenListResponse)
 def list_ai_big_screens(
-    limit: int = Query(50, ge=1, le=200),
+    limit: Annotated[int, Query(ge=1, le=200)] = 50,
 ) -> AiBigScreenListResponse:
     return AiBigScreenListResponse(items=list_screen_assets(limit=limit))
 
@@ -69,6 +73,16 @@ def save_ai_big_screen(payload: AiBigScreenSaveRequest) -> AiBigScreenResponse:
 def get_ai_big_screen(screen_id: str) -> AiBigScreenResponse:
     try:
         return AiBigScreenResponse(screen=get_screen_asset(screen_id=screen_id))
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@router.delete("/{screen_id}", response_model=AiBigScreenDeleteResponse)
+def delete_ai_big_screen(screen_id: str) -> AiBigScreenDeleteResponse:
+    try:
+        return AiBigScreenDeleteResponse(**delete_screen_asset(screen_id=screen_id))
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except Exception as exc:

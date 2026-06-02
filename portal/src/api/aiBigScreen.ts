@@ -1,6 +1,7 @@
 import { requestPortalApi } from "./portalWorkorders";
 import type {
   AiBigScreenApp,
+  AiBigScreenDeleteResponse,
   AiBigScreenListResponse,
   AiBigScreenPatchResponse,
   AiBigScreenPluginsResponse,
@@ -63,6 +64,16 @@ export function getAiBigScreen(screenId: string) {
   return requestPortalApi<AiBigScreenResponse>(
     `/ai-big-screens/${encodeURIComponent(screenId)}`,
     {},
+    AI_BIG_SCREEN_TIMEOUT_MS,
+  );
+}
+
+export function deleteAiBigScreen(screenId: string) {
+  return requestPortalApi<AiBigScreenDeleteResponse>(
+    `/ai-big-screens/${encodeURIComponent(screenId)}`,
+    {
+      method: "DELETE",
+    },
     AI_BIG_SCREEN_TIMEOUT_MS,
   );
 }

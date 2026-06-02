@@ -49,3 +49,8 @@ class AiBigScreenPatchResponse(BaseModel):
 class AiBigScreenPublishResponse(BaseModel):
     screen: dict[str, Any]
     publishTargets: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class AiBigScreenDeleteResponse(BaseModel):
+    screenId: str
+    deleted: bool = True
