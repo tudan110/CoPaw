@@ -103,7 +103,7 @@ export function AppArtifactsPanel({ onOpenWorkbench }: { onOpenWorkbench?: () =>
   };
 
   const handleOpen = (artifact: AppArtifact) => {
-    window.open(artifact.url, "_blank");
+    window.open(`/portal-api/app-artifacts/${artifact.id}/preview`, "_blank");
   };
 
   const totalPages = Math.ceil(total / 20);
