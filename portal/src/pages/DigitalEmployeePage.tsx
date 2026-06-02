@@ -166,6 +166,10 @@ const AppArtifactsPanel = lazyNamed(
   () => import("./digital-employee/appArtifactsPanel"),
   "AppArtifactsPanel",
 );
+const AppWorkbenchPanel = lazyNamed(
+  () => import("./digital-employee/appWorkbenchPanel"),
+  "AppWorkbenchPanel",
+);
 const ChannelsPanel = lazyNamed(
   () => import("./digital-employee/channelsPanel"),
   "ChannelsPanel",
@@ -238,6 +242,7 @@ export default function DigitalEmployeePage({
   const isTracesMode = activeAdvancedPanel === "traces";
   const isAlarmRegistryMode = activeAdvancedPanel === "alarm-registry";
   const isAppArtifactsMode = activeAdvancedPanel === "app-artifacts";
+  const isAppWorkbenchMode = activeAdvancedPanel === "app-workbench";
   const isChannelsMode = activeAdvancedPanel === "channels";
   const isInboxMode = activeAdvancedPanel === "inbox";
   const isPortalHome = !selectedEmployee;
@@ -1693,7 +1698,9 @@ export default function DigitalEmployeePage({
               }
             }} />)
           ) : isAppArtifactsMode ? (
-            renderDeferredPanel(<AppArtifactsPanel />)
+            renderDeferredPanel(<AppArtifactsPanel onOpenWorkbench={() => navigate("/app-workbench")} />)
+          ) : isAppWorkbenchMode ? (
+            renderDeferredPanel(<AppWorkbenchPanel onBack={() => navigate("/app-artifacts")} />)
           ) : isChannelsMode ? (
             renderDeferredPanel(<ChannelsPanel />)
           ) : isInboxMode ? (

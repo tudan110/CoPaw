@@ -59,7 +59,7 @@ async function deleteArtifact(id: string): Promise<void> {
   }
 }
 
-export function AppArtifactsPanel() {
+export function AppArtifactsPanel({ onOpenWorkbench }: { onOpenWorkbench?: () => void }) {
   const [items, setItems] = useState<AppArtifact[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -114,6 +114,11 @@ export function AppArtifactsPanel() {
         <div className="portal-model-page-title">
           成果应用 <small>AI 生成的 HTML 应用与卡片</small>
         </div>
+        {onOpenWorkbench && (
+          <button className="app-artifacts-create-btn" onClick={onOpenWorkbench}>
+            <i className="fas fa-wand-magic-sparkles" /> 新建应用
+          </button>
+        )}
       </div>
 
       <div className="app-artifacts-toolbar">

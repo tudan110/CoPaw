@@ -122,6 +122,10 @@ export default function App() {
         element={renderDeferredPage(<DigitalEmployeePage forcedSection="app-artifacts" />)}
       />
       <Route
+        path="/app-workbench"
+        element={renderDeferredPage(<DigitalEmployeePage forcedSection="app-workbench" />)}
+      />
+      <Route
         path="/channels"
         element={renderDeferredPage(<DigitalEmployeePage forcedSection="channels" />)}
       />
