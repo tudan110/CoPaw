@@ -118,6 +118,10 @@ export default function App() {
         element={renderDeferredPage(<DigitalEmployeePage forcedSection="alarm-registry" />)}
       />
       <Route
+        path="/app-artifacts"
+        element={renderDeferredPage(<DigitalEmployeePage forcedSection="app-artifacts" />)}
+      />
+      <Route
         path="/channels"
         element={renderDeferredPage(<DigitalEmployeePage forcedSection="channels" />)}
       />
