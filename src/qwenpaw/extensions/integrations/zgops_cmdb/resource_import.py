@@ -989,13 +989,12 @@ def _candidate_env_files() -> list[Path]:
 
     Resolution order (first non-empty file wins):
       1. ``$VEOPS_ENV_FILE`` if set.
-      2. ``<cwd>/.env`` — bridge runs cwd'd into the skill dir, so this
-         is the per-skill override slot.
-      3. ``$QWENPAW_WORKING_DIR/secrets/zgops-cmdb.env`` (or COPAW
+      2. ``$QWENPAW_WORKING_DIR/secrets/zgops-cmdb.env`` (or COPAW
          fallback) — stable shared location all CMDB skills can read.
-      4. ``~/.qwenpaw/secrets/zgops-cmdb.env`` — default working dir.
-      5. ``<repo>/deploy-all/qwenpaw/working/secrets/zgops-cmdb.env`` —
+      3. ``~/.qwenpaw/secrets/zgops-cmdb.env`` — default working dir.
+      4. ``<repo>/deploy-all/qwenpaw/working/secrets/zgops-cmdb.env`` —
          dev fallback when running directly out of a checkout.
+      5. ``<cwd>/.env`` — legacy per-skill fallback.
     """
 
     candidates: list[Path] = []
@@ -1003,8 +1002,6 @@ def _candidate_env_files() -> list[Path]:
     explicit = os.environ.get("VEOPS_ENV_FILE")
     if explicit:
         candidates.append(Path(explicit).expanduser())
-
-    candidates.append(_default_env_file())
 
     working_dir = (
         os.environ.get("QWENPAW_WORKING_DIR")
@@ -1031,6 +1028,8 @@ def _candidate_env_files() -> list[Path]:
         candidates.append(repo_secrets)
     except Exception:
         pass
+
+    candidates.append(_default_env_file())
 
     seen: set[str] = set()
     unique: list[Path] = []
@@ -1063,8 +1062,8 @@ def _parse_env() -> dict[str, str]:
     raise RuntimeError(
         "未找到可用的 CMDB 环境文件，已按以下顺序尝试：\n"
         f"{listing}\n"
-        "请在任一位置创建 .env（参考同级 .env.example），"
-        "推荐填写到共享路径 secrets/zgops-cmdb.env。"
+        "请优先配置共享路径 secrets/zgops-cmdb.env；"
+        "本技能 .env 仅作为旧版回退或通过 VEOPS_ENV_FILE 显式覆盖。"
     )
 
 

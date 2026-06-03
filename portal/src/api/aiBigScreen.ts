@@ -10,7 +10,7 @@ import type {
 } from "../types/aiBigScreen";
 
 const AI_BIG_SCREEN_TIMEOUT_MS = 45000;
-const AI_BIG_SCREEN_GENERATION_TIMEOUT_MS = 180000;
+const AI_BIG_SCREEN_GENERATION_TIMEOUT_MS = 600000;
 
 export function listAiBigScreenPlugins() {
   return requestPortalApi<AiBigScreenPluginsResponse>(

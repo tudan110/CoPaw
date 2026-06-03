@@ -8,13 +8,16 @@ SKILL_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 # are preferred; per-skill .env is only a legacy fallback:
 #   1. $VEOPS_ENV_FILE (explicit override)
 #   2. $QWENPAW_WORKING_DIR/secrets/zgops-cmdb.env (or COPAW)
-#   3. ~/.qwenpaw/secrets/zgops-cmdb.env (shared secrets)
-#   4. per-skill .env (legacy fallback)
-WORKING_DIR_GUESS="${QWENPAW_WORKING_DIR:-${COPAW_WORKING_DIR:-$HOME/.qwenpaw}}"
+#   3. deploy-all/qwenpaw/working/secrets/zgops-cmdb.env (checkout fallback)
+#   4. ~/.qwenpaw/secrets/zgops-cmdb.env (shared secrets)
+#   5. per-skill .env (legacy fallback)
+WORKING_DIR_GUESS="${QWENPAW_WORKING_DIR:-${COPAW_WORKING_DIR:-}}"
+CHECKOUT_WORKING_DIR="$(cd "${SKILL_ROOT}/../../../.." && pwd)"
 ENV_FILE=""
 for _cand in \
   "${VEOPS_ENV_FILE:-}" \
-  "${WORKING_DIR_GUESS%/}/secrets/zgops-cmdb.env" \
+  "${WORKING_DIR_GUESS:+${WORKING_DIR_GUESS%/}/secrets/zgops-cmdb.env}" \
+  "${CHECKOUT_WORKING_DIR%/}/secrets/zgops-cmdb.env" \
   "${HOME}/.qwenpaw/secrets/zgops-cmdb.env" \
   "${SKILL_ROOT}/.env"; do
   if [[ -n "${_cand}" && -f "${_cand}" ]]; then
@@ -24,7 +27,7 @@ for _cand in \
 done
 
 if [[ -z "${ENV_FILE}" ]]; then
-  echo "未找到 CMDB 环境文件（.env 或 secrets/zgops-cmdb.env）" >&2
+  echo "未找到 CMDB 环境文件；请优先配置共享 secrets/zgops-cmdb.env，本技能 .env 仅作旧版回退" >&2
   exit 1
 fi
 

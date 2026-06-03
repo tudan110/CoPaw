@@ -238,6 +238,8 @@
   z-index: 1;
   flex: 0 0 auto;
   display: flex;
+  flex-direction: column;
+  gap: 8px;
   padding: 5px;
   border: 1px solid rgba(56, 245, 208, 0.22);
   border-radius: 8px;
@@ -260,6 +262,18 @@
   box-shadow:
     0 16px 28px rgba(56, 245, 208, 0.18),
     inset 0 1px 0 rgba(255, 255, 255, 0.42);
+}
+
+.ai-big-screen-run-btn.secondary {
+  min-height: 42px;
+  color: #ccfbf1;
+  background:
+    linear-gradient(135deg, rgba(20, 184, 166, 0.18), rgba(15, 23, 42, 0.94)),
+    rgba(15, 23, 42, 0.92);
+  border-color: rgba(94, 234, 212, 0.32);
+  box-shadow:
+    0 12px 22px rgba(20, 184, 166, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.12);
 }
 
 .ai-big-screen-action-btn.primary,

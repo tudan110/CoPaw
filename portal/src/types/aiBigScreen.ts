@@ -15,6 +15,7 @@ export interface AiBigScreenComponent {
   capabilityId?: string;
   queryParams?: Record<string, unknown>;
   visualConfig?: Record<string, unknown>;
+  visualSpec?: Record<string, unknown>;
   refreshInterval?: number;
   interactions?: Record<string, unknown>;
   data?: Record<string, unknown>;
@@ -30,6 +31,13 @@ export interface AiBigScreenDataBinding {
   cachePolicy?: Record<string, unknown>;
   permissionScope?: string;
   sourceDescription?: string;
+  skillName?: string;
+}
+
+export interface AiBigScreenFieldDefinition {
+  key: string;
+  label: string;
+  aliases?: string[];
 }
 
 export interface AiBigScreenVersion {
@@ -83,6 +91,8 @@ export interface AiBigScreenPlugin {
   cachePolicy?: Record<string, unknown>;
   refreshPolicy?: Record<string, unknown>;
   dataSource?: string;
+  skillName?: string;
+  availableFields?: AiBigScreenFieldDefinition[];
   sampleData?: Record<string, unknown>;
   examplePrompts?: string[];
 }

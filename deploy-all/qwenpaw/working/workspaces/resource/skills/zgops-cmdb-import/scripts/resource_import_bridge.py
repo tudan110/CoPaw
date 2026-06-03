@@ -45,9 +45,6 @@ def _ensure_qwenpaw_importable() -> None:
 _ensure_qwenpaw_importable()
 
 SKILL_ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_ENV_FILE = SKILL_ROOT / ".env"
-if "VEOPS_ENV_FILE" not in os.environ:
-    os.environ["VEOPS_ENV_FILE"] = str(DEFAULT_ENV_FILE)
 
 from qwenpaw.extensions.integrations.zgops_cmdb.resource_import import (  # noqa: E402
     import_preview_to_cmdb,

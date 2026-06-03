@@ -9,6 +9,9 @@ from qwenpaw.constant import EnvVarLoader
 from qwenpaw.extensions.integrations.working_secrets import (
     ensure_working_secrets_loaded,
 )
+from qwenpaw.extensions.integrations.portal_real_alarms import (
+    query_portal_real_alarms,
+)
 
 ensure_working_secrets_loaded()
 
@@ -111,29 +114,8 @@ def query_topology() -> dict[str, Any]:
 
 
 def query_active_alarm_total() -> int:
-    if not _get_base_url() or not _get_token():
-        return 0
-    body = {
-        "pageNum": 1,
-        "pageSize": 1,
-        "alarmseverity": "",
-        "alarmstatus": "1",
-        "params": {},
-    }
-    try:
-        with httpx.Client(timeout=_get_timeout_seconds()) as client:
-            response = client.post(
-                _build_url(REAL_ALARM_LIST_ENDPOINT),
-                json=body,
-                headers=_build_headers(),
-            )
-            response.raise_for_status()
-            payload = response.json()
-        if isinstance(payload, dict):
-            return int(payload.get("total") or 0)
-    except Exception:  # noqa: BLE001
-        return 0
-    return 0
+    payload = query_portal_real_alarms(limit=1)
+    return int(payload.get("total") or 0) if isinstance(payload, dict) else 0
 
 
 def query_monitoring_overview_dashboard() -> dict[str, Any]:

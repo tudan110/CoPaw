@@ -19,6 +19,11 @@ type PackedComponent = {
   layoutPosition: Required<AiBigScreenLayoutPosition>;
 };
 
+type DisplayColumn = {
+  key: string;
+  label: string;
+};
+
 function getGridStyle(position: Required<AiBigScreenLayoutPosition>) {
   return {
     gridColumn: `${position.x + 1} / span ${position.w}`,
@@ -45,6 +50,8 @@ function getMinimumGridHeight(component: AiBigScreenComponent) {
     || component.type === "bar-chart"
     || component.type === "table"
     || component.type === "topology"
+    || component.type === "risk-pulse"
+    || component.type === "status-stream"
   ) {
     return 4;
   }
@@ -206,22 +213,27 @@ function renderMetric(component: AiBigScreenComponent) {
 }
 
 function getTableColumns(component: AiBigScreenComponent) {
-  const columns = Array.isArray(component.data?.columns)
-    ? component.data?.columns as Array<Record<string, unknown>>
-    : [];
+  const columns = getExplicitDataColumns(component);
   if (columns.length) {
-    return columns
-      .map((column) => ({
-        key: String(column.key || ""),
-        label: String(column.label || column.key || ""),
-      }))
-      .filter((column) => column.key);
+    return columns;
   }
   return [
     { key: "name", label: "事项" },
     { key: "count", label: "数量" },
     { key: "risk", label: "风险" },
   ];
+}
+
+function getExplicitDataColumns(component: AiBigScreenComponent): DisplayColumn[] {
+  const columns = Array.isArray(component.data?.columns)
+    ? component.data?.columns as Array<Record<string, unknown>>
+    : [];
+  return columns
+    .map((column) => ({
+      key: String(column.key || ""),
+      label: String(column.label || column.key || ""),
+    }))
+    .filter((column) => column.key);
 }
 
 function renderTable(component: AiBigScreenComponent) {
@@ -268,7 +280,249 @@ function renderTopology(component: AiBigScreenComponent) {
   );
 }
 
+function riskRows(component: AiBigScreenComponent) {
+  const riskItems = Array.isArray(component.data?.riskItems)
+    ? component.data?.riskItems as Array<Record<string, unknown>>
+    : [];
+  if (riskItems.length) {
+    return riskItems;
+  }
+  return Array.isArray(component.data?.rows) ? component.data?.rows as Array<Record<string, unknown>> : [];
+}
+
+function getVisualSpec(component: AiBigScreenComponent) {
+  return component.visualSpec && typeof component.visualSpec === "object"
+    ? component.visualSpec as Record<string, unknown>
+    : {};
+}
+
+function getVisualBindings(component: AiBigScreenComponent) {
+  const bindings = getVisualSpec(component).bindings;
+  return bindings && typeof bindings === "object" ? bindings as Record<string, unknown> : {};
+}
+
+function bindingField(component: AiBigScreenComponent, key: string, fallback: string) {
+  const value = getVisualBindings(component)[key];
+  return String(value || fallback);
+}
+
+function rowText(row: Record<string, unknown>, field: string, fallback = "--") {
+  return String(row[field] ?? fallback);
+}
+
+function rowNumber(row: Record<string, unknown>, field: string, fallback = 0) {
+  return numberValue(row[field], fallback);
+}
+
+function riskLevelClass(row: Record<string, unknown>) {
+  const explicit = String(row.riskLevel || "").toLowerCase();
+  if (explicit) {
+    return safeClassToken(explicit, "medium");
+  }
+  const score = numberValue(row.riskScore, 0);
+  if (score >= 88) {
+    return "critical";
+  }
+  if (score >= 72) {
+    return "high";
+  }
+  return "medium";
+}
+
+function renderRiskPulse(component: AiBigScreenComponent) {
+  const rows = riskRows(component).slice(0, 5);
+  const valueField = bindingField(component, "value", "riskScore");
+  const messageField = bindingField(component, "message", "message");
+  const titleField = bindingField(component, "title", "riskReason");
+  const score = numberValue(component.data?.riskScore ?? component.data?.value, 0);
+  const scoreLabel = score > 0 ? String(Math.round(score)) : "--";
+  return (
+    <div className="ai-big-screen-risk-pulse">
+      <div className="ai-big-screen-risk-score">
+        <div className="ai-big-screen-risk-rings" aria-hidden="true">
+          <span />
+          <span />
+          <strong>{scoreLabel}</strong>
+        </div>
+        <div>
+          <span>Risk Pulse</span>
+          <p>{String(component.data?.summary || component.data?.trend || "等待风险信号")}</p>
+        </div>
+      </div>
+      <div className="ai-big-screen-risk-list">
+        {rows.map((row, index) => (
+          <div
+            key={`${String(row.time || row.message || "risk")}-${index}`}
+            className={`ai-big-screen-risk-item level-${riskLevelClass(row)}`}
+            style={{ animationDelay: `${index * 0.12}s` }}
+          >
+              <i aria-hidden="true" />
+              <div>
+              <strong>{rowText(row, titleField, String(row.level || "风险日志"))}</strong>
+              <span>{rowText(row, messageField, String(row.content || row.title || "--"))}</span>
+            </div>
+            <em>{String(row[valueField] ?? row.riskScore ?? "")}</em>
+          </div>
+        ))}
+        {!rows.length ? (
+          <div className="ai-big-screen-empty-data">
+            {String(component.data?.message || "未识别到高危日志")}
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function renderStatusStream(component: AiBigScreenComponent) {
+  const rows = Array.isArray(component.data?.rows) ? component.data?.rows as Array<Record<string, unknown>> : [];
+  const titleField = bindingField(component, "title", "title");
+  const timeField = bindingField(component, "time", "eventTime");
+  const severityField = bindingField(component, "severity", "level");
+  const messageField = bindingField(component, "message", "visibleContent");
+  const primaryFields = new Set([titleField, timeField, severityField, messageField, "visibleContent"]);
+  const detailColumns = getExplicitDataColumns(component)
+    .filter((column) => !primaryFields.has(column.key))
+    .slice(0, 6);
+  return (
+    <div className="ai-big-screen-status-stream">
+      {rows.slice(0, 8).map((row, index) => {
+        const details = detailColumns
+          .map((column) => ({
+            ...column,
+            value: rowText(row, column.key, ""),
+          }))
+          .filter((item) => item.value);
+        return (
+          <div
+            key={`${String(row.id || row.title || row.name || "stream")}-${index}`}
+            className={`ai-big-screen-stream-row level-${safeClassToken(row[severityField] || row.status, "normal")}`}
+            style={{ animationDelay: `${index * 0.1}s` }}
+          >
+            <span aria-hidden="true" />
+            <div>
+              <strong>{rowText(row, titleField, String(row.name || row.message || "--"))}</strong>
+              <small>{rowText(row, timeField, String(row[messageField] || row.deviceName || row.status || ""))}</small>
+              {details.length ? (
+                <dl className="ai-big-screen-stream-fields">
+                  {details.map((detail) => (
+                    <div key={detail.key}>
+                      <dt>{detail.label}</dt>
+                      <dd>{detail.value}</dd>
+                    </div>
+                  ))}
+                </dl>
+              ) : null}
+            </div>
+          </div>
+        );
+      })}
+      {!rows.length ? (
+        <div className="ai-big-screen-empty-data">
+          {String(component.data?.message || "当前暂无流式数据")}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function renderSpecTimeline(component: AiBigScreenComponent) {
+  const rows = riskRows(component).slice(0, 7);
+  const timeField = bindingField(component, "time", "time");
+  const titleField = bindingField(component, "title", "title");
+  const messageField = bindingField(component, "message", "message");
+  const severityField = bindingField(component, "severity", "riskLevel");
+  return (
+    <div className="ai-big-screen-spec-timeline">
+      {rows.map((row, index) => (
+        <div
+          key={`${rowText(row, timeField, "time")}-${index}`}
+          className={`ai-big-screen-timeline-row level-${safeClassToken(row[severityField], "normal")}`}
+        >
+          <span>{rowText(row, timeField, "--")}</span>
+          <i aria-hidden="true" />
+          <div>
+            <strong>{rowText(row, titleField, String(row.riskReason || row.level || "事件"))}</strong>
+            <small>{rowText(row, messageField, "--")}</small>
+          </div>
+        </div>
+      ))}
+      {!rows.length ? <div className="ai-big-screen-empty-data">暂无时间线数据</div> : null}
+    </div>
+  );
+}
+
+function renderSpecMatrix(component: AiBigScreenComponent) {
+  const rows = riskRows(component).slice(0, 18);
+  const titleField = bindingField(component, "title", "title");
+  const valueField = bindingField(component, "value", "value");
+  const severityField = bindingField(component, "severity", "riskLevel");
+  return (
+    <div className="ai-big-screen-spec-matrix">
+      {rows.map((row, index) => (
+        <div
+          key={`${rowText(row, titleField, "cell")}-${index}`}
+          className={`ai-big-screen-matrix-cell level-${safeClassToken(row[severityField], "normal")}`}
+          style={{ animationDelay: `${index * 0.045}s` }}
+        >
+          <strong>{String(Math.round(rowNumber(row, valueField, numberValue(row.riskScore))))}</strong>
+          <span>{rowText(row, titleField, String(row.message || row.name || "--"))}</span>
+        </div>
+      ))}
+      {!rows.length ? <div className="ai-big-screen-empty-data">暂无矩阵数据</div> : null}
+    </div>
+  );
+}
+
+function renderSpecMetricCluster(component: AiBigScreenComponent) {
+  const rows = riskRows(component).slice(0, 6);
+  const titleField = bindingField(component, "title", "name");
+  const valueField = bindingField(component, "value", "value");
+  return (
+    <div className="ai-big-screen-spec-metrics">
+      {rows.map((row, index) => (
+        <div key={`${rowText(row, titleField, "metric")}-${index}`} className="ai-big-screen-spec-metric">
+          <strong>{String(row[valueField] ?? row.count ?? row.total ?? "--")}</strong>
+          <span>{rowText(row, titleField, String(row.title || row.message || "--"))}</span>
+        </div>
+      ))}
+      {!rows.length ? (
+        <>
+          <div className="ai-big-screen-spec-metric">
+            <strong>{String(component.data?.value ?? component.data?.riskScore ?? "--")}</strong>
+            <span>{String(component.data?.trend || component.data?.summary || "核心指标")}</span>
+          </div>
+        </>
+      ) : null}
+    </div>
+  );
+}
+
+function renderVisualSpec(component: AiBigScreenComponent) {
+  const kind = String(getVisualSpec(component).kind || "");
+  if (kind === "risk-field") {
+    return renderRiskPulse(component);
+  }
+  if (kind === "signal-stream") {
+    return renderStatusStream(component);
+  }
+  if (kind === "timeline") {
+    return renderSpecTimeline(component);
+  }
+  if (kind === "heatmap-matrix") {
+    return renderSpecMatrix(component);
+  }
+  if (kind === "metric-cluster") {
+    return renderSpecMetricCluster(component);
+  }
+  return null;
+}
+
 function renderComponentBody(component: AiBigScreenComponent) {
+  const visualSpecBody = renderVisualSpec(component);
+  if (visualSpecBody) {
+    return visualSpecBody;
+  }
   if (component.type === "metric-card") {
     return renderMetric(component);
   }
@@ -286,6 +540,12 @@ function renderComponentBody(component: AiBigScreenComponent) {
   }
   if (component.type === "topology") {
     return renderTopology(component);
+  }
+  if (component.type === "risk-pulse") {
+    return renderRiskPulse(component);
+  }
+  if (component.type === "status-stream") {
+    return renderStatusStream(component);
   }
   return <div className="ai-big-screen-text">{String(component.description || "")}</div>;
 }

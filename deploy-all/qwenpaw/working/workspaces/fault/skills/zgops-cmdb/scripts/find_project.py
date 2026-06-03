@@ -52,6 +52,12 @@ def _candidate_env_files() -> list[Path]:
         candidates.append(
             Path(working).expanduser() / "secrets" / "zgops-cmdb.env"
         )
+    try:
+        candidates.append(
+            _default_env_file().parents[4] / "secrets" / "zgops-cmdb.env"
+        )
+    except IndexError:
+        pass
     candidates.append(
         Path.home() / ".qwenpaw" / "secrets" / "zgops-cmdb.env"
     )

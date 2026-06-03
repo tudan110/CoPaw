@@ -3,6 +3,8 @@ import { join } from "node:path";
 import { defineConfig, loadEnv, type Plugin } from "vite";
 import react from "@vitejs/plugin-react";
 
+const PORTAL_PROXY_TIMEOUT_MS = 600000;
+
 function buildProxyTarget(rawTarget: string | undefined, fallbackTarget: string) {
   return (rawTarget || fallbackTarget).replace(/\/$/, "");
 }
@@ -11,6 +13,8 @@ function buildProxyConfig(target: string, prefix: string, rewritePrefix = "") {
   return {
     target,
     changeOrigin: true,
+    timeout: PORTAL_PROXY_TIMEOUT_MS,
+    proxyTimeout: PORTAL_PROXY_TIMEOUT_MS,
     rewrite: (path: string) =>
       path.replace(new RegExp(`^${prefix}`), rewritePrefix),
   };

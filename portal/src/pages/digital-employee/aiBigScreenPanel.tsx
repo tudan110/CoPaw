@@ -70,7 +70,7 @@ function AiBigScreenGenerationStage() {
       <div className="ai-big-screen-generation-copy">
         <span>AI 编排进行中</span>
         <h2>正在生成大屏草稿</h2>
-        <p>理解需求、调用数据能力并完成视觉排布。</p>
+        <p>复杂大屏会持续调用模型和数据接口，可能需要数分钟。</p>
       </div>
       <div className="ai-big-screen-generation-flow">
         {GENERATION_STEPS.map((step, index) => (
@@ -120,6 +120,7 @@ export function AiBigScreenPanel() {
   const [regionEditorOpen, setRegionEditorOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [extending, setExtending] = useState(false);
   const [publishing, setPublishing] = useState(false);
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
@@ -232,6 +233,39 @@ export function AiBigScreenPanel() {
     }
   };
 
+  const handleAppendPrompt = async () => {
+    if (!screen) {
+      setError("请先生成或载入一个大屏");
+      return;
+    }
+    if (!prompt.trim()) {
+      setError("请输入要追加的模块需求");
+      return;
+    }
+    setExtending(true);
+    setError("");
+    setNotice("");
+    try {
+      const saved = await persistScreen(screen);
+      const response = await patchAiBigScreen(saved.id, {
+        baseVersionId: saved.versions?.[saved.versions.length - 1]?.versionId || "",
+        selectedComponentId: "",
+        instruction: prompt.trim(),
+        requestedBy: "portal",
+      });
+      const nextComponents = response.screen.components || [];
+      setScreen(response.screen);
+      setSelectedComponentId(nextComponents[nextComponents.length - 1]?.id || "");
+      setRegionEditorOpen(false);
+      setNotice(response.summary || "已在当前大屏基础上追加模块。");
+      await loadCatalog();
+    } catch (requestError) {
+      setError(extractErrorMessage(requestError) || "追加模块失败");
+    } finally {
+      setExtending(false);
+    }
+  };
+
   const handlePublish = async () => {
     if (!screen) {
       return;
@@ -331,12 +365,21 @@ export function AiBigScreenPanel() {
               <button
                 type="button"
                 className="ai-big-screen-run-btn"
-                disabled={loading}
+                disabled={loading || extending}
                 onClick={() => void handleGenerateDraft()}
               >
                 <i className={`fas ${loading ? "fa-spinner fa-spin" : "fa-wand-magic-sparkles"}`} aria-hidden="true" />
                 {loading ? "生成中..." : "确认生成大屏"}
                 <i className="fas fa-arrow-right" aria-hidden="true" />
+              </button>
+              <button
+                type="button"
+                className="ai-big-screen-run-btn secondary"
+                disabled={!screen || loading || extending || !prompt.trim()}
+                onClick={() => void handleAppendPrompt()}
+              >
+                <i className={`fas ${extending ? "fa-spinner fa-spin" : "fa-layer-group"}`} aria-hidden="true" />
+                {extending ? "追加中..." : "追加到当前大屏"}
               </button>
             </div>
             <div className="ai-big-screen-mini-flow" aria-hidden="true">
