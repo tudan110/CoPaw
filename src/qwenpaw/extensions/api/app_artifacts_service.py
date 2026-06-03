@@ -553,8 +553,8 @@ def _build_dashboard_html(title: str, items: list[dict[str, Any]]) -> str:
 * {{ margin: 0; padding: 0; box-sizing: border-box; }}
 body {{ background: #0f172a; font-family: system-ui, sans-serif; padding: 20px; min-height: 100vh; }}
 .dashboard-header {{ color: #e2e8f0; font-size: 20px; font-weight: 600; margin-bottom: 20px; padding: 8px 0; }}
-.dashboard-grid {{ display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; auto-rows: minmax(280px, auto); }}
-.dashboard-cell {{ background: rgba(30, 41, 59, 0.6); border-radius: 12px; overflow: hidden; border: 1px solid rgba(148, 163, 184, 0.1); }}
+.dashboard-grid {{ display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; grid-auto-rows: minmax(280px, auto); }}
+.dashboard-cell {{ background: rgba(30, 41, 59, 0.6); border-radius: 12px; overflow: hidden; border: 1px solid rgba(148, 163, 184, 0.1); min-height: 280px; }}
 @media (max-width: 1200px) {{ .dashboard-grid {{ grid-template-columns: repeat(2, 1fr); }} }}
 @media (max-width: 600px) {{ .dashboard-grid {{ grid-template-columns: 1fr; }} }}
 </style>
