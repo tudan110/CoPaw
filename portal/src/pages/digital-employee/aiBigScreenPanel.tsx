@@ -350,141 +350,143 @@ export function AiBigScreenPanel() {
             </div>
           </section>
 
-          <section className="ai-big-screen-actions">
-            <div className="ai-big-screen-action-head">
-              <span>当前资产</span>
-              <strong>{screen ? getStatusLabel(screen.status) : "未生成"}</strong>
-            </div>
-            <button
-              type="button"
-              className="ai-big-screen-action-btn"
-              disabled={!screen || saving}
-              onClick={() => void handleSave()}
-            >
-              <i className="fas fa-floppy-disk" aria-hidden="true" />
-              {saving ? "保存中..." : "保存草稿"}
-            </button>
-            <button
-              type="button"
-              className="ai-big-screen-action-btn primary"
-              disabled={!screen || publishing}
-              onClick={() => void handlePublish()}
-            >
-              <i className="fas fa-satellite-dish" aria-hidden="true" />
-              {publishing ? "发布中..." : "发布大屏"}
-            </button>
-            <button
-              type="button"
-              className="ai-big-screen-action-btn"
-              disabled={!externalTarget?.url}
-              onClick={handleOpenPublished}
-            >
-              <i className="fas fa-arrow-up-right-from-square" aria-hidden="true" />
-              打开发布链接
-            </button>
-            <button
-              type="button"
-              className="ai-big-screen-action-btn"
-              onClick={handleOpenGallery}
-            >
-              <i className="fas fa-table-cells-large" aria-hidden="true" />
-              打开展示中心
-            </button>
-          </section>
+          <div className="ai-big-screen-sidebar-scroll">
+            <section className="ai-big-screen-actions">
+              <div className="ai-big-screen-action-head">
+                <span>当前资产</span>
+                <strong>{screen ? getStatusLabel(screen.status) : "未生成"}</strong>
+              </div>
+              <button
+                type="button"
+                className="ai-big-screen-action-btn"
+                disabled={!screen || saving}
+                onClick={() => void handleSave()}
+              >
+                <i className="fas fa-floppy-disk" aria-hidden="true" />
+                {saving ? "保存中..." : "保存草稿"}
+              </button>
+              <button
+                type="button"
+                className="ai-big-screen-action-btn primary"
+                disabled={!screen || publishing}
+                onClick={() => void handlePublish()}
+              >
+                <i className="fas fa-satellite-dish" aria-hidden="true" />
+                {publishing ? "发布中..." : "发布大屏"}
+              </button>
+              <button
+                type="button"
+                className="ai-big-screen-action-btn"
+                disabled={!externalTarget?.url}
+                onClick={handleOpenPublished}
+              >
+                <i className="fas fa-arrow-up-right-from-square" aria-hidden="true" />
+                打开发布链接
+              </button>
+              <button
+                type="button"
+                className="ai-big-screen-action-btn"
+                onClick={handleOpenGallery}
+              >
+                <i className="fas fa-table-cells-large" aria-hidden="true" />
+                打开展示中心
+              </button>
+            </section>
 
-          {notice ? <div className="ai-big-screen-notice">{notice}</div> : null}
-          {error ? <div className="ai-big-screen-notice error">{error}</div> : null}
+            {notice ? <div className="ai-big-screen-notice">{notice}</div> : null}
+            {error ? <div className="ai-big-screen-notice error">{error}</div> : null}
 
-          <section className="ai-big-screen-library ai-big-screen-admin">
-            <div className="ai-big-screen-section-head">
-              <h3>管理后台</h3>
-              <span>{screenStats.total} 个资产</span>
-            </div>
-            <div className="ai-big-screen-admin-metrics">
-              <span>
-                <strong>{screenStats.total}</strong>
-                全部
-              </span>
-              <span>
-                <strong>{screenStats.published}</strong>
-                已发布
-              </span>
-              <span>
-                <strong>{screenStats.draft}</strong>
-                草稿
-              </span>
-            </div>
-            {screens.length ? (
-              <div className="ai-big-screen-list">
-                {screens.map((item) => (
-                  <article
-                    key={item.id}
-                    className={screen?.id === item.id ? "ai-big-screen-asset active" : "ai-big-screen-asset"}
-                  >
-                    <button
-                      type="button"
-                      className="ai-big-screen-asset-main"
-                      onClick={() => handleLoadScreen(item)}
+            <section className="ai-big-screen-library ai-big-screen-admin">
+              <div className="ai-big-screen-section-head">
+                <h3>管理后台</h3>
+                <span>{screenStats.total} 个资产</span>
+              </div>
+              <div className="ai-big-screen-admin-metrics">
+                <span>
+                  <strong>{screenStats.total}</strong>
+                  全部
+                </span>
+                <span>
+                  <strong>{screenStats.published}</strong>
+                  已发布
+                </span>
+                <span>
+                  <strong>{screenStats.draft}</strong>
+                  草稿
+                </span>
+              </div>
+              {screens.length ? (
+                <div className="ai-big-screen-list">
+                  {screens.map((item) => (
+                    <article
+                      key={item.id}
+                      className={screen?.id === item.id ? "ai-big-screen-asset active" : "ai-big-screen-asset"}
                     >
-                      <span>{item.name}</span>
-                      <small>
-                        {getStatusLabel(item.status)} · {getComponentCount(item)} 组件 · {formatFriendlyDateTime(item.updatedAt || "")}
-                      </small>
-                    </button>
-                    <div className="ai-big-screen-asset-actions">
                       <button
                         type="button"
+                        className="ai-big-screen-asset-main"
                         onClick={() => handleLoadScreen(item)}
-                        disabled={saving}
                       >
-                        <i className="fas fa-crosshairs" aria-hidden="true" />
-                        载入
+                        <span>{item.name}</span>
+                        <small>
+                          {getStatusLabel(item.status)} · {getComponentCount(item)} 组件 · {formatFriendlyDateTime(item.updatedAt || "")}
+                        </small>
                       </button>
-                      <button
-                        type="button"
-                        disabled={!getExternalTarget(item)?.url}
-                        onClick={() => {
-                          const target = getExternalTarget(item);
-                          if (target?.url) {
-                            window.open(target.url, "_blank", "noopener,noreferrer");
-                          }
-                        }}
-                      >
-                        <i className="fas fa-link" aria-hidden="true" />
-                        链接
-                      </button>
-                      <button
-                        type="button"
-                        className="danger"
-                        disabled={saving}
-                        onClick={() => void handleDeleteScreen(item)}
-                      >
-                        <i className="fas fa-trash-can" aria-hidden="true" />
-                        删除
-                      </button>
-                    </div>
-                  </article>
+                      <div className="ai-big-screen-asset-actions">
+                        <button
+                          type="button"
+                          onClick={() => handleLoadScreen(item)}
+                          disabled={saving}
+                        >
+                          <i className="fas fa-crosshairs" aria-hidden="true" />
+                          载入
+                        </button>
+                        <button
+                          type="button"
+                          disabled={!getExternalTarget(item)?.url}
+                          onClick={() => {
+                            const target = getExternalTarget(item);
+                            if (target?.url) {
+                              window.open(target.url, "_blank", "noopener,noreferrer");
+                            }
+                          }}
+                        >
+                          <i className="fas fa-link" aria-hidden="true" />
+                          链接
+                        </button>
+                        <button
+                          type="button"
+                          className="danger"
+                          disabled={saving}
+                          onClick={() => void handleDeleteScreen(item)}
+                        >
+                          <i className="fas fa-trash-can" aria-hidden="true" />
+                          删除
+                        </button>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              ) : (
+                <p>暂无已保存大屏。</p>
+              )}
+            </section>
+
+            <section className="ai-big-screen-library">
+              <div className="ai-big-screen-section-head">
+                <h3>可用数据能力</h3>
+                <span>{plugins.length} 项</span>
+              </div>
+              <div className="ai-big-screen-plugin-tags">
+                {plugins.map((plugin) => (
+                  <span key={plugin.id}>
+                    <strong>{plugin.name}</strong>
+                    <small>{plugin.domain}</small>
+                  </span>
                 ))}
               </div>
-            ) : (
-              <p>暂无已保存大屏。</p>
-            )}
-          </section>
-
-          <section className="ai-big-screen-library">
-            <div className="ai-big-screen-section-head">
-              <h3>可用数据能力</h3>
-              <span>{plugins.length} 项</span>
-            </div>
-            <div className="ai-big-screen-plugin-tags">
-              {plugins.map((plugin) => (
-                <span key={plugin.id}>
-                  <strong>{plugin.name}</strong>
-                  <small>{plugin.domain}</small>
-                </span>
-              ))}
-            </div>
-          </section>
+            </section>
+          </div>
         </aside>
 
         <main className={loading ? "ai-big-screen-preview generating" : "ai-big-screen-preview"}>

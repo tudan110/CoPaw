@@ -14,20 +14,114 @@ interface AiBigScreenRendererProps {
   onSelectComponent?: (componentId: string) => void;
 }
 
-function getGridStyle(position?: AiBigScreenLayoutPosition) {
-  const x = Number(position?.x ?? 0);
-  const y = Number(position?.y ?? 0);
-  const w = Math.max(1, Math.min(12, Number(position?.w ?? 3)));
-  const h = Math.max(1, Number(position?.h ?? 2));
+type PackedComponent = {
+  component: AiBigScreenComponent;
+  layoutPosition: Required<AiBigScreenLayoutPosition>;
+};
+
+function getGridStyle(position: Required<AiBigScreenLayoutPosition>) {
   return {
-    gridColumn: `${x + 1} / span ${w}`,
-    gridRow: `${y + 1} / span ${h}`,
+    gridColumn: `${position.x + 1} / span ${position.w}`,
+    gridRow: `${position.y + 1} / span ${position.h}`,
   };
 }
 
 function numberValue(value: unknown, fallback = 0) {
   const number = Number(value);
   return Number.isFinite(number) ? number : fallback;
+}
+
+function gridNumber(value: unknown, fallback: number) {
+  const number = Number(value);
+  return Number.isFinite(number) ? Math.floor(number) : fallback;
+}
+
+function getMinimumGridHeight(component: AiBigScreenComponent) {
+  if (component.type === "metric-card") {
+    return 3;
+  }
+  if (
+    component.type === "line-chart"
+    || component.type === "bar-chart"
+    || component.type === "table"
+    || component.type === "topology"
+  ) {
+    return 4;
+  }
+  return 2;
+}
+
+function normalizeLayoutPosition(
+  component: AiBigScreenComponent,
+  index: number,
+): Required<AiBigScreenLayoutPosition> {
+  const raw = component.layoutPosition || {};
+  const fallbackW = component.type === "metric-card" ? 4 : 6;
+  const fallbackX = index % 2 ? 6 : 0;
+  const fallbackY = Math.floor(index / 2) * 4;
+  const x = Math.max(0, Math.min(11, gridNumber(raw.x, fallbackX)));
+  const w = Math.max(1, Math.min(12 - x, gridNumber(raw.w, fallbackW)));
+  const minH = getMinimumGridHeight(component);
+  const h = Math.max(minH, Math.min(8, gridNumber(raw.h, minH)));
+  const y = Math.max(0, gridNumber(raw.y, fallbackY));
+  return { x, y, w, h };
+}
+
+function canPlace(occupied: Set<string>, position: Required<AiBigScreenLayoutPosition>) {
+  for (let row = position.y; row < position.y + position.h; row += 1) {
+    for (let column = position.x; column < position.x + position.w; column += 1) {
+      if (occupied.has(`${column}:${row}`)) {
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
+function markPosition(occupied: Set<string>, position: Required<AiBigScreenLayoutPosition>) {
+  for (let row = position.y; row < position.y + position.h; row += 1) {
+    for (let column = position.x; column < position.x + position.w; column += 1) {
+      occupied.add(`${column}:${row}`);
+    }
+  }
+}
+
+function findOpenPosition(
+  occupied: Set<string>,
+  desired: Required<AiBigScreenLayoutPosition>,
+): Required<AiBigScreenLayoutPosition> {
+  const maxX = 12 - desired.w;
+  const preferredColumns = [
+    desired.x,
+    ...Array.from({ length: maxX + 1 }, (_, index) => index).filter((x) => x !== desired.x),
+  ];
+  let y = desired.y;
+  while (true) {
+    for (const x of preferredColumns) {
+      const candidate = { ...desired, x, y };
+      if (canPlace(occupied, candidate)) {
+        return candidate;
+      }
+    }
+    y += 1;
+  }
+}
+
+function packComponents(components: AiBigScreenComponent[]): PackedComponent[] {
+  const occupied = new Set<string>();
+  return [...components]
+    .sort((left, right) => {
+      const leftPosition = left.layoutPosition || {};
+      const rightPosition = right.layoutPosition || {};
+      return Number(leftPosition.y || 0) - Number(rightPosition.y || 0)
+        || Number(leftPosition.x || 0) - Number(rightPosition.x || 0);
+    })
+    .map((component, index) => {
+      const desiredPosition = normalizeLayoutPosition(component, index);
+      const layoutPosition = findOpenPosition(occupied, desiredPosition);
+      markPosition(occupied, layoutPosition);
+      return { component, layoutPosition };
+    });
 }
 
 function stringArray(value: unknown): string[] {
@@ -217,13 +311,8 @@ export function AiBigScreenRenderer({
   onSelectComponent,
 }: AiBigScreenRendererProps) {
   const themePalette = safeClassToken(screen.theme?.palette, "professional");
-  const sortedComponents = useMemo(
-    () => [...(screen.components || [])].sort((left, right) => {
-      const leftPosition = left.layoutPosition || {};
-      const rightPosition = right.layoutPosition || {};
-      return Number(leftPosition.y || 0) - Number(rightPosition.y || 0)
-        || Number(leftPosition.x || 0) - Number(rightPosition.x || 0);
-    }),
+  const packedComponents = useMemo(
+    () => packComponents(screen.components || []),
     [screen.components],
   );
 
@@ -241,7 +330,7 @@ export function AiBigScreenRenderer({
       </header>
 
       <div className="ai-big-screen-canvas">
-        {sortedComponents.map((component) => {
+        {packedComponents.map(({ component, layoutPosition }) => {
           const selected = component.id === selectedComponentId;
           const componentPalette = safeClassToken(component.visualConfig?.palette, "professional");
           const componentEmphasis = safeClassToken(component.visualConfig?.emphasis, "standard");
@@ -256,7 +345,7 @@ export function AiBigScreenRenderer({
                 selected ? "selected" : "",
                 interactive ? "interactive" : "",
               ].filter(Boolean).join(" ")}
-              style={getGridStyle(component.layoutPosition)}
+              style={getGridStyle(layoutPosition)}
               role={interactive ? "button" : undefined}
               tabIndex={interactive ? 0 : undefined}
               onClick={() => interactive && onSelectComponent?.(component.id)}

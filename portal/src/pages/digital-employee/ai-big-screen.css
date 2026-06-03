@@ -66,19 +66,33 @@
     ),
     linear-gradient(135deg, #06110f 0%, #121612 52%, #1a1208 100%);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  overflow: hidden;
 }
 
 .ai-big-screen-sidebar,
 .ai-big-screen-preview {
   min-height: 0;
-  overflow-y: auto;
 }
 
 .ai-big-screen-sidebar {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 12px;
+  overflow: hidden;
+}
+
+.ai-big-screen-sidebar-scroll {
+  min-height: 0;
   display: flex;
   flex-direction: column;
   gap: 12px;
+  overflow-y: auto;
   padding-right: 2px;
+  scrollbar-gutter: stable;
+}
+
+.ai-big-screen-sidebar-scroll > * {
+  flex: 0 0 auto;
 }
 
 .ai-big-screen-control,
@@ -112,6 +126,10 @@
   display: flex;
   flex-direction: column;
   gap: 10px;
+}
+
+.ai-big-screen-command-panel {
+  flex: 0 0 auto;
 }
 
 .ai-big-screen-control-title,
@@ -173,7 +191,10 @@
 .ai-big-screen-control textarea {
   position: relative;
   z-index: 1;
-  min-height: 120px;
+  height: clamp(88px, 13vh, 118px);
+  min-height: 88px;
+  max-height: 118px;
+  resize: none;
 }
 
 .ai-big-screen-control textarea::placeholder,
@@ -215,6 +236,7 @@
 .ai-big-screen-prompt-action {
   position: relative;
   z-index: 1;
+  flex: 0 0 auto;
   display: flex;
   padding: 5px;
   border: 1px solid rgba(56, 245, 208, 0.22);
@@ -460,7 +482,9 @@
 
 .ai-big-screen-preview {
   position: relative;
-  overflow: hidden auto;
+  min-width: 0;
+  overflow: auto;
+  scrollbar-gutter: stable both-edges;
   border: 1px solid rgba(111, 255, 220, 0.2);
   border-radius: 8px;
   background:
@@ -476,7 +500,9 @@
 }
 
 .ai-big-screen-preview > .ai-big-screen-shell {
-  min-height: calc(100vh - 172px);
+  width: max(100%, 1120px);
+  min-width: 1120px;
+  min-height: max(820px, calc(100vh - 172px));
 }
 
 .ai-big-screen-empty,
@@ -843,11 +869,16 @@
 @media (max-width: 1180px) {
   .ai-big-screen-workspace {
     grid-template-columns: 1fr;
+    overflow: visible;
   }
 
   .ai-big-screen-sidebar,
-  .ai-big-screen-preview {
+  .ai-big-screen-sidebar-scroll {
     overflow: visible;
+  }
+
+  .ai-big-screen-preview {
+    overflow: auto;
   }
 }
 
