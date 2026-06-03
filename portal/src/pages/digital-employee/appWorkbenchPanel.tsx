@@ -231,6 +231,28 @@ export function AppWorkbenchPanel({
   }, []);
 
   /* ================================================================ */
+  /*  Preview refresh                                                   */
+  /* ================================================================ */
+
+  const editingAppRef = useRef(editingApp);
+  editingAppRef.current = editingApp;
+
+  /** Re-fetch HTML from backend for the currently editing app. */
+  const refreshPreviewFromBackend = useCallback(async () => {
+    const app = editingAppRef.current;
+    if (!app) return;
+    try {
+      const res = await fetch(`/portal-api/app-artifacts/${app.id}/preview`);
+      if (!res.ok) return;
+      const html = await res.text();
+      if (html) {
+        setPreviewHtml(html);
+        setPreviewUrl(buildPreviewUrl(html));
+      }
+    } catch {}
+  }, []);
+
+  /* ================================================================ */
   /*  Message helpers                                                  */
   /* ================================================================ */
 
@@ -422,9 +444,27 @@ export function AppWorkbenchPanel({
       pendingTextRef.current = new Map();
       setIsStreaming(false);
       // Mark all assistant messages as not streaming
-      setMessages((prev) => prev.map((m) => (m.streaming ? { ...m, streaming: false } : m)));
+      setMessages((prev) => {
+        const updated = prev.map((m) => (m.streaming ? { ...m, streaming: false } : m));
+        // Final pass: extract HTML from all assistant messages
+        for (let i = updated.length - 1; i >= 0; i--) {
+          if (updated[i].role === "assistant" && updated[i].content) {
+            const html = extractHtmlBlock(updated[i].content);
+            if (html) {
+              setPreviewHtml(html);
+              setPreviewUrl(buildPreviewUrl(html));
+              break;
+            }
+          }
+        }
+        return updated;
+      });
+      // Auto-refresh preview from backend when editing an existing app
+      if (editingAppRef.current) {
+        void refreshPreviewFromBackend();
+      }
     }
-  }, [inputValue, isStreaming, appendMessage, handleStreamEvent]);
+  }, [inputValue, isStreaming, appendMessage, handleStreamEvent, refreshPreviewFromBackend]);
 
   const handleStop = useCallback(async () => {
     const controller = streamAbortRef.current;
@@ -652,6 +692,16 @@ export function AppWorkbenchPanel({
               ))}
             </div>
             <div className="app-workbench__preview-actions">
+              {editingApp && (
+                <button
+                  className="app-workbench__toggle-btn"
+                  onClick={() => void refreshPreviewFromBackend()}
+                  title="刷新预览"
+                  disabled={isStreaming}
+                >
+                  <i className="fas fa-sync-alt" />
+                </button>
+              )}
               <button
                 className={`app-workbench__toggle-btn ${viewSource ? "active" : ""}`}
                 onClick={() => setViewSource(!viewSource)}
