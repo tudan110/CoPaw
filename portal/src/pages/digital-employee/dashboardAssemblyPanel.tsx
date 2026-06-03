@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import "../dashboard-assembly.css";
 
 /* ------------------------------------------------------------------ */
@@ -99,6 +99,21 @@ export function DashboardAssemblyPanel({
   const [addWidth, setAddWidth] = useState(2);
   const [addHeight, setAddHeight] = useState(1);
 
+  /* ---- Drag-and-drop reorder state ---- */
+  const [dragIndex, setDragIndex] = useState<number | null>(null);
+  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
+
+  /* ---- Resize state ---- */
+  const [resizing, setResizing] = useState<{
+    index: number;
+    axis: "width" | "height" | "both";
+    startX: number;
+    startY: number;
+    startWidth: number;
+    startHeight: number;
+  } | null>(null);
+  const gridRef = useRef<HTMLDivElement>(null);
+
   /* ---- Load data ---- */
   useEffect(() => {
     (async () => {
@@ -171,6 +186,109 @@ export function DashboardAssemblyPanel({
       }),
     );
   }, []);
+
+  /* ---- Drag-and-drop reorder ---- */
+  const handleDragStart = useCallback((e: React.DragEvent, index: number) => {
+    setDragIndex(index);
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("text/plain", String(index));
+    // Make the drag image slightly transparent
+    if (e.currentTarget instanceof HTMLElement) {
+      e.currentTarget.style.opacity = "0.5";
+    }
+  }, []);
+
+  const handleDragEnd = useCallback((e: React.DragEvent) => {
+    if (e.currentTarget instanceof HTMLElement) {
+      e.currentTarget.style.opacity = "1";
+    }
+    setDragIndex(null);
+    setDragOverIndex(null);
+  }, []);
+
+  const handleDragOver = useCallback((e: React.DragEvent, index: number) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    setDragOverIndex(index);
+  }, []);
+
+  const handleDrop = useCallback((e: React.DragEvent, dropIndex: number) => {
+    e.preventDefault();
+    const fromIndex = dragIndex;
+    if (fromIndex === null || fromIndex === dropIndex) {
+      setDragIndex(null);
+      setDragOverIndex(null);
+      return;
+    }
+    setGridItems((prev) => {
+      const items = [...prev];
+      const [moved] = items.splice(fromIndex, 1);
+      items.splice(dropIndex, 0, moved);
+      return items;
+    });
+    setDragIndex(null);
+    setDragOverIndex(null);
+  }, [dragIndex]);
+
+  /* ---- Mouse-based resize ---- */
+  const handleResizeStart = useCallback(
+    (e: React.MouseEvent, index: number, axis: "width" | "height" | "both") => {
+      e.preventDefault();
+      e.stopPropagation();
+      const item = gridItems[index];
+      setResizing({
+        index,
+        axis,
+        startX: e.clientX,
+        startY: e.clientY,
+        startWidth: item.width,
+        startHeight: item.height,
+      });
+    },
+    [gridItems],
+  );
+
+  useEffect(() => {
+    if (!resizing) return;
+    document.body.classList.add("dashboard-resizing");
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!gridRef.current) return;
+      // Calculate grid cell width from grid container
+      const gridRect = gridRef.current.getBoundingClientRect();
+      const gap = 12;
+      const cellWidth = (gridRect.width - gap * 3) / 4;
+      const cellHeight = 200; // approximate row height
+
+      const deltaX = e.clientX - resizing.startX;
+      const deltaY = e.clientY - resizing.startY;
+
+      setGridItems((prev) =>
+        prev.map((item, i) => {
+          if (i !== resizing.index) return item;
+          let newWidth = item.width;
+          let newHeight = item.height;
+          if (resizing.axis === "width" || resizing.axis === "both") {
+            newWidth = Math.max(1, Math.min(4, Math.round(resizing.startWidth + deltaX / cellWidth)));
+          }
+          if (resizing.axis === "height" || resizing.axis === "both") {
+            newHeight = Math.max(1, Math.min(3, Math.round(resizing.startHeight + deltaY / cellHeight)));
+          }
+          if (newWidth === item.width && newHeight === item.height) return item;
+          return { ...item, width: newWidth, height: newHeight };
+        }),
+      );
+    };
+    const handleMouseUp = () => {
+      setResizing(null);
+      document.body.classList.remove("dashboard-resizing");
+    };
+    window.addEventListener("mousemove", handleMouseMove);
+    window.addEventListener("mouseup", handleMouseUp);
+    return () => {
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("mouseup", handleMouseUp);
+    };
+  }, [resizing]);
 
   /* ---- Save ---- */
   const handleSave = useCallback(async () => {
@@ -374,16 +492,27 @@ export function DashboardAssemblyPanel({
                 <p>从左侧选择卡片添加到仪表盘</p>
               </div>
             ) : (
-              <div className="dashboard-assembly__grid">
+              <div className="dashboard-assembly__grid" ref={gridRef}>
                 {gridItems.map((item, idx) => (
                   <div
                     key={`${item.widget_id}-${idx}`}
-                    className="dashboard-assembly__grid-item"
+                    className={`dashboard-assembly__grid-item${
+                      dragIndex === idx ? " dragging" : ""
+                    }${dragOverIndex === idx && dragIndex !== idx ? " drag-over" : ""}`}
                     style={{
                       gridColumn: `span ${item.width}`,
+                      minHeight: `${item.height * 160 + (item.height - 1) * 12}px`,
                     }}
+                    draggable
+                    onDragStart={(e) => handleDragStart(e, idx)}
+                    onDragEnd={handleDragEnd}
+                    onDragOver={(e) => handleDragOver(e, idx)}
+                    onDrop={(e) => handleDrop(e, idx)}
                   >
                     <div className="dashboard-assembly__grid-item-header">
+                      <span className="dashboard-assembly__drag-handle" title="拖动排序">
+                        <i className="fas fa-grip-vertical" />
+                      </span>
                       <span className="dashboard-assembly__grid-item-title">
                         {item.widget_title}
                       </span>
@@ -407,16 +536,29 @@ export function DashboardAssemblyPanel({
                       <button onClick={() => handleMoveItem(idx, "down")} disabled={idx === gridItems.length - 1} title="下移">
                         <i className="fas fa-chevron-down" />
                       </button>
-                      <button onClick={() => handleResizeItem(idx, "width", -1)} disabled={item.width <= 1} title="缩小">
+                      <button onClick={() => handleResizeItem(idx, "width", -1)} disabled={item.width <= 1} title="缩小宽度">
                         <i className="fas fa-compress-arrows-alt" />
                       </button>
-                      <button onClick={() => handleResizeItem(idx, "width", 1)} disabled={item.width >= 4} title="放大">
+                      <button onClick={() => handleResizeItem(idx, "width", 1)} disabled={item.width >= 4} title="放大宽度">
                         <i className="fas fa-expand-arrows-alt" />
                       </button>
                       <button onClick={() => handleRemoveItem(idx)} className="danger" title="移除">
                         <i className="fas fa-trash" />
                       </button>
                     </div>
+                    {/* Resize handles */}
+                    <div
+                      className="dashboard-assembly__resize-handle-right"
+                      onMouseDown={(e) => handleResizeStart(e, idx, "width")}
+                    />
+                    <div
+                      className="dashboard-assembly__resize-handle-bottom"
+                      onMouseDown={(e) => handleResizeStart(e, idx, "height")}
+                    />
+                    <div
+                      className="dashboard-assembly__resize-handle-corner"
+                      onMouseDown={(e) => handleResizeStart(e, idx, "both")}
+                    />
                   </div>
                 ))}
               </div>
