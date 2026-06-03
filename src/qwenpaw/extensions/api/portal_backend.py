@@ -34,6 +34,9 @@ from qwenpaw.extensions.api.alarm_analyst_card_service import (
 from qwenpaw.extensions.api.natural_language_customization_api import (
     router as nl_customization_router,
 )
+from qwenpaw.extensions.api.ai_big_screen_api import (
+    router as ai_big_screen_router,
+)
 from qwenpaw.extensions.api.notification_settings_api import (
     router as notification_settings_router,
 )
@@ -97,6 +100,7 @@ from qwenpaw.app.channels.base import ContentType, TextContent
 
 router = APIRouter(prefix="/api/portal", tags=["portal"])
 router.include_router(nl_customization_router)
+router.include_router(ai_big_screen_router)
 router.include_router(notification_settings_router)
 router.include_router(app_artifacts_router)
 router.include_router(qiming_openai_adapter_router)

@@ -13,9 +13,9 @@ from typing import Any
 from find_project import (
     CmdbHttpClient,
     _clean_text,
-    _load_env_file,
     _match_projects,
     _project_name,
+    _resolve_veops_env,
 )
 
 
@@ -298,10 +298,9 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    env_file = _default_env_file()
-    env = _load_env_file(env_file)
+    env = _resolve_veops_env()
     client = CmdbHttpClient(
-        base_url=env["VEOPS_BASE_URL"],
+        base_url=env.get("VEOPS_BASE_URL", ""),
         username=env.get("VEOPS_USERNAME", ""),
         password=env.get("VEOPS_PASSWORD", ""),
     )

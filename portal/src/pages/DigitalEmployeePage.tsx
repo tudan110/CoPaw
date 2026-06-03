@@ -142,6 +142,10 @@ const NaturalLanguageCustomizationPanel = lazyNamed(
   () => import("./digital-employee/naturalLanguageCustomizationPanel"),
   "NaturalLanguageCustomizationPanel",
 );
+const AiBigScreenPanel = lazyNamed(
+  () => import("./digital-employee/aiBigScreenPanel"),
+  "AiBigScreenPanel",
+);
 const AppMarketPanel = lazyNamed(
   () => import("./digital-employee/appMarketPanel"),
   "AppMarketPanel",
@@ -242,6 +246,7 @@ export default function DigitalEmployeePage({
   const isCliMode = activeAdvancedPanel === "cli";
   const isResourceImportMode = activeAdvancedPanel === "resource-import";
   const isNlCustomizationMode = activeAdvancedPanel === "nl-customization";
+  const isAiBigScreenMode = activeAdvancedPanel === "ai-big-screen";
   const isAppMarketMode = activeAdvancedPanel === "app-market";
   const isTracesMode = activeAdvancedPanel === "traces";
   const isAlarmRegistryMode = activeAdvancedPanel === "alarm-registry";
@@ -1504,6 +1509,7 @@ export default function DigitalEmployeePage({
             isInspirationActive={isInspirationMode}
             isCliActive={isCliMode}
             isNlCustomizationActive={isNlCustomizationMode}
+            isAiBigScreenActive={isAiBigScreenMode}
             isAppMarketActive={isAppMarketMode}
             isTracesActive={isTracesMode}
             isAlarmRegistryActive={isAlarmRegistryMode}
@@ -1545,6 +1551,11 @@ export default function DigitalEmployeePage({
                 panel: "nl-customization",
               })
             }
+            onOpenAiBigScreen={() =>
+              updateCurrentEmployeeRoute({
+                panel: "ai-big-screen",
+              })
+            }
             onOpenConfig={openModelConfig}
             onOpenSettings={() =>
               updateCurrentEmployeeRoute({
@@ -1582,7 +1593,7 @@ export default function DigitalEmployeePage({
 
         <div
           className={
-            isModelConfigMode || isSettingsMode || isTokenUsageMode || isOpsExpertMode || isMcpMode || isSkillPoolMode || isFdeWorkbenchMode || isKnowledgeBaseMode || isInspirationMode || isCliMode || isResourceImportMode || isNlCustomizationMode || isAppMarketMode || isTracesMode || isAlarmRegistryMode || isAppArtifactsMode || isAppWorkbenchMode || isDashboardAssemblyMode || isChannelsMode || isInboxMode
+            isModelConfigMode || isSettingsMode || isTokenUsageMode || isOpsExpertMode || isMcpMode || isSkillPoolMode || isFdeWorkbenchMode || isKnowledgeBaseMode || isInspirationMode || isCliMode || isResourceImportMode || isNlCustomizationMode || isAiBigScreenMode || isAppMarketMode || isTracesMode || isAlarmRegistryMode || isAppArtifactsMode || isAppWorkbenchMode || isDashboardAssemblyMode || isChannelsMode || isInboxMode
               ? `main-content advanced-page-mode${isKnowledgeBaseMode ? " knowledge-base-page-mode" : ""}`
               : currentView === "chat"
                 ? "main-content"
@@ -1687,6 +1698,8 @@ export default function DigitalEmployeePage({
             )
           ) : isNlCustomizationMode ? (
             renderDeferredPanel(<NaturalLanguageCustomizationPanel />)
+          ) : isAiBigScreenMode ? (
+            renderDeferredPanel(<AiBigScreenPanel />)
           ) : isAppMarketMode ? (
             renderDeferredPanel(<AppMarketPanel />)
           ) : isTracesMode ? (

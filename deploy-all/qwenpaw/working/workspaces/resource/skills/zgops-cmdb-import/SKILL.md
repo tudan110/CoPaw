@@ -7,10 +7,10 @@ description: 用于处理CMDB 测试环境中的资源清单智能导入、资�
 
 凭证默认从共享路径 `working/secrets/zgops-cmdb.env` 读取，
 该位置由所有 zgops-cmdb 系列 skill 共用，与本 skill 目录名解耦。
-若需要为本 skill 单独覆盖，仍可在当前目录放 `.env`（优先级更高）。
+若需要为本 skill 单独覆盖，请显式设置 `$VEOPS_ENV_FILE` 指向对应文件；当前目录 `.env` 仅作为旧版回退。
 
 解析顺序：
-`$VEOPS_ENV_FILE` → `<skill_dir>/.env` → `$QWENPAW_WORKING_DIR/secrets/zgops-cmdb.env` → `~/.qwenpaw/secrets/zgops-cmdb.env` → `<repo>/deploy-all/qwenpaw/working/secrets/zgops-cmdb.env`
+`$VEOPS_ENV_FILE` → `$QWENPAW_WORKING_DIR/secrets/zgops-cmdb.env` → `~/.qwenpaw/secrets/zgops-cmdb.env` → `<repo>/deploy-all/qwenpaw/working/secrets/zgops-cmdb.env` → `<skill_dir>/.env`
 
 ## 默认行为
 
@@ -79,4 +79,4 @@ python scripts/resource_import_bridge.py topology-prompt
 
 - 这个 skill 只负责导入。
 - 执行层入口在 `scripts/resource_import_bridge.py`。
-- 运行时只依赖当前 skill 自己的 `.env` 和仓库内导入实现，不需要检查其他 skill 的目录结构。
+- 运行时默认依赖共享 `secrets/zgops-cmdb.env` 和仓库内导入实现；当前 skill 自己的 `.env` 仅作旧版回退，不需要检查其他 skill 的目录结构。

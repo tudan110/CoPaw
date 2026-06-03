@@ -127,7 +127,7 @@ scripts/zgops-cmdb.sh inoe-stat types --output markdown
 
 环境切换：
 
-- 测试、生产等不同环境只需要替换本 skill 目录下 `.env` 的 `INOE_API_BASE_URL` 和 `INOE_API_TOKEN`。
+- 测试、生产等不同环境只需要替换共享 `secrets/zgops-cmdb.env` 的 `INOE_API_BASE_URL` 和 `INOE_API_TOKEN`；本技能目录 `.env` 仅作旧版回退或临时覆盖。
 - 如果 CMDB 接口走独立网关，可单独配置 `INOE_CMDB_API_BASE_URL`。
 - 如果不同网关路径前缀不同，可覆盖 `INOE_CMDB_TYPES_PATH`、`INOE_CMDB_TYPE_GROUPS_PATH`、`INOE_CMDB_COUNT_GROUP_PATH` 等路径变量。
 
@@ -154,7 +154,7 @@ scripts/zgops-cmdb.sh inoe-stat types --output markdown
 ## 备注
 
 - 这套环境中，`project` 对应“应用”模型。
-- 凭据必须保留在 `.env` 中。
+- 凭据默认保留在共享 `secrets/zgops-cmdb.env` 中；本技能 `.env` 仅作为旧版回退或临时覆盖。
 - 如果 `.env` 中配置了用户名密码但登录失败，允许继续尝试匿名访问只读接口；不要因为登录失败就阻断整个查询链路。
 - 如需图表规范，读取 `references/chart-guide.md` 或 `references/echarts-examples.md`。
 - 如果用户要做资源导入、资源纳管、批量导入，改用同级 `zgops-cmdb-import` skill。

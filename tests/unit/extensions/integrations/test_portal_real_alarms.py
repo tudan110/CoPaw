@@ -1,16 +1,24 @@
-import json
 from datetime import datetime, timezone
-
-import httpx
 
 from qwenpaw.extensions.integrations import portal_real_alarms
 from qwenpaw.extensions.integrations.portal_real_alarms import query_portal_real_alarms
 
 
+class _FakeResponse:
+    def __init__(self, payload: dict):
+        self._payload = payload
+
+    def raise_for_status(self) -> None:
+        return None
+
+    def json(self) -> dict:
+        return self._payload
+
+
 def test_query_portal_real_alarms_normalizes_live_rows(monkeypatch) -> None:
     monkeypatch.setattr(
         "qwenpaw.extensions.integrations.portal_real_alarms._post_real_alarm_list",
-        lambda *, limit, begin_time, end_time: {
+        lambda *, limit, begin_time, end_time, alarm_status=None: {
             "code": 200,
             "total": 1,
             "rows": [
@@ -45,7 +53,7 @@ def test_query_portal_real_alarms_normalizes_live_rows(monkeypatch) -> None:
 def test_query_portal_real_alarms_uses_fallback_dispatch_for_camel_case_subtype(monkeypatch) -> None:
     monkeypatch.setattr(
         "qwenpaw.extensions.integrations.portal_real_alarms._post_real_alarm_list",
-        lambda *, limit, begin_time, end_time: {
+        lambda *, limit, begin_time, end_time, alarm_status=None: {
             "code": 200,
             "total": 1,
             "rows": [
@@ -73,7 +81,7 @@ def test_query_portal_real_alarms_omits_missing_device_sentinel_from_fallback_di
 ) -> None:
     monkeypatch.setattr(
         "qwenpaw.extensions.integrations.portal_real_alarms._post_real_alarm_list",
-        lambda *, limit, begin_time, end_time: {
+        lambda *, limit, begin_time, end_time, alarm_status=None: {
             "code": 200,
             "total": 1,
             "rows": [
@@ -99,7 +107,7 @@ def test_query_portal_real_alarms_omits_missing_device_sentinel_from_fallback_di
 def test_query_portal_real_alarms_preserves_deadlock_dispatch_for_english_mysql_alarm(monkeypatch) -> None:
     monkeypatch.setattr(
         "qwenpaw.extensions.integrations.portal_real_alarms._post_real_alarm_list",
-        lambda *, limit, begin_time, end_time: {
+        lambda *, limit, begin_time, end_time, alarm_status=None: {
             "code": 200,
             "total": 1,
             "rows": [
@@ -125,7 +133,7 @@ def test_query_portal_real_alarms_preserves_deadlock_dispatch_for_english_mysql_
 def test_query_portal_real_alarms_returns_empty_live_payload_when_live_rows_empty(monkeypatch) -> None:
     monkeypatch.setattr(
         "qwenpaw.extensions.integrations.portal_real_alarms._post_real_alarm_list",
-        lambda *, limit, begin_time, end_time: {"code": 200, "total": 0, "rows": []},
+        lambda *, limit, begin_time, end_time, alarm_status=None: {"code": 200, "total": 0, "rows": []},
     )
 
     payload = query_portal_real_alarms(limit=10)
@@ -134,7 +142,7 @@ def test_query_portal_real_alarms_returns_empty_live_payload_when_live_rows_empt
 
 
 def test_query_portal_real_alarms_returns_empty_live_payload_on_request_failure(monkeypatch) -> None:
-    def _raise_request_error(*, limit, begin_time, end_time):
+    def _raise_request_error(*, limit, begin_time, end_time, alarm_status=None):
         raise RuntimeError("gateway unavailable")
 
     monkeypatch.setattr(
@@ -150,7 +158,7 @@ def test_query_portal_real_alarms_returns_empty_live_payload_on_request_failure(
 def test_query_portal_real_alarms_returns_empty_live_payload_when_request_failure_has_no_fallback(
     monkeypatch,
 ) -> None:
-    def _raise_request_error(*, limit, begin_time, end_time):
+    def _raise_request_error(*, limit, begin_time, end_time, alarm_status=None):
         raise RuntimeError("gateway unavailable")
 
     monkeypatch.setattr(
@@ -162,13 +170,14 @@ def test_query_portal_real_alarms_returns_empty_live_payload_when_request_failur
     assert payload == {"total": 0, "items": [], "source": "live"}
 
 
-def test_query_portal_real_alarms_sends_last_24_hours_active_alarm_request(monkeypatch) -> None:
+def test_query_portal_real_alarms_defaults_to_current_active_without_time_filter(monkeypatch) -> None:
     captured = {}
 
-    def _fake_post(*, limit, begin_time, end_time):
+    def _fake_post(*, limit, begin_time=None, end_time=None, alarm_status=None):
         captured["limit"] = limit
         captured["begin_time"] = begin_time
         captured["end_time"] = end_time
+        captured["alarm_status"] = alarm_status
         return {"code": 200, "total": 0, "rows": []}
 
     monkeypatch.setattr(
@@ -182,8 +191,84 @@ def test_query_portal_real_alarms_sends_last_24_hours_active_alarm_request(monke
     )
 
     assert captured["limit"] == 5
-    assert captured["begin_time"] == "2026-04-16 01:00:00"
-    assert captured["end_time"] == "2026-04-17 01:00:00"
+    assert captured["begin_time"] is None
+    assert captured["end_time"] is None
+    assert captured["alarm_status"] is None
+
+
+def test_query_portal_real_alarms_preserves_backend_total_beyond_page_rows(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "qwenpaw.extensions.integrations.portal_real_alarms._post_real_alarm_list",
+        lambda *, limit, begin_time=None, end_time=None, alarm_status=None: {
+            "code": 200,
+            "total": 5948,
+            "rows": [
+                {
+                    "alarmuniqueid": "COMMON__active_alarm_1",
+                    "alarmtitle": "CPU利用率过高",
+                    "alarmseverity": "1",
+                    "eventtime": "2026-06-03 10:00:00",
+                    "devName": "node-1",
+                    "manageIp": "10.0.0.1",
+                },
+            ],
+        },
+    )
+
+    payload = query_portal_real_alarms(limit=5)
+
+    assert payload["total"] == 5948
+    assert len(payload["items"]) == 1
+
+
+def test_query_portal_real_alarms_sends_explicit_minute_window(monkeypatch) -> None:
+    captured = {}
+
+    def _fake_post(*, limit, begin_time=None, end_time=None, alarm_status=None):
+        captured["limit"] = limit
+        captured["begin_time"] = begin_time
+        captured["end_time"] = end_time
+        captured["alarm_status"] = alarm_status
+        return {"code": 200, "total": 0, "rows": []}
+
+    monkeypatch.setattr(
+        "qwenpaw.extensions.integrations.portal_real_alarms._post_real_alarm_list",
+        _fake_post,
+    )
+    query_portal_real_alarms(
+        limit=5,
+        now=datetime(2026, 4, 17, 1, 0, 0, tzinfo=timezone.utc),
+        lookback_minutes=15,
+    )
+
+    assert captured["limit"] == 5
+    assert captured["begin_time"] == "2026-04-17 08:45:00"
+    assert captured["end_time"] == "2026-04-17 09:00:00"
+    assert captured["alarm_status"] is None
+
+
+def test_query_portal_real_alarms_sends_explicit_alarm_status(monkeypatch) -> None:
+    captured = {}
+
+    def _fake_post(*, limit, begin_time=None, end_time=None, alarm_status=None):
+        captured["limit"] = limit
+        captured["begin_time"] = begin_time
+        captured["end_time"] = end_time
+        captured["alarm_status"] = alarm_status
+        return {"code": 200, "total": 0, "rows": []}
+
+    monkeypatch.setattr(
+        "qwenpaw.extensions.integrations.portal_real_alarms._post_real_alarm_list",
+        _fake_post,
+    )
+    query_portal_real_alarms(limit=5, alarm_status="1")
+
+    assert captured == {
+        "limit": 5,
+        "begin_time": None,
+        "end_time": None,
+        "alarm_status": "1",
+    }
 
 
 def test_query_portal_real_alarms_posts_gateway_json_payload(monkeypatch) -> None:
@@ -191,14 +276,14 @@ def test_query_portal_real_alarms_posts_gateway_json_payload(monkeypatch) -> Non
     monkeypatch.delenv("INOE_API_BASE_URL", raising=False)
     monkeypatch.delenv("INOE_API_TOKEN", raising=False)
 
-    def _handler(request: httpx.Request) -> httpx.Response:
-        captured["method"] = request.method
-        captured["url"] = str(request.url)
-        captured["content_type"] = request.headers["content-type"]
-        captured["json"] = json.loads(request.content)
-        return httpx.Response(
-            200,
-            json={
+    def _fake_post(url, *, json, headers, timeout):
+        captured["method"] = "POST"
+        captured["url"] = url
+        captured["content_type"] = headers["Content-Type"]
+        captured["json"] = json
+        captured["timeout"] = timeout
+        return _FakeResponse(
+            {
                 "code": 200,
                 "rows": [
                     {
@@ -214,14 +299,7 @@ def test_query_portal_real_alarms_posts_gateway_json_payload(monkeypatch) -> Non
             },
         )
 
-    transport = httpx.MockTransport(_handler)
-    original_client = httpx.Client
-
-    def _client_factory(*args, **kwargs) -> httpx.Client:
-        kwargs["transport"] = transport
-        return original_client(*args, **kwargs)
-
-    monkeypatch.setattr("qwenpaw.extensions.integrations.portal_real_alarms.httpx.Client", _client_factory)
+    monkeypatch.setattr(portal_real_alarms.requests, "post", _fake_post)
     payload = query_portal_real_alarms(
         limit=5,
         now=datetime(2026, 4, 17, 1, 0, 0, tzinfo=timezone.utc),
@@ -234,31 +312,81 @@ def test_query_portal_real_alarms_posts_gateway_json_payload(monkeypatch) -> Non
         f"{portal_real_alarms.DEFAULT_INOE_API_BASE_URL}{portal_real_alarms.REAL_ALARM_LIST_ENDPOINT}"
     )
     assert captured["content_type"].startswith("application/json")
-    assert captured["json"]["alarmstatus"] == "1"
-    assert captured["json"]["params"] == {
-        "beginEventtime": "2026-04-16 01:00:00",
-        "endEventtime": "2026-04-17 01:00:00",
-    }
+    assert captured["json"]["alarmstatus"] is None
+    assert captured["json"]["params"] == {"beginEventtime": None, "endEventtime": None}
+    assert captured["timeout"] == 30.0
+
+
+def test_query_portal_real_alarms_falls_back_to_curl_on_connection_error(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    captured = {}
+    monkeypatch.setenv("INOE_API_BASE_URL", "http://example.test")
+    monkeypatch.setenv("INOE_API_TOKEN", "demo-token")
+
+    def _raise_connection_error(*args, **kwargs):
+        raise portal_real_alarms.requests.exceptions.ConnectionError("requests path blocked")
+
+    class _FakeCompleted:
+        returncode = 0
+        stdout = "200"
+        stderr = ""
+
+    def _fake_run(args, *, capture_output, text, encoding, timeout, check):
+        output_path = args[args.index("-o") + 1]
+        body = {
+            "code": 200,
+            "total": 5995,
+            "rows": [
+                {
+                    "alarmuniqueid": "live-row-1",
+                    "alarmtitle": "CPU等待IO时间过长",
+                    "alarmseverity": "2",
+                    "eventtime": "2026-06-03 10:00:00",
+                    "devName": "node-1",
+                    "manageIp": "10.0.0.1",
+                }
+            ],
+        }
+        tmp_path.joinpath("unused").write_text("", encoding="utf-8")
+        with open(output_path, "w", encoding="utf-8") as handle:
+            import json
+
+            json.dump(body, handle, ensure_ascii=False)
+        captured["args"] = args
+        captured["timeout"] = timeout
+        captured["payload"] = json.loads(args[args.index("--data-binary") + 1])
+        return _FakeCompleted()
+
+    monkeypatch.setattr(portal_real_alarms.requests, "post", _raise_connection_error)
+    monkeypatch.setattr(portal_real_alarms.subprocess, "run", _fake_run)
+
+    payload = query_portal_real_alarms(limit=3)
+
+    assert payload["source"] == "live"
+    assert payload["total"] == 5995
+    assert payload["items"][0]["title"] == "CPU等待IO时间过长"
+    assert "--max-time" in captured["args"]
+    assert captured["args"][captured["args"].index("--max-time") + 1] == "30"
+    assert captured["timeout"] == 35
+    assert captured["payload"]["alarmstatus"] is None
+    assert captured["payload"]["params"] == {"beginEventtime": None, "endEventtime": None}
 
 
 def test_query_portal_real_alarms_posts_bearer_header_from_config(monkeypatch) -> None:
     captured = {}
 
-    def _handler(request: httpx.Request) -> httpx.Response:
-        captured["url"] = str(request.url)
-        captured["authorization"] = request.headers.get("authorization")
-        return httpx.Response(200, json={"code": 200, "rows": [], "total": 0})
-
-    transport = httpx.MockTransport(_handler)
-    original_client = httpx.Client
-
-    def _client_factory(*args, **kwargs) -> httpx.Client:
-        kwargs["transport"] = transport
-        return original_client(*args, **kwargs)
+    def _fake_post(url, *, json, headers, timeout):
+        captured["url"] = url
+        captured["authorization"] = headers.get("Authorization")
+        captured["json"] = json
+        captured["timeout"] = timeout
+        return _FakeResponse({"code": 200, "rows": [], "total": 0})
 
     monkeypatch.setenv("INOE_API_BASE_URL", "http://example.test")
     monkeypatch.setenv("INOE_API_TOKEN", "demo-token")
-    monkeypatch.setattr("qwenpaw.extensions.integrations.portal_real_alarms.httpx.Client", _client_factory)
+    monkeypatch.setattr(portal_real_alarms.requests, "post", _fake_post)
     payload = query_portal_real_alarms(limit=3)
 
     assert payload == {"total": 0, "items": [], "source": "live"}
