@@ -1707,6 +1707,7 @@ export default function DigitalEmployeePage({
               onOpenWorkbench={() => navigate("/app-workbench")}
               onEditApp={(appId) => navigate(`/app-workbench?edit=${appId}`)}
               onOpenDashboardAssembly={() => navigate("/dashboard-assembly")}
+              onEditDashboard={(id) => navigate(`/dashboard-assembly?edit=${id}`)}
             />)
           ) : isAppWorkbenchMode ? (
             renderDeferredPanel(<AppWorkbenchPanel

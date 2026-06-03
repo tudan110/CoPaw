@@ -59,10 +59,11 @@ async function deleteArtifact(id: string): Promise<void> {
   }
 }
 
-export function AppArtifactsPanel({ onOpenWorkbench, onEditApp, onOpenDashboardAssembly }: {
+export function AppArtifactsPanel({ onOpenWorkbench, onEditApp, onOpenDashboardAssembly, onEditDashboard }: {
   onOpenWorkbench?: () => void;
   onEditApp?: (appId: string) => void;
   onOpenDashboardAssembly?: () => void;
+  onEditDashboard?: (dashboardId: string) => void;
 }) {
   const [items, setItems] = useState<AppArtifact[]>([]);
   const [total, setTotal] = useState(0);
@@ -222,7 +223,11 @@ export function AppArtifactsPanel({ onOpenWorkbench, onEditApp, onOpenDashboardA
                     {onEditApp && (
                       <button
                         className="app-artifacts-btn-edit"
-                        onClick={() => onEditApp(item.id)}
+                        onClick={() =>
+                          item.type === "dashboard" && onEditDashboard
+                            ? onEditDashboard(item.id)
+                            : onEditApp(item.id)
+                        }
                         title="编辑应用"
                       >
                         编辑
