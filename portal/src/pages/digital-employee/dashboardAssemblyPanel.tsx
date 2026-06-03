@@ -181,7 +181,8 @@ export function DashboardAssemblyPanel({
     setGridItems((prev) =>
       prev.map((item, i) => {
         if (i !== index) return item;
-        const newVal = Math.max(1, Math.min(4, item[field] + delta));
+        const max = field === "width" ? 4 : 10;
+        const newVal = Math.max(1, Math.min(max, item[field] + delta));
         return { ...item, [field]: newVal };
       }),
     );
@@ -271,7 +272,7 @@ export function DashboardAssemblyPanel({
             newWidth = Math.max(1, Math.min(4, Math.round(resizing.startWidth + deltaX / cellWidth)));
           }
           if (resizing.axis === "height" || resizing.axis === "both") {
-            newHeight = Math.max(1, Math.min(3, Math.round(resizing.startHeight + deltaY / cellHeight)));
+            newHeight = Math.max(1, Math.min(10, Math.round(resizing.startHeight + deltaY / cellHeight)));
           }
           if (newWidth === item.width && newHeight === item.height) return item;
           return { ...item, width: newWidth, height: newHeight };
@@ -474,6 +475,8 @@ export function DashboardAssemblyPanel({
                     <option value={1}>1行</option>
                     <option value={2}>2行</option>
                     <option value={3}>3行</option>
+                    <option value={4}>4行</option>
+                    <option value={5}>5行</option>
                   </select>
                   <button className="dashboard-assembly__add-btn" onClick={handleAddWidget}>
                     <i className="fas fa-plus" /> 添加
