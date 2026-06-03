@@ -126,6 +126,10 @@ export default function App() {
         element={renderDeferredPage(<DigitalEmployeePage forcedSection="app-workbench" />)}
       />
       <Route
+        path="/dashboard-assembly"
+        element={renderDeferredPage(<DigitalEmployeePage forcedSection="dashboard-assembly" />)}
+      />
+      <Route
         path="/channels"
         element={renderDeferredPage(<DigitalEmployeePage forcedSection="channels" />)}
       />

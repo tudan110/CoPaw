@@ -353,3 +353,216 @@ def get_html_content(app_id: str) -> str | None:
     if html_file.exists():
         return html_file.read_text(encoding="utf-8")
     return None
+
+
+# ─── Dashboard API ────────────────────────────────────────────────────────────
+
+
+def create_dashboard(
+    *,
+    title: str,
+    description: str = "",
+    items: list[dict[str, Any]] | None = None,
+    tags: list[str] | None = None,
+    session_id: str | None = None,
+    author: str = "",
+) -> dict[str, Any]:
+    """创建仪表盘，关联多个 widget 卡片。"""
+    dashboard_id = _generate_id()
+    now = _now_iso()
+
+    # Generate an empty HTML page as placeholder (actual rendering is client-side)
+    html_content = _build_dashboard_html(title, items or [])
+    html_path = _write_html(dashboard_id, html_content)
+
+    conn = _get_db()
+    try:
+        conn.execute(
+            """INSERT INTO apps (id, title, description, type, status, author,
+               session_id, html_path, config, tags, version, created_at, updated_at)
+               VALUES (?, ?, ?, 'dashboard', 'published', ?, ?, ?, ?, ?, 1, ?, ?)""",
+            (
+                dashboard_id,
+                title,
+                description,
+                author,
+                session_id,
+                html_path,
+                json.dumps({"layout": "grid"}),
+                json.dumps(tags or []),
+                now,
+                now,
+            ),
+        )
+        conn.execute(
+            """INSERT INTO app_versions (app_id, version, html_path, changelog, created_at)
+               VALUES (?, 1, ?, '初始创建', ?)""",
+            (dashboard_id, html_path, now),
+        )
+
+        # Insert widget items
+        for item in (items or []):
+            conn.execute(
+                """INSERT INTO dashboard_items
+                   (dashboard_id, widget_id, position_x, position_y, width, height, config)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    dashboard_id,
+                    item["widget_id"],
+                    item.get("position_x", 0),
+                    item.get("position_y", 0),
+                    item.get("width", 1),
+                    item.get("height", 1),
+                    json.dumps(item.get("config")) if item.get("config") else None,
+                ),
+            )
+
+        conn.commit()
+    finally:
+        conn.close()
+
+    return get_dashboard(dashboard_id)  # type: ignore
+
+
+def get_dashboard(dashboard_id: str) -> dict[str, Any] | None:
+    """获取仪表盘详情（含关联的 widget 列表）。"""
+    conn = _get_db()
+    try:
+        row = conn.execute("SELECT * FROM apps WHERE id = ? AND type = 'dashboard'", (dashboard_id,)).fetchone()
+        if row is None:
+            return None
+        d = _row_to_dict(row)
+        d["tags"] = _parse_tags(d.get("tags", "[]"))
+        d["config"] = _parse_config(d.get("config"))
+        d["url"] = f"/artifacts/{dashboard_id}/"
+
+        # Fetch widget items
+        items_rows = conn.execute(
+            "SELECT * FROM dashboard_items WHERE dashboard_id = ? ORDER BY position_y, position_x",
+            (dashboard_id,),
+        ).fetchall()
+        d["items"] = []
+        for item_row in items_rows:
+            item_d = _row_to_dict(item_row)
+            item_d["config"] = _parse_config(item_d.get("config"))
+            # Attach widget title
+            widget = conn.execute("SELECT title, type FROM apps WHERE id = ?", (item_d["widget_id"],)).fetchone()
+            item_d["widget_title"] = widget["title"] if widget else "未知卡片"
+            item_d["widget_type"] = widget["type"] if widget else "widget"
+            d["items"].append(item_d)
+
+        return d
+    finally:
+        conn.close()
+
+
+def update_dashboard_items(
+    dashboard_id: str,
+    items: list[dict[str, Any]],
+) -> dict[str, Any] | None:
+    """更新仪表盘的 widget 布局（替换所有 items）。"""
+    conn = _get_db()
+    try:
+        existing = conn.execute(
+            "SELECT * FROM apps WHERE id = ? AND type = 'dashboard'", (dashboard_id,)
+        ).fetchone()
+        if existing is None:
+            return None
+
+        now = _now_iso()
+
+        # Delete old items and insert new ones
+        conn.execute("DELETE FROM dashboard_items WHERE dashboard_id = ?", (dashboard_id,))
+        for item in items:
+            conn.execute(
+                """INSERT INTO dashboard_items
+                   (dashboard_id, widget_id, position_x, position_y, width, height, config)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    dashboard_id,
+                    item["widget_id"],
+                    item.get("position_x", 0),
+                    item.get("position_y", 0),
+                    item.get("width", 1),
+                    item.get("height", 1),
+                    json.dumps(item.get("config")) if item.get("config") else None,
+                ),
+            )
+
+        # Regenerate dashboard HTML
+        html_content = _build_dashboard_html(existing["title"], items)
+        html_path = _write_html(dashboard_id, html_content)
+        new_version = existing["version"] + 1
+
+        conn.execute(
+            """UPDATE apps SET html_path = ?, version = ?, updated_at = ? WHERE id = ?""",
+            (html_path, new_version, now, dashboard_id),
+        )
+        conn.execute(
+            """INSERT INTO app_versions (app_id, version, html_path, changelog, created_at)
+               VALUES (?, ?, ?, '布局更新', ?)""",
+            (dashboard_id, new_version, html_path, now),
+        )
+
+        conn.commit()
+    finally:
+        conn.close()
+
+    return get_dashboard(dashboard_id)
+
+
+def list_widgets() -> list[dict[str, Any]]:
+    """列出所有可用的 widget 卡片（type = widget 或 app 且 status = published）。"""
+    conn = _get_db()
+    try:
+        rows = conn.execute(
+            "SELECT id, title, description, type, tags, updated_at FROM apps WHERE status = 'published' AND type IN ('widget', 'app') ORDER BY updated_at DESC",
+        ).fetchall()
+        result = []
+        for row in rows:
+            d = _row_to_dict(row)
+            d["tags"] = _parse_tags(d.get("tags", "[]"))
+            result.append(d)
+        return result
+    finally:
+        conn.close()
+
+
+def _build_dashboard_html(title: str, items: list[dict[str, Any]]) -> str:
+    """生成仪表盘 HTML — 使用 iframe 嵌入各 widget。"""
+    widget_frames = ""
+    for item in items:
+        w = item.get("width", 1)
+        h = item.get("height", 1)
+        widget_id = item.get("widget_id", "")
+        widget_frames += f"""
+        <div class="dashboard-cell" style="grid-column: span {w}; grid-row: span {h};">
+          <iframe src="/portal-api/app-artifacts/{widget_id}/preview"
+                  style="width:100%;height:100%;border:none;border-radius:8px;"
+                  sandbox="allow-scripts allow-same-origin"
+                  loading="lazy"></iframe>
+        </div>"""
+
+    return f"""<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>{title}</title>
+<style>
+* {{ margin: 0; padding: 0; box-sizing: border-box; }}
+body {{ background: #0f172a; font-family: system-ui, sans-serif; padding: 20px; min-height: 100vh; }}
+.dashboard-header {{ color: #e2e8f0; font-size: 20px; font-weight: 600; margin-bottom: 20px; padding: 8px 0; }}
+.dashboard-grid {{ display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; auto-rows: minmax(280px, auto); }}
+.dashboard-cell {{ background: rgba(30, 41, 59, 0.6); border-radius: 12px; overflow: hidden; border: 1px solid rgba(148, 163, 184, 0.1); }}
+@media (max-width: 1200px) {{ .dashboard-grid {{ grid-template-columns: repeat(2, 1fr); }} }}
+@media (max-width: 600px) {{ .dashboard-grid {{ grid-template-columns: 1fr; }} }}
+</style>
+</head>
+<body>
+<div class="dashboard-header">{title}</div>
+<div class="dashboard-grid">
+{widget_frames}
+</div>
+</body>
+</html>"""

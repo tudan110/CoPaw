@@ -59,9 +59,10 @@ async function deleteArtifact(id: string): Promise<void> {
   }
 }
 
-export function AppArtifactsPanel({ onOpenWorkbench, onEditApp }: {
+export function AppArtifactsPanel({ onOpenWorkbench, onEditApp, onOpenDashboardAssembly }: {
   onOpenWorkbench?: () => void;
   onEditApp?: (appId: string) => void;
+  onOpenDashboardAssembly?: () => void;
 }) {
   const [items, setItems] = useState<AppArtifact[]>([]);
   const [total, setTotal] = useState(0);
@@ -120,6 +121,11 @@ export function AppArtifactsPanel({ onOpenWorkbench, onEditApp }: {
         {onOpenWorkbench && (
           <button className="app-artifacts-create-btn" onClick={onOpenWorkbench}>
             <i className="fas fa-wand-magic-sparkles" /> 新建应用
+          </button>
+        )}
+        {onOpenDashboardAssembly && (
+          <button className="app-artifacts-dashboard-btn" onClick={onOpenDashboardAssembly}>
+            <i className="fas fa-th-large" /> 组装仪表盘
           </button>
         )}
       </div>

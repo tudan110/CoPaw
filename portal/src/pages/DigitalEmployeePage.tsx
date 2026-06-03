@@ -170,6 +170,10 @@ const AppWorkbenchPanel = lazyNamed(
   () => import("./digital-employee/appWorkbenchPanel"),
   "AppWorkbenchPanel",
 );
+const DashboardAssemblyPanel = lazyNamed(
+  () => import("./digital-employee/dashboardAssemblyPanel"),
+  "DashboardAssemblyPanel",
+);
 const ChannelsPanel = lazyNamed(
   () => import("./digital-employee/channelsPanel"),
   "ChannelsPanel",
@@ -243,6 +247,7 @@ export default function DigitalEmployeePage({
   const isAlarmRegistryMode = activeAdvancedPanel === "alarm-registry";
   const isAppArtifactsMode = activeAdvancedPanel === "app-artifacts";
   const isAppWorkbenchMode = activeAdvancedPanel === "app-workbench";
+  const isDashboardAssemblyMode = activeAdvancedPanel === "dashboard-assembly";
   const isChannelsMode = activeAdvancedPanel === "channels";
   const isInboxMode = activeAdvancedPanel === "inbox";
   const isPortalHome = !selectedEmployee;
@@ -1577,7 +1582,7 @@ export default function DigitalEmployeePage({
 
         <div
           className={
-            isModelConfigMode || isSettingsMode || isTokenUsageMode || isOpsExpertMode || isMcpMode || isSkillPoolMode || isFdeWorkbenchMode || isKnowledgeBaseMode || isInspirationMode || isCliMode || isResourceImportMode || isNlCustomizationMode || isAppMarketMode || isTracesMode || isAlarmRegistryMode || isAppArtifactsMode || isChannelsMode || isInboxMode
+            isModelConfigMode || isSettingsMode || isTokenUsageMode || isOpsExpertMode || isMcpMode || isSkillPoolMode || isFdeWorkbenchMode || isKnowledgeBaseMode || isInspirationMode || isCliMode || isResourceImportMode || isNlCustomizationMode || isAppMarketMode || isTracesMode || isAlarmRegistryMode || isAppArtifactsMode || isAppWorkbenchMode || isDashboardAssemblyMode || isChannelsMode || isInboxMode
               ? `main-content advanced-page-mode${isKnowledgeBaseMode ? " knowledge-base-page-mode" : ""}`
               : currentView === "chat"
                 ? "main-content"
@@ -1701,11 +1706,17 @@ export default function DigitalEmployeePage({
             renderDeferredPanel(<AppArtifactsPanel
               onOpenWorkbench={() => navigate("/app-workbench")}
               onEditApp={(appId) => navigate(`/app-workbench?edit=${appId}`)}
+              onOpenDashboardAssembly={() => navigate("/dashboard-assembly")}
             />)
           ) : isAppWorkbenchMode ? (
             renderDeferredPanel(<AppWorkbenchPanel
               onBack={() => navigate("/app-artifacts")}
               editAppId={routeSearchParams.get("edit") || undefined}
+            />)
+          ) : isDashboardAssemblyMode ? (
+            renderDeferredPanel(<DashboardAssemblyPanel
+              onBack={() => navigate("/app-artifacts")}
+              editDashboardId={routeSearchParams.get("edit") || undefined}
             />)
           ) : isChannelsMode ? (
             renderDeferredPanel(<ChannelsPanel />)

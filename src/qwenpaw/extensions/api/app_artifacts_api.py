@@ -4,21 +4,29 @@ from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import HTMLResponse
+from pydantic import BaseModel, Field
+from typing import Any
 
 from qwenpaw.extensions.api.app_artifacts_models import (
     AppArtifactCreate,
     AppArtifactListResponse,
     AppArtifactResponse,
     AppArtifactUpdate,
+    DashboardCreate,
+    DashboardItemCreate,
 )
 from qwenpaw.extensions.api.app_artifacts_service import (
     create_app,
+    create_dashboard,
     delete_app,
     get_app,
     get_app_versions,
+    get_dashboard,
     get_html_content,
     list_apps,
+    list_widgets,
     update_app,
+    update_dashboard_items,
 )
 
 router = APIRouter(prefix="/app-artifacts", tags=["portal"])
@@ -56,6 +64,12 @@ async def list_artifacts(
         page=page,
         page_size=page_size,
     )
+
+
+@router.get("/widgets")
+async def get_available_widgets():
+    """获取所有可用的 widget 卡片（供仪表盘组装选择）。"""
+    return {"items": list_widgets()}
 
 
 @router.get("/{app_id}", response_model=AppArtifactResponse)
@@ -110,3 +124,46 @@ async def preview_artifact(app_id: str):
     if html is None:
         raise HTTPException(status_code=404, detail="应用不存在或 HTML 文件缺失")
     return HTMLResponse(content=html)
+
+
+# ─── Dashboard endpoints ──────────────────────────────────────────────────────
+
+
+class DashboardUpdateItems(BaseModel):
+    """更新仪表盘布局的请求体。"""
+    items: list[DashboardItemCreate] = Field(default_factory=list)
+
+
+@router.post("/dashboards", response_model=AppArtifactResponse)
+async def create_dashboard_endpoint(body: DashboardCreate):
+    """创建仪表盘（组装多个 widget 卡片）。"""
+    result = create_dashboard(
+        title=body.title,
+        description=body.description,
+        items=[item.model_dump() for item in body.items],
+        tags=body.tags,
+        session_id=body.session_id,
+        author="",
+    )
+    return result
+
+
+@router.get("/dashboards/{dashboard_id}")
+async def get_dashboard_detail(dashboard_id: str):
+    """获取仪表盘详情（含 widget 列表）。"""
+    result = get_dashboard(dashboard_id)
+    if result is None:
+        raise HTTPException(status_code=404, detail="仪表盘不存在")
+    return result
+
+
+@router.put("/dashboards/{dashboard_id}/items")
+async def update_dashboard_layout(dashboard_id: str, body: DashboardUpdateItems):
+    """更新仪表盘的 widget 布局。"""
+    result = update_dashboard_items(
+        dashboard_id,
+        [item.model_dump() for item in body.items],
+    )
+    if result is None:
+        raise HTTPException(status_code=404, detail="仪表盘不存在")
+    return result
