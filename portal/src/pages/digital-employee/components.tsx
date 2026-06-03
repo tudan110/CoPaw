@@ -25,6 +25,7 @@ import {
   PORTAL_INSPECTION_CARD_MARKER,
   unwrapPortalInspectionCardContent,
 } from "./helpers";
+import { looksLikeInspectionSummaryReport } from "../../inspection-analyst/summaryDisplayModel";
 import {
   CONVERSATION_PROCESS_RECORD_DISPLAY_MODE_CHANGED_EVENT,
   readConversationProcessRecordDisplayMode,
@@ -46,6 +47,10 @@ const AlarmAnalystCardPanel = lazyNamed(
 const InspectionAnalystCardPanel = lazyNamed(
   () => import("./inspectionAnalystCardComponents"),
   "InspectionAnalystCardPanel",
+);
+const InspectionSummaryCardPanel = lazyNamed(
+  () => import("./inspectionSummaryCardComponents"),
+  "InspectionSummaryCardPanel",
 );
 
 const deferredMessageCardFallback = (
@@ -752,6 +757,16 @@ export const ChatMessageItem = memo(function ChatMessageItem({
     )
     && !isStreamingMessage
     && shouldRenderInspectionAnalystCard(renderedMessageContent);
+  const isInspectionSummaryCardCandidate =
+    message.type === "agent"
+    && (
+      currentEmployee?.id === "inspection"
+      || currentEmployee?.id === "gateway"
+      || currentEmployee?.id === "portal-home"
+    )
+    && !isStreamingMessage
+    && !isInspectionAnalystCardCandidate
+    && looksLikeInspectionSummaryReport(renderedMessageContent);
   const orderDetailPayload = !isStreamingMessage
     ? parsePortalOrderDetailPayload(renderedMessageContent, allBlocks)
     : null;
@@ -948,6 +963,12 @@ export const ChatMessageItem = memo(function ChatMessageItem({
           <div className="message-bubble markdown-bubble inspection-analyst-card-bubble">
             <Suspense fallback={deferredMessageCardFallback}>
               <InspectionAnalystCardPanel content={renderedMessageContent} />
+            </Suspense>
+          </div>
+        ) : isInspectionSummaryCardCandidate ? (
+          <div className="message-bubble markdown-bubble inspection-analyst-card-bubble">
+            <Suspense fallback={deferredMessageCardFallback}>
+              <InspectionSummaryCardPanel content={renderedMessageContent} />
             </Suspense>
           </div>
         ) : renderedMessageContent ? (

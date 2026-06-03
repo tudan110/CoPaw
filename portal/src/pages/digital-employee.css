@@ -12280,3 +12280,459 @@
     padding: 16px;
   }
 }
+
+/* ================================================================ */
+/*  Inspection Summary Report Card (multi-resource)                  */
+/* ================================================================ */
+
+.portal-digital-employee .isummary-card-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-width: 720px;
+}
+
+.portal-digital-employee .isummary-card {
+  border-radius: 14px;
+  padding: 18px 20px;
+  background: rgba(255, 255, 255, 0.55);
+  border: 1px solid rgba(148, 163, 184, 0.12);
+  backdrop-filter: blur(10px);
+}
+
+.portal-digital-employee.theme-dark .isummary-card {
+  background: rgba(30, 41, 59, 0.55);
+  border-color: rgba(148, 163, 184, 0.08);
+}
+
+/* ---- Header card ---- */
+
+.portal-digital-employee .isummary-header-card {
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.06), rgba(139, 92, 246, 0.04));
+}
+
+.portal-digital-employee.theme-dark .isummary-header-card {
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.12), rgba(139, 92, 246, 0.08));
+}
+
+.portal-digital-employee .isummary-eyebrow {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #6366f1;
+  margin-bottom: 4px;
+}
+
+.portal-digital-employee.theme-dark .isummary-eyebrow {
+  color: #818cf8;
+}
+
+.portal-digital-employee .isummary-title {
+  font-size: 18px;
+  font-weight: 700;
+  color: #1e293b;
+  margin: 0 0 4px;
+}
+
+.portal-digital-employee.theme-dark .isummary-title {
+  color: #f1f5f9;
+}
+
+.portal-digital-employee .isummary-time {
+  font-size: 12px;
+  color: #64748b;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.portal-digital-employee.theme-dark .isummary-time {
+  color: #94a3b8;
+}
+
+/* ---- Stats ring ---- */
+
+.portal-digital-employee .isummary-stats-ring {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  margin: 16px 0 12px;
+  padding: 14px 18px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.6);
+  border: 1px solid rgba(148, 163, 184, 0.1);
+}
+
+.portal-digital-employee.theme-dark .isummary-stats-ring {
+  background: rgba(15, 23, 42, 0.4);
+  border-color: rgba(148, 163, 184, 0.08);
+}
+
+.portal-digital-employee .isummary-stat-total {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 64px;
+}
+
+.portal-digital-employee .isummary-stat-total strong {
+  font-size: 28px;
+  font-weight: 800;
+  color: #1e293b;
+  line-height: 1;
+}
+
+.portal-digital-employee.theme-dark .isummary-stat-total strong {
+  color: #f1f5f9;
+}
+
+.portal-digital-employee .isummary-stat-total span {
+  font-size: 11px;
+  color: #94a3b8;
+  margin-top: 2px;
+}
+
+.portal-digital-employee .isummary-stat-pills {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.portal-digital-employee .isummary-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 12px;
+  border-radius: 20px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.portal-digital-employee .isummary-pill.danger {
+  background: rgba(239, 68, 68, 0.1);
+  color: #dc2626;
+}
+
+.portal-digital-employee.theme-dark .isummary-pill.danger {
+  background: rgba(239, 68, 68, 0.15);
+  color: #f87171;
+}
+
+.portal-digital-employee .isummary-pill.warning {
+  background: rgba(245, 158, 11, 0.1);
+  color: #d97706;
+}
+
+.portal-digital-employee.theme-dark .isummary-pill.warning {
+  background: rgba(245, 158, 11, 0.15);
+  color: #fbbf24;
+}
+
+.portal-digital-employee .isummary-pill.good {
+  background: rgba(16, 185, 129, 0.1);
+  color: #059669;
+}
+
+.portal-digital-employee.theme-dark .isummary-pill.good {
+  background: rgba(16, 185, 129, 0.15);
+  color: #34d399;
+}
+
+/* ---- Overview grid ---- */
+
+.portal-digital-employee .isummary-overview-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.portal-digital-employee .isummary-overview-item {
+  display: flex;
+  justify-content: space-between;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: rgba(148, 163, 184, 0.05);
+  font-size: 12px;
+}
+
+.portal-digital-employee .isummary-overview-label {
+  color: #64748b;
+}
+
+.portal-digital-employee.theme-dark .isummary-overview-label {
+  color: #94a3b8;
+}
+
+.portal-digital-employee .isummary-overview-value {
+  font-weight: 600;
+  color: #334155;
+}
+
+.portal-digital-employee.theme-dark .isummary-overview-value {
+  color: #e2e8f0;
+}
+
+/* ---- Section header ---- */
+
+.portal-digital-employee .isummary-section-header {
+  margin-bottom: 12px;
+}
+
+/* ---- Resource groups ---- */
+
+.portal-digital-employee .isummary-resource-group {
+  margin-bottom: 14px;
+  border-radius: 10px;
+  overflow: hidden;
+  border: 1px solid rgba(148, 163, 184, 0.1);
+}
+
+.portal-digital-employee .isummary-resource-group.tone-danger {
+  border-left: 3px solid #ef4444;
+}
+
+.portal-digital-employee .isummary-resource-group.tone-warning {
+  border-left: 3px solid #f59e0b;
+}
+
+.portal-digital-employee .isummary-resource-group.tone-good {
+  border-left: 3px solid #10b981;
+}
+
+.portal-digital-employee .isummary-resource-group-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  background: rgba(148, 163, 184, 0.04);
+}
+
+.portal-digital-employee.theme-dark .isummary-resource-group-header {
+  background: rgba(148, 163, 184, 0.06);
+}
+
+.portal-digital-employee .isummary-resource-group-header h4 {
+  font-size: 14px;
+  font-weight: 600;
+  color: #334155;
+  margin: 0;
+  flex: 1;
+}
+
+.portal-digital-employee.theme-dark .isummary-resource-group-header h4 {
+  color: #e2e8f0;
+}
+
+.portal-digital-employee .isummary-resource-group-icon {
+  font-size: 14px;
+}
+
+.portal-digital-employee .isummary-resource-group-count {
+  font-size: 12px;
+  color: #94a3b8;
+  font-weight: 500;
+}
+
+.portal-digital-employee .isummary-resource-group-items {
+  padding: 4px 0;
+}
+
+/* ---- Resource item ---- */
+
+.portal-digital-employee .isummary-resource-item {
+  border-bottom: 1px solid rgba(148, 163, 184, 0.06);
+}
+
+.portal-digital-employee .isummary-resource-item:last-child {
+  border-bottom: none;
+}
+
+.portal-digital-employee .isummary-resource-item-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.portal-digital-employee .isummary-resource-item-header:hover {
+  background: rgba(148, 163, 184, 0.05);
+}
+
+.portal-digital-employee .isummary-resource-item-name {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.portal-digital-employee .isummary-resource-item-name strong {
+  font-size: 13px;
+  color: #334155;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.portal-digital-employee.theme-dark .isummary-resource-item-name strong {
+  color: #e2e8f0;
+}
+
+.portal-digital-employee .isummary-resource-type {
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: rgba(99, 102, 241, 0.08);
+  color: #6366f1;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.portal-digital-employee.theme-dark .isummary-resource-type {
+  background: rgba(99, 102, 241, 0.15);
+  color: #a5b4fc;
+}
+
+.portal-digital-employee .isummary-resource-ip {
+  font-size: 11px;
+  color: #94a3b8;
+  font-family: "SF Mono", "Fira Code", monospace;
+  white-space: nowrap;
+}
+
+.portal-digital-employee .isummary-chevron {
+  font-size: 10px;
+  color: #94a3b8;
+  transition: transform 0.2s;
+}
+
+.portal-digital-employee .isummary-resource-item-body {
+  padding: 0 14px 10px 14px;
+  animation: isummarySlideIn 0.2s ease;
+}
+
+@keyframes isummarySlideIn {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.portal-digital-employee .isummary-resource-verdict {
+  font-size: 12px;
+  color: #475569;
+  margin: 0 0 6px;
+  line-height: 1.5;
+}
+
+.portal-digital-employee.theme-dark .isummary-resource-verdict {
+  color: #cbd5e1;
+}
+
+.portal-digital-employee .isummary-resource-details {
+  margin: 0;
+  padding-left: 16px;
+  font-size: 11px;
+  color: #64748b;
+  line-height: 1.6;
+}
+
+.portal-digital-employee.theme-dark .isummary-resource-details {
+  color: #94a3b8;
+}
+
+/* ---- Conclusions ---- */
+
+.portal-digital-employee .isummary-conclusion-section {
+  margin-bottom: 12px;
+  padding: 10px 14px;
+  border-radius: 8px;
+  border: 1px solid rgba(148, 163, 184, 0.08);
+}
+
+.portal-digital-employee .isummary-conclusion-section.tone-danger {
+  background: rgba(239, 68, 68, 0.04);
+  border-left: 3px solid #ef4444;
+}
+
+.portal-digital-employee .isummary-conclusion-section.tone-warning {
+  background: rgba(245, 158, 11, 0.04);
+  border-left: 3px solid #f59e0b;
+}
+
+.portal-digital-employee .isummary-conclusion-section.tone-good {
+  background: rgba(16, 185, 129, 0.04);
+  border-left: 3px solid #10b981;
+}
+
+.portal-digital-employee .isummary-conclusion-section h4 {
+  font-size: 13px;
+  font-weight: 600;
+  color: #334155;
+  margin: 0 0 6px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.portal-digital-employee.theme-dark .isummary-conclusion-section h4 {
+  color: #e2e8f0;
+}
+
+.portal-digital-employee .isummary-conclusion-icon {
+  font-size: 12px;
+}
+
+.portal-digital-employee .isummary-conclusion-list {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 12px;
+  color: #475569;
+  line-height: 1.7;
+}
+
+.portal-digital-employee.theme-dark .isummary-conclusion-list {
+  color: #cbd5e1;
+}
+
+.portal-digital-employee .isummary-conclusion-list li {
+  margin-bottom: 4px;
+}
+
+/* ---- Assessment ---- */
+
+.portal-digital-employee .isummary-assessment {
+  margin: 0;
+  padding: 12px 16px;
+  border-left: 3px solid #6366f1;
+  border-radius: 0 8px 8px 0;
+  background: rgba(99, 102, 241, 0.04);
+  font-size: 13px;
+  line-height: 1.7;
+  color: #334155;
+}
+
+.portal-digital-employee.theme-dark .isummary-assessment {
+  background: rgba(99, 102, 241, 0.08);
+  color: #e2e8f0;
+}
+
+/* ---- Topology ---- */
+
+.portal-digital-employee .isummary-topology-pre {
+  margin: 0;
+  padding: 14px;
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.04);
+  overflow-x: auto;
+  font-size: 12px;
+  line-height: 1.5;
+  color: #334155;
+}
+
+.portal-digital-employee.theme-dark .isummary-topology-pre {
+  background: rgba(0, 0, 0, 0.2);
+  color: #e2e8f0;
+}
