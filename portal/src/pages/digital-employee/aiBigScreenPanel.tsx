@@ -111,7 +111,7 @@ function AiBigScreenEmptyState() {
 }
 
 export function AiBigScreenPanel() {
-  const [prompt, setPrompt] = useState("我想要一个大屏，包含15分钟的系统日志、系统告警，以及CMDB中的资源信息");
+  const [prompt, setPrompt] = useState("");
   const [editInstruction, setEditInstruction] = useState("");
   const [screen, setScreen] = useState<AiBigScreenApp | null>(null);
   const [screens, setScreens] = useState<AiBigScreenApp[]>([]);
@@ -324,18 +324,21 @@ export function AiBigScreenPanel() {
               id="ai-big-screen-prompt"
               value={prompt}
               onChange={(event) => setPrompt(event.target.value)}
-              placeholder="描述你想看的数据、时间范围和页面风格"
+              placeholder="输入你想看的数据、时间范围和页面风格"
               rows={5}
             />
-            <button
-              type="button"
-              className="ai-big-screen-run-btn"
-              disabled={loading}
-              onClick={() => void handleGenerateDraft()}
-            >
-              <i className={`fas ${loading ? "fa-spinner fa-spin" : "fa-wand-magic-sparkles"}`} aria-hidden="true" />
-              {loading ? "生成中..." : "生成大屏草稿"}
-            </button>
+            <div className="ai-big-screen-prompt-action">
+              <button
+                type="button"
+                className="ai-big-screen-run-btn"
+                disabled={loading}
+                onClick={() => void handleGenerateDraft()}
+              >
+                <i className={`fas ${loading ? "fa-spinner fa-spin" : "fa-wand-magic-sparkles"}`} aria-hidden="true" />
+                {loading ? "生成中..." : "确认生成大屏"}
+                <i className="fas fa-arrow-right" aria-hidden="true" />
+              </button>
+            </div>
             <div className="ai-big-screen-mini-flow" aria-hidden="true">
               <span>Intent</span>
               <i />
