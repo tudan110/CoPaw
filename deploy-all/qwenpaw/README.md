@@ -30,6 +30,7 @@ QwenPaw 是一个前后端一体化应用：
 - **端口**: 8088
 - **特性**: 内置 Chromium 浏览器，支持自动化任务
 - **Portal 扩展路由**: 容器启动时会自动写入 `custom_channels/portal_api.py`，确保 `/api/portal/*` 可供 Portal 前端访问
+- **后端启动器**: 容器默认使用 `qwenpaw.extensions.runtime.worker_app`，支持通过环境变量配置多 worker
 
 ## Docker 构建
 
@@ -85,6 +86,15 @@ image:
   repository: qwenpaw
   tag: latest
   pullPolicy: IfNotPresent
+```
+
+### 后端 worker 配置
+
+```yaml
+env:
+  QWENPAW_APP_WORKERS: "2"
+  QWENPAW_APP_BACKLOG: "2048"
+  QWENPAW_APP_TIMEOUT_KEEP_ALIVE: "5"
 ```
 
 ### 服务配置

@@ -261,20 +261,58 @@ PY
 
 # 启动应用（默认绑定 0.0.0.0 以便局域网访问；如已显式传入 --host 则不覆盖）
 HOST_OVERRIDDEN=false
+RELOAD_REQUESTED=false
+WORKERS_OVERRIDDEN=false
+BACKLOG_OVERRIDDEN=false
+KEEP_ALIVE_OVERRIDDEN=false
+LIMIT_CONCURRENCY_OVERRIDDEN=false
 if [ -s "$APP_ARGS_FILE" ]; then
     while IFS= read -r arg; do
         case "$arg" in
             --host|--host=*)
                 HOST_OVERRIDDEN=true
-                break
+                ;;
+            --reload)
+                RELOAD_REQUESTED=true
+                ;;
+            --workers|--workers=*)
+                WORKERS_OVERRIDDEN=true
+                ;;
+            --backlog|--backlog=*)
+                BACKLOG_OVERRIDDEN=true
+                ;;
+            --timeout-keep-alive|--timeout-keep-alive=*)
+                KEEP_ALIVE_OVERRIDDEN=true
+                ;;
+            --limit-concurrency|--limit-concurrency=*)
+                LIMIT_CONCURRENCY_OVERRIDDEN=true
                 ;;
         esac
     done < "$APP_ARGS_FILE"
 fi
 
+USE_WORKER_APP="${QWENPAW_START_USE_WORKER_APP:-true}"
+if [ "$RELOAD_REQUESTED" = true ]; then
+    USE_WORKER_APP=false
+fi
+
 set --
 if [ "$HOST_OVERRIDDEN" != true ]; then
     set -- --host 0.0.0.0
+fi
+if [ "$USE_WORKER_APP" != false ]; then
+    if [ "$WORKERS_OVERRIDDEN" != true ]; then
+        set -- "$@" --workers "${QWENPAW_APP_WORKERS:-2}"
+    fi
+    if [ "$BACKLOG_OVERRIDDEN" != true ]; then
+        set -- "$@" --backlog "${QWENPAW_APP_BACKLOG:-2048}"
+    fi
+    if [ "$KEEP_ALIVE_OVERRIDDEN" != true ]; then
+        set -- "$@" --timeout-keep-alive "${QWENPAW_APP_TIMEOUT_KEEP_ALIVE:-5}"
+    fi
+    if [ -n "${QWENPAW_APP_LIMIT_CONCURRENCY:-}" ] && [ "$LIMIT_CONCURRENCY_OVERRIDDEN" != true ]; then
+        set -- "$@" --limit-concurrency "$QWENPAW_APP_LIMIT_CONCURRENCY"
+    fi
 fi
 if [ -s "$APP_ARGS_FILE" ]; then
     while IFS= read -r arg; do
@@ -282,4 +320,8 @@ if [ -s "$APP_ARGS_FILE" ]; then
     done < "$APP_ARGS_FILE"
 fi
 
-"$PYTHON_BIN" -m qwenpaw app "$@"
+if [ "$USE_WORKER_APP" = false ]; then
+    "$PYTHON_BIN" -m qwenpaw app "$@"
+else
+    "$PYTHON_BIN" -m qwenpaw.extensions.runtime.worker_app "$@"
+fi

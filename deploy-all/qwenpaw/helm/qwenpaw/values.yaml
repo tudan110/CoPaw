@@ -18,6 +18,9 @@ securityContext:
 env:
   timezone: "Asia/Shanghai"
   QWENPAW_PORT: "8088"
+  QWENPAW_APP_WORKERS: "2"
+  QWENPAW_APP_BACKLOG: "2048"
+  QWENPAW_APP_TIMEOUT_KEEP_ALIVE: "5"
   QWENPAW_DISABLED_CHANNELS: "imessage"
   # QWENPAW_ENABLED_CHANNELS: ""
   # NB: 安全姿态（skill_scanner 模式、domain_guard、delete_ops_disabled、

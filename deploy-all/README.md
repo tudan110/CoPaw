@@ -97,6 +97,7 @@ helm install cnos-inoe-agent ./cnos-inoe-agent-1.0.0.tgz -n cnos-iomp \
   --set-string qwenpaw.env.INOE_API_BASE_URL="http://192.168.134.96:30080" \
   --set-string qwenpaw.env.INOE_API_TOKEN="<your_jwt_token>" \
   --set-string qwenpaw.env.INOE_API_TIMEOUT="60" \
+  --set-string qwenpaw.env.QWENPAW_APP_WORKERS="2" \
   --set-string qwenpaw.env.QWENPAW_PORTAL_REAL_ALARM_ROUTE_TIMEOUT="5" \
   --set-string qwenpaw.env.QWENPAW_PORTAL_REAL_ALARM_CACHE_TTL="30" \
   --set-string qwenpaw.env.QWENPAW_PORTAL_REAL_ALARM_DEGRADED_COOLDOWN="30" \
@@ -112,6 +113,9 @@ helm install cnos-inoe-agent ./cnos-inoe-agent-1.0.0.tgz -n cnos-iomp \
 | `INOE_API_BASE_URL` | 智观告警平台接口地址 | `http://192.168.134.96:30080` |
 | `INOE_API_TOKEN` | 智观平台 JWT Token | - |
 | `INOE_API_TIMEOUT` | 接口请求超时(秒) | `60` |
+| `QWENPAW_APP_WORKERS` | QwenPaw 后端 worker 进程数 | `2` |
+| `QWENPAW_APP_BACKLOG` | QwenPaw 后端监听 backlog | `2048` |
+| `QWENPAW_APP_TIMEOUT_KEEP_ALIVE` | QwenPaw 后端 keep-alive 超时(秒) | `5` |
 | `QWENPAW_PORTAL_REAL_ALARM_ROUTE_TIMEOUT` | Portal 告警列表前台等待超时(秒) | `5` |
 | `QWENPAW_PORTAL_REAL_ALARM_CACHE_TTL` | 告警列表缓存 TTL(秒) | `30` |
 | `QWENPAW_PORTAL_REAL_ALARM_DEGRADED_COOLDOWN` | 告警后端异常降级冷却(秒) | `30` |

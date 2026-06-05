@@ -27,7 +27,7 @@
 # 强制重新构建前端
 ./start-qwenpaw.sh --rebuild
 
-# 传递参数给 qwenpaw app 命令
+# 传递参数给后端启动命令
 ./start-qwenpaw.sh [任意参数]
 ```
 
@@ -36,7 +36,7 @@
 | 参数 | 说明 |
 |------|------|
 | `--rebuild` | 强制重新构建前端资源（删除旧的构建产物后重新构建） |
-| 其他参数 | 传递给 `qwenpaw app` 命令 |
+| 其他参数 | 默认传递给 `qwenpaw.extensions.runtime.worker_app`；使用 `--reload` 时传递给 `qwenpaw app` |
 
 ### 前置要求
 
@@ -51,13 +51,14 @@
 3. **安装依赖**：使用 uv 安装项目开发依赖
 4. **构建前端**：在 `console` 目录构建前端资源（如需要）
 5. **初始化配置**：创建 `~/.qwenpaw/config.json` 配置文件（如不存在）
-6. **启动应用**：运行 `qwenpaw app` 命令
+6. **启动应用**：默认运行 `qwenpaw.extensions.runtime.worker_app`，以支持多 worker；使用 `--reload` 时回退到 `qwenpaw app`
 
 ### 注意事项
 
 - 首次运行会自动安装 uv 和创建虚拟环境
 - 前端构建产物位于 `console/dist` 目录
 - 配置文件位于 `~/.qwenpaw/config.json`
+- 默认后端 worker 数为 `2`，可通过 `QWENPAW_APP_WORKERS` 或 `--workers` 覆盖；如需强制使用原始 `qwenpaw app`，设置 `QWENPAW_START_USE_WORKER_APP=false`
 
 ---
 

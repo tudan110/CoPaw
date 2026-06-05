@@ -156,6 +156,10 @@ COPY knowledge/ /app/knowledge/
 
 # QwenPaw app port (default 8088). Override at runtime with -e QWENPAW_PORT=3000.
 ENV QWENPAW_PORT=8088
+# Deployment-oriented backend runtime defaults. Override at runtime with -e or Helm values.
+ENV QWENPAW_APP_WORKERS=2
+ENV QWENPAW_APP_BACKLOG=2048
+ENV QWENPAW_APP_TIMEOUT_KEEP_ALIVE=5
 
 COPY deploy-all/qwenpaw/config/supervisord.conf.template /etc/supervisor/conf.d/supervisord.conf.template
 COPY --chmod=755 deploy-all/qwenpaw/entrypoint.sh /entrypoint.sh
