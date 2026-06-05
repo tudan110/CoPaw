@@ -15,10 +15,29 @@ export interface AiBigScreenComponent {
   capabilityId?: string;
   queryParams?: Record<string, unknown>;
   visualConfig?: Record<string, unknown>;
-  visualSpec?: Record<string, unknown>;
+  visualSpec?: AiBigScreenVisualSpec | Record<string, unknown>;
   refreshInterval?: number;
   interactions?: Record<string, unknown>;
   data?: Record<string, unknown>;
+}
+
+export interface AiBigScreenVisualRule {
+  field: string;
+  operator: ">" | ">=" | "<" | "<=" | "=" | "contains" | string;
+  value: string | number;
+  tone: "critical" | "high" | "medium" | "normal" | "cool" | "warm" | string;
+}
+
+export interface AiBigScreenVisualSpec {
+  kind?: "risk-field" | "signal-stream" | "timeline" | "heatmap-matrix" | "metric-cluster" | string;
+  motion?: "none" | "pulse" | "scan" | "flow" | "stagger" | string;
+  density?: "compact" | "balanced" | "showcase" | string;
+  layoutPattern?: "grid" | "focus" | "split" | "timeline" | "matrix" | "flow" | string;
+  composition?: "primary" | "secondary" | "supporting" | string;
+  bindings?: Record<string, string>;
+  highlightRules?: AiBigScreenVisualRule[];
+  emphasisRules?: AiBigScreenVisualRule[];
+  layers?: Array<Record<string, unknown>>;
 }
 
 export interface AiBigScreenDataBinding {
@@ -123,4 +142,19 @@ export interface AiBigScreenPublishResponse {
 export interface AiBigScreenDeleteResponse {
   screenId: string;
   deleted: boolean;
+}
+
+export interface AiBigScreenTask {
+  taskId: string;
+  status: "queued" | "running" | "succeeded" | "failed" | string;
+  stage?: string;
+  message?: string;
+  createdAt?: string;
+  updatedAt?: string;
+  screen?: AiBigScreenApp | null;
+  error?: string;
+}
+
+export interface AiBigScreenTaskResponse {
+  task: AiBigScreenTask;
 }

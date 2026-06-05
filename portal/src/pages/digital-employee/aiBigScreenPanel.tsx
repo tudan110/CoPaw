@@ -1,11 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
 import {
+  createAiBigScreenDraftTask,
   deleteAiBigScreen,
-  generateAiBigScreenDraft,
+  duplicateAiBigScreen,
+  getAiBigScreenDraftTask,
   listAiBigScreenPlugins,
   listAiBigScreens,
   patchAiBigScreen,
   publishAiBigScreen,
+  renameAiBigScreen,
   saveAiBigScreen,
 } from "../../api/aiBigScreen";
 import AiBigScreenRenderer from "../../components/ai-big-screen/AiBigScreenRenderer";
@@ -13,6 +16,7 @@ import type {
   AiBigScreenApp,
   AiBigScreenPlugin,
   AiBigScreenPublishTarget,
+  AiBigScreenTask,
 } from "../../types/aiBigScreen";
 import { formatFriendlyDateTime } from "../../utils/dateTime";
 import "./ai-big-screen.css";
@@ -56,7 +60,8 @@ function getComponentCount(screen: AiBigScreenApp) {
   return screen.components?.length || 0;
 }
 
-function AiBigScreenGenerationStage() {
+function AiBigScreenGenerationStage({ task }: { task: AiBigScreenTask | null }) {
+  const activeStage = String(task?.stage || "queued");
   return (
     <section className="ai-big-screen-generation-stage" aria-live="polite">
       <div className="ai-big-screen-generation-orbit">
@@ -70,13 +75,17 @@ function AiBigScreenGenerationStage() {
       <div className="ai-big-screen-generation-copy">
         <span>AI 编排进行中</span>
         <h2>正在生成大屏草稿</h2>
-        <p>复杂大屏会持续调用模型和数据接口，可能需要数分钟。</p>
+        <p>{task?.message || "复杂大屏会持续调用模型和数据接口，可能需要数分钟。"}</p>
       </div>
       <div className="ai-big-screen-generation-flow">
         {GENERATION_STEPS.map((step, index) => (
           <div
             key={step}
-            className="ai-big-screen-generation-step"
+            className={[
+              "ai-big-screen-generation-step",
+              index === 0 && activeStage === "planning" ? "active" : "",
+              index === GENERATION_STEPS.length - 1 && activeStage === "completed" ? "done" : "",
+            ].filter(Boolean).join(" ")}
             style={{ animationDelay: `${index * 0.28}s` }}
           >
             <span>{String(index + 1).padStart(2, "0")}</span>
@@ -117,6 +126,8 @@ export function AiBigScreenPanel() {
   const [screens, setScreens] = useState<AiBigScreenApp[]>([]);
   const [plugins, setPlugins] = useState<AiBigScreenPlugin[]>([]);
   const [selectedComponentId, setSelectedComponentId] = useState("");
+  const [selectedComponentIds, setSelectedComponentIds] = useState<string[]>([]);
+  const [generationTask, setGenerationTask] = useState<AiBigScreenTask | null>(null);
   const [regionEditorOpen, setRegionEditorOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -165,12 +176,29 @@ export function AiBigScreenPanel() {
     setError("");
     setNotice("");
     try {
-      const response = await generateAiBigScreenDraft({
+      const taskResponse = await createAiBigScreenDraftTask({
         prompt: prompt.trim(),
         requestedBy: "portal",
       });
+      setGenerationTask(taskResponse.task);
+      let task = taskResponse.task;
+      for (let attempt = 0; attempt < 240; attempt += 1) {
+        if (task.status === "succeeded" || task.status === "failed") {
+          break;
+        }
+        await new Promise((resolve) => window.setTimeout(resolve, 1500));
+        const taskStatusResponse = await getAiBigScreenDraftTask(task.taskId);
+        task = taskStatusResponse.task;
+        setGenerationTask(task);
+      }
+      if (task.status !== "succeeded" || !task.screen) {
+        throw new Error(task.error || task.message || "生成大屏草稿失败");
+      }
+      const response = { screen: task.screen };
       setScreen(response.screen);
-      setSelectedComponentId(response.screen.components?.[0]?.id || "");
+      const firstComponentId = response.screen.components?.[0]?.id || "";
+      setSelectedComponentId(firstComponentId);
+      setSelectedComponentIds(firstComponentId ? [firstComponentId] : []);
       setRegionEditorOpen(false);
       setEditInstruction("");
       setNotice("已生成大屏草稿，可以点击组件后继续对话修改。");
@@ -178,6 +206,7 @@ export function AiBigScreenPanel() {
       setError(extractErrorMessage(requestError) || "生成大屏草稿失败");
     } finally {
       setLoading(false);
+      setGenerationTask(null);
     }
   };
 
@@ -218,6 +247,12 @@ export function AiBigScreenPanel() {
       const response = await patchAiBigScreen(saved.id, {
         baseVersionId: saved.versions?.[saved.versions.length - 1]?.versionId || "",
         selectedComponentId,
+        selectedComponentIds,
+        selectionContext: {
+          selectedTitles: selectedComponentIds
+            .map((componentId) => saved.components?.find((component) => component.id === componentId)?.title)
+            .filter(Boolean),
+        },
         instruction: editInstruction.trim(),
         requestedBy: "portal",
       });
@@ -255,7 +290,9 @@ export function AiBigScreenPanel() {
       });
       const nextComponents = response.screen.components || [];
       setScreen(response.screen);
-      setSelectedComponentId(nextComponents[nextComponents.length - 1]?.id || "");
+      const appendedComponentId = nextComponents[nextComponents.length - 1]?.id || "";
+      setSelectedComponentId(appendedComponentId);
+      setSelectedComponentIds(appendedComponentId ? [appendedComponentId] : []);
       setRegionEditorOpen(false);
       setNotice(response.summary || "已在当前大屏基础上追加模块。");
       await loadCatalog();
@@ -302,13 +339,25 @@ export function AiBigScreenPanel() {
 
   const handleLoadScreen = (item: AiBigScreenApp) => {
     setScreen(item);
-    setSelectedComponentId(item.components?.[0]?.id || "");
+    const firstComponentId = item.components?.[0]?.id || "";
+    setSelectedComponentId(firstComponentId);
+    setSelectedComponentIds(firstComponentId ? [firstComponentId] : []);
     setRegionEditorOpen(false);
     setEditInstruction("");
   };
 
-  const handleSelectComponent = (componentId: string) => {
+  const handleSelectComponent = (componentId: string, options?: { additive?: boolean }) => {
     setSelectedComponentId(componentId);
+    setSelectedComponentIds((current) => {
+      if (!options?.additive) {
+        return [componentId];
+      }
+      if (current.includes(componentId)) {
+        const next = current.filter((item) => item !== componentId);
+        return next.length ? next : [componentId];
+      }
+      return [...current, componentId];
+    });
     setRegionEditorOpen(true);
     setEditInstruction("");
   };
@@ -326,6 +375,7 @@ export function AiBigScreenPanel() {
       if (screen?.id === item.id) {
         setScreen(null);
         setSelectedComponentId("");
+        setSelectedComponentIds([]);
         setRegionEditorOpen(false);
         setEditInstruction("");
       }
@@ -333,6 +383,53 @@ export function AiBigScreenPanel() {
       setNotice("大屏资产已删除。");
     } catch (requestError) {
       setError(extractErrorMessage(requestError) || "删除大屏失败");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleRenameScreen = async (item: AiBigScreenApp) => {
+    const nextName = window.prompt("输入新的大屏名称", item.name);
+    if (!nextName?.trim() || nextName.trim() === item.name) {
+      return;
+    }
+    setSaving(true);
+    setError("");
+    setNotice("");
+    try {
+      const response = await renameAiBigScreen(item.id, {
+        name: nextName.trim(),
+        requestedBy: "portal",
+      });
+      if (screen?.id === item.id) {
+        setScreen(response.screen);
+      }
+      await loadCatalog();
+      setNotice("大屏名称已更新。");
+    } catch (requestError) {
+      setError(extractErrorMessage(requestError) || "重命名大屏失败");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDuplicateScreen = async (item: AiBigScreenApp) => {
+    setSaving(true);
+    setError("");
+    setNotice("");
+    try {
+      const response = await duplicateAiBigScreen(item.id, {
+        name: `${item.name} 副本`,
+        requestedBy: "portal",
+      });
+      const firstComponentId = response.screen.components?.[0]?.id || "";
+      setScreen(response.screen);
+      setSelectedComponentId(firstComponentId);
+      setSelectedComponentIds(firstComponentId ? [firstComponentId] : []);
+      await loadCatalog();
+      setNotice("已复制为新的草稿大屏。");
+    } catch (requestError) {
+      setError(extractErrorMessage(requestError) || "复制大屏失败");
     } finally {
       setSaving(false);
     }
@@ -486,6 +583,22 @@ export function AiBigScreenPanel() {
                         </button>
                         <button
                           type="button"
+                          disabled={saving}
+                          onClick={() => void handleRenameScreen(item)}
+                        >
+                          <i className="fas fa-pen" aria-hidden="true" />
+                          重命名
+                        </button>
+                        <button
+                          type="button"
+                          disabled={saving}
+                          onClick={() => void handleDuplicateScreen(item)}
+                        >
+                          <i className="fas fa-copy" aria-hidden="true" />
+                          复制
+                        </button>
+                        <button
+                          type="button"
                           disabled={!getExternalTarget(item)?.url}
                           onClick={() => {
                             const target = getExternalTarget(item);
@@ -534,12 +647,13 @@ export function AiBigScreenPanel() {
 
         <main className={loading ? "ai-big-screen-preview generating" : "ai-big-screen-preview"}>
           {loading ? (
-            <AiBigScreenGenerationStage />
+            <AiBigScreenGenerationStage task={generationTask} />
           ) : screen ? (
             <AiBigScreenRenderer
               screen={screen}
               interactive
               selectedComponentId={selectedComponentId}
+              selectedComponentIds={selectedComponentIds}
               onSelectComponent={handleSelectComponent}
             />
           ) : (
@@ -552,7 +666,10 @@ export function AiBigScreenPanel() {
                 <div>
                   <span>选中区域</span>
                   <strong>{selectedComponent.title}</strong>
-                  <small>{selectedComponent.type} · {selectedComponent.pluginId || "local"}</small>
+                  <small>
+                    {selectedComponent.type} · {selectedComponent.pluginId || "local"}
+                    {selectedComponentIds.length > 1 ? ` · 已选 ${selectedComponentIds.length} 个区域` : ""}
+                  </small>
                 </div>
                 <button
                   type="button"

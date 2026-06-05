@@ -19,6 +19,9 @@ class AiBigScreenSaveRequest(BaseModel):
 class AiBigScreenPatchRequest(BaseModel):
     baseVersionId: str = ""
     selectedComponentId: str = ""
+    selectedComponentIds: list[str] = Field(default_factory=list)
+    selectedRegion: dict[str, Any] = Field(default_factory=dict)
+    selectionContext: dict[str, Any] = Field(default_factory=dict)
     instruction: str
     requestedBy: str = "portal"
 
@@ -28,8 +31,22 @@ class AiBigScreenPublishRequest(BaseModel):
     visibility: str = "internal"
 
 
+class AiBigScreenRenameRequest(BaseModel):
+    name: str
+    requestedBy: str = "portal"
+
+
+class AiBigScreenDuplicateRequest(BaseModel):
+    name: str = ""
+    requestedBy: str = "portal"
+
+
 class AiBigScreenResponse(BaseModel):
     screen: dict[str, Any]
+
+
+class AiBigScreenTaskResponse(BaseModel):
+    task: dict[str, Any]
 
 
 class AiBigScreenListResponse(BaseModel):

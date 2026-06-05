@@ -14,20 +14,26 @@ from qwenpaw.extensions.integrations import nightingale_logs
 from qwenpaw.extensions.integrations import order_workflow
 from qwenpaw.extensions.api.ai_big_screen_api import (
     delete_ai_big_screen,
+    duplicate_ai_big_screen,
+    create_ai_big_screen_draft_task,
     generate_ai_big_screen_draft,
+    get_ai_big_screen_draft_task,
     get_ai_big_screen,
     list_ai_big_screens,
     list_ai_big_screen_plugins,
     patch_ai_big_screen,
     publish_ai_big_screen,
+    rename_ai_big_screen,
     router as ai_big_screen_router,
     save_ai_big_screen,
 )
 from qwenpaw.extensions.api.portal_backend import router as portal_backend_router
 from qwenpaw.extensions.api.ai_big_screen_models import (
     AiBigScreenDraftRequest,
+    AiBigScreenDuplicateRequest,
     AiBigScreenPatchRequest,
     AiBigScreenPublishRequest,
+    AiBigScreenRenameRequest,
     AiBigScreenSaveRequest,
 )
 
@@ -208,6 +214,33 @@ def test_ai_big_screen_generate_persist_publish_and_get(monkeypatch, tmp_path) -
     assert len(detail["publishTargets"]) >= 2
 
 
+def test_ai_big_screen_draft_task_completes_with_screen(monkeypatch, tmp_path) -> None:
+    _patch_registry_path(monkeypatch, tmp_path)
+    _patch_draft_plan(monkeypatch)
+
+    async def _run_task_flow() -> dict:
+        task_response = await create_ai_big_screen_draft_task(
+            AiBigScreenDraftRequest(
+                prompt="查询实时告警、系统日志和待办工单。",
+                requestedBy="portal-test",
+            ),
+        )
+        task_id = task_response.task["taskId"]
+        for _ in range(20):
+            await asyncio.sleep(0.01)
+            current = get_ai_big_screen_draft_task(task_id).task
+            if current["status"] in {"succeeded", "failed"}:
+                return current
+        return get_ai_big_screen_draft_task(task_id).task
+
+    completed_task = asyncio.run(_run_task_flow())
+
+    assert completed_task["status"] == "succeeded"
+    assert completed_task["stage"] == "completed"
+    assert completed_task["screen"]["components"]
+    assert completed_task["error"] == ""
+
+
 def test_ai_big_screen_saved_asset_can_be_deleted(monkeypatch, tmp_path) -> None:
     _patch_registry_path(monkeypatch, tmp_path)
     draft_screen = {
@@ -237,6 +270,57 @@ def test_ai_big_screen_saved_asset_can_be_deleted(monkeypatch, tmp_path) -> None
         assert exc.status_code == 404
     else:
         raise AssertionError("deleted AI big screen should not be readable")
+
+
+def test_ai_big_screen_saved_asset_can_be_renamed_and_duplicated(monkeypatch, tmp_path) -> None:
+    _patch_registry_path(monkeypatch, tmp_path)
+    saved_screen = save_ai_big_screen(
+        AiBigScreenSaveRequest(
+            screen={
+                "id": "screen-manage-test",
+                "name": "原始大屏",
+                "status": "published",
+                "layout": {"type": "grid", "columns": 12, "rowHeight": 84},
+                "theme": {"mode": "dark", "palette": "industrial", "density": "dashboard"},
+                "components": [
+                    {
+                        "id": "component-manage-test",
+                        "title": "指标",
+                        "type": "metric-card",
+                        "pluginId": "cmdb-resources",
+                        "capabilityId": "cmdb-resources",
+                        "data": {"sourceStatus": "live", "value": 1},
+                    },
+                ],
+                "dataBindings": [],
+                "versions": [{"versionId": "v1", "screenId": "screen-manage-test"}],
+                "publishTargets": [{"type": "external-link", "url": "/big-screen/screen-manage-test"}],
+            },
+            requestedBy="portal-test",
+        ),
+    ).screen
+
+    renamed = rename_ai_big_screen(
+        saved_screen["id"],
+        AiBigScreenRenameRequest(name="重命名大屏", requestedBy="portal-test"),
+    ).screen
+    assert renamed["id"] == saved_screen["id"]
+    assert renamed["name"] == "重命名大屏"
+
+    duplicated = duplicate_ai_big_screen(
+        saved_screen["id"],
+        AiBigScreenDuplicateRequest(name="复制大屏", requestedBy="portal-test"),
+    ).screen
+    assert duplicated["id"] != saved_screen["id"]
+    assert duplicated["name"] == "复制大屏"
+    assert duplicated["status"] == "draft"
+    assert duplicated["publishTargets"] == []
+    assert duplicated["versions"][0]["versionId"] == "v1"
+    assert duplicated["aiConversationContext"]["duplicatedFrom"] == saved_screen["id"]
+    assert {item["id"] for item in list_ai_big_screens(limit=10).items} >= {
+        saved_screen["id"],
+        duplicated["id"],
+    }
 
 
 def test_ai_big_screen_patch_component_visual_config(monkeypatch, tmp_path) -> None:
@@ -465,6 +549,207 @@ def test_ai_big_screen_patch_appends_log_risk_component_without_replacing_existi
     assert execute_calls == [("system-logs", added_component["queryParams"])]
 
 
+def test_ai_big_screen_patch_turns_selected_log_table_into_risk_visual(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    _patch_registry_path(monkeypatch, tmp_path)
+    log_component = {
+        "id": "component-logs",
+        "title": "系统日志",
+        "type": "table",
+        "pluginId": "system-logs",
+        "capabilityId": "system-logs",
+        "queryParams": {"lookbackMinutes": 15, "limit": 50},
+        "layoutPosition": {"x": 0, "y": 0, "w": 12, "h": 4},
+        "visualConfig": {"palette": "industrial", "emphasis": "standard"},
+        "data": {
+            "source": "zhiguan-log-service",
+            "sourceStatus": "live",
+            "rows": [{"time": "2026-06-03 14:00:00", "message": "service ready"}],
+        },
+    }
+    saved_screen = save_ai_big_screen(
+        AiBigScreenSaveRequest(
+            screen={
+                "schemaVersion": 1,
+                "id": "screen-log-risk-patch",
+                "name": "日志大屏",
+                "status": "draft",
+                "layout": {"type": "grid", "columns": 12, "rowHeight": 84},
+                "theme": {"mode": "dark", "palette": "industrial", "density": "dashboard"},
+                "components": [log_component],
+                "dataBindings": [ai_big_screen_service._build_binding(log_component)],
+                "versions": [
+                    {
+                        "versionId": "v1",
+                        "screenId": "screen-log-risk-patch",
+                        "configSnapshot": {},
+                        "changeSummary": "初始版本",
+                    },
+                ],
+            },
+            requestedBy="portal-test",
+        ),
+    ).screen
+
+    async def _fake_patch_plan(**kwargs):
+        return ai_big_screen_service._normalize_patch_plan(
+            {"summary": "分析系统日志高危情况", "operations": []},
+            screen=kwargs["screen"],
+            selected_component_id=kwargs["selected_component_id"],
+            instruction=kwargs["instruction"],
+        )
+
+    execute_calls: list[tuple[str, dict]] = []
+
+    def _fake_execute(capability_id: str, query_params: dict) -> dict:
+        execute_calls.append((capability_id, dict(query_params)))
+        return {
+            "source": "zhiguan-log-service",
+            "sourceStatus": "live",
+            "visualKind": "risk-pulse",
+            "riskScore": 91,
+            "rows": [
+                {
+                    "time": "2026-06-03 15:10:00",
+                    "level": "ERROR",
+                    "message": "Redis timeout",
+                    "riskScore": 91,
+                    "riskReason": "timeout",
+                },
+            ],
+        }
+
+    monkeypatch.setattr(ai_big_screen_service, "_build_patch_plan_with_ai", _fake_patch_plan)
+    monkeypatch.setattr(ai_big_screen_service, "_execute_data_capability", _fake_execute)
+
+    patch_response = asyncio.run(
+        patch_ai_big_screen(
+            saved_screen["id"],
+            AiBigScreenPatchRequest(
+                baseVersionId="v1",
+                selectedComponentId="component-logs",
+                instruction="分析系统日志有哪些高危情况，并且动态渲染突出危险部分",
+                requestedBy="portal-test",
+            ),
+        ),
+    )
+
+    patched_component = patch_response.screen["components"][0]
+    assert patched_component["id"] == "component-logs"
+    assert patched_component["type"] == "risk-pulse"
+    assert patched_component["queryParams"]["analysisMode"] == "risk_summary"
+    assert patched_component["visualConfig"]["palette"] == "warm"
+    assert patched_component["visualConfig"]["emphasis"] == "strong"
+    assert patched_component["visualSpec"]["kind"] == "risk-field"
+    assert patched_component["visualSpec"]["motion"] == "pulse"
+    assert patched_component["data"]["riskScore"] == 91
+    assert execute_calls[-1][0] == "system-logs"
+    assert execute_calls[-1][1]["analysisMode"] == "risk_summary"
+    data_intent = patch_response.screen["aiConversationContext"]["dataIntentPlan"]["intents"][0]
+    assert data_intent["analysisMode"] == "risk_summary"
+    visual_item = patch_response.screen["aiConversationContext"]["visualPlan"]["items"][0]
+    assert visual_item["visualType"] == "risk-pulse"
+    assert visual_item["visualSpec"]["kind"] == "risk-field"
+
+
+def test_ai_big_screen_patch_appends_multiple_semantic_data_components(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    _patch_registry_path(monkeypatch, tmp_path)
+    base_component = {
+        "id": "component-workorders",
+        "title": "待办工单",
+        "type": "table",
+        "pluginId": "workorders",
+        "capabilityId": "workorders",
+        "queryParams": {"timeRange": "today", "limit": 20},
+        "layoutPosition": {"x": 0, "y": 0, "w": 6, "h": 4},
+        "visualConfig": {"palette": "industrial", "emphasis": "standard"},
+        "data": {
+            "source": "portal-order-workflow-api",
+            "sourceStatus": "live",
+            "rows": [{"workorderNo": "WO-1", "title": "CPU 高"}],
+        },
+    }
+    saved_screen = save_ai_big_screen(
+        AiBigScreenSaveRequest(
+            screen={
+                "schemaVersion": 1,
+                "id": "screen-append-multiple-data",
+                "name": "可叠加大屏",
+                "status": "draft",
+                "layout": {"type": "grid", "columns": 12, "rowHeight": 84},
+                "theme": {"mode": "dark", "palette": "industrial", "density": "dashboard"},
+                "components": [base_component],
+                "dataBindings": [ai_big_screen_service._build_binding(base_component)],
+                "versions": [
+                    {
+                        "versionId": "v1",
+                        "screenId": "screen-append-multiple-data",
+                        "configSnapshot": {},
+                        "changeSummary": "初始版本",
+                    },
+                ],
+            },
+            requestedBy="portal-test",
+        ),
+    ).screen
+
+    async def _fake_patch_plan(**kwargs):
+        raise AssertionError("明确的数据追加意图不应该依赖 LLM patch")
+
+    execute_calls: list[tuple[str, dict]] = []
+
+    def _fake_execute(capability_id: str, query_params: dict) -> dict:
+        execute_calls.append((capability_id, dict(query_params)))
+        return {
+            "source": f"{capability_id}-source",
+            "sourceStatus": "live",
+            "rows": [{"title": capability_id}],
+        }
+
+    monkeypatch.setattr(ai_big_screen_service, "_build_patch_plan_with_ai", _fake_patch_plan)
+    monkeypatch.setattr(ai_big_screen_service, "_execute_data_capability", _fake_execute)
+
+    patch_response = asyncio.run(
+        patch_ai_big_screen(
+            saved_screen["id"],
+            AiBigScreenPatchRequest(
+                baseVersionId="v1",
+                selectedComponentId="",
+                instruction="帮我加入实时告警和系统日志",
+                requestedBy="portal-test",
+            ),
+        ),
+    )
+
+    patched_screen = patch_response.screen
+    assert [component["capabilityId"] for component in patched_screen["components"]] == [
+        "workorders",
+        "real-alarms",
+        "system-logs",
+    ]
+    assert patched_screen["components"][1]["type"] in {"table", "status-stream"}
+    assert patched_screen["components"][2]["type"] == "table"
+    assert [component["data"]["rows"][0]["title"] for component in patched_screen["components"][1:]] == [
+        "real-alarms",
+        "system-logs",
+    ]
+    assert [call[0] for call in execute_calls] == ["real-alarms", "system-logs"]
+    assert len(patched_screen["dataBindings"]) == 3
+    assert [
+        intent["capabilityId"]
+        for intent in patched_screen["aiConversationContext"]["dataIntentPlan"]["intents"]
+    ] == ["workorders", "real-alarms", "system-logs"]
+    assert [
+        item["capabilityId"]
+        for item in patched_screen["aiConversationContext"]["visualPlan"]["items"]
+    ] == ["workorders", "real-alarms", "system-logs"]
+
+
 def test_ai_big_screen_patch_aligns_selected_component_layout_with_left(
     monkeypatch,
     tmp_path,
@@ -653,6 +938,110 @@ def test_ai_big_screen_patch_adds_workorder_field_and_rehydrates_data(
     assert {"key": "starter", "label": "流程发起人"} in patched_component["data"]["columns"]
     assert patched_component["data"]["rows"][0]["starter"] == "xiaok"
     assert patch_response.screen["dataBindings"][0]["input"]["fields"][-1] == "starter"
+    data_intent_plan = patch_response.screen["aiConversationContext"]["dataIntentPlan"]
+    assert data_intent_plan["mode"] == "component-state"
+    assert data_intent_plan["intents"][0]["capabilityId"] == "workorders"
+    assert data_intent_plan["intents"][0]["fields"] == ["workorderNo", "title", "starter"]
+    assert data_intent_plan["intents"][0]["queryParams"]["fields"] == ["workorderNo", "title", "starter"]
+    visual_plan = patch_response.screen["aiConversationContext"]["visualPlan"]
+    assert visual_plan["mode"] == "component-state"
+    assert visual_plan["items"][0]["componentId"] == "component-workorders"
+    assert visual_plan["items"][0]["capabilityId"] == "workorders"
+    assert visual_plan["items"][0]["visualType"] == "table"
+    assert visual_plan["items"][0]["visibleFields"] == ["workorderNo", "title", "starter"]
+
+
+def test_ai_big_screen_patch_applies_field_change_to_selected_component_ids(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    _patch_registry_path(monkeypatch, tmp_path)
+    components = [
+        {
+            "id": "component-workorders-a",
+            "title": "待办工单 A",
+            "type": "table",
+            "pluginId": "workorders",
+            "capabilityId": "workorders",
+            "queryParams": {"timeRange": "today", "limit": 10},
+            "visualConfig": {"palette": "industrial", "emphasis": "standard"},
+            "data": {
+                "source": "portal-order-workflow-api",
+                "sourceStatus": "live",
+                "columns": [{"key": "workorderNo", "label": "工单号"}],
+                "rows": [{"workorderNo": "TASK-A"}],
+            },
+        },
+        {
+            "id": "component-workorders-b",
+            "title": "待办工单 B",
+            "type": "table",
+            "pluginId": "workorders",
+            "capabilityId": "workorders",
+            "queryParams": {"timeRange": "today", "limit": 10},
+            "visualConfig": {"palette": "industrial", "emphasis": "standard"},
+            "data": {
+                "source": "portal-order-workflow-api",
+                "sourceStatus": "live",
+                "columns": [{"key": "workorderNo", "label": "工单号"}],
+                "rows": [{"workorderNo": "TASK-B"}],
+            },
+        },
+    ]
+    saved_screen = save_ai_big_screen(
+        AiBigScreenSaveRequest(
+            screen={
+                "schemaVersion": 1,
+                "id": "screen-multi-select-field",
+                "name": "多选修改大屏",
+                "status": "draft",
+                "layout": {"type": "grid", "columns": 12, "rowHeight": 84},
+                "theme": {"mode": "dark", "palette": "industrial", "density": "dashboard"},
+                "components": components,
+                "dataBindings": [ai_big_screen_service._build_binding(component) for component in components],
+                "versions": [{"versionId": "v1", "screenId": "screen-multi-select-field"}],
+            },
+            requestedBy="portal-test",
+        ),
+    ).screen
+
+    async def _fake_patch_plan(**kwargs):
+        raise AssertionError("明确字段修改不应该依赖 LLM patch")
+
+    monkeypatch.setattr(ai_big_screen_service, "_build_patch_plan_with_ai", _fake_patch_plan)
+    monkeypatch.setattr(
+        ai_big_screen_service,
+        "_execute_data_capability",
+        lambda capability_id, query_params: {
+            "source": "portal-order-workflow-api",
+            "sourceStatus": "live",
+            "columns": ai_big_screen_service._columns_for_capability_fields(
+                capability_id,
+                query_params.get("fields"),
+            ),
+            "rows": [{"workorderNo": "TASK", "starter": "xiaok"}],
+        },
+    )
+
+    patch_response = asyncio.run(
+        patch_ai_big_screen(
+            saved_screen["id"],
+            AiBigScreenPatchRequest(
+                baseVersionId="v1",
+                selectedComponentIds=["component-workorders-a", "component-workorders-b"],
+                instruction="这两个工单区域增加流程发起人字段",
+                requestedBy="portal-test",
+            ),
+        ),
+    )
+
+    for component in patch_response.screen["components"]:
+        assert "starter" in component["queryParams"]["fields"]
+        assert {"key": "starter", "label": "流程发起人"} in component["data"]["columns"]
+    assert patch_response.screen["aiConversationContext"]["selectedComponentIds"] == [
+        "component-workorders-a",
+        "component-workorders-b",
+    ]
 
 
 def test_ai_big_screen_field_patch_switches_workorder_stream_to_table(
@@ -770,6 +1159,26 @@ def test_ai_big_screen_field_patch_switches_workorder_stream_to_table(
     assert {"key": "starter", "label": "流程发起人"} in patched_component["data"]["columns"]
     assert patched_component["data"]["rows"][0]["taskId"] == "task-9"
     assert patched_component["data"]["rows"][0]["procInsId"] == "proc-8"
+    data_intent_plan = patch_response.screen["aiConversationContext"]["dataIntentPlan"]
+    assert data_intent_plan["mode"] == "component-state"
+    assert data_intent_plan["intents"][0]["capabilityId"] == "workorders"
+    assert data_intent_plan["intents"][0]["visualIntent"]["type"] == "table"
+    assert data_intent_plan["intents"][0]["fields"] == [
+        "workorderNo",
+        "title",
+        "status",
+        "severity",
+        "eventTime",
+        "starter",
+        "taskName",
+        "processName",
+        "taskId",
+        "procInsId",
+    ]
+    visual_plan = patch_response.screen["aiConversationContext"]["visualPlan"]
+    assert visual_plan["mode"] == "component-state"
+    assert visual_plan["items"][0]["visualType"] == "table"
+    assert visual_plan["items"][0]["visibleFields"] == data_intent_plan["intents"][0]["fields"]
 
 
 def test_nightingale_logs_latest_non_empty_searches_backwards(monkeypatch) -> None:
@@ -1432,10 +1841,11 @@ def test_ai_big_screen_realtime_alarm_draft_removes_model_builtin_alarm_filters(
 
     alarm_calls = [query_params for capability_id, query_params in calls if capability_id == "real-alarms"]
     assert alarm_calls
-    assert alarm_calls[0] == {
-        "limit": 50,
-        "fields": ["eventTime", "level", "title", "deviceName", "manageIp"],
-    }
+    assert "lookbackMinutes" not in alarm_calls[0]
+    assert "alarmStatus" not in alarm_calls[0]
+    assert "alarmstatus" not in alarm_calls[0]
+    assert alarm_calls[0]["limit"] == 100
+    assert alarm_calls[0]["fields"] == ["eventTime", "level", "title", "deviceName", "manageIp"]
     alarm_component = next(component for component in draft_screen["components"] if component["pluginId"] == "real-alarms")
     assert alarm_component["queryParams"] == alarm_calls[0]
     assert alarm_component["data"]["total"] == 5995
@@ -1501,7 +1911,7 @@ def test_ai_big_screen_corrects_workorder_component_bound_to_alarm_capability(
 
     draft_screen = _await_if_needed(generate_ai_big_screen_draft(
         AiBigScreenDraftRequest(
-            prompt="查询实时告警、待办工单。",
+            prompt="查询实时告警、待办工单，并分析整体态势。",
             requestedBy="portal-test",
         ),
     )).screen
@@ -1509,7 +1919,7 @@ def test_ai_big_screen_corrects_workorder_component_bound_to_alarm_capability(
     workorder_component = next(
         component for component in draft_screen["components"] if component["title"] == "待办工单统计"
     )
-    alarm_component = next(component for component in draft_screen["components"] if component["title"] == "实时告警")
+    alarm_component = next(component for component in draft_screen["components"] if component["pluginId"] == "real-alarms")
 
     assert workorder_component["capabilityId"] == "workorders"
     assert workorder_component["pluginId"] == "workorders"
@@ -1519,6 +1929,186 @@ def test_ai_big_screen_corrects_workorder_component_bound_to_alarm_capability(
     assert alarm_component["capabilityId"] == "real-alarms"
     assert ("workorders", workorder_component["queryParams"]) in calls
     assert any(capability_id == "real-alarms" for capability_id, _ in calls)
+
+
+def test_ai_big_screen_simple_query_dedupes_capabilities_and_does_not_infer_log_risk(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    _patch_registry_path(monkeypatch, tmp_path)
+    calls: list[tuple[str, dict]] = []
+
+    async def _fake_plan(**kwargs):
+        raise AssertionError("简单查询不应该调用模板 LLM 生成组件")
+
+    def _fake_execute(capability_id: str, query_params: dict) -> dict:
+        calls.append((capability_id, dict(query_params)))
+        return {
+            "source": capability_id,
+            "sourceStatus": "live",
+            "total": 1,
+            "value": 1,
+            "rows": [{"title": capability_id}],
+        }
+
+    monkeypatch.setattr(ai_big_screen_service, "_build_screen_plan_with_ai", _fake_plan)
+    monkeypatch.setattr(ai_big_screen_service, "_execute_data_capability", _fake_execute)
+
+    draft_screen = _await_if_needed(generate_ai_big_screen_draft(
+        AiBigScreenDraftRequest(
+            prompt="查询实时告警、系统日志和待办工单。",
+            requestedBy="portal-test",
+        ),
+    )).screen
+
+    capability_ids = [component["capabilityId"] for component in draft_screen["components"]]
+    assert capability_ids == ["real-alarms", "system-logs", "workorders"]
+    assert [capability_id for capability_id, _ in calls] == capability_ids
+
+    alarm_component = draft_screen["components"][0]
+    assert alarm_component["title"] == "系统告警"
+    assert alarm_component["type"] == "table"
+
+    log_component = draft_screen["components"][1]
+    assert log_component["title"] == "15分钟系统日志"
+    assert log_component["type"] == "table"
+    assert log_component["queryParams"].get("analysisMode") in (None, "")
+    assert "visualSpec" not in log_component
+
+    workorder_component = draft_screen["components"][2]
+    assert workorder_component["title"] == "工单信息"
+    assert workorder_component["type"] == "table"
+    assert workorder_component["data"]["source"] == "workorders"
+    data_intent_plan = draft_screen["aiConversationContext"]["dataIntentPlan"]
+    assert data_intent_plan["mode"] == "simple-query"
+    assert [item["capabilityId"] for item in data_intent_plan["intents"]] == capability_ids
+    assert data_intent_plan["intents"][0]["queryParams"]["limit"] == 100
+    assert data_intent_plan["intents"][1]["queryParams"]["lookbackMinutes"] == 15
+    assert data_intent_plan["intents"][2]["queryParams"]["timeRange"] == "today"
+    assert all(item["source"] == "semantic-intent" for item in data_intent_plan["intents"])
+    visual_plan = draft_screen["aiConversationContext"]["visualPlan"]
+    assert visual_plan["mode"] == "data-intent-derived"
+    assert [item["capabilityId"] for item in visual_plan["items"]] == capability_ids
+    assert [item["visualType"] for item in visual_plan["items"]] == ["table", "table", "table"]
+    assert visual_plan["items"][0]["title"] == "系统告警"
+    assert visual_plan["items"][1]["title"] == "15分钟系统日志"
+    assert visual_plan["items"][2]["title"] == "工单信息"
+
+
+def test_ai_big_screen_data_intent_plan_explains_query_time_and_data_quality(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    _patch_registry_path(monkeypatch, tmp_path)
+
+    def _fake_execute(capability_id: str, query_params: dict) -> dict:
+        if capability_id == "real-alarms":
+            return {
+                "source": "portal-real-alarm-api",
+                "sourceStatus": "live",
+                "total": 2,
+                "rows": [{"title": "CPU 高"}, {"title": "Redis 连接异常"}],
+            }
+        if capability_id == "system-logs":
+            return {
+                "source": "zhiguan-log-service",
+                "sourceStatus": "empty",
+                "rows": [],
+            }
+        return {"source": capability_id, "sourceStatus": "live", "rows": [{"title": capability_id}]}
+
+    monkeypatch.setattr(ai_big_screen_service, "_execute_data_capability", _fake_execute)
+
+    draft_screen = _await_if_needed(generate_ai_big_screen_draft(
+        AiBigScreenDraftRequest(
+            prompt="查询实时告警、15分钟系统日志和待办工单。",
+            requestedBy="portal-test",
+        ),
+    )).screen
+
+    intents = {
+        item["capabilityId"]: item
+        for item in draft_screen["aiConversationContext"]["dataIntentPlan"]["intents"]
+    }
+    assert intents["real-alarms"]["intentKind"] == "query"
+    assert intents["real-alarms"]["timeIntent"] == "current"
+    assert intents["real-alarms"]["dataQuality"] == "live"
+    assert intents["real-alarms"]["reasoningTrace"]["sourceStatus"] == "live"
+    assert intents["real-alarms"]["reasoningTrace"]["rowCount"] == 2
+
+    assert intents["system-logs"]["intentKind"] == "query"
+    assert intents["system-logs"]["timeIntent"] == "relative"
+    assert intents["system-logs"]["dataQuality"] == "empty"
+    assert intents["system-logs"]["reasoningTrace"]["sourceStatus"] == "empty"
+    assert intents["system-logs"]["reasoningTrace"]["rowCount"] == 0
+
+
+def test_ai_big_screen_golden_prompts_keep_capabilities_visuals_and_gap_honest(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    _patch_registry_path(monkeypatch, tmp_path)
+    original_execute = ai_big_screen_service._execute_data_capability
+
+    def _fake_execute(capability_id: str, query_params: dict) -> dict:
+        if capability_id == "capability-gap":
+            return original_execute(capability_id, query_params)
+        return {
+            "source": capability_id,
+            "sourceStatus": "live",
+            "total": 1,
+            "rows": [{"title": capability_id, "riskScore": 92, "riskLevel": "critical"}],
+        }
+
+    monkeypatch.setattr(ai_big_screen_service, "_execute_data_capability", _fake_execute)
+
+    async def _fake_gap_plan(**kwargs):
+        return {
+            "name": "未知指标",
+            "description": "尚未接入的数据能力。",
+            "theme": {"mode": "dark", "palette": "industrial", "density": "dashboard"},
+            "components": [],
+            "summary": "",
+        }
+
+    simple_screen = _await_if_needed(generate_ai_big_screen_draft(
+        AiBigScreenDraftRequest(
+            prompt="查询实时告警、系统日志和待办工单。",
+            requestedBy="portal-test",
+        ),
+    )).screen
+    assert [component["capabilityId"] for component in simple_screen["components"]] == [
+        "real-alarms",
+        "system-logs",
+        "workorders",
+    ]
+    assert [item["intentKind"] for item in simple_screen["aiConversationContext"]["dataIntentPlan"]["intents"]] == [
+        "query",
+        "query",
+        "query",
+    ]
+
+    risk_screen = _await_if_needed(generate_ai_big_screen_draft(
+        AiBigScreenDraftRequest(
+            prompt="分析系统日志有哪些高危情况，并且进行动态渲染突出危险部分。",
+            requestedBy="portal-test",
+        ),
+    )).screen
+    assert risk_screen["components"][0]["capabilityId"] == "system-logs"
+    assert risk_screen["components"][0]["type"] == "risk-pulse"
+    assert risk_screen["components"][0]["visualSpec"]["kind"] == "risk-field"
+    assert risk_screen["aiConversationContext"]["dataIntentPlan"]["intents"][0]["intentKind"] == "analysis"
+
+    monkeypatch.setattr(ai_big_screen_service, "_build_screen_plan_with_ai", _fake_gap_plan)
+    gap_screen = _await_if_needed(generate_ai_big_screen_draft(
+        AiBigScreenDraftRequest(
+            prompt="展示一个尚未接入的新业务指标",
+            requestedBy="portal-test",
+        ),
+    )).screen
+    assert gap_screen["components"][0]["capabilityId"] == "capability-gap"
+    assert gap_screen["aiConversationContext"]["dataIntentPlan"]["intents"][0]["dataQuality"] == "gap"
+    assert "模拟数据" in str(gap_screen["components"][0]["data"])
 
 
 def test_ai_big_screen_log_risk_prompt_prefers_dynamic_risk_visual(
@@ -1608,6 +2198,8 @@ def test_ai_big_screen_visual_spec_is_sanitized_and_preserved(
                         "kind": "risk-field",
                         "motion": "scan",
                         "density": "showcase",
+                        "layoutPattern": "focus",
+                        "composition": "primary",
                         "bindings": {
                             "time": "time",
                             "message": "message",
@@ -1618,6 +2210,10 @@ def test_ai_big_screen_visual_spec_is_sanitized_and_preserved(
                         "highlightRules": [
                             {"field": "riskScore", "operator": ">=", "value": 88, "tone": "critical"},
                             {"field": "message", "operator": "contains", "value": "<script>", "tone": "warm"},
+                        ],
+                        "emphasisRules": [
+                            {"field": "riskScore", "operator": ">=", "value": 88, "tone": "critical"},
+                            {"field": "message", "operator": "contains", "value": "javascript:alert(1)", "tone": "warm"},
                         ],
                         "layers": [
                             {"type": "score", "source": "rows"},
@@ -1646,6 +2242,9 @@ def test_ai_big_screen_visual_spec_is_sanitized_and_preserved(
     visual_spec = draft_screen["components"][0]["visualSpec"]
     assert visual_spec["kind"] == "risk-field"
     assert visual_spec["motion"] == "scan"
+    assert visual_spec["density"] == "showcase"
+    assert visual_spec["layoutPattern"] == "focus"
+    assert visual_spec["composition"] == "primary"
     assert visual_spec["bindings"] == {
         "time": "time",
         "message": "message",
@@ -1658,6 +2257,9 @@ def test_ai_big_screen_visual_spec_is_sanitized_and_preserved(
         "value": 88,
         "tone": "critical",
     }
+    assert visual_spec["emphasisRules"] == [
+        {"field": "riskScore", "operator": ">=", "value": 88, "tone": "critical"},
+    ]
     assert visual_spec["layers"] == [
         {"type": "score", "source": "rows"},
         {"type": "list", "source": "rows", "limit": 5},

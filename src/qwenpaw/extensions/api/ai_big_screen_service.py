@@ -227,10 +227,28 @@ async def build_screen_draft(request: AiBigScreenDraftRequest) -> dict[str, Any]
     screen_id = f"screen-{uuid.uuid4().hex[:10]}"
     requested_title = str(request.title or "").strip()
     now = _now_iso()
-    raw_plan = await _build_screen_plan_with_ai(prompt=prompt, title=requested_title)
-    plan = _normalize_screen_plan(raw_plan, prompt=prompt, title=requested_title)
+    if _should_use_semantic_data_intent_path(prompt):
+        plan = _build_simple_query_screen_plan(prompt=prompt, title=requested_title)
+    else:
+        raw_plan = await _build_screen_plan_with_ai(prompt=prompt, title=requested_title)
+        plan = _normalize_screen_plan(raw_plan, prompt=prompt, title=requested_title)
     components = await _hydrate_components_with_data(plan["components"], instruction=prompt)
     data_bindings = [_build_binding(component) for component in components]
+    data_intent_plan = plan.get("dataIntentPlan")
+    if not isinstance(data_intent_plan, dict):
+        data_intent_plan = _build_data_intent_plan_from_components(
+            prompt=prompt,
+            components=components,
+            mode="ai-plan",
+            source="normalized-components",
+        )
+    else:
+        data_intent_plan = _build_data_intent_plan_from_components(
+            prompt=prompt,
+            components=components,
+            mode=str(data_intent_plan.get("mode") or "ai-plan"),
+            source=_data_intent_plan_source(data_intent_plan, default="normalized-components"),
+        )
     screen = {
         "schemaVersion": SCREEN_SCHEMA_VERSION,
         "id": screen_id,
@@ -251,6 +269,15 @@ async def build_screen_draft(request: AiBigScreenDraftRequest) -> dict[str, Any]
             "generationSummary": plan["summary"],
             "dataCapabilities": [item["pluginId"] for item in data_bindings],
             "capabilityGaps": _extract_capability_gaps(components),
+            "dataIntentPlan": data_intent_plan,
+            "visualPlan": _build_visual_plan_from_components(
+                components=components,
+                mode=(
+                    "data-intent-derived"
+                    if str(data_intent_plan.get("mode") or "") in {"simple-query", "semantic-query"}
+                    else "component-state"
+                ),
+            ),
         },
         "createdAt": now,
         "updatedAt": now,
@@ -263,6 +290,69 @@ async def build_screen_draft(request: AiBigScreenDraftRequest) -> dict[str, Any]
     )
     screen["versions"] = [version]
     return screen
+
+
+_DRAFT_TASKS: dict[str, dict[str, Any]] = {}
+
+
+def create_screen_draft_task(request: AiBigScreenDraftRequest) -> dict[str, Any]:
+    task_id = f"task-{uuid.uuid4().hex[:10]}"
+    now = _now_iso()
+    task = {
+        "taskId": task_id,
+        "status": "queued",
+        "stage": "queued",
+        "message": "已创建生成任务",
+        "createdAt": now,
+        "updatedAt": now,
+        "screen": None,
+        "error": "",
+    }
+    _DRAFT_TASKS[task_id] = task
+    asyncio.create_task(_run_screen_draft_task(task_id, request))
+    return dict(task)
+
+
+def get_screen_draft_task(task_id: str) -> dict[str, Any]:
+    normalized_task_id = str(task_id or "").strip()
+    if not normalized_task_id or normalized_task_id not in _DRAFT_TASKS:
+        raise ValueError(f"未找到生成任务：{normalized_task_id}")
+    return dict(_DRAFT_TASKS[normalized_task_id])
+
+
+async def _run_screen_draft_task(task_id: str, request: AiBigScreenDraftRequest) -> None:
+    _update_screen_draft_task(
+        task_id,
+        status="running",
+        stage="planning",
+        message="正在理解需求并规划数据能力",
+    )
+    try:
+        screen = await build_screen_draft(request)
+    except Exception as exc:
+        _update_screen_draft_task(
+            task_id,
+            status="failed",
+            stage="failed",
+            message="生成失败",
+            error=_extract_exception_message(exc),
+        )
+        return
+    _update_screen_draft_task(
+        task_id,
+        status="succeeded",
+        stage="completed",
+        message="生成完成",
+        screen=screen,
+    )
+
+
+def _update_screen_draft_task(task_id: str, **updates: Any) -> None:
+    task = _DRAFT_TASKS.get(task_id)
+    if not isinstance(task, dict):
+        return
+    task.update(updates)
+    task["updatedAt"] = _now_iso()
 
 
 def save_screen_asset(
@@ -289,6 +379,69 @@ def delete_screen_asset(*, screen_id: str) -> dict[str, Any]:
         "screenId": str(deleted.get("id") or screen_id),
         "deleted": True,
     }
+
+
+def rename_screen_asset(
+    *,
+    screen_id: str,
+    name: str,
+    requested_by: str = "portal",
+) -> dict[str, Any]:
+    next_name = str(name or "").strip()
+    if not next_name:
+        raise ValueError("name 不能为空")
+    screen = registry.get_screen(screen_id=screen_id)
+    screen["name"] = next_name[:80]
+    screen["aiConversationContext"] = {
+        **(
+            screen.get("aiConversationContext")
+            if isinstance(screen.get("aiConversationContext"), dict)
+            else {}
+        ),
+        "lastInstruction": "重命名大屏",
+    }
+    return registry.save_screen(screen=screen, requested_by=requested_by)
+
+
+def duplicate_screen_asset(
+    *,
+    screen_id: str,
+    name: str = "",
+    requested_by: str = "portal",
+) -> dict[str, Any]:
+    source = registry.get_screen(screen_id=screen_id)
+    now = _now_iso()
+    duplicated = copy.deepcopy(source)
+    duplicated["id"] = f"screen-{uuid.uuid4().hex[:10]}"
+    duplicated["name"] = str(name or "").strip() or f"{source.get('name') or 'AI 大屏'} 副本"
+    duplicated["status"] = "draft"
+    duplicated["owner"] = str(requested_by or "portal").strip() or "portal"
+    duplicated["createdAt"] = now
+    duplicated["updatedAt"] = now
+    duplicated["publishTargets"] = []
+    duplicated["permissions"] = {
+        **(duplicated.get("permissions") if isinstance(duplicated.get("permissions"), dict) else {}),
+        "visibility": "private",
+    }
+    duplicated["versions"] = [
+        _build_version(
+            screen=duplicated,
+            version_id="v1",
+            summary=f"从 {source.get('name') or screen_id} 复制生成。",
+            requested_by=requested_by,
+        ),
+    ]
+    duplicated["aiConversationContext"] = {
+        **(
+            duplicated.get("aiConversationContext")
+            if isinstance(duplicated.get("aiConversationContext"), dict)
+            else {}
+        ),
+        "lastInstruction": "复制大屏",
+        "duplicatedFrom": screen_id,
+    }
+    _validate_screen(duplicated)
+    return registry.save_screen(screen=duplicated, requested_by=requested_by)
 
 
 def publish_screen_asset(
@@ -365,6 +518,8 @@ _ALLOWED_VISUAL_SPEC_KINDS = {
 }
 _ALLOWED_VISUAL_SPEC_MOTIONS = {"none", "pulse", "scan", "flow", "stagger"}
 _ALLOWED_VISUAL_SPEC_DENSITIES = {"compact", "balanced", "showcase"}
+_ALLOWED_VISUAL_SPEC_LAYOUT_PATTERNS = {"grid", "focus", "split", "timeline", "matrix", "flow"}
+_ALLOWED_VISUAL_SPEC_COMPOSITIONS = {"primary", "secondary", "supporting"}
 _ALLOWED_VISUAL_SPEC_BINDINGS = {
     "time",
     "title",
@@ -397,16 +552,31 @@ async def patch_screen_asset(
     if not isinstance(components, list) or not components:
         raise ValueError("大屏没有可修改组件")
 
-    selected_component_id = str(request.selectedComponentId or "").strip()
+    selected_component_ids = _normalize_selected_component_ids(
+        request.selectedComponentIds,
+        fallback=str(request.selectedComponentId or "").strip(),
+    )
+    selected_component_id = selected_component_ids[0] if selected_component_ids else ""
     selected_index = _find_component_index(components, selected_component_id)
     if selected_component_id and selected_index < 0:
         raise ValueError(f"未找到组件：{selected_component_id}")
+    for component_id in selected_component_ids[1:]:
+        if _find_component_index(components, component_id) < 0:
+            raise ValueError(f"未找到组件：{component_id}")
 
-    plan = await _build_patch_plan_with_ai(
+    plan = _build_semantic_patch_plan_if_actionable(
         screen=screen,
         selected_component_id=selected_component_id,
+        selected_component_ids=selected_component_ids,
         instruction=instruction,
     )
+    if not plan:
+        plan = await _build_patch_plan_with_ai(
+            screen=screen,
+            selected_component_id=selected_component_id,
+            selected_component_ids=selected_component_ids,
+            instruction=instruction,
+        )
     summary = await _apply_patch_plan(screen=screen, plan=plan, instruction=instruction)
     next_components = screen.get("components")
     if isinstance(next_components, list):
@@ -414,6 +584,26 @@ async def patch_screen_asset(
             components=next_components,
             previous_bindings=screen.get("dataBindings"),
         )
+        data_intent_plan = _build_data_intent_plan_from_components(
+            prompt=str(
+                (
+                    screen.get("aiConversationContext")
+                    if isinstance(screen.get("aiConversationContext"), dict)
+                    else {}
+                ).get("sourcePrompt")
+                or instruction
+            ),
+            components=[component for component in next_components if isinstance(component, dict)],
+            mode="component-state",
+            source="component-state",
+        )
+        visual_plan = _build_visual_plan_from_components(
+            components=[component for component in next_components if isinstance(component, dict)],
+            mode="component-state",
+        )
+    else:
+        data_intent_plan = {}
+        visual_plan = {}
 
     screen["aiConversationContext"] = {
         **(
@@ -423,6 +613,11 @@ async def patch_screen_asset(
         ),
         "lastInstruction": instruction,
         "selectedComponentId": selected_component_id,
+        "selectedComponentIds": selected_component_ids,
+        "selectedRegion": copy.deepcopy(request.selectedRegion or {}),
+        "selectionContext": copy.deepcopy(request.selectionContext or {}),
+        "dataIntentPlan": data_intent_plan,
+        "visualPlan": visual_plan,
     }
 
     version_id = f"v{len(screen.get('versions') or []) + 1}"
@@ -439,10 +634,31 @@ async def patch_screen_asset(
     return {"screen": saved, "version": version, "summary": summary}
 
 
+def _build_semantic_patch_plan_if_actionable(
+    *,
+    screen: Mapping[str, Any],
+    selected_component_id: str,
+    selected_component_ids: list[str] | None = None,
+    instruction: str,
+) -> dict[str, Any]:
+    plan = _normalize_patch_plan(
+        {"summary": "", "operations": []},
+        screen=screen,
+        selected_component_id=selected_component_id,
+        selected_component_ids=selected_component_ids,
+        instruction=instruction,
+    )
+    operations = plan.get("operations")
+    if not isinstance(operations, list) or not operations:
+        return {}
+    return plan
+
+
 async def _build_patch_plan_with_ai(
     *,
     screen: Mapping[str, Any],
     selected_component_id: str,
+    selected_component_ids: list[str] | None = None,
     instruction: str,
 ) -> dict[str, Any]:
     from qwenpaw.agents.model_factory import create_model_and_formatter
@@ -510,6 +726,7 @@ async def _build_patch_plan_with_ai(
                 {
                     "instruction": instruction,
                     "selectedComponentId": selected_component_id,
+                    "selectedComponentIds": selected_component_ids or ([selected_component_id] if selected_component_id else []),
                     "screen": {
                         "id": screen.get("id"),
                         "name": screen.get("name"),
@@ -558,6 +775,7 @@ async def _build_patch_plan_with_ai(
         parsed,
         screen=screen,
         selected_component_id=selected_component_id,
+        selected_component_ids=selected_component_ids,
         instruction=instruction,
     )
 
@@ -585,7 +803,11 @@ async def _build_screen_plan_with_ai(*, prompt: str, title: str) -> dict[str, An
                 "你是面向运维场景的 AI 大屏产品设计师和数据需求分析师。"
                 "你必须先理解用户语义中真正需要的数据，再从给定 dataCapabilities 中选择能力。"
                 "同一句话出现多个数据对象时必须全部覆盖，例如日志和告警要生成两个独立数据需求。"
+                "普通查询类需求只能为每个数据对象生成一个组件，不要为同一个 capabilityId 生成重复组件。"
+                "组件标题、描述、capabilityId 必须语义一致：工单只能使用 workorders，告警只能使用 real-alarms，日志只能使用 system-logs。"
                 "你需要创造性设计版式、标题、描述、视觉调性和组件组合，但不得输出前端源码、SQL、脚本或未授权接口。"
+                "创造性不得改变用户请求的数据意图；用户没有要求分析、风险、高危、动态突出时，系统日志只能按普通日志查询展示，"
+                "不要使用 risk-pulse、risk-field 或 queryParams.analysisMode=risk_summary。"
                 "如果用户需要的数据没有可真实查询的已接入能力，必须使用 capability-gap，"
                 "在 queryParams 中写明 requestedData、reason、suggestedSkillName、suggestedApi、requiredInputs、validationPlan，"
                 "不得用已有能力或样例数据伪装。"
@@ -674,24 +896,34 @@ def _normalize_screen_plan(
     title: str,
 ) -> dict[str, Any]:
     inferred_lookback_minutes = _extract_lookback_minutes(prompt)
-    normalized_components = [
-        _normalize_plan_component(
-            component,
-            index=index,
-            inferred_lookback_minutes=inferred_lookback_minutes,
+    if _should_use_semantic_data_intent_path(prompt):
+        normalized_components = _build_simple_query_components(
             prompt=prompt,
+            inferred_lookback_minutes=inferred_lookback_minutes,
         )
-        for index, component in enumerate(
-            plan.get("components") if isinstance(plan.get("components"), list) else []
+    else:
+        normalized_components = [
+            _normalize_plan_component(
+                component,
+                index=index,
+                inferred_lookback_minutes=inferred_lookback_minutes,
+                prompt=prompt,
+            )
+            for index, component in enumerate(
+                plan.get("components") if isinstance(plan.get("components"), list) else []
+            )
+            if isinstance(component, dict)
+        ]
+        normalized_components = [item for item in normalized_components if item]
+        normalized_components = _ensure_semantic_capabilities(
+            prompt=prompt,
+            components=normalized_components,
+            inferred_lookback_minutes=inferred_lookback_minutes,
         )
-        if isinstance(component, dict)
-    ]
-    normalized_components = [item for item in normalized_components if item]
-    normalized_components = _ensure_semantic_capabilities(
-        prompt=prompt,
-        components=normalized_components,
-        inferred_lookback_minutes=inferred_lookback_minutes,
-    )
+        normalized_components = _dedupe_simple_query_components(
+            prompt=prompt,
+            components=normalized_components,
+        )
     if not normalized_components:
         normalized_components = [
             _build_capability_gap_component(
@@ -712,6 +944,250 @@ def _normalize_screen_plan(
         "components": normalized_components,
         "summary": str(plan.get("summary") or "").strip(),
     }
+
+
+def _build_simple_query_screen_plan(
+    *,
+    prompt: str,
+    title: str,
+) -> dict[str, Any]:
+    inferred_lookback_minutes = _extract_lookback_minutes(prompt)
+    components = _build_simple_query_components(
+        prompt=prompt,
+        inferred_lookback_minutes=inferred_lookback_minutes,
+    )
+    requested_title = str(title or "").strip()
+    capability_names = [
+        str(_plugin_by_id(str(component.get("capabilityId") or "")).get("name") or "")
+        for component in components
+    ]
+    capability_label = "、".join([name for name in capability_names if name]) or "数据能力"
+    return {
+        "name": requested_title or "AI 实时运维大屏",
+        "description": f"按数据意图查询：{prompt}",
+        "theme": _normalize_theme({}),
+        "layout": _normalize_layout({}),
+        "components": components,
+        "summary": f"已按数据意图生成 {capability_label} 查询组件。",
+        "dataIntentPlan": _build_data_intent_plan_from_components(
+            prompt=prompt,
+            components=components,
+            mode="simple-query" if _prompt_is_simple_data_query(prompt) else "semantic-query",
+            source="semantic-intent",
+        ),
+    }
+
+
+def _build_data_intent_plan_from_components(
+    *,
+    prompt: str,
+    components: list[dict[str, Any]],
+    mode: str,
+    source: str,
+) -> dict[str, Any]:
+    intents: list[dict[str, Any]] = []
+    for index, component in enumerate(components):
+        capability_id = str(component.get("capabilityId") or component.get("pluginId") or "")
+        capability = _plugin_by_id(capability_id)
+        query_params = _component_query_params(component)
+        fields = _normalize_capability_fields(
+            capability_id,
+            query_params.get("fields"),
+            fallback=_default_capability_fields(capability_id),
+        )
+        intent = {
+            "id": f"intent-{index + 1}",
+            "capabilityId": capability_id,
+            "name": str(capability.get("name") or component.get("title") or capability_id),
+            "domain": str(capability.get("domain") or ""),
+            "source": source,
+            "confidence": 1.0 if source == "semantic-intent" else 0.82,
+            "intentKind": _infer_intent_kind(prompt=prompt, component=component),
+            "timeIntent": _infer_time_intent(prompt=prompt, query_params=query_params),
+            "dataQuality": _infer_data_quality(component),
+            "reasoningTrace": _build_intent_reasoning_trace(component),
+            "queryParams": copy.deepcopy(query_params),
+            "fields": fields,
+            "analysisMode": str(query_params.get("analysisMode") or ""),
+            "visualIntent": {
+                "type": str(component.get("type") or ""),
+                "title": str(component.get("title") or ""),
+            },
+        }
+        if capability_id == "capability-gap":
+            intent["gapReason"] = str(query_params.get("reason") or "")
+            intent["requestedData"] = str(query_params.get("requestedData") or "")
+        intents.append(intent)
+    return {
+        "version": 1,
+        "mode": str(mode or "ai-plan"),
+        "sourcePrompt": str(prompt or ""),
+        "intents": intents,
+    }
+
+
+def _data_intent_plan_source(
+    plan: Mapping[str, Any],
+    *,
+    default: str,
+) -> str:
+    intents = plan.get("intents")
+    if isinstance(intents, list):
+        for intent in intents:
+            if not isinstance(intent, dict):
+                continue
+            source = str(intent.get("source") or "").strip()
+            if source:
+                return source
+    return default
+
+
+def _build_visual_plan_from_components(
+    *,
+    components: list[dict[str, Any]],
+    mode: str,
+) -> dict[str, Any]:
+    items: list[dict[str, Any]] = []
+    for index, component in enumerate(components):
+        capability_id = str(component.get("capabilityId") or component.get("pluginId") or "")
+        query_params = _component_query_params(component)
+        visible_fields = _normalize_capability_fields(
+            capability_id,
+            query_params.get("fields"),
+            fallback=_component_current_fields(component),
+        )
+        items.append(
+            {
+                "id": f"visual-{index + 1}",
+                "componentId": str(component.get("id") or ""),
+                "capabilityId": capability_id,
+                "visualType": str(component.get("type") or ""),
+                "title": str(component.get("title") or ""),
+                "layoutPosition": copy.deepcopy(component.get("layoutPosition") or {}),
+                "visibleFields": visible_fields,
+                "visualConfig": copy.deepcopy(component.get("visualConfig") or {}),
+                "visualSpec": copy.deepcopy(component.get("visualSpec") or {}),
+            },
+        )
+    return {
+        "version": 1,
+        "mode": str(mode or "component-state"),
+        "items": items,
+    }
+
+
+def _infer_intent_kind(
+    *,
+    prompt: str,
+    component: Mapping[str, Any],
+) -> str:
+    query_params = _component_query_params(component)
+    component_type = str(component.get("type") or "")
+    analysis_mode = str(query_params.get("analysisMode") or "")
+    text = " ".join(
+        (
+            str(prompt or ""),
+            str(component.get("title") or ""),
+            str(component.get("description") or ""),
+        ),
+    )
+    if _prompt_is_simple_data_query(prompt):
+        return "query"
+    if analysis_mode or component_type == "risk-pulse" or any(
+        term in text for term in ("分析", "风险", "高危", "危险", "异常", "根因")
+    ):
+        return "analysis"
+    if any(term in text for term in ("对比", "比较", "同比", "环比")):
+        return "compare"
+    if any(term in text for term in ("趋势", "走势", "变化")):
+        return "trend"
+    if any(term in text for term in ("统计", "汇总", "数量", "总数")):
+        return "aggregate"
+    if any(term in text for term in ("关联", "相关", "影响")):
+        return "correlation"
+    return "query"
+
+
+def _infer_time_intent(
+    *,
+    prompt: str,
+    query_params: Mapping[str, Any],
+) -> str:
+    text = str(prompt or "")
+    strategy = str(query_params.get("searchStrategy") or query_params.get("search_strategy") or "")
+    time_mode = str(query_params.get("timeMode") or query_params.get("time_mode") or "")
+    if strategy == "latest_non_empty" or time_mode == "latest_non_empty":
+        return "latest_non_empty"
+    if any(
+        str(query_params.get(key) or "").strip()
+        for key in ("fromTime", "from_time", "toTime", "to_time")
+    ):
+        return "absolute"
+    if "lookbackMinutes" in query_params or str(query_params.get("timeMode") or "") == "relative":
+        return "relative"
+    if any(term in text for term in ("当前", "目前", "现在", "实时", "活动", "有哪些")):
+        return "current"
+    if "最近" in text or "分钟" in text or "小时" in text:
+        return "relative"
+    return "current"
+
+
+def _infer_data_quality(component: Mapping[str, Any]) -> str:
+    data = component.get("data") if isinstance(component.get("data"), dict) else {}
+    capability_id = str(component.get("capabilityId") or component.get("pluginId") or "")
+    if capability_id == "capability-gap":
+        return "gap"
+    status = str(data.get("sourceStatus") or "").strip().lower()
+    if status in {"live", "empty", "fallback", "failed", "gap"}:
+        return status
+    if status in {"unavailable", "error"}:
+        return "failed"
+    rows = data.get("rows") if isinstance(data, dict) else None
+    if isinstance(rows, list):
+        return "live" if rows else "empty"
+    if data:
+        return "live"
+    return "empty"
+
+
+def _build_intent_reasoning_trace(component: Mapping[str, Any]) -> dict[str, Any]:
+    data = component.get("data") if isinstance(component.get("data"), dict) else {}
+    rows = data.get("rows") if isinstance(data, dict) else []
+    trace = {
+        "source": str(data.get("source") or ""),
+        "sourceStatus": str(data.get("sourceStatus") or ""),
+        "rowCount": len(rows) if isinstance(rows, list) else 0,
+    }
+    total = data.get("total")
+    if isinstance(total, (int, float)):
+        trace["total"] = total
+    planning_trace = component.get("dataPlanningTrace")
+    if isinstance(planning_trace, list) and planning_trace:
+        trace["plannerAttempts"] = len(planning_trace)
+        last_observation = planning_trace[-1]
+        if isinstance(last_observation, dict):
+            trace["lastPlannerAction"] = str(last_observation.get("plannerAction") or "")
+            trace["lastPlannerReason"] = str(last_observation.get("plannerReason") or "")[:160]
+    return trace
+
+
+def _build_simple_query_components(
+    *,
+    prompt: str,
+    inferred_lookback_minutes: int,
+) -> list[dict[str, Any]]:
+    components: list[dict[str, Any]] = []
+    for capability_id in _extract_semantic_capability_ids(prompt):
+        component = _build_semantic_component(
+            capability_id=capability_id,
+            index=len(components),
+            inferred_lookback_minutes=inferred_lookback_minutes,
+            force_lookback=_capability_time_window_applies(prompt, capability_id),
+            prompt=prompt,
+        )
+        if component:
+            components.append(component)
+    return components
 
 
 def _normalize_plan_component(
@@ -775,10 +1251,17 @@ def _normalize_plan_component(
     )
     visual_config = _normalize_visual_config(component.get("visualConfig"))
     visual_spec = _normalize_visual_spec(component.get("visualSpec"))
-    if capability_id == "system-logs" and _component_requests_log_risk_analysis(
+    explicit_log_risk = capability_id == "system-logs" and _component_requests_log_risk_analysis(
         prompt=prompt,
         component=component,
-    ):
+    )
+    if capability_id == "system-logs" and component_type == "risk-pulse" and not explicit_log_risk:
+        component_type = "table"
+        if str(query_params.get("analysisMode") or "") == "risk_summary":
+            query_params["analysisMode"] = ""
+        if visual_spec.get("kind") == "risk-field":
+            visual_spec = {}
+    if explicit_log_risk:
         component_type = "risk-pulse"
         query_params["analysisMode"] = "risk_summary"
         query_params.setdefault("limit", 100)
@@ -818,16 +1301,28 @@ def _resolve_component_capability_id(
 ) -> str:
     if raw_capability_id and not _plugin_by_id(raw_capability_id):
         return raw_capability_id
+    if raw_capability_id:
+        title_inferred_capability_id = _infer_component_capability_id(
+            component,
+            keys=("title", "name", "summary"),
+        )
+        if title_inferred_capability_id:
+            return title_inferred_capability_id
+        return raw_capability_id
     inferred_capability_id = _infer_component_capability_id(component)
     if inferred_capability_id:
         return inferred_capability_id
     return raw_capability_id
 
 
-def _infer_component_capability_id(component: Mapping[str, Any]) -> str:
+def _infer_component_capability_id(
+    component: Mapping[str, Any],
+    *,
+    keys: tuple[str, ...] = ("title", "description", "name", "summary"),
+) -> str:
     text = " ".join(
         str(component.get(key) or "")
-        for key in ("title", "description", "name", "summary")
+        for key in keys
     ).strip()
     if not text:
         return ""
@@ -921,12 +1416,21 @@ def _normalize_visual_spec(raw_visual_spec: Any) -> dict[str, Any]:
         "motion": motion if motion in _ALLOWED_VISUAL_SPEC_MOTIONS else "none",
         "density": density if density in _ALLOWED_VISUAL_SPEC_DENSITIES else "balanced",
     }
+    layout_pattern = str(raw_visual_spec.get("layoutPattern") or "").strip()
+    if layout_pattern in _ALLOWED_VISUAL_SPEC_LAYOUT_PATTERNS:
+        visual_spec["layoutPattern"] = layout_pattern
+    composition = str(raw_visual_spec.get("composition") or "").strip()
+    if composition in _ALLOWED_VISUAL_SPEC_COMPOSITIONS:
+        visual_spec["composition"] = composition
     bindings = _normalize_visual_spec_bindings(raw_visual_spec.get("bindings"))
     if bindings:
         visual_spec["bindings"] = bindings
     highlight_rules = _normalize_visual_spec_highlight_rules(raw_visual_spec.get("highlightRules"))
     if highlight_rules:
         visual_spec["highlightRules"] = highlight_rules
+    emphasis_rules = _normalize_visual_spec_highlight_rules(raw_visual_spec.get("emphasisRules"))
+    if emphasis_rules:
+        visual_spec["emphasisRules"] = emphasis_rules
     layers = _normalize_visual_spec_layers(raw_visual_spec.get("layers"))
     if layers:
         visual_spec["layers"] = layers
@@ -1100,6 +1604,72 @@ def _ensure_semantic_capabilities(
     return next_components
 
 
+def _dedupe_simple_query_components(
+    *,
+    prompt: str,
+    components: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    if not _prompt_is_simple_data_query(prompt):
+        return components
+
+    semantic_ids = set(_extract_semantic_capability_ids(prompt))
+    if not semantic_ids:
+        return components
+
+    seen: set[str] = set()
+    deduped: list[dict[str, Any]] = []
+    for component in components:
+        capability_id = str(component.get("capabilityId") or component.get("pluginId") or "")
+        if capability_id in semantic_ids:
+            if capability_id in seen:
+                continue
+            seen.add(capability_id)
+        deduped.append(component)
+    return deduped
+
+
+def _should_use_simple_data_intent_path(prompt: str) -> bool:
+    return _prompt_is_simple_data_query(prompt) and bool(_extract_semantic_capability_ids(prompt))
+
+
+def _should_use_semantic_data_intent_path(prompt: str) -> bool:
+    capability_ids = _extract_semantic_capability_ids(prompt)
+    if not capability_ids:
+        return False
+    return _prompt_is_simple_data_query(prompt) or _should_use_log_risk_fast_path(prompt)
+
+
+def _should_use_log_risk_fast_path(prompt: str) -> bool:
+    text = str(prompt or "")
+    if not _text_requests_log_risk_analysis(text):
+        return False
+    return any(term in text for term in ("分析", "高危", "危险", "动态", "突出", "有哪些"))
+
+
+def _prompt_is_simple_data_query(prompt: str) -> bool:
+    text = str(prompt or "")
+    if not any(term in text for term in ("查询", "查看", "看一下", "展示", "显示")):
+        return False
+    expansion_terms = (
+        "分析",
+        "风险",
+        "高危",
+        "危险",
+        "动态",
+        "渲染",
+        "趋势",
+        "排行",
+        "排名",
+        "top",
+        "Top",
+        "对比",
+        "统计图",
+        "多个",
+        "分别",
+    )
+    return not any(term in text for term in expansion_terms)
+
+
 def _build_capability_gap_component(
     *,
     index: int,
@@ -1141,6 +1711,7 @@ def _build_semantic_component(
     index: int,
     inferred_lookback_minutes: int,
     force_lookback: bool = False,
+    prompt: str = "",
 ) -> dict[str, Any]:
     capability = _plugin_by_id(capability_id)
     if not capability:
@@ -1164,16 +1735,23 @@ def _build_semantic_component(
         capability_id == "system-logs" or (capability_id == "real-alarms" and force_lookback)
     ):
         component["queryParams"]["lookbackMinutes"] = inferred_lookback_minutes
+    if capability_id == "system-logs" and _text_requests_log_risk_analysis(prompt):
+        component["title"] = "系统日志高危情况分析"
+        component["visualType"] = "risk-pulse"
+        component["queryParams"]["analysisMode"] = "risk_summary"
+        component["queryParams"]["limit"] = 100
+        component["visualConfig"] = {"palette": "warm", "emphasis": "strong"}
+        component["visualSpec"] = _default_log_risk_visual_spec()
     return _normalize_plan_component(
         component,
         index=index,
         inferred_lookback_minutes=inferred_lookback_minutes,
+        prompt=prompt,
     )
 
 
 def _extract_semantic_capability_ids(prompt: str) -> list[str]:
     normalized = str(prompt or "").lower()
-    capability_ids: list[str] = []
     checks = [
         ("system-logs", ("日志", "log", "logs")),
         ("real-alarms", ("告警", "报警", "alarm", "alarms")),
@@ -1181,8 +1759,15 @@ def _extract_semantic_capability_ids(prompt: str) -> list[str]:
         ("cmdb-resources", ("cmdb", "资源", "资产", "resource", "asset")),
         ("topology-impact", ("拓扑", "链路", "影响范围", "topology")),
     ]
+    matches: list[tuple[int, int, str]] = []
     for capability_id, terms in checks:
-        if any(term in normalized for term in terms):
+        positions = [normalized.find(term.lower()) for term in terms if normalized.find(term.lower()) >= 0]
+        if positions:
+            matches.append((min(positions), len(matches), capability_id))
+    matches.sort(key=lambda item: (item[0], item[1]))
+    capability_ids: list[str] = []
+    for _, _, capability_id in matches:
+        if capability_id not in capability_ids:
             capability_ids.append(capability_id)
     return capability_ids
 
@@ -1220,10 +1805,7 @@ def _component_requests_log_risk_analysis(
     prompt: str,
     component: Mapping[str, Any],
 ) -> bool:
-    title = str(component.get("title") or "")
-    description = str(component.get("description") or "")
-    query_text = " ".join((str(prompt or ""), title, description))
-    return _text_requests_log_risk_analysis(query_text)
+    return _text_requests_log_risk_analysis(prompt)
 
 
 def _text_requests_current_alarm(text: str) -> bool:
@@ -2134,7 +2716,8 @@ def _component_current_fields(component: Mapping[str, Any]) -> list[str]:
         return query_fields
 
     data = component.get("data") if isinstance(component.get("data"), dict) else {}
-    columns = data.get("columns") if isinstance(data, dict) else []
+    raw_columns = data.get("columns") if isinstance(data, dict) else []
+    columns = raw_columns if isinstance(raw_columns, list) else []
     column_keys = [
         str(column.get("key") or "")
         for column in columns
@@ -2319,6 +2902,7 @@ def _normalize_patch_plan(
     *,
     screen: Mapping[str, Any],
     selected_component_id: str,
+    selected_component_ids: list[str] | None = None,
     instruction: str = "",
 ) -> dict[str, Any]:
     allowed_component_ids = {
@@ -2348,6 +2932,7 @@ def _normalize_patch_plan(
                 operation=raw_operation,
                 allowed_component_ids=allowed_component_ids,
                 selected_component_id=selected_component_id,
+                selected_component_ids=selected_component_ids,
             )
         if normalized:
             operations.append(normalized)
@@ -2355,6 +2940,7 @@ def _normalize_patch_plan(
         operations=operations,
         screen=screen,
         selected_component_id=selected_component_id,
+        selected_component_ids=selected_component_ids,
         instruction=instruction,
     )
     summary = str(plan.get("summary") or "").strip()
@@ -2376,6 +2962,7 @@ def _ensure_semantic_patch_operations(
     operations: list[dict[str, Any]],
     screen: Mapping[str, Any],
     selected_component_id: str,
+    selected_component_ids: list[str] | None = None,
     instruction: str,
 ) -> list[dict[str, Any]]:
     text = str(instruction or "").strip()
@@ -2387,24 +2974,32 @@ def _ensure_semantic_patch_operations(
         for item in screen.get("components", [])
         if isinstance(item, dict) and str(item.get("id") or "").strip()
     ]
-    if selected_component_id:
+    normalized_selected_ids = _normalize_selected_component_ids(
+        selected_component_ids,
+        fallback=selected_component_id,
+    )
+    if normalized_selected_ids:
         candidates = [
             component
             for component in components
-            if str(component.get("id") or "") == selected_component_id
+            if str(component.get("id") or "") in normalized_selected_ids
         ]
     else:
         candidates = components
 
     semantic_operations: list[dict[str, Any]] = []
-    if _instruction_mentions_add_component(text) and not _operations_mention_add_component(operations):
-        add_operation = _build_semantic_add_component_operation(
-            screen=screen,
-            instruction=text,
-            add_component_count=0,
+    if (
+        _instruction_mentions_add_component(text)
+        and not _instruction_mentions_field_change(text)
+        and not _operations_mention_add_component(operations)
+    ):
+        semantic_operations.extend(
+            _build_semantic_add_component_operations(
+                screen=screen,
+                instruction=text,
+                add_component_count=0,
+            ),
         )
-        if add_operation:
-            semantic_operations.append(add_operation)
     if _instruction_mentions_field_change(text):
         mode = _infer_field_patch_mode(text)
         for component in candidates:
@@ -2430,6 +3025,14 @@ def _ensure_semantic_patch_operations(
                 component_id,
             ):
                 continue
+            if not _component_patch_mentions_title([*operations, *semantic_operations], component_id):
+                semantic_operations.append(
+                    {
+                        "type": "setComponentTitle",
+                        "componentIds": [component_id],
+                        "title": _latest_non_empty_logs_title(text),
+                    },
+                )
             semantic_operations.append(
                 {
                     "type": "setComponentQueryParams",
@@ -2441,6 +3044,36 @@ def _ensure_semantic_patch_operations(
                     },
                 },
             )
+    if _text_requests_log_risk_analysis(text):
+        for component in candidates:
+            component_id = str(component.get("id") or "")
+            capability_id = str(component.get("capabilityId") or component.get("pluginId") or "")
+            if capability_id != "system-logs":
+                continue
+            merged_operations = [*operations, *semantic_operations]
+            if not _component_patch_mentions_type(merged_operations, component_id):
+                semantic_operations.append(
+                    {
+                        "type": "setComponentType",
+                        "componentIds": [component_id],
+                        "componentType": "risk-pulse",
+                    },
+                )
+            if not _component_patch_mentions_query_param(
+                [*operations, *semantic_operations],
+                component_id,
+                "analysisMode",
+            ):
+                semantic_operations.append(
+                    {
+                        "type": "setComponentQueryParams",
+                        "componentIds": [component_id],
+                        "queryParams": {
+                            "analysisMode": "risk_summary",
+                            "limit": 100,
+                        },
+                    },
+                )
     if _instruction_mentions_layout_change(text):
         for component in candidates:
             component_id = str(component.get("id") or "")
@@ -2456,12 +3089,36 @@ def _ensure_semantic_patch_operations(
     return [*operations, *semantic_operations]
 
 
+def _build_semantic_add_component_operations(
+    *,
+    screen: Mapping[str, Any],
+    instruction: str,
+    add_component_count: int,
+) -> list[dict[str, Any]]:
+    operations: list[dict[str, Any]] = []
+    for capability_id in _extract_semantic_capability_ids(instruction):
+        add_operation = _build_semantic_add_component_operation(
+            screen=screen,
+            instruction=instruction,
+            capability_id=capability_id,
+            add_component_count=add_component_count + len(operations),
+        )
+        if add_operation:
+            operations.append(add_operation)
+    return operations
+
+
 def _operations_mention_add_component(operations: list[dict[str, Any]]) -> bool:
     return any(operation.get("type") == "addComponent" for operation in operations)
 
 
 def _instruction_mentions_add_component(instruction: str) -> bool:
     text = str(instruction or "")
+    if _extract_semantic_capability_ids(text) and any(
+        term in text
+        for term in ("新增", "增加", "加入", "添加", "追加", "加上", "补充", "补一个")
+    ):
+        return True
     if any(term in text for term in ("模块", "组件", "区域", "卡片", "图表", "面板", "新模块")):
         return any(term in text for term in ("新增", "增加", "加入", "添加", "追加", "加一个", "加个", "补一个", "新"))
     return any(
@@ -2474,10 +3131,12 @@ def _build_semantic_add_component_operation(
     *,
     screen: Mapping[str, Any],
     instruction: str,
+    capability_id: str = "",
     add_component_count: int,
 ) -> dict[str, Any]:
-    capability_ids = _extract_semantic_capability_ids(instruction)
-    capability_id = capability_ids[0] if capability_ids else ""
+    if not capability_id:
+        capability_ids = _extract_semantic_capability_ids(instruction)
+        capability_id = capability_ids[0] if capability_ids else ""
     if not capability_id:
         return {}
     title = _semantic_component_title(instruction, capability_id)
@@ -2503,7 +3162,10 @@ def _build_semantic_add_component_operation(
         "capabilityId": capability_id,
         "visualType": visual_type,
         "queryParams": query_params,
-        "layoutPosition": _next_append_layout_position(screen.get("components")),
+        "layoutPosition": _offset_append_layout_position(
+            _next_append_layout_position(screen.get("components")),
+            add_component_count,
+        ),
         "visualConfig": visual_config,
     }
     return _normalize_add_component_operation(
@@ -2718,6 +3380,55 @@ def _component_patch_mentions_fields(
     return False
 
 
+def _component_patch_mentions_title(
+    operations: list[dict[str, Any]],
+    component_id: str,
+) -> bool:
+    for operation in operations:
+        component_ids = operation.get("componentIds")
+        if not isinstance(component_ids, list) or component_id not in component_ids:
+            continue
+        if operation.get("type") == "setComponentTitle":
+            return True
+    return False
+
+
+def _component_patch_mentions_type(
+    operations: list[dict[str, Any]],
+    component_id: str,
+) -> bool:
+    for operation in operations:
+        component_ids = operation.get("componentIds")
+        if not isinstance(component_ids, list) or component_id not in component_ids:
+            continue
+        if operation.get("type") == "setComponentType":
+            return True
+    return False
+
+
+def _component_patch_mentions_query_param(
+    operations: list[dict[str, Any]],
+    component_id: str,
+    query_param: str,
+) -> bool:
+    for operation in operations:
+        component_ids = operation.get("componentIds")
+        if not isinstance(component_ids, list) or component_id not in component_ids:
+            continue
+        if operation.get("type") != "setComponentQueryParams":
+            continue
+        query_params = operation.get("queryParams")
+        if isinstance(query_params, dict) and query_param in query_params:
+            return True
+    return False
+
+
+def _latest_non_empty_logs_title(instruction: str) -> str:
+    if "最后一次" in str(instruction or ""):
+        return "最后一次有系统日志的数据"
+    return "最近一次有系统日志的数据"
+
+
 def _component_patch_mentions_log_time_strategy(
     operations: list[dict[str, Any]],
     component_id: str,
@@ -2796,12 +3507,27 @@ def _next_append_layout_position(components: Any) -> dict[str, int]:
     return {"x": 0, "y": max_bottom, "w": 12, "h": 4}
 
 
+def _offset_append_layout_position(
+    position: Mapping[str, Any],
+    add_component_count: int,
+) -> dict[str, int]:
+    normalized = {
+        "x": max(0, min(11, _safe_int(position.get("x"), 0))),
+        "y": max(0, _safe_int(position.get("y"), 0)),
+        "w": max(1, min(12, _safe_int(position.get("w"), 12))),
+        "h": max(1, min(8, _safe_int(position.get("h"), 4))),
+    }
+    normalized["y"] += max(0, _safe_int(add_component_count, 0)) * normalized["h"]
+    return normalized
+
+
 def _normalize_patch_operation(
     *,
     operation_type: str,
     operation: Mapping[str, Any],
     allowed_component_ids: set[str],
     selected_component_id: str,
+    selected_component_ids: list[str] | None = None,
 ) -> dict[str, Any]:
     if operation_type == "setThemePalette":
         palette = _normalize_palette(operation.get("palette"))
@@ -2811,6 +3537,7 @@ def _normalize_patch_operation(
         operation.get("componentIds"),
         allowed_component_ids=allowed_component_ids,
         selected_component_id=selected_component_id,
+        selected_component_ids=selected_component_ids,
     )
     if operation_type == "setComponentPalette":
         palette = _normalize_palette(operation.get("palette"))
@@ -2899,6 +3626,7 @@ def _normalize_component_ids(
     *,
     allowed_component_ids: set[str],
     selected_component_id: str,
+    selected_component_ids: list[str] | None = None,
 ) -> list[str]:
     if raw_component_ids == "*":
         return sorted(allowed_component_ids)
@@ -2907,12 +3635,35 @@ def _normalize_component_ids(
     elif isinstance(raw_component_ids, list):
         values = [str(item) for item in raw_component_ids]
     else:
-        values = [selected_component_id] if selected_component_id else []
+        values = _normalize_selected_component_ids(
+            selected_component_ids,
+            fallback=selected_component_id,
+        )
     return [
         item
         for item in values
         if item in allowed_component_ids
     ]
+
+
+def _normalize_selected_component_ids(
+    raw_component_ids: Any,
+    *,
+    fallback: str = "",
+) -> list[str]:
+    values: list[str] = []
+    if isinstance(raw_component_ids, list):
+        values.extend(str(item).strip() for item in raw_component_ids)
+    elif isinstance(raw_component_ids, str):
+        values.append(raw_component_ids.strip())
+    fallback_value = str(fallback or "").strip()
+    if fallback_value:
+        values.insert(0, fallback_value)
+    normalized: list[str] = []
+    for value in values:
+        if value and value not in normalized:
+            normalized.append(value)
+    return normalized
 
 
 def _normalize_palette(value: Any) -> str:
@@ -2994,6 +3745,8 @@ def _apply_component_operation(
         component_type = str(operation.get("componentType") or "").strip()
         if component_type in _ALLOWED_COMPONENT_TYPES:
             next_component["type"] = component_type
+            if _component_is_log_risk_visual(next_component):
+                next_component = _apply_log_risk_visual_defaults(next_component)
     elif operation_type == "setComponentLayout":
         layout_position = operation.get("layoutPosition")
         if isinstance(layout_position, dict):
@@ -3059,6 +3812,24 @@ def _apply_component_operation(
             next_component["queryParams"] = query_params
             if current_component_type != "table":
                 next_component["type"] = "table"
+    return next_component
+
+
+def _component_is_log_risk_visual(component: Mapping[str, Any]) -> bool:
+    capability_id = str(component.get("capabilityId") or component.get("pluginId") or "")
+    return capability_id == "system-logs" and str(component.get("type") or "") == "risk-pulse"
+
+
+def _apply_log_risk_visual_defaults(component: Mapping[str, Any]) -> dict[str, Any]:
+    next_component = dict(component)
+    visual_config = _component_visual_config(next_component)
+    visual_config["palette"] = "warm"
+    visual_config["emphasis"] = "strong"
+    next_component["visualConfig"] = visual_config
+    visual_spec = _normalize_visual_spec(next_component.get("visualSpec"))
+    if not visual_spec:
+        visual_spec = _default_log_risk_visual_spec()
+    next_component["visualSpec"] = visual_spec
     return next_component
 
 
