@@ -314,6 +314,7 @@ export function InboxPanel() {
   const [markingAllRead, setMarkingAllRead] = useState(false);
   const [deletingIds, setDeletingIds] = useState<string[]>([]);
   const drawerTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const closeDetail = useCallback(() => {
     setDrawerClosing(true);
@@ -356,15 +357,27 @@ export function InboxPanel() {
 
   useEffect(() => {
     const controller = new AbortController();
-    void fetchEvents({ signal: controller.signal });
+    let cancelled = false;
 
-    const timer = window.setInterval(() => {
-      void fetchEvents({ silent: true });
-    }, POLL_INTERVAL_MS);
+    const poll = async (silent = false) => {
+      await fetchEvents({ silent, signal: controller.signal });
+      if (cancelled) {
+        return;
+      }
+      pollTimerRef.current = window.setTimeout(() => {
+        void poll(true);
+      }, POLL_INTERVAL_MS);
+    };
+
+    void poll();
 
     return () => {
+      cancelled = true;
       controller.abort();
-      window.clearInterval(timer);
+      if (pollTimerRef.current) {
+        window.clearTimeout(pollTimerRef.current);
+        pollTimerRef.current = null;
+      }
     };
   }, [fetchEvents]);
 

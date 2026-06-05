@@ -200,7 +200,7 @@ export function usePortalAlerts({
   useEffect(() => {
     if (!PORTAL_REAL_ALARM_POLL_ENABLED || suspended) {
       if (alertPollTimerRef.current) {
-        window.clearInterval(alertPollTimerRef.current);
+        window.clearTimeout(alertPollTimerRef.current);
         alertPollTimerRef.current = null;
       }
       setOpsAlerts([]);
@@ -209,14 +209,27 @@ export function usePortalAlerts({
       return undefined;
     }
 
-    void loadOpsAlerts();
-    alertPollTimerRef.current = window.setInterval(() => {
-      void loadOpsAlerts();
-    }, PORTAL_REAL_ALARM_POLL_INTERVAL_MS);
+    let cancelled = false;
+
+    const poll = async () => {
+      await loadOpsAlerts();
+      if (cancelled) {
+        return;
+      }
+      alertPollTimerRef.current = window.setTimeout(
+        () => {
+          void poll();
+        },
+        PORTAL_REAL_ALARM_POLL_INTERVAL_MS,
+      );
+    };
+
+    void poll();
 
     return () => {
+      cancelled = true;
       if (alertPollTimerRef.current) {
-        window.clearInterval(alertPollTimerRef.current);
+        window.clearTimeout(alertPollTimerRef.current);
         alertPollTimerRef.current = null;
       }
     };

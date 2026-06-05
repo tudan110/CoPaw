@@ -1,6 +1,7 @@
 import { portalGatewayAgentId } from "../config/portalBranding";
 
 const DEFAULT_API_BASE_URL = "/copaw-api/api";
+const DEFAULT_REQUEST_TIMEOUT_MS = 15000;
 
 const API_BASE_URL = (import.meta.env.VITE_COPAW_API_BASE_URL || DEFAULT_API_BASE_URL).replace(
   /\/$/,
@@ -50,6 +51,20 @@ interface RequestOptions {
   method?: string;
   body?: unknown;
   signal?: AbortSignal;
+  timeoutMs?: number;
+}
+
+function bindAbortSignals(controller: AbortController, externalSignal?: AbortSignal | null) {
+  if (!externalSignal) {
+    return () => {};
+  }
+  if (externalSignal.aborted) {
+    controller.abort();
+    return () => {};
+  }
+  const abort = () => controller.abort();
+  externalSignal.addEventListener("abort", abort, { once: true });
+  return () => externalSignal.removeEventListener("abort", abort);
 }
 
 function buildInboxQuery(params: ListInboxEventsParams = {}) {
@@ -66,35 +81,49 @@ function buildInboxQuery(params: ListInboxEventsParams = {}) {
 
 async function requestInboxApi<T>(
   path: string,
-  { method = "GET", body, signal }: RequestOptions = {},
+  { method = "GET", body, signal, timeoutMs = DEFAULT_REQUEST_TIMEOUT_MS }: RequestOptions = {},
 ): Promise<T> {
-  const response = await fetch(`${API_BASE_URL}/console/inbox${path}`, {
-    method,
-    signal,
-    headers: {
-      ...(body ? { "Content-Type": "application/json" } : {}),
-      "X-Agent-Id": portalGatewayAgentId,
-    },
-    body: body ? JSON.stringify(body) : undefined,
-  });
+  const controller = new AbortController();
+  const cleanupExternalAbort = bindAbortSignals(controller, signal);
+  const timerId = window.setTimeout(() => controller.abort(), timeoutMs);
 
-  if (!response.ok) {
-    const text = await response.text().catch(() => "");
-    let detail = "";
-    try {
-      const payload = JSON.parse(text);
-      detail = payload?.detail || payload?.message || "";
-    } catch {
-      detail = text;
+  try {
+    const response = await fetch(`${API_BASE_URL}/console/inbox${path}`, {
+      method,
+      signal: controller.signal,
+      headers: {
+        ...(body ? { "Content-Type": "application/json" } : {}),
+        "X-Agent-Id": portalGatewayAgentId,
+      },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+
+    if (!response.ok) {
+      const text = await response.text().catch(() => "");
+      let detail = "";
+      try {
+        const payload = JSON.parse(text);
+        detail = payload?.detail || payload?.message || "";
+      } catch {
+        detail = text;
+      }
+      throw new Error(detail || `收件箱请求失败：${response.status}`);
     }
-    throw new Error(detail || `收件箱请求失败：${response.status}`);
-  }
 
-  if (response.status === 204) {
-    return null as T;
-  }
+    if (response.status === 204) {
+      return null as T;
+    }
 
-  return response.json() as Promise<T>;
+    return response.json() as Promise<T>;
+  } catch (error: any) {
+    if (error?.name === "AbortError") {
+      throw new Error(signal?.aborted ? "请求已取消" : "请求超时，请稍后重试");
+    }
+    throw error;
+  } finally {
+    window.clearTimeout(timerId);
+    cleanupExternalAbort();
+  }
 }
 
 export const inboxApi = {
