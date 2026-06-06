@@ -7,6 +7,7 @@ import type {
   AiBigScreenPluginsResponse,
   AiBigScreenPublishResponse,
   AiBigScreenResponse,
+  AiBigScreenTaskResponse,
 } from "../types/aiBigScreen";
 
 const AI_BIG_SCREEN_TIMEOUT_MS = 45000;
@@ -46,6 +47,32 @@ export function generateAiBigScreenDraft(payload: {
   );
 }
 
+export function createAiBigScreenDraftTask(payload: {
+  prompt: string;
+  title?: string;
+  requestedBy?: string;
+}) {
+  return requestPortalApi<AiBigScreenTaskResponse>(
+    "/ai-big-screens/draft-tasks",
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
+    },
+    AI_BIG_SCREEN_TIMEOUT_MS,
+  );
+}
+
+export function getAiBigScreenDraftTask(taskId: string) {
+  return requestPortalApi<AiBigScreenTaskResponse>(
+    `/ai-big-screens/draft-tasks/${encodeURIComponent(taskId)}`,
+    {},
+    AI_BIG_SCREEN_TIMEOUT_MS,
+  );
+}
+
 export function saveAiBigScreen(screen: AiBigScreenApp, requestedBy = "portal") {
   return requestPortalApi<AiBigScreenResponse>(
     "/ai-big-screens",
@@ -78,11 +105,54 @@ export function deleteAiBigScreen(screenId: string) {
   );
 }
 
+export function renameAiBigScreen(
+  screenId: string,
+  payload: {
+    name: string;
+    requestedBy?: string;
+  },
+) {
+  return requestPortalApi<AiBigScreenResponse>(
+    `/ai-big-screens/${encodeURIComponent(screenId)}/rename`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
+    },
+    AI_BIG_SCREEN_TIMEOUT_MS,
+  );
+}
+
+export function duplicateAiBigScreen(
+  screenId: string,
+  payload: {
+    name?: string;
+    requestedBy?: string;
+  } = {},
+) {
+  return requestPortalApi<AiBigScreenResponse>(
+    `/ai-big-screens/${encodeURIComponent(screenId)}/duplicate`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
+    },
+    AI_BIG_SCREEN_TIMEOUT_MS,
+  );
+}
+
 export function patchAiBigScreen(
   screenId: string,
   payload: {
     baseVersionId?: string;
     selectedComponentId?: string;
+    selectedComponentIds?: string[];
+    selectedRegion?: Record<string, unknown>;
+    selectionContext?: Record<string, unknown>;
     instruction: string;
     requestedBy?: string;
   },

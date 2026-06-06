@@ -10,8 +10,9 @@ import "./ai-big-screen-renderer.css";
 interface AiBigScreenRendererProps {
   screen: AiBigScreenApp;
   selectedComponentId?: string;
+  selectedComponentIds?: string[];
   interactive?: boolean;
-  onSelectComponent?: (componentId: string) => void;
+  onSelectComponent?: (componentId: string, options?: { additive?: boolean }) => void;
 }
 
 type PackedComponent = {
@@ -296,6 +297,17 @@ function getVisualSpec(component: AiBigScreenComponent) {
     : {};
 }
 
+function getVisualSpecClassNames(component: AiBigScreenComponent) {
+  const spec = getVisualSpec(component);
+  return [
+    `visual-kind-${safeClassToken(spec.kind, "none")}`,
+    `visual-motion-${safeClassToken(spec.motion, "none")}`,
+    `visual-density-${safeClassToken(spec.density, "balanced")}`,
+    `visual-layout-${safeClassToken(spec.layoutPattern, "grid")}`,
+    `visual-composition-${safeClassToken(spec.composition, "supporting")}`,
+  ];
+}
+
 function getVisualBindings(component: AiBigScreenComponent) {
   const bindings = getVisualSpec(component).bindings;
   return bindings && typeof bindings === "object" ? bindings as Record<string, unknown> : {};
@@ -567,6 +579,7 @@ function getSourceStatusLabel(component: AiBigScreenComponent) {
 export function AiBigScreenRenderer({
   screen,
   selectedComponentId = "",
+  selectedComponentIds = [],
   interactive = false,
   onSelectComponent,
 }: AiBigScreenRendererProps) {
@@ -574,6 +587,10 @@ export function AiBigScreenRenderer({
   const packedComponents = useMemo(
     () => packComponents(screen.components || []),
     [screen.components],
+  );
+  const selectedIdSet = useMemo(
+    () => new Set([selectedComponentId, ...selectedComponentIds].filter(Boolean)),
+    [selectedComponentId, selectedComponentIds],
   );
 
   return (
@@ -591,7 +608,7 @@ export function AiBigScreenRenderer({
 
       <div className="ai-big-screen-canvas">
         {packedComponents.map(({ component, layoutPosition }) => {
-          const selected = component.id === selectedComponentId;
+          const selected = selectedIdSet.has(component.id);
           const componentPalette = safeClassToken(component.visualConfig?.palette, "professional");
           const componentEmphasis = safeClassToken(component.visualConfig?.emphasis, "standard");
           const sourceStatus = safeClassToken(component.data?.sourceStatus, "unknown");
@@ -602,20 +619,23 @@ export function AiBigScreenRenderer({
                 "ai-big-screen-card",
                 `palette-${componentPalette}`,
                 `emphasis-${componentEmphasis}`,
+                ...getVisualSpecClassNames(component),
                 selected ? "selected" : "",
                 interactive ? "interactive" : "",
               ].filter(Boolean).join(" ")}
               style={getGridStyle(layoutPosition)}
               role={interactive ? "button" : undefined}
               tabIndex={interactive ? 0 : undefined}
-              onClick={() => interactive && onSelectComponent?.(component.id)}
+              onClick={(event) => interactive && onSelectComponent?.(component.id, {
+                additive: event.shiftKey || event.metaKey || event.ctrlKey,
+              })}
               onKeyDown={(event) => {
                 if (!interactive) {
                   return;
                 }
                 if (event.key === "Enter" || event.key === " ") {
                   event.preventDefault();
-                  onSelectComponent?.(component.id);
+                  onSelectComponent?.(component.id, { additive: event.shiftKey || event.metaKey || event.ctrlKey });
                 }
               }}
             >

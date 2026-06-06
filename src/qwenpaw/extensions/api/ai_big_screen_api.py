@@ -6,6 +6,7 @@ from fastapi import APIRouter, HTTPException, Query
 
 from qwenpaw.extensions.api.ai_big_screen_models import (
     AiBigScreenDeleteResponse,
+    AiBigScreenDuplicateRequest,
     AiBigScreenDraftRequest,
     AiBigScreenListResponse,
     AiBigScreenPatchRequest,
@@ -13,17 +14,23 @@ from qwenpaw.extensions.api.ai_big_screen_models import (
     AiBigScreenPluginsResponse,
     AiBigScreenPublishRequest,
     AiBigScreenPublishResponse,
+    AiBigScreenRenameRequest,
     AiBigScreenResponse,
     AiBigScreenSaveRequest,
+    AiBigScreenTaskResponse,
 )
 from qwenpaw.extensions.api.ai_big_screen_service import (
     build_screen_draft,
+    create_screen_draft_task,
     delete_screen_asset,
+    duplicate_screen_asset,
     get_screen_asset,
+    get_screen_draft_task,
     list_builtin_plugins,
     list_screen_assets,
     patch_screen_asset,
     publish_screen_asset,
+    rename_screen_asset,
     save_screen_asset,
 )
 
@@ -50,6 +57,28 @@ async def generate_ai_big_screen_draft(
         return AiBigScreenResponse(screen=await build_screen_draft(payload))
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@router.post("/draft-tasks", response_model=AiBigScreenTaskResponse)
+async def create_ai_big_screen_draft_task(
+    payload: AiBigScreenDraftRequest,
+) -> AiBigScreenTaskResponse:
+    try:
+        return AiBigScreenTaskResponse(task=create_screen_draft_task(payload))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@router.get("/draft-tasks/{task_id}", response_model=AiBigScreenTaskResponse)
+def get_ai_big_screen_draft_task(task_id: str) -> AiBigScreenTaskResponse:
+    try:
+        return AiBigScreenTaskResponse(task=get_screen_draft_task(task_id))
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
@@ -85,6 +114,44 @@ def delete_ai_big_screen(screen_id: str) -> AiBigScreenDeleteResponse:
         return AiBigScreenDeleteResponse(**delete_screen_asset(screen_id=screen_id))
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@router.post("/{screen_id}/rename", response_model=AiBigScreenResponse)
+def rename_ai_big_screen(
+    screen_id: str,
+    payload: AiBigScreenRenameRequest,
+) -> AiBigScreenResponse:
+    try:
+        return AiBigScreenResponse(
+            screen=rename_screen_asset(
+                screen_id=screen_id,
+                name=payload.name,
+                requested_by=payload.requestedBy,
+            ),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@router.post("/{screen_id}/duplicate", response_model=AiBigScreenResponse)
+def duplicate_ai_big_screen(
+    screen_id: str,
+    payload: AiBigScreenDuplicateRequest,
+) -> AiBigScreenResponse:
+    try:
+        return AiBigScreenResponse(
+            screen=duplicate_screen_asset(
+                screen_id=screen_id,
+                name=payload.name,
+                requested_by=payload.requestedBy,
+            ),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 

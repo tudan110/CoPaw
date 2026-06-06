@@ -86,6 +86,7 @@
 }
 
 .ai-big-screen-card {
+  position: relative;
   min-height: 132px;
   display: flex;
   flex-direction: column;
@@ -135,6 +136,64 @@
 
 .ai-big-screen-card.emphasis-strong {
   box-shadow: 0 22px 42px rgba(0, 0, 0, 0.32), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+.ai-big-screen-card.visual-composition-primary {
+  border-color: rgba(251, 191, 36, 0.44);
+  box-shadow:
+    0 24px 52px rgba(0, 0, 0, 0.36),
+    inset 0 1px 0 rgba(255, 255, 255, 0.07);
+}
+
+.ai-big-screen-card.visual-composition-secondary {
+  opacity: 0.94;
+}
+
+.ai-big-screen-card.visual-density-compact .ai-big-screen-card-head {
+  padding: 10px 12px 0;
+}
+
+.ai-big-screen-card.visual-density-compact .ai-big-screen-card-body {
+  padding: 8px 12px 12px;
+}
+
+.ai-big-screen-card.visual-density-showcase .ai-big-screen-card-head h2 {
+  font-size: 17px;
+}
+
+.ai-big-screen-card.visual-layout-focus .ai-big-screen-card-body {
+  padding: 10px 16px 16px;
+}
+
+.ai-big-screen-card.visual-layout-split .ai-big-screen-card-body {
+  display: grid;
+  min-height: 0;
+}
+
+.ai-big-screen-card.visual-layout-matrix .ai-big-screen-card-body {
+  padding: 10px;
+}
+
+.ai-big-screen-card.visual-motion-scan::after,
+.ai-big-screen-card.visual-motion-flow::after {
+  content: "";
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  border-radius: 8px;
+  opacity: 0.28;
+}
+
+.ai-big-screen-card.visual-motion-scan::after {
+  background: linear-gradient(115deg, transparent 0 38%, rgba(125, 211, 252, 0.18) 50%, transparent 62% 100%);
+  animation: aiSpecScan 3.6s linear infinite;
+}
+
+.ai-big-screen-card.visual-motion-flow::after {
+  background:
+    radial-gradient(circle at 10% 20%, rgba(45, 212, 191, 0.16), transparent 22%),
+    radial-gradient(circle at 82% 76%, rgba(56, 189, 248, 0.12), transparent 24%);
+  animation: aiSpecFlow 5.2s ease-in-out infinite alternate;
 }
 
 .ai-big-screen-card.interactive {
@@ -726,6 +785,24 @@
   to {
     transform: translateY(0);
     opacity: 1;
+  }
+}
+
+@keyframes aiSpecScan {
+  from {
+    transform: translateX(-110%);
+  }
+  to {
+    transform: translateX(110%);
+  }
+}
+
+@keyframes aiSpecFlow {
+  from {
+    transform: translate3d(-1.5%, -1%, 0) scale(1);
+  }
+  to {
+    transform: translate3d(1.5%, 1%, 0) scale(1.02);
   }
 }
 
