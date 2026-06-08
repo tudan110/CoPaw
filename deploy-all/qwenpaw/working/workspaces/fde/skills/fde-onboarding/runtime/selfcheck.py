@@ -45,6 +45,11 @@ def _scan(skill_dir: Path, name: str) -> dict[str, Any]:
                 "title": getattr(f, "title", ""),
                 "file": getattr(f, "file_path", ""),
                 "line": getattr(f, "line_number", None),
+                "snippet": getattr(f, "snippet", None),
+                "remediation": getattr(f, "remediation", None),
+                "category": getattr(getattr(f, "category", None), "value", str(getattr(f, "category", "") or "")),
+                "rule_id": getattr(f, "rule_id", ""),
+                "description": getattr(f, "description", ""),
             }
         )
     return {
