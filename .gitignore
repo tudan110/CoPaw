@@ -104,6 +104,7 @@ AGENTS.md
 openspec
 CLAUDE.md
 *.tmp
+.superpowers/
 
 # Build cache
 .cache/  # Includes conda_unpack_wheels/ for Windows packaging workaround
