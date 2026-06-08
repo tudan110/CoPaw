@@ -70,3 +70,29 @@ def test_is_secret_env_key_matches_credential_shapes():
         assert svc._is_secret_env_key(k) is True
     for k in ["CMDB_BASE_URL", "TIMEOUT", "TASK_URL", "REGION"]:
         assert svc._is_secret_env_key(k) is False
+
+
+def _bare_staged(tmp_path: Path) -> Path:
+    d = tmp_path / "demo"
+    (d / "runtime").mkdir(parents=True)
+    (d / "SKILL.md").write_text("---\nname: demo\n---\n", "utf-8")
+    return d
+
+
+def test_safe_staged_target_allows_normal_paths(tmp_path):
+    d = _bare_staged(tmp_path)
+    assert svc._safe_staged_target(d, "SKILL.md") == (d / "SKILL.md").resolve()
+    assert svc._safe_staged_target(d, "runtime/x.py") == (
+        d / "runtime" / "x.py"
+    ).resolve()
+
+
+@pytest.mark.parametrize(
+    "rel",
+    ["../escape.py", "/etc/passwd", "_fde_meta.json", "GENERATION.md",
+     "runtime/../../x", ""],
+)
+def test_safe_staged_target_rejects_bad_paths(tmp_path, rel):
+    d = _bare_staged(tmp_path)
+    with pytest.raises(svc.FdeWorkbenchError):
+        svc._safe_staged_target(d, rel)

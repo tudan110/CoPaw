@@ -1067,6 +1067,32 @@ def _rewrite_frontmatter(skill_md: str, updates: dict[str, Any]) -> str:
     return head + "\n".join(new_lines) + fence + body
 
 
+def _safe_staged_target(skill_dir: Path, rel: str) -> Path:
+    """Resolve a relative path inside ``skill_dir`` for writing, rejecting
+    traversal, absolute paths, FDE-internal files, and symlinks."""
+    rel = str(rel or "").strip()
+    if not rel:
+        raise FdeWorkbenchError("文件路径不能为空")
+    if (
+        rel.startswith("/")
+        or rel.startswith("\\")
+        or ":" in rel.split("/")[0]
+    ):
+        raise FdeWorkbenchError(f"不允许绝对路径：{rel}")
+    base = skill_dir.resolve()
+    target = (base / rel).resolve()
+    if target != base and base not in target.parents:
+        raise FdeWorkbenchError(f"路径越界（疑似穿越）：{rel}")
+    parts = target.relative_to(base).parts
+    if not parts:
+        raise FdeWorkbenchError(f"不允许写入技能根目录：{rel}")
+    if parts[-1] in _STAGED_INTERNAL_FILES:
+        raise FdeWorkbenchError(f"不允许编辑内部文件：{parts[-1]}")
+    if target.is_symlink():
+        raise FdeWorkbenchError(f"不允许写入符号链接：{rel}")
+    return target
+
+
 def _read_staged_bundle(skill_dir: Path) -> dict[str, Any]:
     """Split a staged skill dir into create_skill() arguments."""
     content: str | None = None
