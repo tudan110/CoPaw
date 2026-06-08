@@ -77,6 +77,7 @@ export function ChartWidget({ component }: WidgetProps) {
 
   const isMapFly = type === "map-fly";
   const [mapReady, setMapReady] = useState(isChinaMapReady);
+  const [mapError, setMapError] = useState(false);
 
   useEffect(() => {
     if (!isMapFly || mapReady) return;
@@ -86,7 +87,7 @@ export function ChartWidget({ component }: WidgetProps) {
         if (!cancelled) setMapReady(true);
       })
       .catch(() => {
-        // Map load failed — keep mapReady false; will show placeholder
+        if (!cancelled) setMapError(true);
       });
     return () => {
       cancelled = true;
@@ -102,11 +103,11 @@ export function ChartWidget({ component }: WidgetProps) {
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
-            color: "#9fb2cc",
+            color: mapError ? "#f87171" : "#9fb2cc",
             fontSize: 12,
           }}
         >
-          加载地图…
+          {mapError ? "地图加载失败" : "加载地图…"}
         </div>
       );
     }

@@ -310,6 +310,15 @@
   border-bottom: 1px solid rgba(255, 255, 255, 0.06);
 }
 
+.bs-stream-msg {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--bs-label);
+}
+
 /* ── Severity dot ──────────────────────────────────────────── */
 .bs-dot {
   width: 6px;
@@ -653,8 +662,11 @@
 
 /* Composition classes */
 .bs-comp-primary .bs-gp-title {
-  font-size: 12px;
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: 1px;
   color: var(--bs-cyan-lt);
+  text-shadow: 0 0 12px rgba(34, 211, 238, 0.35);
 }
 
 .bs-comp-secondary {
