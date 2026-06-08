@@ -22,7 +22,7 @@ RUN set -eux; \
     npm config set fetch-retry-maxtimeout "${NPM_FETCH_RETRY_MAX_TIMEOUT}"; \
     npm config set fetch-timeout "${NPM_FETCH_TIMEOUT}"; \
     sed -i "s#https://registry.npmjs.org/#${NPM_REGISTRY%/}/#g" package-lock.json; \
-    npm ci --include=dev --legacy-peer-deps --no-audit --no-fund --registry="${NPM_REGISTRY}"; \
+    npm ci --include=dev --no-audit --no-fund --registry="${NPM_REGISTRY}"; \
     export NODE_OPTIONS="--max-old-space-size=4096" && npm run build
 
 # -----------------------------------------------------------------------------
@@ -137,22 +137,11 @@ RUN qwenpaw init --defaults --accept-security
 
 # Copy working directory data to backup (for PVC init on first start)
 COPY deploy-all/qwenpaw/data/qwenpaw/ /app/.working.backup/
-# Overlay repo-managed extensions into backup working dir
-#COPY deploy-all/qwenpaw/working/extensions /app/.working.backup/extensions
-# Copy workspace skills into the backup workspace
-#COPY deploy-all/qwenpaw/working/workspaces/query/skills /app/.working.backup/workspaces/query/skills
-#COPY deploy-all/qwenpaw/working/workspaces/resource/skills /app/.working.backup/workspaces/resource/skills
-#COPY deploy-all/qwenpaw/working/workspaces/fault/skills /app/.working.backup/workspaces/fault/skills
-#COPY deploy-all/qwenpaw/working/workspaces/order/skills /app/.working.backup/workspaces/order/skills
-#COPY deploy-all/qwenpaw/working/workspaces/knowledge/skills /app/.working.backup/workspaces/knowledge/skills
 # Copy secret directory data to backup
 COPY deploy-all/qwenpaw/data/qwenpaw.secret/ /app/.working.secret.backup/
 
 # Create empty working directories (PVC will mount over these)
 RUN mkdir -p /app/working /app/working.secret
-
-# Copy knowledge directory for kb-retriever skill
-COPY knowledge/ /app/knowledge/
 
 # QwenPaw app port (default 8088). Override at runtime with -e QWENPAW_PORT=3000.
 ENV QWENPAW_PORT=8088
