@@ -4,6 +4,7 @@ import {
   adaptLegacyScreen,
   mapComponentType,
   mapSourceStatus,
+  normalizeBindings,
 } from "./adaptLegacyScreen.ts";
 
 test("maps legacy types to D-max component types", () => {
@@ -93,4 +94,43 @@ test("filters components without id; defaults layout to 1920x1080", () => {
   assert.equal(spec.components.length, 1);
   assert.equal(spec.components[0].id, "ok");
   assert.deepEqual(spec.layout, { designWidth: 1920, designHeight: 1080 });
+});
+
+test("normalizeBindings aliases legacy roles to widget vocabulary", () => {
+  const b = normalizeBindings({
+    title: "title",
+    severity: "level",
+    time: "eventTime",
+    status: "alarmStatus",
+  });
+  assert.equal(b?.message, "title", "message <- title");
+  assert.equal(b?.tone, "level", "tone <- severity field");
+  assert.equal(b?.time, "eventTime", "time preserved");
+});
+
+test("real table screen resolves a non-blank message (regression for blank rows)", () => {
+  // shape from screen-3ae3323fbc/3c478117e4: table + bindings.title, rows carry `title`
+  const spec = adaptLegacyScreen({
+    id: "s",
+    name: "n",
+    components: [
+      {
+        id: "wo",
+        type: "table",
+        title: "待办工单",
+        capabilityId: "workorders",
+        visualSpec: { bindings: { title: "title", severity: "severity", time: "eventTime" } },
+        data: {
+          sourceStatus: "live",
+          rows: [{ title: "工单A", eventTime: "09:00", severity: "high" }],
+        },
+      },
+    ],
+  });
+  const c = spec.components[0];
+  assert.equal(c.type, "alarm-stream");
+  const msgKey = c.visualSpec.bindings?.message;
+  assert.equal(msgKey, "title", "message binding aliased from title");
+  const row0 = c.data?.rows?.[0] as Record<string, unknown>;
+  assert.equal(row0[msgKey!], "工单A", "message resolves to a real, non-blank value");
 });

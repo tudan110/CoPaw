@@ -78,6 +78,34 @@ export function mapComponentType(raw: string): string {
   return "text"; // safe fallback — renderer always has a text widget
 }
 
+/**
+ * Translate legacy binding roles into the vocabulary the D-max widgets read.
+ * Legacy specs bind {title, severity, status, time, value, group}; the new
+ * widgets read {message, tone, name, value, time, x, y, ...}. Without this,
+ * e.g. AlarmStream looks for `message` while the data only has `title`, so
+ * rows render blank. Keeps the original keys and adds derived ones.
+ */
+export function normalizeBindings(
+  b?: Record<string, string>,
+): Record<string, string> | undefined {
+  if (!b || typeof b !== "object") return b;
+  const out: Record<string, string> = { ...b };
+  const alias = (target: string, ...sources: string[]) => {
+    if (out[target]) return;
+    for (const s of sources) {
+      if (b[s]) {
+        out[target] = b[s];
+        return;
+      }
+    }
+  };
+  alias("message", "message", "title", "content");
+  alias("tone", "tone", "severity", "riskLevel", "level");
+  alias("name", "name", "title", "group");
+  // value / time / x / y / unit / prefix / color pass through unchanged
+  return out;
+}
+
 export function mapSourceStatus(raw: unknown, hasRows: boolean): SourceStatus {
   const s = String(raw ?? "").toLowerCase();
   if (["live", "ok", "success", "ready", "online"].includes(s)) return "live";
@@ -138,14 +166,17 @@ function adaptData(c: LegacyComponent): CapabilityResult | undefined {
 export function adaptLegacyScreen(screen: LegacyScreen): DashboardSpec {
   const components: ScreenComponent[] = (screen.components ?? [])
     .filter((c) => c && typeof c.id === "string" && c.id.length > 0)
-    .map((c) => ({
-      id: c.id,
-      type: mapComponentType(String(c.type ?? "text")),
-      title: String(c.title ?? ""),
-      visualSpec: (c.visualSpec ?? {}) as VisualSpec,
-      data: adaptData(c),
-      // layoutPosition intentionally omitted → renderer runs auto-layout
-    }));
+    .map((c) => {
+      const vs = (c.visualSpec ?? {}) as VisualSpec;
+      return {
+        id: c.id,
+        type: mapComponentType(String(c.type ?? "text")),
+        title: String(c.title ?? ""),
+        visualSpec: { ...vs, bindings: normalizeBindings(vs.bindings) },
+        data: adaptData(c),
+        // layoutPosition intentionally omitted → renderer runs auto-layout
+      };
+    });
   return {
     schemaVersion: 1,
     id: String(screen.id ?? ""),
