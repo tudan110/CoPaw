@@ -1,0 +1,51 @@
+import { evaluateRules } from "../rules.ts";
+import type { WidgetProps } from "../registry.ts";
+
+const TONE_DOT: Record<string, string> = {
+  critical: "bs-dot--critical",
+  high: "bs-dot--high",
+  medium: "bs-dot--medium",
+  normal: "bs-dot--normal",
+  cool: "bs-dot--cool",
+  warm: "bs-dot--warm",
+};
+
+/** Scrolling alarm stream — marquee list with severity dots. */
+export function AlarmStream({ component }: WidgetProps) {
+  const rows = (component.data?.rows ?? []) as Array<
+    Record<string, unknown>
+  >;
+  const rules = component.visualSpec?.highlightRules;
+  const tones = evaluateRules(rows, rules);
+  const bindings = component.visualSpec?.bindings;
+  const msgKey = bindings?.["message"] ?? "msg";
+  const timeKey = bindings?.["time"] ?? "time";
+  const toneKey = bindings?.["tone"] ?? "severity";
+
+  // Duplicate items for seamless infinite scroll
+  const items = rows.length > 0 ? [...rows, ...rows] : [];
+
+  return (
+    <div className="bs-stream">
+      <ul className="bs-stream-list">
+        {items.map((row, i) => {
+          const tone =
+            tones[i % rows.length] ??
+            String((row as Record<string, unknown>)[toneKey] ?? "");
+          const dotCls = TONE_DOT[tone] ?? "bs-dot--normal";
+          const msg = String(row[msgKey] ?? row["message"] ?? row["msg"] ?? "");
+          const time = String(
+            row[timeKey] ?? row["time"] ?? row["ts"] ?? "",
+          );
+          return (
+            <li key={i} className="bs-stream-item">
+              <span className={`bs-dot ${dotCls}`} />
+              {time && <span className="bs-timeline-time">{time}</span>}
+              <span className="bs-stream-msg">{msg}</span>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
