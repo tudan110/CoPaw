@@ -66,7 +66,9 @@ def test_update_env_example_sets_values_and_empties_secrets():
 
 
 def test_is_secret_env_key_matches_credential_shapes():
-    for k in ["CMDB_TOKEN", "API_KEY", "x_secret", "DB_PASSWORD", "AK", "app_sk"]:
+    for k in [
+        "CMDB_TOKEN", "API_KEY", "x_secret", "DB_PASSWORD", "AK", "app_sk",
+    ]:
         assert svc._is_secret_env_key(k) is True
     for k in ["CMDB_BASE_URL", "TIMEOUT", "TASK_URL", "REGION"]:
         assert svc._is_secret_env_key(k) is False

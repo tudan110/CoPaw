@@ -1162,7 +1162,7 @@ def _review_state(
 
 
 def _yaml_dq(s: str) -> str:
-    """Double-quote a scalar so it's always valid YAML (no quoting guesswork)."""
+    """Double-quote a scalar so it's always valid YAML (no guesswork)."""
     return '"' + str(s).replace("\\", "\\\\").replace('"', '\\"') + '"'
 
 
