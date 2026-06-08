@@ -88,8 +88,29 @@ function weightOf(vs: VisualSpec | undefined): number {
  * are passed as the stage `background` so they fill the entire viewport
  * behind the scaled content — no empty bands at any aspect ratio.
  */
-export function BigScreenRenderer({ spec }: { spec: DashboardSpec }) {
+interface BigScreenRendererProps {
+  spec: DashboardSpec;
+  /** Optional authoring interaction — same contract as the legacy renderer. */
+  interactive?: boolean;
+  selectedComponentId?: string;
+  selectedComponentIds?: string[];
+  onSelectComponent?: (
+    componentId: string,
+    options?: { additive?: boolean },
+  ) => void;
+}
+
+export function BigScreenRenderer({
+  spec,
+  interactive = false,
+  selectedComponentId = "",
+  selectedComponentIds = [],
+  onSelectComponent,
+}: BigScreenRendererProps) {
   const s = normalizeSpec(spec);
+  const selectedSet = new Set(
+    [selectedComponentId, ...selectedComponentIds].filter(Boolean),
+  );
 
   // Coordinate-free specs (AI-generated) carry no layoutPosition → run the
   // auto-layout engine over per-component weights so panels fill the canvas
@@ -131,22 +152,39 @@ export function BigScreenRenderer({ spec }: { spec: DashboardSpec }) {
         {s.components.map((c) => {
           const pos = c.layoutPosition ?? autoPos?.get(c.id) ?? DEFAULT_POS;
           const vsClasses = visualSpecClassTokens(c.visualSpec).join(" ");
+          const selected = selectedSet.has(c.id);
           return (
-            <GlassPanel
+            <div
               key={c.id}
-              title={c.title}
-              sourceStatus={c.data?.sourceStatus}
-              className={vsClasses}
               style={{
                 position: "absolute",
                 left: pos.x,
                 top: pos.y,
                 width: pos.w,
                 height: pos.h,
+                borderRadius: 14,
+                cursor: interactive ? "pointer" : undefined,
+                outline: selected ? "2px solid #22d3ee" : undefined,
+                outlineOffset: -2,
               }}
+              onClick={
+                interactive
+                  ? (e) =>
+                      onSelectComponent?.(c.id, {
+                        additive: e.shiftKey || e.metaKey || e.ctrlKey,
+                      })
+                  : undefined
+              }
             >
-              <ComponentBody component={c} />
-            </GlassPanel>
+              <GlassPanel
+                title={c.title}
+                sourceStatus={c.data?.sourceStatus}
+                className={vsClasses}
+                style={{ width: "100%", height: "100%" }}
+              >
+                <ComponentBody component={c} />
+              </GlassPanel>
+            </div>
           );
         })}
       </ScreenStage>
