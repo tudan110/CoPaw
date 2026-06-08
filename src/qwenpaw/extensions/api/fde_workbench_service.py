@@ -978,6 +978,55 @@ def _review_state(
     }
 
 
+def _yaml_dq(s: str) -> str:
+    """Double-quote a scalar so it's always valid YAML (no quoting guesswork)."""
+    return '"' + str(s).replace("\\", "\\\\").replace('"', '\\"') + '"'
+
+
+def _render_fm_line(key: str, value: Any) -> str:
+    if isinstance(value, (list, tuple)):
+        items = ", ".join(
+            _yaml_dq(str(v).strip()) for v in value if str(v).strip()
+        )
+        return f"{key}: [{items}]"
+    return f"{key}: {_yaml_dq(str(value))}"
+
+
+def _rewrite_frontmatter(skill_md: str, updates: dict[str, Any]) -> str:
+    """Surgically update specific frontmatter keys, preserving the body and
+    every other key. Edited keys are re-emitted as double-quoted YAML
+    scalars / flow lists. Raises on malformed frontmatter so we never write
+    a corrupt SKILL.md.
+    """
+    updates = {k: v for k, v in (updates or {}).items() if v is not None}
+    if not updates:
+        return skill_md
+    m = re.match(r"^(---\s*\n)(.*?)(\n---\s*\n)(.*)$", skill_md, re.S)
+    if not m:
+        raise FdeWorkbenchError(
+            "SKILL.md 缺少合法 YAML frontmatter，无法安全改写"
+        )
+    head, block, fence, body = m.group(1), m.group(2), m.group(3), m.group(4)
+    seen: set[str] = set()
+    new_lines: list[str] = []
+    for line in block.split("\n"):
+        stripped = line.strip()
+        key = (
+            stripped.partition(":")[0].strip()
+            if ":" in stripped and not stripped.startswith("#")
+            else ""
+        )
+        if key in updates:
+            new_lines.append(_render_fm_line(key, updates[key]))
+            seen.add(key)
+        else:
+            new_lines.append(line)
+    for key, value in updates.items():
+        if key not in seen:
+            new_lines.append(_render_fm_line(key, value))
+    return head + "\n".join(new_lines) + fence + body
+
+
 def _read_staged_bundle(skill_dir: Path) -> dict[str, Any]:
     """Split a staged skill dir into create_skill() arguments."""
     content: str | None = None
