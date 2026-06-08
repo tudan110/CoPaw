@@ -6,6 +6,7 @@ import {
   normalizeSpec,
   type DashboardSpec,
   type ScreenComponent,
+  type VisualSpec,
 } from "./types.ts";
 import { ScreenStage } from "./panels/ScreenStage.tsx";
 import { AuroraBackground } from "./panels/AuroraBackground.tsx";
@@ -13,6 +14,7 @@ import { ParticleLayer } from "./panels/ParticleLayer.tsx";
 import { GlassPanel } from "./panels/GlassPanel.tsx";
 import { COMPONENT_REGISTRY, resolveComponentType } from "./registry.ts";
 import { visualSpecClassTokens } from "./visualSpec.ts";
+import { computeAutoLayout } from "./autoLayout.ts";
 
 /** Honest L2 status: failed/empty render an explicit note instead of an
  *  empty/broken-looking widget body. gap/live fall through to the widget. */
@@ -62,6 +64,21 @@ function ComponentBody({ component }: { component: ScreenComponent }) {
 
 const DEFAULT_POS = { x: 0, y: 0, w: 480, h: 280 };
 
+/** Derive a relative size weight from the component's visual role, used by the
+ *  auto-layout engine when a spec ships without explicit coordinates. */
+function weightOf(vs: VisualSpec | undefined): number {
+  switch (vs?.composition) {
+    case "primary":
+      return 3;
+    case "secondary":
+      return 1.6;
+    case "supporting":
+      return 0.9;
+    default:
+      return 1.2;
+  }
+}
+
 /**
  * BigScreenRenderer — turns a DashboardSpec into the full D-max screen.
  *
@@ -73,6 +90,24 @@ const DEFAULT_POS = { x: 0, y: 0, w: 480, h: 280 };
  */
 export function BigScreenRenderer({ spec }: { spec: DashboardSpec }) {
   const s = normalizeSpec(spec);
+
+  // Coordinate-free specs (AI-generated) carry no layoutPosition → run the
+  // auto-layout engine over per-component weights so panels fill the canvas
+  // with no overlap, for any component count. Fully hand-positioned specs
+  // (e.g. the D-max fixture) are used as authored.
+  const autoPos =
+    s.components.length > 0 && s.components.some((c) => !c.layoutPosition)
+      ? new Map(
+          computeAutoLayout(
+            s.components.map((c) => ({
+              id: c.id,
+              weight: weightOf(c.visualSpec),
+            })),
+            { width: s.layout.designWidth, height: s.layout.designHeight },
+          ).map((r) => [r.id, r]),
+        )
+      : null;
+
   return (
     <div
       className="bs-root"
@@ -94,7 +129,7 @@ export function BigScreenRenderer({ spec }: { spec: DashboardSpec }) {
         }
       >
         {s.components.map((c) => {
-          const pos = c.layoutPosition ?? DEFAULT_POS;
+          const pos = c.layoutPosition ?? autoPos?.get(c.id) ?? DEFAULT_POS;
           const vsClasses = visualSpecClassTokens(c.visualSpec).join(" ");
           return (
             <GlassPanel
