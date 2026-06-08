@@ -50,6 +50,15 @@ export function isKnownComponentType(t: string): boolean {
 }
 
 /**
+ * Maps a raw component type to a renderer key: known types pass through,
+ * anything else collapses to "unknown" so the renderer shows an explicit
+ * placeholder instead of crashing. Pure + JSX-free so node:test can import it.
+ */
+export function resolveComponentType(t: string): string {
+  return isKnownComponentType(t) ? t : "unknown";
+}
+
+/**
  * Live registry: populated by widget modules as they land (Tasks 10-12).
  * Empty until then — BigScreenRenderer falls back to an "unknown" placeholder.
  */
