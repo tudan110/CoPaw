@@ -21,6 +21,21 @@ FDE_WORKSPACE = (
 )
 
 
+def _approve_staged(name: str, staged_dir: Path) -> None:
+    """Seed an approved, digest-bound review on a staged skill so install's
+    human-review gate passes — without the heavy selfcheck subprocess
+    (``set_staged_review`` itself is covered in test_fde_staged_review.py)."""
+    skill_dir = staged_dir / name
+    meta = svc._load_staged_meta(skill_dir)
+    meta["review"] = {
+        "status": "approved",
+        "approved_by": "test",
+        "approved_at": "2026-06-08T00:00:00+00:00",
+        "content_digest": svc._staged_content_digest(skill_dir),
+    }
+    svc._save_staged_meta(skill_dir, meta)
+
+
 @pytest.fixture
 def fde_env(monkeypatch, tmp_path):
     """Point the service at the repo's fde workspace + a temp staged dir."""
@@ -127,6 +142,7 @@ def test_install_staged_skill_into_workspace(fde_env, monkeypatch, tmp_path):
         },
     )
 
+    _approve_staged("demo-installable", fde_env)
     result = svc.install_staged_skill("demo-installable")
     assert result["installed"] is True
     assert result["name"] == "demo-installable"
@@ -187,6 +203,7 @@ def test_install_mirrors_to_gateway_by_default(
         },
     )
 
+    _approve_staged("demo-mirror", fde_env)
     result = svc.install_staged_skill("demo-mirror")
     assert result["installed"] is True
     assert result["target_workspace"] == "order"
@@ -223,6 +240,7 @@ def test_install_skips_mirror_when_target_is_gateway(
             "triggers": ["告警"],
         },
     )
+    _approve_staged("demo-gw-target", fde_env)
     result = svc.install_staged_skill("demo-gw-target")
     assert result["installed"] is True
     mirror = result["gateway_mirror"]
@@ -253,6 +271,7 @@ def test_install_opt_out_mirror(fde_env, monkeypatch, tmp_path):
             "triggers": ["告警"],
         },
     )
+    _approve_staged("demo-no-mirror", fde_env)
     result = svc.install_staged_skill(
         "demo-no-mirror", mirror_to_gateway=False,
     )
@@ -288,6 +307,7 @@ def test_delete_installed_skill_cleans_gateway_mirror(
             "triggers": ["告警"],
         },
     )
+    _approve_staged("demo-delete-me", fde_env)
     install_result = svc.install_staged_skill("demo-delete-me")
     assert install_result["gateway_mirror"]["mirrored"] is True
     assert (target_ws / "skills" / "demo-delete-me").is_dir()
@@ -344,6 +364,7 @@ def test_copy_installed_skill_move(fde_env, monkeypatch, tmp_path):
             "triggers": ["告警"],
         },
     )
+    _approve_staged("demo-migrate-me", fde_env)
     svc.install_staged_skill("demo-migrate-me")
     assert (src / "skills" / "demo-migrate-me" / "SKILL.md").is_file()
 
@@ -559,6 +580,7 @@ def test_install_skip_domain_check_prewarms_cache(
         encoding="utf-8",
     )
 
+    _approve_staged("demo-skip", fde_env)
     result = svc.install_staged_skill("demo-skip", skip_domain_check=True)
     assert result["installed"] is True
     assert result["domain_override_applied"] is True
@@ -581,6 +603,7 @@ def test_install_writes_env_values(fde_env, monkeypatch, tmp_path):
             "triggers": ["告警"],
         },
     )
+    _approve_staged("demo-env-install", fde_env)
     result = svc.install_staged_skill(
         "demo-env-install",
         env_values={"FOO_TOKEN": "abc", "FOO_URL": "https://example/api"},
@@ -643,6 +666,7 @@ def test_install_auto_creates_missing_target(fde_env, monkeypatch, tmp_path):
         },
     )
 
+    _approve_staged("demo-auto-create", fde_env)
     result = svc.install_staged_skill("demo-auto-create")
     assert result["installed"] is True
     assert result["target_workspace"] == "brand-new-agent"

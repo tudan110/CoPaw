@@ -1394,15 +1394,19 @@ def install_staged_skill(
     skill_dir = fde_staged_dir() / name
     if not skill_dir.is_dir():
         raise FdeWorkbenchError(f"未找到 staged 技能：{name}")
-    meta_path = skill_dir / "_fde_meta.json"
-    if not meta_path.exists():
-        raise FdeWorkbenchError(f"staged 技能缺少 _fde_meta.json：{name}")
-    try:
-        meta = json.loads(meta_path.read_text(encoding="utf-8"))
-    except json.JSONDecodeError as exc:
+    meta = _load_staged_meta(skill_dir)
+    # --- 人工审查闸门（D2/D3）：服务端强约束，不靠前端禁用按钮。
+    # AI 自检（gate 1）经 approve 时已校验 ready_for_review + digest 绑定，
+    # 加上下面 create_skill 的真实扫描，无需在此重复跑一遍 selfcheck。 ---
+    review = _review_state(skill_dir, meta)
+    if review["effective"] != "approved":
+        if review["effective"] == "stale":
+            raise FdeWorkbenchError(
+                "内容在审查通过后被修改，请复审后再安装"
+            )
         raise FdeWorkbenchError(
-            f"_fde_meta.json 不是合法 JSON：{name}"
-        ) from exc
+            "人工审查未通过，不能安装（请先在工作台点「审查通过」）"
+        )
     override = str(target_override or "").strip()
     recorded = str(meta.get("target_workspace") or "").strip()
     target_workspace = override or recorded

@@ -125,3 +125,30 @@ def test_approve_then_reset_review(staged_review_env, monkeypatch):
     out2 = svc.set_staged_review("demo", action="reset")
     assert out2["staged"]["review"]["effective"] == "pending"
     assert out2["staged"]["review"]["content_digest"] is None
+
+
+def test_install_blocked_until_review_approved(monkeypatch, tmp_path):
+    staged = tmp_path / "staged"
+    staged.mkdir()
+    monkeypatch.setenv("QWENPAW_FDE_STAGED_DIR", str(staged))
+    d = _make_staged(staged)
+
+    # pending review -> install refused before touching any workspace
+    with pytest.raises(svc.FdeWorkbenchError) as ei:
+        svc.install_staged_skill("demo", auto_create_target=False)
+    assert "审查" in str(ei.value)
+
+    # approve, then edit -> stale -> still refused
+    monkeypatch.setattr(
+        svc, "selfcheck_staged_skill",
+        lambda name: {"ready_for_review": True},
+    )
+    monkeypatch.setattr(
+        svc, "show_staged_skill",
+        lambda name, **k: {"skill_name": name, "files": []},
+    )
+    svc.set_staged_review("demo", action="approve")
+    (d / "runtime" / "tool_adapters.py").write_text("X = 2\n", "utf-8")
+    with pytest.raises(svc.FdeWorkbenchError) as ei2:
+        svc.install_staged_skill("demo", auto_create_target=False)
+    assert "复审" in str(ei2.value) or "修改" in str(ei2.value)
