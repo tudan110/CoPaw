@@ -304,6 +304,46 @@ def _parse_env_values(text: str) -> dict[str, str]:
     return values
 
 
+# KEY as substring + AK/SK only as whole _-bounded segments (so TASK/RISK
+# don't false-match). Emptying a non-secret by mistake is harmless (operator
+# re-enters at install); leaking a secret into a staged file is not.
+_SECRET_ENV_KEY_RE = re.compile(
+    r"(TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|KEY|(^|_)(AK|SK)(_|$))",
+    re.I,
+)
+
+
+def _is_secret_env_key(key: str) -> bool:
+    return bool(_SECRET_ENV_KEY_RE.search(str(key or "")))
+
+
+def _update_env_example(text: str, updates: dict[str, str]) -> str:
+    """Update/append ``KEY=value`` lines, preserving comments + order.
+    Secret-looking keys are written with an EMPTY value (D4: credentials
+    never land in staged files).
+    """
+    if not updates:
+        return text or ""
+    remaining = {
+        str(k).strip(): ("" if _is_secret_env_key(k) else str(v))
+        for k, v in updates.items()
+        if str(k).strip()
+    }
+    out_lines: list[str] = []
+    for raw in (text or "").splitlines():
+        stripped = raw.strip()
+        if stripped and not stripped.startswith("#") and "=" in stripped:
+            key = stripped.partition("=")[0].strip()
+            if key in remaining:
+                out_lines.append(f"{key}={remaining.pop(key)}")
+                continue
+        out_lines.append(raw)
+    for key, val in remaining.items():
+        out_lines.append(f"{key}={val}")
+    body = "\n".join(out_lines)
+    return body if body.endswith("\n") else body + "\n"
+
+
 def _installed_skill_dir(target_workspace: str, skill_name: str) -> Path:
     target_workspace = (target_workspace or "").strip()
     if not target_workspace:
