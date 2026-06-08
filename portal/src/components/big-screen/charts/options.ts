@@ -246,6 +246,7 @@ export function buildGraphOption(
   data: {
     nodes?: Array<Record<string, unknown>>;
     rows?: Array<Record<string, unknown>>;
+    links?: Array<{ source: string; target: string }>;
   },
 ): Record<string, unknown> {
   const nodes = (data.nodes ?? data.rows ?? []).map((n, i) => ({
@@ -254,9 +255,15 @@ export function buildGraphOption(
     symbolSize: Number(n["size"] ?? 20),
     itemStyle: { color: BS_PALETTE[i % BS_PALETTE.length] },
   }));
-  const edges = (data.rows ?? [])
-    .filter((r) => r["source"] !== undefined && r["target"] !== undefined)
-    .map((r) => ({ source: String(r["source"]), target: String(r["target"]) }));
+  // Prefer explicit links; fall back to rows with source/target fields (backward-compatible)
+  const edges =
+    data.links ??
+    (data.rows ?? [])
+      .filter((r) => r["source"] !== undefined && r["target"] !== undefined)
+      .map((r) => ({
+        source: String(r["source"]),
+        target: String(r["target"]),
+      }));
   return {
     backgroundColor: DARK_BG,
     color: BS_PALETTE,
@@ -303,7 +310,7 @@ export function buildMapFlyOption(
     }));
 
   return {
-    backgroundColor: "rgba(6,20,43,.96)",
+    backgroundColor: "transparent",
     geo: {
       map: "china",
       roam: false,
