@@ -924,6 +924,60 @@ def _staged_content_digest(skill_dir: Path) -> str:
     return h.hexdigest()
 
 
+def _load_staged_meta(skill_dir: Path) -> dict[str, Any]:
+    meta_path = skill_dir / "_fde_meta.json"
+    if not meta_path.exists():
+        raise FdeWorkbenchError(
+            f"staged 技能缺少 _fde_meta.json：{skill_dir.name}"
+        )
+    try:
+        data = json.loads(meta_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise FdeWorkbenchError(
+            f"_fde_meta.json 不是合法 JSON：{skill_dir.name}"
+        ) from exc
+    if not isinstance(data, dict):
+        raise FdeWorkbenchError(
+            f"_fde_meta.json 不是 JSON 对象：{skill_dir.name}"
+        )
+    return data
+
+
+def _save_staged_meta(skill_dir: Path, meta: dict[str, Any]) -> None:
+    (skill_dir / "_fde_meta.json").write_text(
+        json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8",
+    )
+
+
+def _review_state(
+    skill_dir: Path, meta: dict[str, Any],
+) -> dict[str, Any]:
+    """Derive the human-review verdict. ``effective`` is computed, never
+    stored: approved only when status==approved AND the stored digest
+    still matches current content (else 'stale'); otherwise 'pending'.
+    """
+    review = meta.get("review") or {}
+    status = str(review.get("status") or "pending")
+    stored = review.get("content_digest")
+    current = _staged_content_digest(skill_dir)
+    digest_matches = bool(stored) and stored == current
+    if status == "approved" and digest_matches:
+        effective = "approved"
+    elif status == "approved":
+        effective = "stale"
+    else:
+        effective = "pending"
+    return {
+        "status": status,
+        "approved_by": review.get("approved_by"),
+        "approved_at": review.get("approved_at"),
+        "content_digest": stored,
+        "current_digest": current,
+        "digest_matches": digest_matches,
+        "effective": effective,
+    }
+
+
 def _read_staged_bundle(skill_dir: Path) -> dict[str, Any]:
     """Split a staged skill dir into create_skill() arguments."""
     content: str | None = None

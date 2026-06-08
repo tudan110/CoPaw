@@ -54,3 +54,34 @@ def test_digest_ignores_internal_meta_files(tmp_path):
     (d / "_fde_meta.json").write_text(json.dumps(meta), "utf-8")
     (d / "GENERATION.md").write_text("# notes\n", "utf-8")
     assert svc._staged_content_digest(d) == base
+
+
+def test_review_state_defaults_to_pending(tmp_path):
+    d = _make_staged(tmp_path)
+    meta = svc._load_staged_meta(d)
+    rv = svc._review_state(d, meta)
+    assert rv["status"] == "pending"
+    assert rv["effective"] == "pending"
+    assert rv["digest_matches"] is False
+
+
+def test_review_state_approved_then_stale_on_edit(tmp_path):
+    d = _make_staged(tmp_path)
+    meta = svc._load_staged_meta(d)
+    meta["review"] = {
+        "status": "approved",
+        "approved_by": "op",
+        "approved_at": "2026-06-08T00:00:00+00:00",
+        "content_digest": svc._staged_content_digest(d),
+    }
+    svc._save_staged_meta(d, meta)
+
+    rv = svc._review_state(d, svc._load_staged_meta(d))
+    assert rv["effective"] == "approved"
+
+    # edit a managed file -> digest drifts -> approval goes stale
+    (d / "runtime" / "tool_adapters.py").write_text("X = 99\n", "utf-8")
+    rv2 = svc._review_state(d, svc._load_staged_meta(d))
+    assert rv2["status"] == "approved"
+    assert rv2["digest_matches"] is False
+    assert rv2["effective"] == "stale"
