@@ -197,6 +197,102 @@ def discard_staged_skill(name: str) -> dict[str, Any]:
     return _run_fde_tools(["discard", "--name", name, "--yes"])
 
 
+def staged_detail_with_review(name: str) -> dict[str, Any]:
+    """show-staged bundle + computed review state. Shape returned by
+    GET /fde/staged/{name}."""
+    name = _validate_skill_name(name)
+    skill_dir = fde_staged_dir() / name
+    if not skill_dir.is_dir():
+        raise FdeWorkbenchError(f"未找到 staged 技能：{name}")
+    detail = show_staged_skill(name)
+    detail["review"] = _review_state(skill_dir, _load_staged_meta(skill_dir))
+    return detail
+
+
+def _mutation_result(name: str) -> dict[str, Any]:
+    """Envelope returned by edit/review mutators: staged(bundle+review) +
+    fresh selfcheck — one response the panel re-renders from."""
+    return {
+        "staged": staged_detail_with_review(name),
+        "selfcheck": selfcheck_staged_skill(name),
+    }
+
+
+def edit_staged_fields(
+    name: str,
+    *,
+    description: str | None = None,
+    triggers: list[str] | None = None,
+    category: str | None = None,
+    tags: list[str] | None = None,
+    env: dict[str, str] | None = None,
+) -> dict[str, Any]:
+    """Guided-field edit: rewrite SKILL.md frontmatter + .env.example,
+    then re-run self-check. Secrets are emptied from .env.example (D4)."""
+    name = _validate_skill_name(name)
+    skill_dir = fde_staged_dir() / name
+    if not skill_dir.is_dir():
+        raise FdeWorkbenchError(f"未找到 staged 技能：{name}")
+    updates: dict[str, Any] = {}
+    if description is not None:
+        updates["description"] = description
+    if triggers is not None:
+        updates["triggers"] = triggers
+    if category is not None:
+        updates["category"] = category
+    if tags is not None:
+        updates["tags"] = tags
+    if updates:
+        md_path = skill_dir / "SKILL.md"
+        if not md_path.is_file():
+            raise FdeWorkbenchError("staged 技能缺少 SKILL.md")
+        new_md = _rewrite_frontmatter(
+            md_path.read_text(encoding="utf-8"), updates,
+        )
+        try:  # never write frontmatter that doesn't parse
+            import yaml
+
+            yaml.safe_load(new_md.split("---", 2)[1])
+        except Exception as exc:  # noqa: BLE001
+            raise FdeWorkbenchError(
+                f"改写后的 frontmatter 非法 YAML：{exc}"
+            ) from exc
+        md_path.write_text(new_md, encoding="utf-8")
+    if env:
+        example = skill_dir / ".env.example"
+        current = (
+            example.read_text(encoding="utf-8") if example.is_file() else ""
+        )
+        example.write_text(
+            _update_env_example(current, env), encoding="utf-8",
+        )
+    return _mutation_result(name)
+
+
+def edit_staged_files(
+    name: str, files: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Advanced raw-file edit: path-safe write of each file, then re-check."""
+    name = _validate_skill_name(name)
+    skill_dir = fde_staged_dir() / name
+    if not skill_dir.is_dir():
+        raise FdeWorkbenchError(f"未找到 staged 技能：{name}")
+    if not files:
+        raise FdeWorkbenchError("没有要保存的文件")
+    # validate ALL paths before writing ANY (atomic-ish)
+    targets: list[tuple[Path, str]] = []
+    for item in files:
+        path = item.get("path") if isinstance(item, dict) else None
+        content = item.get("content") if isinstance(item, dict) else None
+        targets.append(
+            (_safe_staged_target(skill_dir, path or ""), content or ""),
+        )
+    for target, content in targets:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(content, encoding="utf-8")
+    return _mutation_result(name)
+
+
 def generate_skill(
     *,
     name: str,

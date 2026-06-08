@@ -96,3 +96,71 @@ def test_safe_staged_target_rejects_bad_paths(tmp_path, rel):
     d = _bare_staged(tmp_path)
     with pytest.raises(svc.FdeWorkbenchError):
         svc._safe_staged_target(d, rel)
+
+
+def _full_staged(root: Path) -> Path:
+    d = root / "demo"
+    (d / "runtime").mkdir(parents=True)
+    d_md = (
+        "---\nname: demo\ncategory: ops\ntags: [a]\n"
+        "triggers: [告警]\ndescription: 旧\n---\n\n# Demo\n"
+    )
+    (d / "SKILL.md").write_text(d_md, "utf-8")
+    (d / ".env.example").write_text("CMDB_TOKEN=\nCMDB_BASE_URL=\n", "utf-8")
+    (d / "runtime" / "tool_adapters.py").write_text("X = 1\n", "utf-8")
+    (d / "_fde_meta.json").write_text(
+        json.dumps({"skill_name": "demo", "target_workspace": "query"}),
+        "utf-8",
+    )
+    return d
+
+
+@pytest.fixture
+def staged_only(monkeypatch, tmp_path):
+    """Point the staged dir at tmp_path and stub the subprocess calls so the
+    edit logic is tested in isolation (no fde_tools / scanner / LLM)."""
+    staged = tmp_path / "staged"
+    staged.mkdir()
+    monkeypatch.setenv("QWENPAW_FDE_STAGED_DIR", str(staged))
+    monkeypatch.setattr(
+        svc, "show_staged_skill",
+        lambda name, **k: {"skill_name": name, "files": []},
+    )
+    monkeypatch.setattr(
+        svc, "selfcheck_staged_skill",
+        lambda name: {"ready_for_review": True, "scan": {"findings": []}},
+    )
+    return staged
+
+
+def test_edit_fields_rewrites_md_and_env(staged_only):
+    _full_staged(staged_only)
+    out = svc.edit_staged_fields(
+        "demo",
+        description="新描述",
+        triggers=["应用拓扑"],
+        env={"CMDB_TOKEN": "leak", "CMDB_BASE_URL": "http://x:8000"},
+    )
+    md = (staged_only / "demo" / "SKILL.md").read_text("utf-8")
+    assert "新描述" in md and "应用拓扑" in md
+    env = (staged_only / "demo" / ".env.example").read_text("utf-8")
+    assert "CMDB_TOKEN=\n" in env and "leak" not in env       # secret emptied
+    assert "CMDB_BASE_URL=http://x:8000" in env
+    # envelope shape: staged(+review) + fresh selfcheck
+    assert out["staged"]["review"]["effective"] == "pending"
+    assert out["selfcheck"]["ready_for_review"] is True
+
+
+def test_edit_files_writes_and_rejects_traversal(staged_only):
+    _full_staged(staged_only)
+    svc.edit_staged_files(
+        "demo",
+        [{"path": "runtime/tool_adapters.py", "content": "Y = 2\n"}],
+    )
+    assert (
+        staged_only / "demo" / "runtime" / "tool_adapters.py"
+    ).read_text("utf-8") == "Y = 2\n"
+    with pytest.raises(svc.FdeWorkbenchError):
+        svc.edit_staged_files(
+            "demo", [{"path": "../evil.py", "content": "x"}],
+        )
