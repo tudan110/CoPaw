@@ -778,13 +778,15 @@ export function FdeWorkbenchPanel() {
         ? "ok"
         : "down";
   const available = heroState === "ok";
-  const currentStep = selectedName
-    ? detail?.selfcheck?.ready_for_review
-      ? 3
-      : 2
-    : staged.length
+  // 步进贴合状态：没选→对话生成；选了但 AI 自检没过→审查代码；
+  // AI 自检过、人工审查没过→自检；两道闸门都过→确认安装。
+  const currentStep = !selectedName
+    ? 0
+    : !aiOk
       ? 1
-      : 0;
+      : !reviewOk
+        ? 2
+        : 3;
 
   return (
     <div className="fde-wb">
