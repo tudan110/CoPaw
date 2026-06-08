@@ -293,6 +293,53 @@ def edit_staged_files(
     return _mutation_result(name)
 
 
+def _now_iso() -> str:
+    from datetime import datetime, timezone
+
+    return datetime.now(timezone.utc).isoformat()
+
+
+def set_staged_review(
+    name: str,
+    *,
+    action: str,
+    approved_by: str | None = None,
+) -> dict[str, Any]:
+    """Record the human-review verdict on a staged skill. ``approve``
+    requires a passing self-check (gate 1) and stamps the current
+    content digest so any later edit auto-invalidates the approval."""
+    name = _validate_skill_name(name)
+    skill_dir = fde_staged_dir() / name
+    if not skill_dir.is_dir():
+        raise FdeWorkbenchError(f"未找到 staged 技能：{name}")
+    meta = _load_staged_meta(skill_dir)
+    if action == "approve":
+        sc = selfcheck_staged_skill(name)  # gate 1 at approve time
+        if not sc.get("ready_for_review"):
+            raise FdeWorkbenchError(
+                "AI 自检未通过，不能标记审查通过："
+                + "；".join(sc.get("blocked_reasons") or ["未知原因"])
+            )
+        label = str(approved_by or "").strip() or None
+        meta["review"] = {
+            "status": "approved",
+            "approved_by": label,
+            "approved_at": _now_iso(),
+            "content_digest": _staged_content_digest(skill_dir),
+        }
+    elif action == "reset":
+        meta["review"] = {
+            "status": "pending",
+            "approved_by": None,
+            "approved_at": None,
+            "content_digest": None,
+        }
+    else:
+        raise FdeWorkbenchError(f"未知的审查动作：{action}")
+    _save_staged_meta(skill_dir, meta)
+    return _mutation_result(name)
+
+
 def generate_skill(
     *,
     name: str,

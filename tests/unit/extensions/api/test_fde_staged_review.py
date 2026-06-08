@@ -85,3 +85,43 @@ def test_review_state_approved_then_stale_on_edit(tmp_path):
     assert rv2["status"] == "approved"
     assert rv2["digest_matches"] is False
     assert rv2["effective"] == "stale"
+
+
+@pytest.fixture
+def staged_review_env(monkeypatch, tmp_path):
+    staged = tmp_path / "staged"
+    staged.mkdir()
+    monkeypatch.setenv("QWENPAW_FDE_STAGED_DIR", str(staged))
+    monkeypatch.setattr(
+        svc, "show_staged_skill",
+        lambda name, **k: {"skill_name": name, "files": []},
+    )
+    return staged
+
+
+def test_approve_requires_ready_for_review(staged_review_env, monkeypatch):
+    _make_staged(staged_review_env)
+    monkeypatch.setattr(
+        svc, "selfcheck_staged_skill",
+        lambda name: {"ready_for_review": False,
+                      "blocked_reasons": ["语法错误"]},
+    )
+    with pytest.raises(svc.FdeWorkbenchError):
+        svc.set_staged_review("demo", action="approve")
+
+
+def test_approve_then_reset_review(staged_review_env, monkeypatch):
+    d = _make_staged(staged_review_env)
+    monkeypatch.setattr(
+        svc, "selfcheck_staged_skill",
+        lambda name: {"ready_for_review": True},
+    )
+    out = svc.set_staged_review("demo", action="approve", approved_by="vince")
+    rv = out["staged"]["review"]
+    assert rv["effective"] == "approved"
+    assert rv["approved_by"] == "vince"
+    assert rv["content_digest"] == svc._staged_content_digest(d)
+
+    out2 = svc.set_staged_review("demo", action="reset")
+    assert out2["staged"]["review"]["effective"] == "pending"
+    assert out2["staged"]["review"]["content_digest"] is None
