@@ -7,6 +7,7 @@ No FastAPI imports here so the logic is unit-testable in isolation.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -898,6 +899,29 @@ def _tree_insert(tree: dict[str, Any], parts: list[str], content: str) -> None:
                 f"staged 目录结构异常：{'/'.join(parts)}"
             )
     node[parts[-1]] = content
+
+
+def _staged_content_digest(skill_dir: Path) -> str:
+    """SHA-256 over all managed staged files (sorted by relpath),
+    excluding FDE-internal meta files. Binds a human-review approval to
+    exact content: any edit changes the digest, auto-invalidating the
+    approval. Excludes ``_fde_meta.json`` (which stores the digest) to
+    avoid self-reference. Mirrors ``_read_staged_bundle``'s file filter.
+    """
+    h = hashlib.sha256()
+    for path in sorted(skill_dir.rglob("*")):
+        if path.is_dir():
+            continue
+        if "__pycache__" in path.parts or path.suffix == ".pyc":
+            continue
+        rel = path.relative_to(skill_dir)
+        if len(rel.parts) == 1 and rel.parts[0] in _STAGED_INTERNAL_FILES:
+            continue
+        h.update(rel.as_posix().encode("utf-8"))
+        h.update(b"\0")
+        h.update(path.read_bytes())
+        h.update(b"\0")
+    return h.hexdigest()
 
 
 def _read_staged_bundle(skill_dir: Path) -> dict[str, Any]:
