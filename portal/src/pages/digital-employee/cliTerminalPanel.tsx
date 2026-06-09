@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { createChat, stopChat, streamChat } from "../../api/copawChat";
+import { toFriendlyChatError } from "../../lib/chatErrorMessage";
 import {
   digitalEmployees,
   employeeResults,
@@ -568,7 +569,7 @@ export function CliTerminalPanel({
       }
     } catch (error: any) {
       if (!controller.signal.aborted) {
-        appendLine(`对话失败：${String(error?.message || "请稍后重试")}`, "error");
+        appendLine(`对话失败：${toFriendlyChatError(error)}`, "error");
       }
     } finally {
       if (streamAbortRef.current === controller) {

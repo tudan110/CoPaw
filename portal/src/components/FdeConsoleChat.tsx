@@ -13,6 +13,7 @@ import {
   stopChat,
   streamChat,
 } from "../api/copawChat";
+import { toFriendlyChatError } from "../lib/chatErrorMessage";
 import {
   extractCopawMessageText,
   mergeStreamingText,
@@ -455,10 +456,7 @@ export function FdeConsoleChat({
         // Reconnect failure isn't always an error — task may have ended just
         // before we attached. Only surface if we actually saw events flowing.
         if (attached) {
-          const msg =
-            error instanceof Error
-              ? error.message
-              : "重连失败，请稍后重试";
+          const msg = toFriendlyChatError(error) || "重连失败，请稍后重试";
           patchLastAssistant((t) => ({ ...t, status: "error", error: msg }));
         }
       } finally {
@@ -599,8 +597,7 @@ export function FdeConsoleChat({
         },
       );
     } catch (error) {
-      const msg =
-        error instanceof Error ? error.message : "请求失败，请稍后重试";
+      const msg = toFriendlyChatError(error);
       patchLastAssistant((t) => ({ ...t, status: "error", error: msg }));
     } finally {
       setStreaming(false);

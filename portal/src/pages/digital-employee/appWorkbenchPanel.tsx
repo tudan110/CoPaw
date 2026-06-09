@@ -7,6 +7,7 @@ import {
   type KeyboardEvent,
 } from "react";
 import { createChat, stopChat, streamChat } from "../../api/copawChat";
+import { toFriendlyChatError } from "../../lib/chatErrorMessage";
 import {
   buildThinkingBlock,
   buildToolBlock,
@@ -433,7 +434,7 @@ export function AppWorkbenchPanel({
         appendMessage({
           id: uid(),
           role: "assistant",
-          content: `对话失败：${String(error?.message || "请稍后重试")}`,
+          content: `对话失败：${toFriendlyChatError(error)}`,
         });
       }
     } finally {

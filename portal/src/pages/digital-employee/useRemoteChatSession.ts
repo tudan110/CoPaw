@@ -37,6 +37,7 @@ import {
   normalizeRemoteSessions,
 } from "./helpers";
 import { isResourceImportIntent } from "./pageHelpers";
+import { toFriendlyChatError } from "../../lib/chatErrorMessage";
 import {
   createAlarmAnalystCard,
   listAlarmAnalystCards,
@@ -68,13 +69,7 @@ type FaultDisposalHistory = {
 };
 
 function normalizeRemoteChatErrorMessage(error: any) {
-  const rawMessage = String(error?.message || "").trim();
-  if (
-    /RemoteProtocolError|incomplete chunked read|peer closed connection/i.test(rawMessage)
-  ) {
-    return "模型流式连接中断，请重试当前步骤。";
-  }
-  return rawMessage || "请稍后重试";
+  return toFriendlyChatError(error);
 }
 
 function getPortalProgressSubtitle(stage: string) {
