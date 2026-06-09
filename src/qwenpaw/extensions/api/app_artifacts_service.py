@@ -112,13 +112,19 @@ def _parse_config(config_str: str | None) -> dict[str, Any] | None:
         return None
 
 
-def _write_html(app_id: str, html_content: str) -> str:
-    """将 HTML 内容写入文件，返回相对路径。"""
+def _write_html(app_id: str, html_content: str, version: int) -> str:
+    """将某个版本的 HTML 写入独立文件，返回相对路径。
+
+    每个版本落到 ``v{version}.html``，新版本不再覆盖旧版本，
+    使 ``app_versions`` 记录的 html_path 始终指向当时的真实内容，
+    支持历史版本预览与回滚。
+    """
     app_dir = APP_ARTIFACTS_HTML_DIR / app_id
     app_dir.mkdir(parents=True, exist_ok=True)
-    html_file = app_dir / "index.html"
+    filename = f"v{version}.html"
+    html_file = app_dir / filename
     html_file.write_text(html_content, encoding="utf-8")
-    return f"{app_id}/index.html"
+    return f"{app_id}/{filename}"
 
 
 def _delete_html(app_id: str) -> None:
@@ -147,7 +153,7 @@ def create_app(
     """创建并发布一个应用/卡片。"""
     app_id = _generate_id()
     now = _now_iso()
-    html_path = _write_html(app_id, html_content)
+    html_path = _write_html(app_id, html_content, 1)
 
     conn = _get_db()
     try:
@@ -291,8 +297,8 @@ def update_app(
             params.append(json.dumps(config))
 
         if html_content is not None:
-            html_path = _write_html(app_id, html_content)
             new_version = existing["version"] + 1
+            html_path = _write_html(app_id, html_content, new_version)
             updates.append("html_path = ?")
             params.append(html_path)
             updates.append("version = ?")
@@ -347,12 +353,46 @@ def get_app_versions(app_id: str) -> list[dict[str, Any]]:
         conn.close()
 
 
-def get_html_content(app_id: str) -> str | None:
-    """读取应用的 HTML 内容。"""
-    html_file = APP_ARTIFACTS_HTML_DIR / app_id / "index.html"
+def get_html_content(app_id: str, version: int | None = None) -> str | None:
+    """读取应用的 HTML 内容。
+
+    version 为 None 时返回当前版本（apps.html_path）；指定 version
+    时返回该历史版本（app_versions.html_path）。按 DB 记录的相对路径
+    读取，兼容老数据中指向 ``index.html`` 的记录。
+    """
+    conn = _get_db()
+    try:
+        if version is None:
+            row = conn.execute(
+                "SELECT html_path FROM apps WHERE id = ?", (app_id,)
+            ).fetchone()
+        else:
+            row = conn.execute(
+                "SELECT html_path FROM app_versions WHERE app_id = ? AND version = ?",
+                (app_id, version),
+            ).fetchone()
+    finally:
+        conn.close()
+
+    if row is None or not row["html_path"]:
+        return None
+    html_file = APP_ARTIFACTS_HTML_DIR / row["html_path"]
     if html_file.exists():
         return html_file.read_text(encoding="utf-8")
     return None
+
+
+def rollback_to_version(app_id: str, version: int) -> dict[str, Any] | None:
+    """将应用回滚到指定版本。
+
+    读取目标版本的 HTML 内容,通过 update_app 写回,自动产生新版本号。
+    原版本的 HTML 文件不受影响(按 v{n}.html 存储,互不覆盖)。
+    """
+    html = get_html_content(app_id, version=version)
+    if html is None:
+        return None
+    changelog = f"回滚到 v{version}"
+    return update_app(app_id, html_content=html, status="published")
 
 
 # ─── Dashboard API ────────────────────────────────────────────────────────────
@@ -373,7 +413,7 @@ def create_dashboard(
 
     # Generate an empty HTML page as placeholder (actual rendering is client-side)
     html_content = _build_dashboard_html(title, items or [])
-    html_path = _write_html(dashboard_id, html_content)
+    html_path = _write_html(dashboard_id, html_content, 1)
 
     conn = _get_db()
     try:
@@ -490,9 +530,9 @@ def update_dashboard_items(
             )
 
         # Regenerate dashboard HTML
-        html_content = _build_dashboard_html(existing["title"], items)
-        html_path = _write_html(dashboard_id, html_content)
         new_version = existing["version"] + 1
+        html_content = _build_dashboard_html(existing["title"], items)
+        html_path = _write_html(dashboard_id, html_content, new_version)
 
         conn.execute(
             """UPDATE apps SET html_path = ?, version = ?, updated_at = ? WHERE id = ?""",

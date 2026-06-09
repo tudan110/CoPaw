@@ -59,6 +59,30 @@ async function deleteArtifact(id: string): Promise<void> {
   }
 }
 
+interface AppVersion {
+  version: number;
+  html_path: string;
+  changelog: string | null;
+  created_at: string;
+}
+
+async function fetchVersions(id: string): Promise<AppVersion[]> {
+  const response = await fetch(`/portal-api/app-artifacts/${id}/versions`);
+  if (!response.ok) {
+    throw new Error(`请求失败: ${response.status}`);
+  }
+  const data = await response.json();
+  return data.versions ?? [];
+}
+
+async function rollbackVersion(id: string, version: number): Promise<AppArtifact> {
+  const response = await fetch(`/portal-api/app-artifacts/${id}/rollback?version=${version}`, { method: "POST" });
+  if (!response.ok) {
+    throw new Error(`回滚失败: ${response.status}`);
+  }
+  return response.json();
+}
+
 export function AppArtifactsPanel({ onOpenWorkbench, onEditApp, onOpenDashboardAssembly, onEditDashboard }: {
   onOpenWorkbench?: () => void;
   onEditApp?: (appId: string) => void;
@@ -72,6 +96,10 @@ export function AppArtifactsPanel({ onOpenWorkbench, onEditApp, onOpenDashboardA
   const [filterType, setFilterType] = useState<string>("");
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
+  const [versionsFor, setVersionsFor] = useState<AppArtifact | null>(null);
+  const [versions, setVersions] = useState<AppVersion[]>([]);
+  const [versionsLoading, setVersionsLoading] = useState(false);
+  const [versionsError, setVersionsError] = useState("");
 
   const loadData = async () => {
     setLoading(true);
@@ -111,13 +139,48 @@ export function AppArtifactsPanel({ onOpenWorkbench, onEditApp, onOpenDashboardA
     window.open(`/portal-api/app-artifacts/${artifact.id}/preview`, "_blank");
   };
 
+  const openVersions = async (artifact: AppArtifact) => {
+    setVersionsFor(artifact);
+    setVersions([]);
+    setVersionsError("");
+    setVersionsLoading(true);
+    try {
+      setVersions(await fetchVersions(artifact.id));
+    } catch (e) {
+      setVersionsError(e instanceof Error ? e.message : "加载失败");
+    } finally {
+      setVersionsLoading(false);
+    }
+  };
+
+  const previewVersion = (version: number) => {
+    if (!versionsFor) return;
+    window.open(
+      `/portal-api/app-artifacts/${versionsFor.id}/preview?version=${version}`,
+      "_blank",
+    );
+  };
+
+  const handleRollback = async (version: number) => {
+    if (!versionsFor) return;
+    if (!confirm(`确定要回滚到 v${version} 吗？当前版本将被保留在历史记录中。`)) return;
+    try {
+      const updated = await rollbackVersion(versionsFor.id, version);
+      setVersionsFor(updated);
+      setVersions(await fetchVersions(updated.id));
+      void loadData();
+    } catch (e) {
+      setVersionsError(e instanceof Error ? e.message : "回滚失败");
+    }
+  };
+
   const totalPages = Math.ceil(total / 20);
 
   return (
     <div className="app-artifacts-panel">
       <div className="portal-model-page-header">
         <div className="portal-model-page-title">
-          成果应用 <small>AI 生成的 HTML 应用与卡片</small>
+          我的应用 <small>AI 生成的 HTML 应用与卡片</small>
         </div>
         {onOpenWorkbench && (
           <button className="app-artifacts-create-btn" onClick={onOpenWorkbench}>
@@ -180,7 +243,7 @@ export function AppArtifactsPanel({ onOpenWorkbench, onEditApp, onOpenDashboardA
         ) : !items.length ? (
           <div className="app-artifacts-empty">
             <span className="app-artifacts-empty-icon">📭</span>
-            <p>暂无已发布的成果应用</p>
+            <p>暂无已发布的应用</p>
             <p className="app-artifacts-empty-hint">在对话中让 AI 帮你开发 HTML 应用，发布后将展示在这里</p>
           </div>
         ) : (
@@ -216,9 +279,9 @@ export function AppArtifactsPanel({ onOpenWorkbench, onEditApp, onOpenDashboardA
                     <button
                       className="app-artifacts-btn-open"
                       onClick={() => handleOpen(item)}
-                      title="在新标签页打开"
+                      title="查看"
                     >
-                      打开
+                      <i className="fas fa-eye" />
                     </button>
                     {onEditApp && (
                       <button
@@ -228,17 +291,24 @@ export function AppArtifactsPanel({ onOpenWorkbench, onEditApp, onOpenDashboardA
                             ? onEditDashboard(item.id)
                             : onEditApp(item.id)
                         }
-                        title="编辑应用"
+                        title="编辑"
                       >
-                        编辑
+                        <i className="fas fa-pen" />
                       </button>
                     )}
                     <button
+                      className="app-artifacts-btn-history"
+                      onClick={() => openVersions(item)}
+                      title="版本历史"
+                    >
+                      <i className="fas fa-clock-rotate-left" />
+                    </button>
+                    <button
                       className="app-artifacts-btn-delete"
                       onClick={() => handleDelete(item.id, item.title)}
-                      title="删除应用"
+                      title="删除"
                     >
-                      删除
+                      <i className="fas fa-trash" />
                     </button>
                   </div>
                 </div>
@@ -259,6 +329,74 @@ export function AppArtifactsPanel({ onOpenWorkbench, onEditApp, onOpenDashboardA
           </div>
         )}
       </div>
+
+      {versionsFor && (
+        <div
+          className="app-artifacts-modal-overlay"
+          onClick={() => setVersionsFor(null)}
+        >
+          <div
+            className="app-artifacts-modal"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="app-artifacts-modal-header">
+              <h3>版本历史 · {versionsFor.title}</h3>
+              <button
+                className="app-artifacts-modal-close"
+                onClick={() => setVersionsFor(null)}
+                title="关闭"
+              >
+                ×
+              </button>
+            </div>
+            <div className="app-artifacts-modal-body">
+              {versionsLoading ? (
+                <div className="app-artifacts-empty">
+                  <span className="app-artifacts-spinner" />
+                  <p>正在加载...</p>
+                </div>
+              ) : versionsError ? (
+                <div className="app-artifacts-notice error">{versionsError}</div>
+              ) : !versions.length ? (
+                <div className="app-artifacts-empty">
+                  <span className="app-artifacts-empty-icon">🕑</span>
+                  <p>暂无版本记录</p>
+                </div>
+              ) : (
+                <ul className="app-artifacts-version-list">
+                  {versions.map((v) => (
+                    <li key={v.version} className="app-artifacts-version-item">
+                      <span className="app-artifacts-version-tag">
+                        v{v.version}
+                        {v.version === versionsFor.version && " · 当前"}
+                        {v.changelog && ` · ${v.changelog}`}
+                      </span>
+                      <div className="app-artifacts-version-actions">
+                        <button
+                          className="app-artifacts-btn-preview-version"
+                          onClick={() => previewVersion(v.version)}
+                          title="预览此版本"
+                        >
+                          <i className="fas fa-eye" />
+                        </button>
+                        {v.version !== versionsFor.version && (
+                          <button
+                            className="app-artifacts-btn-rollback-version"
+                            onClick={() => handleRollback(v.version)}
+                            title="应用此版本"
+                          >
+                            <i className="fas fa-undo" />
+                          </button>
+                        )}
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

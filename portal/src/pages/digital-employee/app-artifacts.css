@@ -226,25 +226,30 @@
 .app-artifacts-card-actions {
   display: flex;
   gap: 6px;
+  flex-wrap: nowrap;
 }
 
 .app-artifacts-btn-open {
-  padding: 4px 12px;
+  padding: 4px 8px;
   border-radius: 5px;
-  border: 1px solid #3b82f6;
-  background: #3b82f6;
-  color: #fff;
+  border: 1px solid #e2e8f0;
+  background: #fff;
+  color: #3b82f6;
   font-size: 12px;
   cursor: pointer;
-  transition: background 0.15s;
+  transition: all 0.15s;
+  white-space: nowrap;
+  line-height: 1;
 }
 
 .app-artifacts-btn-open:hover {
-  background: #2563eb;
+  border-color: #3b82f6;
+  color: #3b82f6;
+  background: #eff6ff;
 }
 
 .app-artifacts-btn-edit {
-  padding: 4px 10px;
+  padding: 4px 8px;
   border-radius: 5px;
   border: 1px solid #8b5cf6;
   background: #fff;
@@ -252,6 +257,8 @@
   font-size: 12px;
   cursor: pointer;
   transition: all 0.15s;
+  white-space: nowrap;
+  line-height: 1;
 }
 
 .app-artifacts-btn-edit:hover {
@@ -261,7 +268,7 @@
 }
 
 .app-artifacts-btn-delete {
-  padding: 4px 10px;
+  padding: 4px 8px;
   border-radius: 5px;
   border: 1px solid #e2e8f0;
   background: #fff;
@@ -269,6 +276,8 @@
   font-size: 12px;
   cursor: pointer;
   transition: all 0.15s;
+  white-space: nowrap;
+  line-height: 1;
 }
 
 .app-artifacts-btn-delete:hover {
@@ -376,6 +385,29 @@
   border-top-color: #334155;
 }
 
+.portal-digital-employee.theme-dark .app-artifacts-btn-open {
+  border-color: #334155;
+  background: #1e293b;
+  color: #60a5fa;
+}
+
+.portal-digital-employee.theme-dark .app-artifacts-btn-open:hover {
+  border-color: #60a5fa;
+  background: #1c2740;
+}
+
+.portal-digital-employee.theme-dark .app-artifacts-btn-edit {
+  border-color: #334155;
+  background: #1e293b;
+  color: #a78bfa;
+}
+
+.portal-digital-employee.theme-dark .app-artifacts-btn-edit:hover {
+  border-color: #a78bfa;
+  background: #2e2650;
+  color: #c4b5fd;
+}
+
 .portal-digital-employee.theme-dark .app-artifacts-btn-delete {
   border-color: #334155;
   background: #1e293b;
@@ -449,4 +481,210 @@
 
 .app-artifacts-dashboard-btn i {
   font-size: 13px;
+}
+
+/* ---- History button ---- */
+
+.app-artifacts-btn-history {
+  padding: 4px 8px;
+  border-radius: 5px;
+  border: 1px solid #e2e8f0;
+  background: #fff;
+  color: #475569;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+  line-height: 1;
+}
+
+.app-artifacts-btn-history:hover {
+  border-color: #3b82f6;
+  color: #3b82f6;
+  background: #eff6ff;
+}
+
+/* ---- Version history modal ---- */
+
+.app-artifacts-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 20px;
+}
+
+.app-artifacts-modal {
+  background: #fff;
+  border-radius: 14px;
+  width: 100%;
+  max-width: 520px;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 20px 50px rgba(15, 23, 42, 0.25);
+}
+
+.app-artifacts-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.app-artifacts-modal-header h3 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: #1e293b;
+}
+
+.app-artifacts-modal-close {
+  border: none;
+  background: none;
+  font-size: 22px;
+  line-height: 1;
+  color: #94a3b8;
+  cursor: pointer;
+  padding: 0 4px;
+}
+
+.app-artifacts-modal-close:hover {
+  color: #475569;
+}
+
+.app-artifacts-modal-body {
+  padding: 16px 20px;
+  overflow-y: auto;
+}
+
+.app-artifacts-version-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.app-artifacts-version-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+}
+
+.app-artifacts-version-tag {
+  font-size: 13px;
+  font-weight: 600;
+  color: #3b82f6;
+  white-space: nowrap;
+}
+
+.app-artifacts-btn-preview-version {
+  padding: 4px 8px;
+  border-radius: 5px;
+  border: 1px solid #e2e8f0;
+  background: #fff;
+  color: #475569;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+  line-height: 1;
+}
+
+.app-artifacts-btn-preview-version:hover {
+  border-color: #3b82f6;
+  color: #3b82f6;
+  background: #eff6ff;
+}
+
+.app-artifacts-version-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.app-artifacts-btn-rollback-version {
+  padding: 4px 8px;
+  border-radius: 5px;
+  border: 1px solid #e2e8f0;
+  background: #fff;
+  color: #8b5cf6;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+  line-height: 1;
+}
+
+.app-artifacts-btn-rollback-version:hover {
+  border-color: #8b5cf6;
+  color: #7c3aed;
+  background: #f5f3ff;
+}
+
+/* ---- History / modal dark theme ---- */
+
+.portal-digital-employee.theme-dark .app-artifacts-btn-history {
+  background: #1e293b;
+  border-color: #334155;
+  color: #94a3b8;
+}
+
+.portal-digital-employee.theme-dark .app-artifacts-btn-history:hover {
+  border-color: #60a5fa;
+  color: #60a5fa;
+  background: #1c2740;
+}
+
+.portal-digital-employee.theme-dark .app-artifacts-modal {
+  background: #1e293b;
+}
+
+.portal-digital-employee.theme-dark .app-artifacts-modal-header {
+  border-bottom-color: #334155;
+}
+
+.portal-digital-employee.theme-dark .app-artifacts-modal-header h3 {
+  color: #f1f5f9;
+}
+
+.portal-digital-employee.theme-dark .app-artifacts-modal-close:hover {
+  color: #e2e8f0;
+}
+
+.portal-digital-employee.theme-dark .app-artifacts-version-item {
+  border-color: #334155;
+}
+
+.portal-digital-employee.theme-dark .app-artifacts-btn-preview-version {
+  background: #1e293b;
+  border-color: #334155;
+  color: #94a3b8;
+}
+
+.portal-digital-employee.theme-dark .app-artifacts-btn-preview-version:hover {
+  border-color: #60a5fa;
+  color: #60a5fa;
+  background: #1c2740;
+}
+
+.portal-digital-employee.theme-dark .app-artifacts-btn-rollback-version {
+  background: #1e293b;
+  border-color: #334155;
+  color: #a78bfa;
+}
+
+.portal-digital-employee.theme-dark .app-artifacts-btn-rollback-version:hover {
+  border-color: #a78bfa;
+  background: #2e2650;
+  color: #c4b5fd;
 }

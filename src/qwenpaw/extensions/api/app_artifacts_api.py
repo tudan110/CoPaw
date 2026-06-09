@@ -24,6 +24,7 @@ from qwenpaw.extensions.api.app_artifacts_service import (
     get_dashboard,
     get_html_content,
     list_apps,
+    rollback_to_version,
     list_widgets,
     update_app,
     update_dashboard_items,
@@ -117,10 +118,25 @@ async def get_artifact_versions(app_id: str):
     return {"app_id": app_id, "versions": versions}
 
 
+@router.post("/{app_id}/rollback")
+async def rollback_artifact(
+    app_id: str,
+    version: int = Query(..., ge=1, description="要回滚到的目标版本号"),
+):
+    """将应用回滚到指定历史版本。"""
+    result = rollback_to_version(app_id, version)
+    if result is None:
+        raise HTTPException(status_code=404, detail="应用不存在或目标版本无 HTML 内容")
+    return result
+
+
 @router.get("/{app_id}/preview", response_class=HTMLResponse)
-async def preview_artifact(app_id: str):
+async def preview_artifact(
+    app_id: str,
+    version: int | None = Query(default=None, ge=1, description="预览指定历史版本，默认当前版本"),
+):
     """预览应用的 HTML 内容（直接返回 HTML）。"""
-    html = get_html_content(app_id)
+    html = get_html_content(app_id, version=version)
     if html is None:
         raise HTTPException(status_code=404, detail="应用不存在或 HTML 文件缺失")
     return HTMLResponse(content=html)
