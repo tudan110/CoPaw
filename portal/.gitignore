@@ -1,3 +1,8 @@
 dist
 node_modules
 .vite
+
+# TS 编译产物 / 增量缓存（构建用 vite，不依赖 tsc 输出，自动生成）
+*.tsbuildinfo
+vite.config.js
+vite.config.d.ts
