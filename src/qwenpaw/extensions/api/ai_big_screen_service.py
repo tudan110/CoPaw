@@ -500,6 +500,7 @@ AI_BIG_SCREEN_CONFIGURE_LLM_MESSAGE = (
 
 _ALLOWED_PALETTES = {"professional", "warm", "cool", "executive", "industrial", "aurora", "mono"}
 _ALLOWED_COMPONENT_TYPES = {
+    # Legacy types — still rendered by the authoring-panel renderer.
     "metric-card",
     "line-chart",
     "bar-chart",
@@ -508,6 +509,23 @@ _ALLOWED_COMPONENT_TYPES = {
     "text",
     "risk-pulse",
     "status-stream",
+    # D-max palette — rendered by the new BigScreenRenderer (view) via the
+    # adapter; the legacy renderer text-falls-back the unfamiliar ones.
+    "metric-kpi",
+    "flip-number",
+    "liquid-ball",
+    "area-chart",
+    "donut",
+    "gauge",
+    "radar",
+    "heatmap",
+    "graph",
+    "map-fly",
+    "alarm-stream",
+    "top-n",
+    "funnel",
+    "timeline",
+    "bar3d",
 }
 _ALLOWED_VISUAL_SPEC_KINDS = {
     "risk-field",
@@ -530,6 +548,17 @@ _ALLOWED_VISUAL_SPEC_BINDINGS = {
     "group",
     "riskScore",
     "riskLevel",
+    # D-max widget binding keys
+    "name",
+    "x",
+    "y",
+    "unit",
+    "prefix",
+    "color",
+    "label",
+    "description",
+    "text",
+    "tone",
 }
 _ALLOWED_VISUAL_SPEC_LAYER_TYPES = {"score", "list", "stream", "timeline", "matrix", "metrics"}
 _ALLOWED_VISUAL_SPEC_SOURCES = {"rows", "riskItems", "series", "categories"}
@@ -803,7 +832,9 @@ async def _build_screen_plan_with_ai(*, prompt: str, title: str) -> dict[str, An
                 "你是面向运维场景的 AI 大屏产品设计师和数据需求分析师。"
                 "你必须先理解用户语义中真正需要的数据，再从给定 dataCapabilities 中选择能力。"
                 "同一句话出现多个数据对象时必须全部覆盖，例如日志和告警要生成两个独立数据需求。"
-                "普通查询类需求只能为每个数据对象生成一个组件，不要为同一个 capabilityId 生成重复组件。"
+                "同一个 capabilityId 的数据可以从不同视角拆成多个互补组件"
+                "（例如告警可同时做\"总数翻牌 + 分级占比环图 + 滚动告警流 + 趋势曲线\"），"
+                "只要每个组件呈现不同侧面、不是简单重复——这样大屏更丰富；简单单值查询保持一个组件即可。"
                 "组件标题、描述、capabilityId 必须语义一致：工单只能使用 workorders，告警只能使用 real-alarms，日志只能使用 system-logs。"
                 "你需要创造性设计版式、标题、描述、视觉调性和组件组合，但不得输出前端源码、SQL、脚本或未授权接口。"
                 "创造性不得改变用户请求的数据意图；用户没有要求分析、风险、高危、动态突出时，系统日志只能按普通日志查询展示，"
@@ -815,16 +846,27 @@ async def _build_screen_plan_with_ai(*, prompt: str, title: str) -> dict[str, An
                 "JSON 字段固定为：name, description, theme, layout, components, summary。"
                 "theme.palette 只能是 professional、industrial、aurora、mono、warm、cool、executive。"
                 "components 是数组；每项必须包含 title, description, capabilityId, visualType, queryParams, layoutPosition。"
-                "capabilityId 必须来自 dataCapabilities；visualType 必须是 metric-card、line-chart、bar-chart、table、topology、text、risk-pulse、status-stream。"
+                "capabilityId 必须来自 dataCapabilities。"
+                "visualType 从以下大屏组件库中按数据特征挑最贴切、最有视觉冲击力的，不要清一色用 table："
+                "数字指标=metric-kpi / flip-number(大数翻牌) / gauge(达成率仪表) / liquid-ball(百分比水球)；"
+                "趋势对比=line-chart / area-chart / bar-chart / donut(占比) / radar(多维评估) / heatmap(时段热力)；"
+                "列表与流=alarm-stream(滚动告警流) / top-n(TOP排行) / timeline(时间线) / funnel(漏斗收敛)；"
+                "关系地理=graph(依赖拓扑) / map-fly(全国分布飞线)；风险=risk-pulse。"
+                "兼容旧类型 table、topology、status-stream、metric-card、text 仍可用。"
                 "如果用户要求分析系统日志高危/风险/危险情况并动态突出，"
                 "系统日志组件优先使用 visualType=risk-pulse，queryParams.analysisMode=risk_summary。"
                 "components 每项可以包含 visualSpec 安全视觉规格；"
                 "visualSpec.kind 只能是 risk-field、signal-stream、timeline、heatmap-matrix、metric-cluster，"
                 "motion 只能是 none、pulse、scan、flow、stagger；"
-                "bindings 用于声明 time/title/message/severity/status/value/group 等字段如何绑定数据，"
+                "bindings 用于声明字段绑定，键名取自数据列："
+                "name/value(指标与排行)、x/y(图表横纵轴)、unit/prefix(数值单位前缀)、"
+                "time/message/tone(流与时间线)、title/severity/status/group 等，"
                 "highlightRules 用于声明条件高亮，layers 用于声明 score/list/stream/timeline/matrix/metrics 等层。"
                 "不要输出 HTML、CSS、JS、URL 或代码。"
-                "queryParams 只写普通 JSON 参数。layoutPosition 使用 12 列网格 x,y,w,h。"
+                "queryParams 只写普通 JSON 参数。"
+                "用 visualSpec.composition 表达组件重要度：primary(核心，最大) / secondary(次要) / supporting(辅助)；"
+                "新版大屏据此自动排版铺满整屏。layoutPosition 仍用 12 列网格 x,y,w,h，但仅作兜底、不必追求精确。"
+                "尽量生成 4-8 个主次分明、类型多样的组件，让大屏丰富炫酷而不单薄。"
             ),
         },
         {
@@ -845,23 +887,43 @@ async def _build_screen_plan_with_ai(*, prompt: str, title: str) -> dict[str, An
                         "layout": {"type": "grid", "columns": 12, "rowHeight": 84},
                         "components": [
                             {
+                                "title": "实时告警总数",
+                                "description": "最近 15 分钟活动告警计数。",
+                                "capabilityId": "real-alarms",
+                                "visualType": "flip-number",
+                                "queryParams": {"lookbackMinutes": 15, "limit": 200},
+                                "visualSpec": {"composition": "primary", "bindings": {"value": "total", "unit": "条"}},
+                                "layoutPosition": {"x": 0, "y": 0, "w": 4, "h": 2},
+                            },
+                            {
+                                "title": "告警分级占比",
+                                "description": "按严重级别统计的告警占比。",
+                                "capabilityId": "real-alarms",
+                                "visualType": "donut",
+                                "queryParams": {"lookbackMinutes": 15, "limit": 200},
+                                "visualSpec": {"composition": "secondary", "bindings": {"name": "level", "value": "count"}},
+                                "layoutPosition": {"x": 4, "y": 0, "w": 4, "h": 4},
+                            },
+                            {
+                                "title": "实时告警流",
+                                "description": "最近活动告警滚动列表。",
+                                "capabilityId": "real-alarms",
+                                "visualType": "alarm-stream",
+                                "queryParams": {"lookbackMinutes": 15, "limit": 80},
+                                "visualSpec": {"composition": "supporting", "bindings": {"message": "title", "time": "eventTime", "tone": "level"}},
+                                "layoutPosition": {"x": 8, "y": 0, "w": 4, "h": 4},
+                            },
+                            {
                                 "title": "15分钟系统日志",
-                                "description": "最近 15 分钟智观日志服务接入的业务/应用/系统日志。",
+                                "description": "最近 15 分钟智观日志接入的业务/应用/系统日志。",
                                 "capabilityId": "system-logs",
                                 "visualType": "table",
                                 "queryParams": {"lookbackMinutes": 15, "limit": 50, "query": ""},
-                                "layoutPosition": {"x": 0, "y": 0, "w": 6, "h": 4},
-                            },
-                            {
-                                "title": "15分钟系统告警",
-                                "description": "最近 15 分钟活动告警。",
-                                "capabilityId": "real-alarms",
-                                "visualType": "table",
-                                "queryParams": {"lookbackMinutes": 15, "limit": 80},
-                                "layoutPosition": {"x": 6, "y": 0, "w": 6, "h": 4},
+                                "visualSpec": {"composition": "supporting"},
+                                "layoutPosition": {"x": 0, "y": 2, "w": 4, "h": 2},
                             },
                         ],
-                        "summary": "覆盖日志和告警两个实时数据需求。",
+                        "summary": "告警从总数、分级、实时流三个视角展开，并覆盖系统日志需求。",
                     },
                 },
                 ensure_ascii=False,

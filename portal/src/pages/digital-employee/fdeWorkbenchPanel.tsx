@@ -5,11 +5,13 @@ import {
   FdeWorkbenchError,
   type FdeInstalledSkill,
   type FdeProbeResult,
+  type FdeReviewState,
   type FdeSelfcheckResult,
   type FdeStagedDetail,
   type FdeStagedSummary,
   type FdeWorkbenchInfo,
 } from "../../api/fde";
+import { SelfcheckReport } from "./SelfcheckReport";
 import { FdeConsoleChat } from "../../components/FdeConsoleChat";
 import { FdeCreateAgentModal } from "../../components/FdeCreateAgentModal";
 import { portalAgentsApi, type AgentSummary } from "../../api/portalAgents";
@@ -75,55 +77,6 @@ function parseEnvExample(text: string | null | undefined): EnvField[] {
 
 const DOMAIN_UNAVAILABLE_MARKER = "技能领域审核未完成";
 
-function SelfcheckBanner({
-  result,
-}: {
-  result: FdeSelfcheckResult | undefined;
-}) {
-  if (!result) {
-    return null;
-  }
-  if (result.error) {
-    return (
-      <div className="fde-selfcheck fde-selfcheck--bad">
-        <div className="fde-selfcheck-head">
-          <span className="fde-pill fde-pill--bad">自检失败</span>
-          <span className="fde-selfcheck-line">{result.error}</span>
-        </div>
-      </div>
-    );
-  }
-  const ready = Boolean(result.ready_for_review);
-  const lists: Array<{ label: string; items: string[]; tone: string }> = [
-    { label: "阻塞原因", items: result.blocked_reasons || [], tone: "bad" },
-    { label: "警告", items: result.warnings || [], tone: "warn" },
-    { label: "待人工补全 / 确认", items: result.todo || [], tone: "muted" },
-  ];
-  return (
-    <div className={`fde-selfcheck fde-selfcheck--${ready ? "ok" : "bad"}`}>
-      <div className="fde-selfcheck-head">
-        <span className={`fde-pill fde-pill--${ready ? "ok" : "bad"}`}>
-          {ready ? "自检通过 · 可进入审批" : "未通过自检"}
-        </span>
-      </div>
-      {lists.map(({ label, items, tone }) =>
-        items.length > 0 ? (
-          <div className="fde-selfcheck-block" key={label}>
-            <div className={`fde-selfcheck-block-title fde-tone--${tone}`}>
-              {label}
-            </div>
-            <ul>
-              {items.map((it) => (
-                <li key={it}>{it}</li>
-              ))}
-            </ul>
-          </div>
-        ) : null,
-      )}
-    </div>
-  );
-}
-
 export function FdeWorkbenchPanel() {
   const [info, setInfo] = useState<FdeWorkbenchInfo | null>(null);
   const [staged, setStaged] = useState<FdeStagedSummary[]>([]);
@@ -157,6 +110,14 @@ export function FdeWorkbenchPanel() {
   // Cross-agent "已交付技能" view (skills tagged 二开 in any business agent).
   const [installed, setInstalled] = useState<FdeInstalledSkill[]>([]);
   const [installedLoading, setInstalledLoading] = useState(false);
+  const [tab, setTab] = useState<"overview" | "code" | "probe">("overview");
+  // edited code buffer per path; only dirty files get saved
+  const [codeEdits, setCodeEdits] = useState<Record<string, string>>({});
+  // guided-field draft for the selected skill
+  const [fieldDraft, setFieldDraft] = useState<{
+    description: string;
+    triggers: string;
+  }>({ description: "", triggers: "" });
 
   const loadStaged = useCallback(async () => {
     setLoading(true);
@@ -341,6 +302,78 @@ export function FdeWorkbenchPanel() {
     }
   }, [selectedName]);
 
+  const applyMutation = useCallback(
+    (res: { staged: FdeStagedDetail; selfcheck: FdeSelfcheckResult }) => {
+      setDetail({ ...res.staged, selfcheck: res.selfcheck });
+    },
+    [],
+  );
+
+  const handleSaveFields = useCallback(async () => {
+    if (!selectedName) return;
+    setBusy("save-fields");
+    try {
+      const env = selectedName ? envByName[selectedName] : undefined;
+      const res = await fdeApi.editStagedFields(selectedName, {
+        description: fieldDraft.description,
+        triggers: fieldDraft.triggers
+          .split(",")
+          .map((s) => s.trim())
+          .filter(Boolean),
+        env,
+      });
+      applyMutation(res);
+      setNotice({ type: "success", message: "已保存并重新自检。" });
+    } catch (error) {
+      setNotice({ type: "error", message: `保存失败：${errMsg(error)}` });
+    } finally {
+      setBusy(null);
+    }
+  }, [selectedName, fieldDraft, envByName, applyMutation]);
+
+  const handleSaveCode = useCallback(async () => {
+    if (!selectedName) return;
+    const files = Object.entries(codeEdits).map(([path, content]) => ({
+      path,
+      content,
+    }));
+    if (files.length === 0) {
+      setNotice({ type: "info", message: "没有改动的文件。" });
+      return;
+    }
+    setBusy("save-code");
+    try {
+      const res = await fdeApi.editStagedFiles(selectedName, files);
+      applyMutation(res);
+      setCodeEdits({});
+      setNotice({ type: "success", message: "代码已保存并重新自检。" });
+    } catch (error) {
+      setNotice({ type: "error", message: `保存失败：${errMsg(error)}` });
+    } finally {
+      setBusy(null);
+    }
+  }, [selectedName, codeEdits, applyMutation]);
+
+  const handleReview = useCallback(
+    async (action: "approve" | "reset") => {
+      if (!selectedName) return;
+      setBusy(`review-${action}`);
+      try {
+        const res = await fdeApi.reviewStaged(selectedName, action);
+        applyMutation(res);
+        setNotice({
+          type: "success",
+          message: action === "approve" ? "已标记审查通过。" : "已撤回审查。",
+        });
+      } catch (error) {
+        setNotice({ type: "error", message: `操作失败：${errMsg(error)}` });
+      } finally {
+        setBusy(null);
+      }
+    },
+    [selectedName, applyMutation],
+  );
+
   const targetWorkspace = useMemo(() => {
     const fromList = staged.find(
       (s) => s.skill_name === selectedName,
@@ -352,6 +385,32 @@ export function FdeWorkbenchPanel() {
     setInstallTarget(targetWorkspace);
     setDomainBlocked(false);
   }, [selectedName, targetWorkspace]);
+
+  const review: FdeReviewState | undefined = detail?.review;
+  const reviewOk = review?.effective === "approved";
+  const aiOk = Boolean(detail?.selfcheck?.ready_for_review);
+
+  useEffect(() => {
+    // seed guided fields from the freshly-loaded SKILL.md frontmatter
+    setCodeEdits({});
+    setTab("overview");
+    if (!detail) {
+      setFieldDraft({ description: "", triggers: "" });
+      return;
+    }
+    const md =
+      detail.files.find((f) => f.path === "SKILL.md")?.content || "";
+    const desc = /^description:\s*(.*)$/m.exec(md)?.[1] || "";
+    const trig = /^triggers:\s*\[(.*)\]/m.exec(md)?.[1] || "";
+    setFieldDraft({
+      description: desc.replace(/^["']|["']$/g, "").trim(),
+      triggers: trig
+        .split(",")
+        .map((s) => s.replace(/^\s*["']?|["']?\s*$/g, ""))
+        .filter(Boolean)
+        .join(", "),
+    });
+  }, [detail]);
 
   // .env.example fields for the currently-selected staged skill, parsed
   // from the file we already fetched with show-staged.
@@ -719,13 +778,15 @@ export function FdeWorkbenchPanel() {
         ? "ok"
         : "down";
   const available = heroState === "ok";
-  const currentStep = selectedName
-    ? detail?.selfcheck?.ready_for_review
-      ? 3
-      : 2
-    : staged.length
+  // 步进贴合状态：没选→对话生成；选了但 AI 自检没过→审查代码；
+  // AI 自检过、人工审查没过→自检；两道闸门都过→确认安装。
+  const currentStep = !selectedName
+    ? 0
+    : !aiOk
       ? 1
-      : 0;
+      : !reviewOk
+        ? 2
+        : 3;
 
   return (
     <div className="fde-wb">
@@ -1091,44 +1152,112 @@ export function FdeWorkbenchPanel() {
               </p>
             </section>
           ) : (
-            <>
-              <section className="fde-section">
-                <div className="fde-section-head">
-                  <div className="fde-section-title">{detail.skill_name}</div>
-                  <label className="fde-install-target">
-                    安装到
-                    <select
-                      className="fde-field"
-                      value={installTarget || targetWorkspace}
-                      onChange={(e) => {
-                        if (e.target.value === NEW_AGENT_SENTINEL) {
-                          setCreateAgentFor("install");
-                        } else {
-                          setInstallTarget(e.target.value);
-                        }
-                      }}
-                    >
-                      {agentOptions(installTarget || targetWorkspace)}
-                    </select>
-                  </label>
-                </div>
-                <SelfcheckBanner result={detail.selfcheck} />
-                {envFields.length > 0 ? (
-                  <div className="fde-env-card">
-                    <div className="fde-env-head">
-                      <div className="fde-env-title">配置凭证</div>
-                      <span className="fde-env-sub">
-                        从 <code>.env.example</code> 自动提取的 {envFields.length} 项
-                        — 填好后点「确认安装」，凭证会以 600 权限写入技能目录的{" "}
-                        <code>.env</code>；留空也行，可装好后再回来补。
+            <section className="fde-section fde-board">
+              {/* 常驻状态条 */}
+              <div className="fde-strip">
+                <span className="fde-strip-name">{detail.skill_name}</span>
+                <label className="fde-install-target">
+                  安装到
+                  <select
+                    className="fde-field"
+                    value={installTarget || targetWorkspace}
+                    onChange={(e) => {
+                      if (e.target.value === NEW_AGENT_SENTINEL) {
+                        setCreateAgentFor("install");
+                      } else {
+                        setInstallTarget(e.target.value);
+                      }
+                    }}
+                  >
+                    {agentOptions(installTarget || targetWorkspace)}
+                  </select>
+                </label>
+                <span className="fde-strip-gap" />
+                <span
+                  className={`fde-gate ${aiOk ? "is-ok" : "is-bad"}`}
+                  title="AI 自检（域审查 + 安全扫描 + 语法）"
+                >
+                  AI自检 {aiOk ? "✓ 通过" : "✗ 未过"}
+                </span>
+                <span
+                  className={`fde-gate ${
+                    reviewOk
+                      ? "is-ok"
+                      : review?.effective === "stale"
+                        ? "is-warn"
+                        : "is-wait"
+                  }`}
+                  title="人工审查闸门"
+                >
+                  人工审查{" "}
+                  {reviewOk
+                    ? "✓ 通过"
+                    : review?.effective === "stale"
+                      ? "⚠ 已失效"
+                      : "○ 待审"}
+                </span>
+              </div>
+
+              {/* Tabs */}
+              <div className="fde-tabs">
+                {(
+                  [
+                    ["overview", "概览"],
+                    ["code", `代码 · ${detail.files.length}`],
+                    ["probe", "试跑"],
+                  ] as const
+                ).map(([key, label]) => (
+                  <button
+                    key={key}
+                    type="button"
+                    className={`fde-tab${tab === key ? " is-on" : ""}`}
+                    onClick={() => setTab(key)}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+
+              {tab === "overview" ? (
+                <div className="fde-tabpane">
+                  <SelfcheckReport result={detail.selfcheck} />
+                  <div className="fde-guide">
+                    <div className="fde-guide-head">
+                      引导字段
+                      <span className="fde-report-hint">
+                        改完点「保存并重检」
                       </span>
                     </div>
+                    <label className="fde-guide-row">
+                      <span className="fde-guide-key">描述</span>
+                      <input
+                        className="fde-field"
+                        value={fieldDraft.description}
+                        onChange={(e) =>
+                          setFieldDraft((d) => ({
+                            ...d,
+                            description: e.target.value,
+                          }))
+                        }
+                      />
+                    </label>
+                    <label className="fde-guide-row">
+                      <span className="fde-guide-key">触发词</span>
+                      <input
+                        className="fde-field"
+                        placeholder="逗号分隔"
+                        value={fieldDraft.triggers}
+                        onChange={(e) =>
+                          setFieldDraft((d) => ({
+                            ...d,
+                            triggers: e.target.value,
+                          }))
+                        }
+                      />
+                    </label>
                     {envFields.map((field) => (
-                      <label className="fde-env-row" key={field.key}>
-                        <span className="fde-env-key">{field.key}</span>
-                        {field.hint ? (
-                          <span className="fde-env-hint">{field.hint}</span>
-                        ) : null}
+                      <label className="fde-guide-row" key={field.key}>
+                        <span className="fde-guide-key">{field.key}</span>
                         <input
                           className="fde-field"
                           type={
@@ -1149,138 +1278,9 @@ export function FdeWorkbenchPanel() {
                       </label>
                     ))}
                   </div>
-                ) : null}
-                <div className="fde-action-bar">
-                  <div className="fde-action-bar-group">
-                    <button
-                      type="button"
-                      className="fde-btn fde-btn--ghost"
-                      onClick={() => void handleSelfcheck()}
-                      disabled={busy === "selfcheck"}
-                    >
-                      <i
-                        className={`fas ${
-                          busy === "selfcheck"
-                            ? "fa-spinner fa-spin"
-                            : "fa-shield-halved"
-                        }`}
-                      />
-                      {busy === "selfcheck" ? "自检中…" : "重新自检"}
-                    </button>
-                    <button
-                      type="button"
-                      className="fde-btn fde-btn--ghost"
-                      onClick={() => void handleProbe()}
-                      disabled={busy === "probe"}
-                    >
-                      <i
-                        className={`fas ${
-                          busy === "probe" ? "fa-spinner fa-spin" : "fa-play"
-                        }`}
-                      />
-                      {busy === "probe" ? "试跑中…" : "沙箱试跑 diagnose"}
-                    </button>
-                  </div>
-                  <span className="fde-action-bar-divider" aria-hidden />
-                  <div className="fde-action-bar-group">
-                    <button
-                      type="button"
-                      className="fde-btn fde-btn--primary"
-                      onClick={() => void handleInstall()}
-                      disabled={
-                        busy === "install" ||
-                        busy === "install-force" ||
-                        !detail.selfcheck?.ready_for_review
-                      }
-                      title={
-                        detail.selfcheck?.ready_for_review
-                          ? undefined
-                          : "自检未通过，先修正"
-                      }
-                    >
-                      <i
-                        className={`fas ${
-                          busy === "install"
-                            ? "fa-spinner fa-spin"
-                            : "fa-circle-check"
-                        }`}
-                      />
-                      {busy === "install"
-                        ? "安装中…"
-                        : `确认安装到 ${installTarget || targetWorkspace || "?"}`}
-                    </button>
-                    {domainBlocked ? (
-                      <button
-                        type="button"
-                        className="fde-btn fde-btn--warn"
-                        onClick={() => void handleForceInstall()}
-                        disabled={
-                          busy === "install" || busy === "install-force"
-                        }
-                        title={
-                          "领域审核服务暂时不可用。代码已审，强制跳过该项检查继续安装。"
-                        }
-                      >
-                        <i
-                          className={`fas ${
-                            busy === "install-force"
-                              ? "fa-spinner fa-spin"
-                              : "fa-triangle-exclamation"
-                          }`}
-                        />
-                        {busy === "install-force"
-                          ? "强制安装中…"
-                          : "强制安装（领域审核暂不可用）"}
-                      </button>
-                    ) : null}
-                  </div>
-                  <span className="fde-action-bar-spacer" aria-hidden />
-                  <button
-                    type="button"
-                    className="fde-btn fde-btn--danger"
-                    onClick={() => void handleDiscard()}
-                    disabled={busy === "discard"}
-                  >
-                    <i
-                      className={`fas ${
-                        busy === "discard" ? "fa-spinner fa-spin" : "fa-trash"
-                      }`}
-                    />
-                    丢弃
-                  </button>
                 </div>
-                {probe ? (
-                  <div
-                    className={`fde-terminal${probe.ok ? "" : " is-error"}`}
-                  >
-                    <div className="fde-terminal-bar">
-                      <span className="fde-terminal-dot" />
-                      <span className="fde-terminal-dot" />
-                      <span className="fde-terminal-dot" />
-                      <span className="fde-terminal-title">
-                        chat_skill_bridge.py diagnose
-                      </span>
-                    </div>
-                    <pre>
-                      {probe.ok
-                        ? probe.stdout || "(无输出)"
-                        : probe.error ||
-                          probe.stderr ||
-                          probe.stdout ||
-                          "(失败，无输出)"}
-                    </pre>
-                  </div>
-                ) : null}
-              </section>
-
-              <section className="fde-section fde-code-section">
-                <div className="fde-section-head">
-                  <div className="fde-section-title">
-                    代码
-                    <span className="fde-count">{detail.files.length}</span>
-                  </div>
-                </div>
-                <div className="fde-code">
+              ) : tab === "code" ? (
+                <div className="fde-tabpane fde-code">
                   <div className="fde-code-tree">
                     {detail.files.map((f) => (
                       <button
@@ -1288,20 +1288,166 @@ export function FdeWorkbenchPanel() {
                         type="button"
                         className={`fde-code-file${
                           activeFile === f.path ? " is-active" : ""
-                        }`}
+                        }${codeEdits[f.path] != null ? " is-dirty" : ""}`}
                         onClick={() => setActiveFile(f.path)}
                         title={f.path}
                       >
                         {f.path}
+                        {codeEdits[f.path] != null ? " ●" : ""}
                       </button>
                     ))}
                   </div>
-                  <pre className="fde-code-pane">
-                    {activeFileContent ?? "选一个文件查看内容"}
-                  </pre>
+                  {(() => {
+                    const file = detail.files.find(
+                      (f) => f.path === activeFile,
+                    );
+                    const editable = Boolean(
+                      file && !file.binary && !file.truncated,
+                    );
+                    const value =
+                      activeFile != null && codeEdits[activeFile] != null
+                        ? codeEdits[activeFile]
+                        : (activeFileContent ?? "");
+                    return (
+                      <textarea
+                        className="fde-code-edit"
+                        value={value}
+                        readOnly={!editable}
+                        spellCheck={false}
+                        onChange={(e) => {
+                          if (!activeFile) return;
+                          const v = e.target.value;
+                          setCodeEdits((prev) => ({
+                            ...prev,
+                            [activeFile]: v,
+                          }));
+                        }}
+                      />
+                    );
+                  })()}
                 </div>
-              </section>
-            </>
+              ) : (
+                <div className="fde-tabpane">
+                  <button
+                    type="button"
+                    className="fde-btn fde-btn--ghost"
+                    onClick={() => void handleProbe()}
+                    disabled={busy === "probe"}
+                  >
+                    <i
+                      className={`fas ${
+                        busy === "probe" ? "fa-spinner fa-spin" : "fa-play"
+                      }`}
+                    />
+                    {busy === "probe" ? "试跑中…" : "沙箱试跑 diagnose"}
+                  </button>
+                  {probe ? (
+                    <div
+                      className={`fde-terminal${probe.ok ? "" : " is-error"}`}
+                    >
+                      <pre>
+                        {probe.ok
+                          ? probe.stdout || "(无输出)"
+                          : probe.error ||
+                            probe.stderr ||
+                            probe.stdout ||
+                            "(失败，无输出)"}
+                      </pre>
+                    </div>
+                  ) : null}
+                </div>
+              )}
+
+              {/* Sticky footer：双闸门 + 安装 */}
+              <div className="fde-foot">
+                <button
+                  type="button"
+                  className="fde-btn fde-btn--ghost"
+                  onClick={() => void handleSelfcheck()}
+                  disabled={busy === "selfcheck"}
+                  title="不改动，仅重新跑一遍 AI 自检"
+                >
+                  {busy === "selfcheck" ? "自检中…" : "重新自检"}
+                </button>
+                <button
+                  type="button"
+                  className="fde-btn fde-btn--ghost"
+                  onClick={() =>
+                    void (tab === "code"
+                      ? handleSaveCode()
+                      : handleSaveFields())
+                  }
+                  disabled={busy === "save-fields" || busy === "save-code"}
+                >
+                  {busy === "save-fields" || busy === "save-code"
+                    ? "保存中…"
+                    : "保存并重检"}
+                </button>
+                <span className="fde-foot-gap" />
+                {reviewOk ? (
+                  <button
+                    type="button"
+                    className="fde-btn fde-btn--ghost"
+                    onClick={() => void handleReview("reset")}
+                    disabled={busy === "review-reset"}
+                  >
+                    撤回审查
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    className="fde-btn fde-btn--warn"
+                    onClick={() => void handleReview("approve")}
+                    disabled={busy === "review-approve" || !aiOk}
+                    title={aiOk ? undefined : "AI 自检未通过，先修正"}
+                  >
+                    {busy === "review-approve" ? "标记中…" : "审查通过 ▸"}
+                  </button>
+                )}
+                <button
+                  type="button"
+                  className="fde-btn fde-btn--primary"
+                  onClick={() => void handleInstall()}
+                  disabled={
+                    busy === "install" ||
+                    busy === "install-force" ||
+                    !aiOk ||
+                    !reviewOk
+                  }
+                  title={
+                    !aiOk
+                      ? "AI 自检未通过"
+                      : !reviewOk
+                        ? "人工审查未通过"
+                        : undefined
+                  }
+                >
+                  {busy === "install"
+                    ? "安装中…"
+                    : `确认安装到 ${installTarget || targetWorkspace || "?"}`}
+                </button>
+                {domainBlocked ? (
+                  <button
+                    type="button"
+                    className="fde-btn fde-btn--warn"
+                    onClick={() => void handleForceInstall()}
+                    disabled={busy === "install" || busy === "install-force"}
+                  >
+                    {busy === "install-force"
+                      ? "强制安装中…"
+                      : "强制安装（领域审核暂不可用）"}
+                  </button>
+                ) : null}
+                <button
+                  type="button"
+                  className="fde-btn fde-btn--danger"
+                  onClick={() => void handleDiscard()}
+                  disabled={busy === "discard"}
+                >
+                  丢弃
+                </button>
+              </div>
+            </section>
           )}
         </div>
       </div>

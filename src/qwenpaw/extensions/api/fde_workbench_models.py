@@ -4,7 +4,7 @@ Kept free of FastAPI imports so unit tests can use them directly.
 """
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -62,3 +62,29 @@ class FdeCopyInstalledRequest(BaseModel):
     # leave a copy at the source too.
     remove_source: bool = False
     skip_domain_check: bool = False
+
+
+class FdeEditFieldsRequest(BaseModel):
+    """引导字段：只改提供的键，未提供的保持原样。"""
+
+    description: str | None = None
+    triggers: list[str] | None = None
+    category: str | None = None
+    tags: list[str] | None = None
+    # 非密配置（接口URL / *_BASE_URL 等）→ 写入 .env.example；密钥型 key
+    # 的值由后端强制清空（凭证仍在 install 时经 env_values 注入）。
+    env: dict[str, str] | None = None
+
+
+class FdeStagedFile(BaseModel):
+    path: str = Field(..., description="skill_dir 相对路径")
+    content: str = Field(default="", description="文件内容")
+
+
+class FdeEditFilesRequest(BaseModel):
+    files: list[FdeStagedFile] = Field(default_factory=list)
+
+
+class FdeReviewRequest(BaseModel):
+    action: Literal["approve", "reset"]
+    approved_by: str | None = None

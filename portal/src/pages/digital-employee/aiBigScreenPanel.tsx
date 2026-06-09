@@ -11,7 +11,9 @@ import {
   renameAiBigScreen,
   saveAiBigScreen,
 } from "../../api/aiBigScreen";
-import AiBigScreenRenderer from "../../components/ai-big-screen/AiBigScreenRenderer";
+import { BigScreenRenderer } from "../../components/big-screen/BigScreenRenderer.tsx";
+import { adaptLegacyScreen } from "../../components/big-screen/adaptLegacyScreen.ts";
+import "../../components/big-screen/big-screen.css";
 import type {
   AiBigScreenApp,
   AiBigScreenPlugin,
@@ -649,13 +651,22 @@ export function AiBigScreenPanel() {
           {loading ? (
             <AiBigScreenGenerationStage task={generationTask} />
           ) : screen ? (
-            <AiBigScreenRenderer
-              screen={screen}
-              interactive
-              selectedComponentId={selectedComponentId}
-              selectedComponentIds={selectedComponentIds}
-              onSelectComponent={handleSelectComponent}
-            />
+            <div
+              style={{
+                width: "100%",
+                aspectRatio: "16 / 9",
+                margin: "auto",
+                position: "relative",
+              }}
+            >
+              <BigScreenRenderer
+                spec={adaptLegacyScreen(screen)}
+                interactive
+                selectedComponentId={selectedComponentId}
+                selectedComponentIds={selectedComponentIds}
+                onSelectComponent={handleSelectComponent}
+              />
+            </div>
           ) : (
             <AiBigScreenEmptyState />
           )}
