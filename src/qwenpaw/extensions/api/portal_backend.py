@@ -93,10 +93,13 @@ from qwenpaw.extensions.integrations import knowledge_base
 from qwenpaw.extensions.api import fde_workbench_service
 from qwenpaw.extensions.api.fde_workbench_models import (
     FdeCopyInstalledRequest,
+    FdeEditFieldsRequest,
+    FdeEditFilesRequest,
     FdeEnvWriteRequest,
     FdeGenerateRequest,
     FdeInstallRequest,
     FdeProbeRequest,
+    FdeReviewRequest,
 )
 from qwenpaw.app.agent_context import get_agent_for_request
 from qwenpaw.app.channels.base import ContentType, TextContent
@@ -3068,7 +3071,7 @@ async def fde_generate(body: FdeGenerateRequest):
 async def fde_show_staged(skill_name: str):
     try:
         return await asyncio.to_thread(
-            fde_workbench_service.show_staged_skill, skill_name,
+            fde_workbench_service.staged_detail_with_review, skill_name,
         )
     except fde_workbench_service.FdeWorkbenchError as exc:
         return _fde_error_response(exc)
@@ -3079,6 +3082,54 @@ async def fde_selfcheck_staged(skill_name: str):
     try:
         return await asyncio.to_thread(
             fde_workbench_service.selfcheck_staged_skill, skill_name,
+        )
+    except fde_workbench_service.FdeWorkbenchError as exc:
+        return _fde_error_response(exc)
+
+
+@router.put("/fde/staged/{skill_name}/fields")
+async def fde_edit_staged_fields(
+    skill_name: str, body: FdeEditFieldsRequest,
+):
+    try:
+        return await asyncio.to_thread(
+            lambda: fde_workbench_service.edit_staged_fields(
+                skill_name,
+                description=body.description,
+                triggers=body.triggers,
+                category=body.category,
+                tags=body.tags,
+                env=body.env,
+            ),
+        )
+    except fde_workbench_service.FdeWorkbenchError as exc:
+        return _fde_error_response(exc)
+
+
+@router.put("/fde/staged/{skill_name}/files")
+async def fde_edit_staged_files(
+    skill_name: str, body: FdeEditFilesRequest,
+):
+    try:
+        return await asyncio.to_thread(
+            lambda: fde_workbench_service.edit_staged_files(
+                skill_name,
+                [{"path": f.path, "content": f.content} for f in body.files],
+            ),
+        )
+    except fde_workbench_service.FdeWorkbenchError as exc:
+        return _fde_error_response(exc)
+
+
+@router.post("/fde/staged/{skill_name}/review")
+async def fde_review_staged(skill_name: str, body: FdeReviewRequest):
+    try:
+        return await asyncio.to_thread(
+            lambda: fde_workbench_service.set_staged_review(
+                skill_name,
+                action=body.action,
+                approved_by=body.approved_by,
+            ),
         )
     except fde_workbench_service.FdeWorkbenchError as exc:
         return _fde_error_response(exc)

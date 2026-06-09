@@ -1,0 +1,136 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import {
+  adaptLegacyScreen,
+  mapComponentType,
+  mapSourceStatus,
+  normalizeBindings,
+} from "./adaptLegacyScreen.ts";
+
+test("maps legacy types to D-max component types", () => {
+  assert.equal(mapComponentType("metric-card"), "metric-kpi");
+  assert.equal(mapComponentType("table"), "alarm-stream");
+  assert.equal(mapComponentType("topology"), "graph");
+  assert.equal(mapComponentType("line-chart"), "line-chart"); // already known
+  assert.equal(mapComponentType("risk-pulse"), "risk-pulse"); // already known
+  assert.equal(mapComponentType("riskPulse"), "risk-pulse"); // legacy alias
+  assert.equal(mapComponentType("totally-unknown"), "text"); // fallback
+});
+
+test("maps source status, falling back to row presence", () => {
+  assert.equal(mapSourceStatus("ok", true), "live");
+  assert.equal(mapSourceStatus("unavailable", false), "failed");
+  assert.equal(mapSourceStatus("empty", false), "empty");
+  assert.equal(mapSourceStatus(undefined, true), "live");
+  assert.equal(mapSourceStatus(undefined, false), "empty");
+});
+
+test("drops legacy grid coordinates so auto-layout positions components", () => {
+  const spec = adaptLegacyScreen({
+    id: "s1",
+    name: "Ops",
+    status: "published",
+    components: [
+      {
+        id: "a",
+        type: "metric-card",
+        title: "Alarms",
+        layoutPosition: { x: 0, y: 0, w: 4, h: 2 },
+        data: { sourceStatus: "ok", value: 1284 },
+      },
+    ],
+  });
+  assert.equal(spec.components.length, 1);
+  assert.equal(spec.components[0].layoutPosition, undefined, "coords dropped");
+  assert.equal(spec.components[0].type, "metric-kpi");
+  assert.equal(spec.status, "published");
+});
+
+test("adapts data payload into CapabilityResult (rows + scalar metrics)", () => {
+  const spec = adaptLegacyScreen({
+    id: "s",
+    name: "n",
+    components: [
+      {
+        id: "k",
+        type: "metric-card",
+        title: "Online",
+        capabilityId: "cmdb-resources",
+        data: { sourceStatus: "ok", total: 8642, rows: [{ host: "a" }] },
+      },
+    ],
+  });
+  const d = spec.components[0].data!;
+  assert.equal(d.capabilityId, "cmdb-resources");
+  assert.equal(d.sourceStatus, "live");
+  assert.deepEqual(d.rows, [{ host: "a" }]);
+  assert.equal(d.metrics?.total, 8642, "scalar field promoted to metrics");
+});
+
+test("failed/empty status surfaces honestly with message", () => {
+  const spec = adaptLegacyScreen({
+    id: "s",
+    name: "n",
+    components: [
+      {
+        id: "h",
+        type: "table",
+        title: "Heat",
+        data: { sourceStatus: "unavailable", message: "timeout", rows: [] },
+      },
+    ],
+  });
+  assert.equal(spec.components[0].data?.sourceStatus, "failed");
+  assert.equal(spec.components[0].data?.message, "timeout");
+});
+
+test("filters components without id; defaults layout to 1920x1080", () => {
+  const spec = adaptLegacyScreen({
+    components: [
+      { id: "", type: "text", title: "x" },
+      { id: "ok", type: "text", title: "y" },
+    ],
+  });
+  assert.equal(spec.components.length, 1);
+  assert.equal(spec.components[0].id, "ok");
+  assert.deepEqual(spec.layout, { designWidth: 1920, designHeight: 1080 });
+});
+
+test("normalizeBindings aliases legacy roles to widget vocabulary", () => {
+  const b = normalizeBindings({
+    title: "title",
+    severity: "level",
+    time: "eventTime",
+    status: "alarmStatus",
+  });
+  assert.equal(b?.message, "title", "message <- title");
+  assert.equal(b?.tone, "level", "tone <- severity field");
+  assert.equal(b?.time, "eventTime", "time preserved");
+});
+
+test("real table screen resolves a non-blank message (regression for blank rows)", () => {
+  // shape from screen-3ae3323fbc/3c478117e4: table + bindings.title, rows carry `title`
+  const spec = adaptLegacyScreen({
+    id: "s",
+    name: "n",
+    components: [
+      {
+        id: "wo",
+        type: "table",
+        title: "待办工单",
+        capabilityId: "workorders",
+        visualSpec: { bindings: { title: "title", severity: "severity", time: "eventTime" } },
+        data: {
+          sourceStatus: "live",
+          rows: [{ title: "工单A", eventTime: "09:00", severity: "high" }],
+        },
+      },
+    ],
+  });
+  const c = spec.components[0];
+  assert.equal(c.type, "alarm-stream");
+  const msgKey = c.visualSpec.bindings?.message;
+  assert.equal(msgKey, "title", "message binding aliased from title");
+  const row0 = c.data?.rows?.[0] as Record<string, unknown>;
+  assert.equal(row0[msgKey!], "工单A", "message resolves to a real, non-blank value");
+});

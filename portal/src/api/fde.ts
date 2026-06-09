@@ -113,6 +113,38 @@ export interface FdeStagedFile {
   truncated?: boolean;
 }
 
+export interface FdeScanFinding {
+  severity: string;
+  title: string;
+  file: string;
+  line: number | null;
+  snippet?: string | null;
+  remediation?: string | null;
+  category?: string;
+  rule_id?: string;
+  description?: string;
+}
+
+export interface FdeScanResult {
+  status?: string;
+  is_safe?: boolean;
+  max_severity?: string | null;
+  findings?: FdeScanFinding[];
+  reason?: string;
+}
+
+export type FdeReviewEffective = "approved" | "stale" | "pending";
+
+export interface FdeReviewState {
+  status: "pending" | "approved";
+  approved_by: string | null;
+  approved_at: string | null;
+  content_digest: string | null;
+  current_digest?: string;
+  digest_matches: boolean;
+  effective: FdeReviewEffective;
+}
+
 export interface FdeSelfcheckResult {
   ok: boolean;
   skill_name?: string;
@@ -120,7 +152,7 @@ export interface FdeSelfcheckResult {
   ready_for_review?: boolean;
   blocked_reasons?: string[];
   warnings?: string[];
-  scan?: Record<string, unknown>;
+  scan?: FdeScanResult;
   domain?: Record<string, unknown>;
   syntax?: Record<string, unknown>;
   todo?: string[];
@@ -131,6 +163,12 @@ export interface FdeStagedDetail {
   skill_name: string;
   staged_dir: string;
   files: FdeStagedFile[];
+  selfcheck: FdeSelfcheckResult;
+  review?: FdeReviewState;
+}
+
+export interface FdeStagedMutationResult {
+  staged: FdeStagedDetail;
   selfcheck: FdeSelfcheckResult;
 }
 
@@ -287,6 +325,46 @@ export const fdeApi = {
     requestFde<FdeSelfcheckResult>(
       `/staged/${encodeURIComponent(skillName)}/selfcheck`,
       { method: "POST" },
+      HEAVY_TIMEOUT_MS,
+    ),
+
+  editStagedFields: (
+    skillName: string,
+    body: {
+      description?: string;
+      triggers?: string[];
+      category?: string;
+      tags?: string[];
+      env?: Record<string, string>;
+    },
+  ) =>
+    requestFde<FdeStagedMutationResult>(
+      `/staged/${encodeURIComponent(skillName)}/fields`,
+      { method: "PUT", body: JSON.stringify(body) },
+      HEAVY_TIMEOUT_MS,
+    ),
+
+  editStagedFiles: (
+    skillName: string,
+    files: Array<{ path: string; content: string }>,
+  ) =>
+    requestFde<FdeStagedMutationResult>(
+      `/staged/${encodeURIComponent(skillName)}/files`,
+      { method: "PUT", body: JSON.stringify({ files }) },
+      HEAVY_TIMEOUT_MS,
+    ),
+
+  reviewStaged: (
+    skillName: string,
+    action: "approve" | "reset",
+    approvedBy?: string,
+  ) =>
+    requestFde<FdeStagedMutationResult>(
+      `/staged/${encodeURIComponent(skillName)}/review`,
+      {
+        method: "POST",
+        body: JSON.stringify({ action, approved_by: approvedBy }),
+      },
       HEAVY_TIMEOUT_MS,
     ),
 

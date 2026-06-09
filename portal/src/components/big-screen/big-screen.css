@@ -1,0 +1,739 @@
+/* =============================================================
+ * AI Big-Screen Design System — ported from D-max / D-rich mockups
+ * ============================================================= */
+
+/* ── CSS variables ─────────────────────────────────────────── */
+.bs-root {
+  --bs-cyan:    #22d3ee;
+  --bs-green:   #34d399;
+  --bs-violet:  #a78bfa;
+  --bs-orange:  #fb923c;
+  --bs-red:     #f87171;
+  --bs-cyan-lt: #a5f3fc;
+  --bs-text:    #eaf2ff;
+  --bs-muted:   #9fb2cc;
+  --bs-label:   #cbd6e8;
+  color: var(--bs-text);
+  font-family: system-ui, -apple-system, sans-serif;
+}
+
+/* ── Stage root (full-screen letterbox container) ──────────── */
+.bs-stage-root {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  background: radial-gradient(
+    120% 120% at 70% -10%,
+    #11243f,
+    #070c16 62%
+  );
+}
+
+.bs-stage {
+  position: absolute;
+  top: 0;
+  left: 0;
+}
+
+/* ── Aurora layer ──────────────────────────────────────────── */
+.bs-aurora-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.bs-aurora {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(64px);
+  pointer-events: none;
+}
+
+.bs-aurora--cyan {
+  width: 360px;
+  height: 360px;
+  left: -90px;
+  top: -130px;
+  background: radial-gradient(circle, var(--bs-cyan), transparent 62%);
+  opacity: 0.45;
+}
+
+.bs-aurora--green {
+  width: 380px;
+  height: 380px;
+  right: -120px;
+  top: -50px;
+  background: radial-gradient(circle, var(--bs-green), transparent 62%);
+  opacity: 0.3;
+}
+
+.bs-aurora--violet {
+  width: 400px;
+  height: 400px;
+  left: 36%;
+  bottom: -190px;
+  background: radial-gradient(circle, var(--bs-violet), transparent 62%);
+  opacity: 0.4;
+}
+
+/* ── Particle layer ────────────────────────────────────────── */
+.bs-particle-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+}
+
+.bs-particle {
+  position: absolute;
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: var(--bs-cyan-lt);
+  box-shadow: 0 0 7px var(--bs-cyan-lt);
+  animation: bs-particle-pulse 3s infinite;
+}
+
+/* ── Glass panel ───────────────────────────────────────────── */
+.bs-gp {
+  position: relative;
+  background: rgba(255, 255, 255, 0.055);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.13);
+  border-radius: 14px;
+  padding: 8px 11px;
+  overflow: hidden;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.28);
+}
+
+/* Fallback when backdrop-filter is unsupported */
+@supports not (backdrop-filter: blur(1px)) {
+  .bs-gp {
+    background: rgba(16, 28, 46, 0.82);
+  }
+}
+
+.bs-gp-header {
+  font-size: 10px;
+  letter-spacing: 1.5px;
+  color: var(--bs-muted);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+}
+
+.bs-gp-title {
+  font-size: 10px;
+  letter-spacing: 1.5px;
+  color: var(--bs-muted);
+}
+
+.bs-gp-body {
+  position: relative;
+  height: calc(100% - 26px);
+}
+
+/* No header → body fills entire panel */
+.bs-gp:not(:has(.bs-gp-header)) .bs-gp-body {
+  height: 100%;
+}
+
+/* ── Source status badges ──────────────────────────────────── */
+.bs-gp-badge {
+  font-size: 8px;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.bs-gp-badge::before {
+  content: "";
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+}
+
+.bs-gp-badge--live {
+  color: var(--bs-green);
+}
+
+.bs-gp-badge--live::before {
+  background: var(--bs-green);
+  box-shadow: 0 0 6px var(--bs-green);
+  animation: bs-particle-pulse 1.6s infinite;
+}
+
+.bs-gp-badge--empty {
+  color: var(--bs-muted);
+}
+
+.bs-gp-badge--empty::before {
+  background: var(--bs-muted);
+}
+
+.bs-gp-badge--failed {
+  color: var(--bs-red);
+}
+
+.bs-gp-badge--failed::before {
+  background: var(--bs-red);
+  box-shadow: 0 0 6px var(--bs-red);
+}
+
+.bs-gp-badge--gap {
+  color: var(--bs-orange);
+}
+
+.bs-gp-badge--gap::before {
+  background: var(--bs-orange);
+}
+
+/* ── Flip-number digit cells ───────────────────────────────── */
+.bs-flip {
+  display: inline-flex;
+  gap: 3px;
+}
+
+.bs-flip-digit {
+  position: relative;
+  font-style: normal;
+  background: linear-gradient(#102038, #0a1322);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 4px;
+  padding: 3px 0;
+  min-width: 17px;
+  text-align: center;
+  font-weight: 800;
+  font-size: 18px;
+  color: var(--bs-cyan-lt);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+}
+
+/* horizontal fold line in the middle of each digit */
+.bs-flip-digit::after {
+  content: "";
+  position: absolute;
+  left: 1px;
+  right: 1px;
+  top: 50%;
+  height: 1px;
+  background: rgba(0, 0, 0, 0.55);
+}
+
+.bs-flip-unit {
+  color: var(--bs-muted);
+  font-size: 11px;
+  min-width: auto;
+  align-self: flex-end;
+  padding-bottom: 4px;
+  background: none;
+  border: none;
+  box-shadow: none;
+}
+
+.bs-flip-unit::after {
+  display: none;
+}
+
+/* Flip animation */
+.bs-flip-digit.bs-flipping {
+  animation: bs-flip-card 0.35s ease-in-out;
+}
+
+/* ── Water ball (liquid-ball) ──────────────────────────────── */
+.bs-ball {
+  width: 88px;
+  height: 88px;
+  border-radius: 50%;
+  border: 2px solid rgba(52, 211, 153, 0.55);
+  position: relative;
+  overflow: hidden;
+  flex: none;
+  box-shadow: 0 0 18px rgba(52, 211, 153, 0.25) inset;
+}
+
+.bs-ball-wave {
+  position: absolute;
+  left: -30%;
+  width: 160%;
+  height: 160%;
+  border-radius: 42%;
+  background: rgba(52, 211, 153, 0.45);
+  top: 34%;
+  animation: bs-wave 7s linear infinite;
+}
+
+.bs-ball-wave--2 {
+  background: rgba(34, 211, 238, 0.3);
+  top: 40%;
+  animation: bs-wave 11s linear infinite reverse;
+}
+
+.bs-ball-value {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 800;
+  font-size: 20px;
+  color: #eaf2ff;
+  text-shadow: 0 1px 4px #000;
+  z-index: 2;
+}
+
+/* ── Alarm stream (marquee list) ───────────────────────────── */
+.bs-stream {
+  height: 100%;
+  overflow: hidden;
+  -webkit-mask: linear-gradient(#000 80%, transparent);
+  mask: linear-gradient(#000 80%, transparent);
+}
+
+.bs-stream-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  animation: bs-marquee-v 12s linear infinite;
+}
+
+.bs-stream-item {
+  display: flex;
+  gap: 7px;
+  align-items: center;
+  font-size: 10px;
+  padding: 4px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.bs-stream-msg {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--bs-label);
+}
+
+/* ── Severity dot ──────────────────────────────────────────── */
+.bs-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex: none;
+}
+
+.bs-dot--critical {
+  background: var(--bs-red);
+  box-shadow: 0 0 6px var(--bs-red);
+}
+
+.bs-dot--high {
+  background: var(--bs-orange);
+  box-shadow: 0 0 6px var(--bs-orange);
+}
+
+.bs-dot--medium {
+  background: #fbbf24;
+}
+
+.bs-dot--normal {
+  background: var(--bs-green);
+}
+
+.bs-dot--cool {
+  background: var(--bs-cyan);
+}
+
+.bs-dot--warm {
+  background: var(--bs-orange);
+}
+
+/* ── TopN rank bars ────────────────────────────────────────── */
+.bs-topn-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 5px 0;
+  font-size: 10px;
+}
+
+.bs-topn-label {
+  width: 46px;
+  color: var(--bs-label);
+  flex: none;
+}
+
+.bs-topn-bar-track {
+  flex: 1;
+  height: 7px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+}
+
+.bs-topn-bar-fill {
+  height: 100%;
+  border-radius: 4px;
+  background: linear-gradient(90deg, var(--bs-cyan), var(--bs-violet));
+}
+
+.bs-topn-value {
+  margin-left: auto;
+  color: var(--bs-label);
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+/* ── Risk pulse widget ─────────────────────────────────────── */
+.bs-risk-pulse {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.bs-risk-level {
+  font-size: 26px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.bs-risk-level--critical {
+  color: var(--bs-red);
+  text-shadow: 0 0 14px rgba(248, 113, 113, 0.5);
+}
+
+.bs-risk-level--high {
+  color: var(--bs-orange);
+  text-shadow: 0 0 14px rgba(251, 146, 60, 0.5);
+}
+
+.bs-risk-level--medium {
+  color: #fbbf24;
+}
+
+.bs-risk-level--normal {
+  color: var(--bs-green);
+}
+
+.bs-risk-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.bs-risk-tag {
+  font-size: 9px;
+  padding: 2px 6px;
+  border-radius: 6px;
+}
+
+.bs-risk-tag--critical {
+  background: rgba(248, 113, 113, 0.18);
+  color: #fecaca;
+}
+
+.bs-risk-tag--high {
+  background: rgba(251, 146, 60, 0.18);
+  color: #fed7aa;
+}
+
+.bs-risk-tag--medium {
+  background: rgba(251, 191, 36, 0.18);
+  color: #fde68a;
+}
+
+/* ── Funnel widget ─────────────────────────────────────────── */
+.bs-funnel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.bs-funnel-step {
+  height: 15px;
+  border-radius: 3px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 9px;
+  color: #06121f;
+  font-weight: 700;
+}
+
+/* ── Timeline widget ───────────────────────────────────────── */
+.bs-timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 4px 0;
+}
+
+.bs-timeline-item {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  font-size: 10px;
+}
+
+.bs-timeline-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex: none;
+  margin-top: 3px;
+  background: var(--bs-cyan);
+  box-shadow: 0 0 6px var(--bs-cyan);
+}
+
+.bs-timeline-time {
+  color: var(--bs-muted);
+  font-variant-numeric: tabular-nums;
+  flex: none;
+  width: 36px;
+}
+
+.bs-timeline-msg {
+  color: var(--bs-label);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── Bar3D widget (faux-3D CSS bars) ───────────────────────── */
+.bs-bar3d {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-around;
+  height: 100%;
+  padding: 0 4px;
+  gap: 4px;
+}
+
+.bs-bar3d-bar {
+  width: 22px;
+  border-radius: 3px 3px 0 0;
+  background: linear-gradient(#67e8f9, #0e7490);
+  box-shadow: 6px 0 0 -1px rgba(14, 116, 144, 0.6);
+  transition: height 0.5s ease;
+}
+
+.bs-bar3d-bar--warn {
+  background: linear-gradient(#fca5a5, #b91c1c);
+  box-shadow: 6px 0 0 -1px rgba(185, 28, 28, 0.6);
+}
+
+.bs-bar3d-bar--violet {
+  background: linear-gradient(#a78bfa, #6d28d9);
+  box-shadow: 6px 0 0 -1px rgba(109, 40, 217, 0.6);
+}
+
+/* ── Metric KPI tile ───────────────────────────────────────── */
+.bs-kpi {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 5px;
+}
+
+.bs-kpi-label {
+  font-size: 9px;
+  color: var(--bs-muted);
+  letter-spacing: 0.5px;
+}
+
+.bs-kpi-value {
+  font-weight: 800;
+  font-size: 24px;
+  line-height: 1;
+  color: var(--bs-cyan-lt);
+}
+
+.bs-kpi-sparkline {
+  width: 100%;
+  height: 16px;
+}
+
+/* ── Scan line effect ──────────────────────────────────────── */
+.bs-scan-line {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  top: 26px;
+  height: 2px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    var(--bs-cyan),
+    transparent
+  );
+  animation: bs-scan 3.6s linear infinite;
+  opacity: 0.8;
+  pointer-events: none;
+}
+
+/* ── VisualSpec class tokens (motion / density / layout / composition) ── */
+
+/* Motion classes */
+.bs-motion-pulse {
+  animation: bs-particle-pulse 2s infinite;
+}
+
+.bs-motion-stagger > * {
+  animation: bs-fade-in 0.4s both;
+}
+
+.bs-motion-stagger > *:nth-child(1) { animation-delay: 0ms; }
+.bs-motion-stagger > *:nth-child(2) { animation-delay: 80ms; }
+.bs-motion-stagger > *:nth-child(3) { animation-delay: 160ms; }
+.bs-motion-stagger > *:nth-child(4) { animation-delay: 240ms; }
+.bs-motion-stagger > *:nth-child(5) { animation-delay: 320ms; }
+
+.bs-motion-scan {
+  position: relative;
+  overflow: hidden;
+}
+
+.bs-motion-scan::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    180deg,
+    transparent 0%,
+    rgba(34, 211, 238, 0.07) 50%,
+    transparent 100%
+  );
+  animation: bs-scan-overlay 3s linear infinite;
+  pointer-events: none;
+}
+
+.bs-motion-flow {
+  overflow: hidden;
+}
+
+.bs-motion-flow > * {
+  animation: bs-marquee-v 14s linear infinite;
+}
+
+/* Density classes */
+.bs-density-compact {
+  font-size: 9px;
+}
+
+.bs-density-compact .bs-gp {
+  padding: 4px 7px;
+}
+
+.bs-density-showcase .bs-kpi-value {
+  font-size: 32px;
+}
+
+.bs-density-showcase .bs-flip-digit {
+  font-size: 24px;
+  min-width: 22px;
+}
+
+/* Layout pattern classes */
+.bs-layout-focus {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.bs-layout-split {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.bs-layout-timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* Composition classes */
+.bs-comp-primary .bs-gp-title {
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  color: var(--bs-cyan-lt);
+  text-shadow: 0 0 12px rgba(34, 211, 238, 0.35);
+}
+
+.bs-comp-secondary {
+  opacity: 0.9;
+}
+
+.bs-comp-supporting {
+  opacity: 0.75;
+}
+
+/* ── Keyframes ─────────────────────────────────────────────── */
+
+@keyframes bs-particle-pulse {
+  0%, 100% {
+    opacity: 0.4;
+    transform: scale(0.85);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.15);
+  }
+}
+
+@keyframes bs-wave {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes bs-marquee-v {
+  0%   { transform: translateY(0); }
+  100% { transform: translateY(-50%); }
+}
+
+@keyframes bs-marquee-h {
+  0%   { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+
+@keyframes bs-flip-card {
+  0%   { transform: rotateX(0deg); }
+  50%  { transform: rotateX(-90deg); }
+  100% { transform: rotateX(0deg); }
+}
+
+@keyframes bs-scan {
+  0%   { top: 26px; opacity: 0; }
+  10%  { opacity: 0.8; }
+  100% { top: calc(100% - 8px); opacity: 0; }
+}
+
+@keyframes bs-scan-overlay {
+  0%   { transform: translateY(-100%); }
+  100% { transform: translateY(100%); }
+}
+
+@keyframes bs-fade-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ── Reduced motion ────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  .bs-stage-root *,
+  .bs-stage-root *::before,
+  .bs-stage-root *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}

@@ -7,6 +7,7 @@ No FastAPI imports here so the logic is unit-testable in isolation.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -196,6 +197,149 @@ def discard_staged_skill(name: str) -> dict[str, Any]:
     return _run_fde_tools(["discard", "--name", name, "--yes"])
 
 
+def staged_detail_with_review(name: str) -> dict[str, Any]:
+    """show-staged bundle + computed review state. Shape returned by
+    GET /fde/staged/{name}."""
+    name = _validate_skill_name(name)
+    skill_dir = fde_staged_dir() / name
+    if not skill_dir.is_dir():
+        raise FdeWorkbenchError(f"未找到 staged 技能：{name}")
+    detail = show_staged_skill(name)
+    detail["review"] = _review_state(skill_dir, _load_staged_meta(skill_dir))
+    return detail
+
+
+def _mutation_result(name: str) -> dict[str, Any]:
+    """Envelope returned by edit/review mutators: staged(bundle+review) +
+    fresh selfcheck — one response the panel re-renders from."""
+    return {
+        "staged": staged_detail_with_review(name),
+        "selfcheck": selfcheck_staged_skill(name),
+    }
+
+
+def edit_staged_fields(
+    name: str,
+    *,
+    description: str | None = None,
+    triggers: list[str] | None = None,
+    category: str | None = None,
+    tags: list[str] | None = None,
+    env: dict[str, str] | None = None,
+) -> dict[str, Any]:
+    """Guided-field edit: rewrite SKILL.md frontmatter + .env.example,
+    then re-run self-check. Secrets are emptied from .env.example (D4)."""
+    name = _validate_skill_name(name)
+    skill_dir = fde_staged_dir() / name
+    if not skill_dir.is_dir():
+        raise FdeWorkbenchError(f"未找到 staged 技能：{name}")
+    updates: dict[str, Any] = {}
+    if description is not None:
+        updates["description"] = description
+    if triggers is not None:
+        updates["triggers"] = triggers
+    if category is not None:
+        updates["category"] = category
+    if tags is not None:
+        updates["tags"] = tags
+    if updates:
+        md_path = skill_dir / "SKILL.md"
+        if not md_path.is_file():
+            raise FdeWorkbenchError("staged 技能缺少 SKILL.md")
+        new_md = _rewrite_frontmatter(
+            md_path.read_text(encoding="utf-8"), updates,
+        )
+        try:  # never write frontmatter that doesn't parse
+            import yaml
+
+            yaml.safe_load(new_md.split("---", 2)[1])
+        except Exception as exc:  # noqa: BLE001
+            raise FdeWorkbenchError(
+                f"改写后的 frontmatter 非法 YAML：{exc}"
+            ) from exc
+        md_path.write_text(new_md, encoding="utf-8")
+    if env:
+        example = skill_dir / ".env.example"
+        current = (
+            example.read_text(encoding="utf-8") if example.is_file() else ""
+        )
+        example.write_text(
+            _update_env_example(current, env), encoding="utf-8",
+        )
+    return _mutation_result(name)
+
+
+def edit_staged_files(
+    name: str, files: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Advanced raw-file edit: path-safe write of each file, then re-check."""
+    name = _validate_skill_name(name)
+    skill_dir = fde_staged_dir() / name
+    if not skill_dir.is_dir():
+        raise FdeWorkbenchError(f"未找到 staged 技能：{name}")
+    if not files:
+        raise FdeWorkbenchError("没有要保存的文件")
+    # validate ALL paths before writing ANY (atomic-ish)
+    targets: list[tuple[Path, str]] = []
+    for item in files:
+        path = item.get("path") if isinstance(item, dict) else None
+        content = item.get("content") if isinstance(item, dict) else None
+        targets.append(
+            (_safe_staged_target(skill_dir, path or ""), content or ""),
+        )
+    for target, content in targets:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(content, encoding="utf-8")
+    return _mutation_result(name)
+
+
+def _now_iso() -> str:
+    from datetime import datetime, timezone
+
+    return datetime.now(timezone.utc).isoformat()
+
+
+def set_staged_review(
+    name: str,
+    *,
+    action: str,
+    approved_by: str | None = None,
+) -> dict[str, Any]:
+    """Record the human-review verdict on a staged skill. ``approve``
+    requires a passing self-check (gate 1) and stamps the current
+    content digest so any later edit auto-invalidates the approval."""
+    name = _validate_skill_name(name)
+    skill_dir = fde_staged_dir() / name
+    if not skill_dir.is_dir():
+        raise FdeWorkbenchError(f"未找到 staged 技能：{name}")
+    meta = _load_staged_meta(skill_dir)
+    if action == "approve":
+        sc = selfcheck_staged_skill(name)  # gate 1 at approve time
+        if not sc.get("ready_for_review"):
+            raise FdeWorkbenchError(
+                "AI 自检未通过，不能标记审查通过："
+                + "；".join(sc.get("blocked_reasons") or ["未知原因"])
+            )
+        label = str(approved_by or "").strip() or None
+        meta["review"] = {
+            "status": "approved",
+            "approved_by": label,
+            "approved_at": _now_iso(),
+            "content_digest": _staged_content_digest(skill_dir),
+        }
+    elif action == "reset":
+        meta["review"] = {
+            "status": "pending",
+            "approved_by": None,
+            "approved_at": None,
+            "content_digest": None,
+        }
+    else:
+        raise FdeWorkbenchError(f"未知的审查动作：{action}")
+    _save_staged_meta(skill_dir, meta)
+    return _mutation_result(name)
+
+
 def generate_skill(
     *,
     name: str,
@@ -301,6 +445,46 @@ def _parse_env_values(text: str) -> dict[str, str]:
         key, _, val = line.partition("=")
         values[key.strip()] = val.strip().strip('"').strip("'")
     return values
+
+
+# KEY as substring + AK/SK only as whole _-bounded segments (so TASK/RISK
+# don't false-match). Emptying a non-secret by mistake is harmless (operator
+# re-enters at install); leaking a secret into a staged file is not.
+_SECRET_ENV_KEY_RE = re.compile(
+    r"(TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|KEY|(^|_)(AK|SK)(_|$))",
+    re.I,
+)
+
+
+def _is_secret_env_key(key: str) -> bool:
+    return bool(_SECRET_ENV_KEY_RE.search(str(key or "")))
+
+
+def _update_env_example(text: str, updates: dict[str, str]) -> str:
+    """Update/append ``KEY=value`` lines, preserving comments + order.
+    Secret-looking keys are written with an EMPTY value (D4: credentials
+    never land in staged files).
+    """
+    if not updates:
+        return text or ""
+    remaining = {
+        str(k).strip(): ("" if _is_secret_env_key(k) else str(v))
+        for k, v in updates.items()
+        if str(k).strip()
+    }
+    out_lines: list[str] = []
+    for raw in (text or "").splitlines():
+        stripped = raw.strip()
+        if stripped and not stripped.startswith("#") and "=" in stripped:
+            key = stripped.partition("=")[0].strip()
+            if key in remaining:
+                out_lines.append(f"{key}={remaining.pop(key)}")
+                continue
+        out_lines.append(raw)
+    for key, val in remaining.items():
+        out_lines.append(f"{key}={val}")
+    body = "\n".join(out_lines)
+    return body if body.endswith("\n") else body + "\n"
 
 
 def _installed_skill_dir(target_workspace: str, skill_name: str) -> Path:
@@ -900,6 +1084,158 @@ def _tree_insert(tree: dict[str, Any], parts: list[str], content: str) -> None:
     node[parts[-1]] = content
 
 
+def _staged_content_digest(skill_dir: Path) -> str:
+    """SHA-256 over all managed staged files (sorted by relpath),
+    excluding FDE-internal meta files. Binds a human-review approval to
+    exact content: any edit changes the digest, auto-invalidating the
+    approval. Excludes ``_fde_meta.json`` (which stores the digest) to
+    avoid self-reference. Mirrors ``_read_staged_bundle``'s file filter.
+    """
+    h = hashlib.sha256()
+    for path in sorted(skill_dir.rglob("*")):
+        if path.is_dir():
+            continue
+        if "__pycache__" in path.parts or path.suffix == ".pyc":
+            continue
+        rel = path.relative_to(skill_dir)
+        if len(rel.parts) == 1 and rel.parts[0] in _STAGED_INTERNAL_FILES:
+            continue
+        h.update(rel.as_posix().encode("utf-8"))
+        h.update(b"\0")
+        h.update(path.read_bytes())
+        h.update(b"\0")
+    return h.hexdigest()
+
+
+def _load_staged_meta(skill_dir: Path) -> dict[str, Any]:
+    meta_path = skill_dir / "_fde_meta.json"
+    if not meta_path.exists():
+        raise FdeWorkbenchError(
+            f"staged 技能缺少 _fde_meta.json：{skill_dir.name}"
+        )
+    try:
+        data = json.loads(meta_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise FdeWorkbenchError(
+            f"_fde_meta.json 不是合法 JSON：{skill_dir.name}"
+        ) from exc
+    if not isinstance(data, dict):
+        raise FdeWorkbenchError(
+            f"_fde_meta.json 不是 JSON 对象：{skill_dir.name}"
+        )
+    return data
+
+
+def _save_staged_meta(skill_dir: Path, meta: dict[str, Any]) -> None:
+    (skill_dir / "_fde_meta.json").write_text(
+        json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8",
+    )
+
+
+def _review_state(
+    skill_dir: Path, meta: dict[str, Any],
+) -> dict[str, Any]:
+    """Derive the human-review verdict. ``effective`` is computed, never
+    stored: approved only when status==approved AND the stored digest
+    still matches current content (else 'stale'); otherwise 'pending'.
+    """
+    review = meta.get("review") or {}
+    status = str(review.get("status") or "pending")
+    stored = review.get("content_digest")
+    current = _staged_content_digest(skill_dir)
+    digest_matches = bool(stored) and stored == current
+    if status == "approved" and digest_matches:
+        effective = "approved"
+    elif status == "approved":
+        effective = "stale"
+    else:
+        effective = "pending"
+    return {
+        "status": status,
+        "approved_by": review.get("approved_by"),
+        "approved_at": review.get("approved_at"),
+        "content_digest": stored,
+        "current_digest": current,
+        "digest_matches": digest_matches,
+        "effective": effective,
+    }
+
+
+def _yaml_dq(s: str) -> str:
+    """Double-quote a scalar so it's always valid YAML (no guesswork)."""
+    return '"' + str(s).replace("\\", "\\\\").replace('"', '\\"') + '"'
+
+
+def _render_fm_line(key: str, value: Any) -> str:
+    if isinstance(value, (list, tuple)):
+        items = ", ".join(
+            _yaml_dq(str(v).strip()) for v in value if str(v).strip()
+        )
+        return f"{key}: [{items}]"
+    return f"{key}: {_yaml_dq(str(value))}"
+
+
+def _rewrite_frontmatter(skill_md: str, updates: dict[str, Any]) -> str:
+    """Surgically update specific frontmatter keys, preserving the body and
+    every other key. Edited keys are re-emitted as double-quoted YAML
+    scalars / flow lists. Raises on malformed frontmatter so we never write
+    a corrupt SKILL.md.
+    """
+    updates = {k: v for k, v in (updates or {}).items() if v is not None}
+    if not updates:
+        return skill_md
+    m = re.match(r"^(---\s*\n)(.*?)(\n---\s*\n)(.*)$", skill_md, re.S)
+    if not m:
+        raise FdeWorkbenchError(
+            "SKILL.md 缺少合法 YAML frontmatter，无法安全改写"
+        )
+    head, block, fence, body = m.group(1), m.group(2), m.group(3), m.group(4)
+    seen: set[str] = set()
+    new_lines: list[str] = []
+    for line in block.split("\n"):
+        stripped = line.strip()
+        key = (
+            stripped.partition(":")[0].strip()
+            if ":" in stripped and not stripped.startswith("#")
+            else ""
+        )
+        if key in updates:
+            new_lines.append(_render_fm_line(key, updates[key]))
+            seen.add(key)
+        else:
+            new_lines.append(line)
+    for key, value in updates.items():
+        if key not in seen:
+            new_lines.append(_render_fm_line(key, value))
+    return head + "\n".join(new_lines) + fence + body
+
+
+def _safe_staged_target(skill_dir: Path, rel: str) -> Path:
+    """Resolve a relative path inside ``skill_dir`` for writing, rejecting
+    traversal, absolute paths, FDE-internal files, and symlinks."""
+    rel = str(rel or "").strip()
+    if not rel:
+        raise FdeWorkbenchError("文件路径不能为空")
+    if (
+        rel.startswith("/")
+        or rel.startswith("\\")
+        or ":" in rel.split("/")[0]
+    ):
+        raise FdeWorkbenchError(f"不允许绝对路径：{rel}")
+    base = skill_dir.resolve()
+    target = (base / rel).resolve()
+    if target != base and base not in target.parents:
+        raise FdeWorkbenchError(f"路径越界（疑似穿越）：{rel}")
+    parts = target.relative_to(base).parts
+    if not parts:
+        raise FdeWorkbenchError(f"不允许写入技能根目录：{rel}")
+    if parts[-1] in _STAGED_INTERNAL_FILES:
+        raise FdeWorkbenchError(f"不允许编辑内部文件：{parts[-1]}")
+    if target.is_symlink():
+        raise FdeWorkbenchError(f"不允许写入符号链接：{rel}")
+    return target
+
+
 def _read_staged_bundle(skill_dir: Path) -> dict[str, Any]:
     """Split a staged skill dir into create_skill() arguments."""
     content: str | None = None
@@ -1058,15 +1394,19 @@ def install_staged_skill(
     skill_dir = fde_staged_dir() / name
     if not skill_dir.is_dir():
         raise FdeWorkbenchError(f"未找到 staged 技能：{name}")
-    meta_path = skill_dir / "_fde_meta.json"
-    if not meta_path.exists():
-        raise FdeWorkbenchError(f"staged 技能缺少 _fde_meta.json：{name}")
-    try:
-        meta = json.loads(meta_path.read_text(encoding="utf-8"))
-    except json.JSONDecodeError as exc:
+    meta = _load_staged_meta(skill_dir)
+    # --- 人工审查闸门（D2/D3）：服务端强约束，不靠前端禁用按钮。
+    # AI 自检（gate 1）经 approve 时已校验 ready_for_review + digest 绑定，
+    # 加上下面 create_skill 的真实扫描，无需在此重复跑一遍 selfcheck。 ---
+    review = _review_state(skill_dir, meta)
+    if review["effective"] != "approved":
+        if review["effective"] == "stale":
+            raise FdeWorkbenchError(
+                "内容在审查通过后被修改，请复审后再安装"
+            )
         raise FdeWorkbenchError(
-            f"_fde_meta.json 不是合法 JSON：{name}"
-        ) from exc
+            "人工审查未通过，不能安装（请先在工作台点「审查通过」）"
+        )
     override = str(target_override or "").strip()
     recorded = str(meta.get("target_workspace") or "").strip()
     target_workspace = override or recorded
