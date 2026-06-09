@@ -144,6 +144,10 @@ export default function App() {
         element={renderDeferredPage(<DigitalEmployeePage forcedSection="dashboard-assembly" />)}
       />
       <Route
+        path="/proxy-datasources"
+        element={renderDeferredPage(<DigitalEmployeePage forcedSection="proxy-datasources" />)}
+      />
+      <Route
         path="/channels"
         element={renderDeferredPage(<DigitalEmployeePage forcedSection="channels" />)}
       />

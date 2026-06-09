@@ -178,6 +178,10 @@ const DashboardAssemblyPanel = lazyNamed(
   () => import("./digital-employee/dashboardAssemblyPanel"),
   "DashboardAssemblyPanel",
 );
+const ProxyDatasourcesPanel = lazyNamed(
+  () => import("./digital-employee/proxyDatasourcesPanel"),
+  "ProxyDatasourcesPanel",
+);
 const ChannelsPanel = lazyNamed(
   () => import("./digital-employee/channelsPanel"),
   "ChannelsPanel",
@@ -253,6 +257,7 @@ export default function DigitalEmployeePage({
   const isAppArtifactsMode = activeAdvancedPanel === "app-artifacts";
   const isAppWorkbenchMode = activeAdvancedPanel === "app-workbench";
   const isDashboardAssemblyMode = activeAdvancedPanel === "dashboard-assembly";
+  const isProxyDatasourcesMode = activeAdvancedPanel === "proxy-datasources";
   const isChannelsMode = activeAdvancedPanel === "channels";
   const isInboxMode = activeAdvancedPanel === "inbox";
   const isPortalHome = !selectedEmployee;
@@ -1514,6 +1519,7 @@ export default function DigitalEmployeePage({
             isTracesActive={isTracesMode}
             isAlarmRegistryActive={isAlarmRegistryMode}
             isAppArtifactsActive={isAppArtifactsMode}
+            isProxyDatasourcesActive={isProxyDatasourcesMode}
             isChannelsActive={isChannelsMode}
             isInboxActive={isInboxMode}
             onOpenTraces={() =>
@@ -1529,6 +1535,11 @@ export default function DigitalEmployeePage({
             onOpenAppArtifacts={() =>
               updateCurrentEmployeeRoute({
                 panel: "app-artifacts",
+              })
+            }
+            onOpenProxyDatasources={() =>
+              updateCurrentEmployeeRoute({
+                panel: "proxy-datasources",
               })
             }
             onOpenChannels={() =>
@@ -1732,6 +1743,8 @@ export default function DigitalEmployeePage({
               onBack={() => navigate("/app-artifacts")}
               editDashboardId={routeSearchParams.get("edit") || undefined}
             />)
+          ) : isProxyDatasourcesMode ? (
+            renderDeferredPanel(<ProxyDatasourcesPanel />)
           ) : isChannelsMode ? (
             renderDeferredPanel(<ChannelsPanel />)
           ) : isInboxMode ? (

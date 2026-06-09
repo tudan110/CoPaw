@@ -231,6 +231,7 @@ export function AdvancedModelEntry({
   isTracesActive,
   isAlarmRegistryActive,
   isAppArtifactsActive,
+  isProxyDatasourcesActive,
   isChannelsActive,
   isInboxActive,
   onOpenNlCustomization,
@@ -250,6 +251,7 @@ export function AdvancedModelEntry({
   onOpenTraces,
   onOpenAlarmRegistry,
   onOpenAppArtifacts,
+  onOpenProxyDatasources,
   onOpenChannels,
   onOpenInbox,
 }: {
@@ -272,6 +274,7 @@ export function AdvancedModelEntry({
   isTracesActive?: boolean;
   isAlarmRegistryActive?: boolean;
   isAppArtifactsActive?: boolean;
+  isProxyDatasourcesActive?: boolean;
   isChannelsActive?: boolean;
   isInboxActive?: boolean;
   onOpenNlCustomization: () => void;
@@ -291,12 +294,13 @@ export function AdvancedModelEntry({
   onOpenTraces: () => void;
   onOpenAlarmRegistry: () => void;
   onOpenAppArtifacts: () => void;
+  onOpenProxyDatasources: () => void;
   onOpenChannels: () => void;
   onOpenInbox: () => void;
 }) {
-  const [configOpen, setConfigOpen] = useState(true);
-  const [workbenchOpen, setWorkbenchOpen] = useState(true);
-  const [opsOpen, setOpsOpen] = useState(true);
+  const [configOpen, setConfigOpen] = useState(false);
+  const [workbenchOpen, setWorkbenchOpen] = useState(false);
+  const [opsOpen, setOpsOpen] = useState(false);
 
   return (
     <div className="sidebar-advanced expanded">
@@ -504,9 +508,24 @@ export function AdvancedModelEntry({
               🎨
             </span>
           </div>
-          <div className="sidebar-advanced-item-name">成果应用</div>
+          <div className="sidebar-advanced-item-name">我的应用</div>
           <div className="sidebar-advanced-item-desc">AI 生成的页面与卡片</div>
           <div className="sidebar-advanced-item-meta">发布 / 预览 / 管理</div>
+        </button>
+        <button
+          className={
+            isProxyDatasourcesActive ? "sidebar-advanced-item active" : "sidebar-advanced-item"
+          }
+          onClick={onOpenProxyDatasources}
+        >
+          <div className="sidebar-advanced-item-icon">
+            <span role="img" aria-label="proxy-datasources">
+              🔌
+            </span>
+          </div>
+          <div className="sidebar-advanced-item-name">数据源代理</div>
+          <div className="sidebar-advanced-item-desc">应用调用的外部接口</div>
+          <div className="sidebar-advanced-item-meta">配置 / 鉴权 / 转发</div>
         </button>
       </div>
 
