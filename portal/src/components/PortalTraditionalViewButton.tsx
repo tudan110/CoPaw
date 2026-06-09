@@ -1,4 +1,4 @@
-import { postPortalCloseDrawerMessage } from "../pages/digital-employee/pageHelpers";
+import { navigateToTraditionalView } from "../pages/digital-employee/pageHelpers";
 
 export default function PortalTraditionalViewButton({
   className = "",
@@ -11,7 +11,7 @@ export default function PortalTraditionalViewButton({
     <button
       type="button"
       className={classes}
-      onClick={postPortalCloseDrawerMessage}
+      onClick={navigateToTraditionalView}
       aria-label="切换传统视图"
       title="切换传统视图"
     >

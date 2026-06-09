@@ -54,6 +54,15 @@ export function postPortalCloseDrawerMessage() {
     window.parent.postMessage(PORTAL_CLOSE_DRAWER_MESSAGE, "*");
   }
 }
+
+export const TRADITIONAL_VIEW_PORT = "30081";
+
+export function navigateToTraditionalView() {
+  const { protocol, hostname } = window.location;
+  const url = `${protocol}//${hostname}:${TRADITIONAL_VIEW_PORT}/`;
+  const target = window.top ?? window;
+  target.location.href = url;
+}
 export const RESOURCE_IMPORT_OWNER_ID = "resource";
 export const KNOWLEDGE_BASE_OWNER_ID = "knowledge";
 export const ORDER_OWNER_ID = "order";
