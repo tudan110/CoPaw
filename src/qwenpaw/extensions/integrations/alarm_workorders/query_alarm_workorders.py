@@ -175,7 +175,7 @@ def _execute_with_timeout(module, *, page_size: int, token: Any, alarm_status: s
             token=token,
             alarm_status=alarm_status,
         )
-        return future.result(timeout=REAL_ALARM_TIMEOUT_SECONDS)
+        return future.result(timeout=_real_alarm_timeout_seconds())
 
 
 def _with_mock_retry(limit: int) -> tuple[dict[str, Any], str]:
@@ -194,7 +194,10 @@ def _with_mock_retry(limit: int) -> tuple[dict[str, Any], str]:
     except concurrent.futures.TimeoutError:
         result = {
             "code": 504,
-            "msg": f"real-alarm query timeout after {REAL_ALARM_TIMEOUT_SECONDS:.0f}s",
+            "msg": (
+                "real-alarm query timeout after "
+                f"{_real_alarm_timeout_seconds():.0f}s"
+            ),
         }
 
     previous_flag = os.environ.get("USE_MOCK_DATA")
@@ -333,3 +336,22 @@ if __name__ == "__main__":
 REAL_ALARM_TIMEOUT_SECONDS = float(
     os.getenv("INOE_API_TIMEOUT", "8").strip() or "8"
 )
+
+
+def _real_alarm_timeout_seconds() -> float:
+    """Resolve the INOE timeout: page (DB) override > env > default 8s.
+
+    Lazily imports the override store so this module stays loadable as a
+    standalone script (it is sometimes executed via importlib/subprocess).
+    """
+    try:
+        from qwenpaw.extensions.api import diagnosis_settings_store
+
+        return diagnosis_settings_store.resolve_float(
+            "inoe_api_timeout_seconds",
+            "INOE_API_TIMEOUT",
+            REAL_ALARM_TIMEOUT_SECONDS,
+            min_value=0.1,
+        )
+    except Exception:
+        return REAL_ALARM_TIMEOUT_SECONDS

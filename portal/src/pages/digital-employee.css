@@ -9048,6 +9048,22 @@
   color: #b91c1c;
 }
 
+.portal-digital-employee .settings-link-btn {
+  border: none;
+  background: none;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  color: var(--primary);
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.portal-digital-employee .settings-link-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .portal-digital-employee .settings-notification-stack {
   display: flex;
   flex-direction: column;

@@ -10,9 +10,123 @@ import {
 } from "./faultAnalysisSettings";
 import {
   settingsApi,
+  diagnosisSettingsApi,
+  DIAGNOSIS_TOKEN_CLEAR,
   type NotificationChannelScopeConfig,
   type NotificationChannelSettings,
+  type DiagnosisSettingsPayload,
+  type MaskedSecret,
 } from "../../api/settings";
+
+// Editable numeric fields in the diagnosis tab, grouped for rendering.
+type DiagnosisNumberField = {
+  key: string;
+  label: string;
+  group: "polling" | "inoe" | "query_window";
+  min?: number;
+  max?: number;
+  step?: number;
+  hint: string;
+};
+
+const DIAGNOSIS_NUMBER_FIELDS: DiagnosisNumberField[] = [
+  {
+    key: "auto_takeover_interval_seconds",
+    label: "轮询间隔（秒）",
+    group: "polling",
+    min: 60,
+    step: 10,
+    hint: "两轮自动接管之间的间隔，最小 60 秒。调大可降低分析频率、省 token。",
+  },
+  {
+    key: "auto_takeover_limit",
+    label: "每轮抓取告警数",
+    group: "polling",
+    min: 1,
+    step: 1,
+    hint: "每轮最多拉取并评估多少条告警。",
+  },
+  {
+    key: "max_active_analyses",
+    label: "最大并发分析数",
+    group: "polling",
+    min: 1,
+    step: 1,
+    hint: "同时进行的告警分析数量，直接决定并发调用大模型的规模。",
+  },
+  {
+    key: "inoe_api_timeout_seconds",
+    label: "INOE 接口超时（秒）",
+    group: "inoe",
+    min: 1,
+    step: 1,
+    hint: "调用告警平台网关的请求超时。",
+  },
+  {
+    key: "timezone_offset_hours",
+    label: "时区偏移（小时）",
+    group: "query_window",
+    min: -12,
+    max: 14,
+    step: 1,
+    hint: "告警平台时间的时区偏移，默认东八区 8。",
+  },
+  {
+    key: "cache_ttl_seconds",
+    label: "告警缓存有效期（秒）",
+    group: "query_window",
+    min: 0,
+    step: 5,
+    hint: "前台告警列表缓存的有效期。",
+  },
+];
+
+const DIAGNOSIS_TEXT_FIELDS: {
+  key: string;
+  label: string;
+  group: "inoe";
+  placeholder: string;
+  hint: string;
+}[] = [
+  {
+    key: "inoe_api_base_url",
+    label: "INOE 网关地址",
+    group: "inoe",
+    placeholder: "http://gateway:30080",
+    hint: "告警平台网关 base URL。",
+  },
+];
+
+const DIAGNOSIS_GROUP_META: {
+  id: "polling" | "inoe" | "query_window";
+  title: string;
+  description: string;
+}[] = [
+  {
+    id: "polling",
+    title: "轮询与并发",
+    description: "控制自动接管的频率、批量与并发，直接影响 token 消耗。",
+  },
+  {
+    id: "inoe",
+    title: "告警平台连接（INOE）",
+    description: "告警网关地址、令牌与超时。",
+  },
+  {
+    id: "query_window",
+    title: "告警查询窗口",
+    description: "时区与缓存等查询相关参数。",
+  },
+];
+
+function isMaskedSecret(value: unknown): value is MaskedSecret {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "masked" in value &&
+    "is_set" in value
+  );
+}
 
 const SETTINGS_TABS = [
   {
@@ -219,6 +333,173 @@ export function SettingsPanel() {
   };
   const handleFaultAnalysisConfidenceVisibilityChange = (visible: boolean) => {
     setShowFaultAnalysisConfidence(writeFaultAnalysisConfidenceVisible(visible));
+  };
+
+  // --- Alarm diagnosis settings (backend-persisted, DB > env > default) ---
+  const [diagnosisPayload, setDiagnosisPayload] =
+    useState<DiagnosisSettingsPayload | null>(null);
+  const [diagnosisDraft, setDiagnosisDraft] = useState<Record<string, string>>(
+    {},
+  );
+  const [diagnosisTokenDraft, setDiagnosisTokenDraft] = useState("");
+  const [diagnosisLoading, setDiagnosisLoading] = useState(true);
+  const [diagnosisSaving, setDiagnosisSaving] = useState(false);
+  const [diagnosisTogglePending, setDiagnosisTogglePending] = useState(false);
+  const [diagnosisNotice, setDiagnosisNotice] = useState<{
+    type: "success" | "error";
+    text: string;
+  } | null>(null);
+
+  const buildDiagnosisDraft = (payload: DiagnosisSettingsPayload) => {
+    const draft: Record<string, string> = {};
+    [...DIAGNOSIS_NUMBER_FIELDS, ...DIAGNOSIS_TEXT_FIELDS].forEach((field) => {
+      const value = payload.effective[field.key];
+      draft[field.key] =
+        value === undefined || value === null || isMaskedSecret(value)
+          ? ""
+          : String(value);
+    });
+    return draft;
+  };
+
+  const applyDiagnosisPayload = (payload: DiagnosisSettingsPayload) => {
+    setDiagnosisPayload(payload);
+    setDiagnosisDraft(buildDiagnosisDraft(payload));
+    setDiagnosisTokenDraft("");
+  };
+
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      setDiagnosisLoading(true);
+      try {
+        const payload = await diagnosisSettingsApi.get();
+        if (!cancelled) {
+          applyDiagnosisPayload(payload);
+          setDiagnosisNotice(null);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setDiagnosisNotice({
+            type: "error",
+            text: error instanceof Error ? error.message : "诊断设置加载失败",
+          });
+        }
+      } finally {
+        if (!cancelled) {
+          setDiagnosisLoading(false);
+        }
+      }
+    };
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const diagnosisEnabled = Boolean(
+    diagnosisPayload?.effective.auto_takeover_enabled,
+  );
+
+  const handleDiagnosisToggle = async (enabled: boolean) => {
+    if (diagnosisTogglePending || enabled === diagnosisEnabled) {
+      return;
+    }
+    setDiagnosisTogglePending(true);
+    setDiagnosisNotice(null);
+    try {
+      const payload = await diagnosisSettingsApi.update({
+        auto_takeover_enabled: enabled,
+      });
+      applyDiagnosisPayload(payload);
+      setDiagnosisNotice({
+        type: "success",
+        text: enabled ? "已开启实时告警分析" : "已暂停实时告警分析",
+      });
+    } catch (error) {
+      setDiagnosisNotice({
+        type: "error",
+        text: error instanceof Error ? error.message : "切换失败",
+      });
+    } finally {
+      setDiagnosisTogglePending(false);
+    }
+  };
+
+  const handleDiagnosisFieldChange = (key: string, value: string) => {
+    setDiagnosisDraft((current) => ({ ...current, [key]: value }));
+  };
+
+  const handleSaveDiagnosisSettings = async () => {
+    if (!diagnosisPayload || diagnosisSaving) {
+      return;
+    }
+    const body: Record<string, number | string> = {};
+    for (const field of DIAGNOSIS_NUMBER_FIELDS) {
+      const raw = (diagnosisDraft[field.key] ?? "").trim();
+      if (raw === "") {
+        continue;
+      }
+      const num = Number(raw);
+      if (Number.isNaN(num)) {
+        setDiagnosisNotice({ type: "error", text: `${field.label} 必须是数字` });
+        return;
+      }
+      const effective = diagnosisPayload.effective[field.key];
+      if (String(effective) !== String(num)) {
+        body[field.key] = num;
+      }
+    }
+    for (const field of DIAGNOSIS_TEXT_FIELDS) {
+      const raw = (diagnosisDraft[field.key] ?? "").trim();
+      const effective = diagnosisPayload.effective[field.key];
+      if (raw !== String(effective ?? "")) {
+        body[field.key] = raw;
+      }
+    }
+    if (diagnosisTokenDraft.trim() !== "") {
+      body.inoe_api_token = diagnosisTokenDraft.trim();
+    }
+    if (Object.keys(body).length === 0) {
+      setDiagnosisNotice({ type: "success", text: "没有需要保存的改动" });
+      return;
+    }
+    setDiagnosisSaving(true);
+    setDiagnosisNotice(null);
+    try {
+      const payload = await diagnosisSettingsApi.update(body);
+      applyDiagnosisPayload(payload);
+      setDiagnosisNotice({ type: "success", text: "诊断设置已保存" });
+    } catch (error) {
+      setDiagnosisNotice({
+        type: "error",
+        text: error instanceof Error ? error.message : "保存失败",
+      });
+    } finally {
+      setDiagnosisSaving(false);
+    }
+  };
+
+  const handleResetDiagnosisField = async (key: string) => {
+    if (diagnosisSaving) {
+      return;
+    }
+    setDiagnosisNotice(null);
+    try {
+      const payload =
+        key === "inoe_api_token"
+          ? await diagnosisSettingsApi.update({
+              inoe_api_token: DIAGNOSIS_TOKEN_CLEAR,
+            })
+          : await diagnosisSettingsApi.reset(key);
+      applyDiagnosisPayload(payload);
+      setDiagnosisNotice({ type: "success", text: "已恢复为环境默认值" });
+    } catch (error) {
+      setDiagnosisNotice({
+        type: "error",
+        text: error instanceof Error ? error.message : "恢复默认失败",
+      });
+    }
   };
 
   useEffect(() => {
@@ -517,6 +798,254 @@ export function SettingsPanel() {
                       当前默认：{showFaultAnalysisConfidence ? "展示根因分析置信度" : "隐藏根因分析置信度"}
                     </div>
                   </section>
+
+                  {diagnosisNotice ? (
+                    <div className={`settings-notice ${diagnosisNotice.type}`}>
+                      {diagnosisNotice.text}
+                    </div>
+                  ) : null}
+
+                  <section className="settings-section">
+                    <div className="portal-model-block-head">
+                      <div>
+                        <h4>实时告警分析</h4>
+                        <p>
+                          关闭后将暂停对实时告警的自动轮询与分析，不再消耗大模型
+                          token；本地开发或告警量大时可临时关闭。设置即时生效，无需重启。
+                          未在此设置的项会回退到 `.env` / 部署环境变量。
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="settings-choice-grid">
+                      <button
+                        type="button"
+                        className={
+                          diagnosisEnabled
+                            ? "portal-managed-config-toggle active"
+                            : "portal-managed-config-toggle"
+                        }
+                        disabled={diagnosisLoading || diagnosisTogglePending}
+                        onClick={() => handleDiagnosisToggle(true)}
+                      >
+                        <i className="fas fa-play" />
+                        开启实时分析
+                      </button>
+                      <button
+                        type="button"
+                        className={
+                          !diagnosisEnabled
+                            ? "portal-managed-config-toggle active"
+                            : "portal-managed-config-toggle"
+                        }
+                        disabled={diagnosisLoading || diagnosisTogglePending}
+                        onClick={() => handleDiagnosisToggle(false)}
+                      >
+                        <i className="fas fa-pause" />
+                        暂停实时分析
+                      </button>
+                    </div>
+
+                    <div className="portal-managed-config-hint settings-inline-hint">
+                      {diagnosisLoading
+                        ? "正在加载诊断设置…"
+                        : `当前：${diagnosisEnabled ? "实时分析进行中" : "实时分析已暂停"}` +
+                          `（${
+                            diagnosisPayload?.overrides.auto_takeover_enabled
+                              ? "页面已设置"
+                              : "来自环境变量默认"
+                          }）`}
+                    </div>
+                  </section>
+
+                  {DIAGNOSIS_GROUP_META.map((group) => {
+                    const numberFields = DIAGNOSIS_NUMBER_FIELDS.filter(
+                      (field) => field.group === group.id,
+                    );
+                    const textFields = DIAGNOSIS_TEXT_FIELDS.filter(
+                      (field) => field.group === group.id,
+                    );
+                    return (
+                      <section key={group.id} className="settings-section">
+                        <div className="portal-model-block-head">
+                          <div>
+                            <h4>{group.title}</h4>
+                            <p>{group.description}</p>
+                          </div>
+                        </div>
+
+                        <div className="settings-form-grid">
+                          {textFields.map((field) => {
+                            const isOverridden = Boolean(
+                              diagnosisPayload?.overrides[field.key],
+                            );
+                            const envValue = diagnosisPayload?.env[field.key];
+                            return (
+                              <div
+                                key={field.key}
+                                className="portal-form-group settings-field"
+                              >
+                                <label htmlFor={`diag-${field.key}`}>
+                                  {field.label}
+                                </label>
+                                <input
+                                  id={`diag-${field.key}`}
+                                  type="text"
+                                  value={diagnosisDraft[field.key] ?? ""}
+                                  disabled={diagnosisLoading || diagnosisSaving}
+                                  placeholder={field.placeholder}
+                                  onChange={(event) =>
+                                    handleDiagnosisFieldChange(
+                                      field.key,
+                                      event.target.value,
+                                    )
+                                  }
+                                />
+                                <small>
+                                  {field.hint}
+                                  {!isMaskedSecret(envValue)
+                                    ? `　环境默认：${String(envValue ?? "")}`
+                                    : ""}
+                                  {isOverridden ? (
+                                    <>
+                                      {"　"}
+                                      <button
+                                        type="button"
+                                        className="settings-link-btn"
+                                        disabled={diagnosisSaving}
+                                        onClick={() =>
+                                          handleResetDiagnosisField(field.key)
+                                        }
+                                      >
+                                        恢复默认
+                                      </button>
+                                    </>
+                                  ) : null}
+                                </small>
+                              </div>
+                            );
+                          })}
+
+                          {numberFields.map((field) => {
+                            const isOverridden = Boolean(
+                              diagnosisPayload?.overrides[field.key],
+                            );
+                            const envValue = diagnosisPayload?.env[field.key];
+                            return (
+                              <div
+                                key={field.key}
+                                className="portal-form-group settings-field"
+                              >
+                                <label htmlFor={`diag-${field.key}`}>
+                                  {field.label}
+                                </label>
+                                <input
+                                  id={`diag-${field.key}`}
+                                  type="number"
+                                  min={field.min}
+                                  max={field.max}
+                                  step={field.step}
+                                  value={diagnosisDraft[field.key] ?? ""}
+                                  disabled={diagnosisLoading || diagnosisSaving}
+                                  onChange={(event) =>
+                                    handleDiagnosisFieldChange(
+                                      field.key,
+                                      event.target.value,
+                                    )
+                                  }
+                                />
+                                <small>
+                                  {field.hint}
+                                  {!isMaskedSecret(envValue)
+                                    ? `　环境默认：${String(envValue ?? "")}`
+                                    : ""}
+                                  {isOverridden ? (
+                                    <>
+                                      {"　"}
+                                      <button
+                                        type="button"
+                                        className="settings-link-btn"
+                                        disabled={diagnosisSaving}
+                                        onClick={() =>
+                                          handleResetDiagnosisField(field.key)
+                                        }
+                                      >
+                                        恢复默认
+                                      </button>
+                                    </>
+                                  ) : null}
+                                </small>
+                              </div>
+                            );
+                          })}
+
+                          {group.id === "inoe" ? (
+                            <div className="portal-form-group settings-field">
+                              <label htmlFor="diag-inoe-token">
+                                INOE 访问令牌
+                              </label>
+                              <input
+                                id="diag-inoe-token"
+                                type="password"
+                                autoComplete="new-password"
+                                value={diagnosisTokenDraft}
+                                disabled={diagnosisLoading || diagnosisSaving}
+                                placeholder={
+                                  isMaskedSecret(
+                                    diagnosisPayload?.effective.inoe_api_token,
+                                  ) &&
+                                  diagnosisPayload?.effective.inoe_api_token
+                                    .is_set
+                                    ? `已设置（${
+                                        (
+                                          diagnosisPayload.effective
+                                            .inoe_api_token as MaskedSecret
+                                        ).masked
+                                      }），留空则不修改`
+                                    : "未设置，留空则不修改"
+                                }
+                                onChange={(event) =>
+                                  setDiagnosisTokenDraft(event.target.value)
+                                }
+                              />
+                              <small>
+                                Bearer 令牌；出于安全不会回显原文。
+                                {diagnosisPayload?.overrides.inoe_api_token ? (
+                                  <>
+                                    {"　"}
+                                    <button
+                                      type="button"
+                                      className="settings-link-btn"
+                                      disabled={diagnosisSaving}
+                                      onClick={() =>
+                                        handleResetDiagnosisField(
+                                          "inoe_api_token",
+                                        )
+                                      }
+                                    >
+                                      清除并恢复默认
+                                    </button>
+                                  </>
+                                ) : null}
+                              </small>
+                            </div>
+                          ) : null}
+                        </div>
+                      </section>
+                    );
+                  })}
+
+                  <div className="portal-model-form-actions compact-row">
+                    <button
+                      type="button"
+                      className="portal-model-btn compact"
+                      disabled={diagnosisLoading || diagnosisSaving}
+                      onClick={handleSaveDiagnosisSettings}
+                    >
+                      <i className="fas fa-floppy-disk" />
+                      {diagnosisSaving ? "保存中…" : "保存诊断配置"}
+                    </button>
+                  </div>
                 </div>
               ) : null}
 
