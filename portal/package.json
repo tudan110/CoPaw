@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite --configLoader runner --host 0.0.0.0",
     "build": "vite build --configLoader runner",
-    "preview": "vite preview --host 0.0.0.0"
+    "preview": "vite preview --host 0.0.0.0",
+    "test:big-screen": "node --experimental-strip-types --test \"src/components/big-screen/**/*.test.ts\""
   },
   "dependencies": {
     "@agentscope-ai/chat": "1.1.61",
