@@ -18,79 +18,151 @@ error() {
     printf '[sync-working] %s\n' "$*" >&2
 }
 
-sync_workspace_skills_to_pool() {
+# 按条目合并 workspaces/*/skill.json（技能注册表）：
+#   - 源里登记的技能条目（含 enabled 启用状态）以源为准写入目标
+#   - 目标端运行时自装的技能条目（源里没有的）一律保留
+#   - 目标缺失该文件时整份 seed
+# 写入时复用应用同款的 .skill.json.lock 文件锁 + 临时文件原子替换 +
+# version 递增（max(version+1, 当前毫秒时间戳)），运行中的应用可安全感知。
+merge_workspace_skill_manifests() {
     local source_dir="$1"
     local target_dir="$2"
     local quiet_flag="$3"
-    local pool_dir="$target_dir/skill_pool"
     local workspaces_dir="$source_dir/workspaces"
-    local seen_file=""
-    local synced_count=0
-    local skipped_count=0
-    local workspace_dir=""
-    local skills_dir=""
-    local skill_dir=""
-    local skill_name=""
-    local target_skill_dir=""
-    local ordered_workspaces=()
+    local src_manifest=""
+    local ws_name=""
 
-    mkdir -p "$pool_dir"
-    if [ ! -d "$workspaces_dir" ]; then
-        return
+    [ -d "$workspaces_dir" ] || return 0
+
+    if ! command -v python3 >/dev/null 2>&1; then
+        error "未找到 python3，无法合并 workspaces/*/skill.json（技能启用状态未同步）"
+        return 1
     fi
 
-    seen_file="$(mktemp)"
-    trap 'rm -f "$seen_file"' RETURN
+    for src_manifest in "$workspaces_dir"/*/skill.json; do
+        [ -f "$src_manifest" ] || continue
+        ws_name="$(basename "$(dirname "$src_manifest")")"
+        SYNC_QUIET="$quiet_flag" python3 - "$src_manifest" \
+            "$target_dir/workspaces/$ws_name/skill.json" "$ws_name" <<'PYEOF'
+import contextlib
+import json
+import os
+import sys
+import tempfile
+import time
+from pathlib import Path
 
-    if [ -d "$workspaces_dir/gateway" ]; then
-        ordered_workspaces+=("$workspaces_dir/gateway")
-    fi
-    for workspace_dir in "$workspaces_dir"/*; do
-        [ -d "$workspace_dir" ] || continue
-        [ "$workspace_dir" = "$workspaces_dir/gateway" ] && continue
-        ordered_workspaces+=("$workspace_dir")
+src_path, dst_path = Path(sys.argv[1]), Path(sys.argv[2])
+ws = sys.argv[3]
+quiet = os.environ.get("SYNC_QUIET") == "true"
+
+
+def info(msg):
+    print(f"[sync-working] {msg}")
+
+
+src = json.loads(src_path.read_text(encoding="utf-8"))
+src_skills = src.get("skills", {}) or {}
+
+# 源里有技能目录但没在源 skill.json 登记的，提醒维护者补登记，
+# 否则目标端只能按"新发现技能"默认禁用入库。
+src_skills_dir = src_path.parent / "skills"
+if src_skills_dir.is_dir():
+    for p in sorted(src_skills_dir.iterdir()):
+        if (
+            p.is_dir()
+            and (p / "SKILL.md").exists()
+            and p.name not in src_skills
+        ):
+            info(
+                f"警告: {ws}/skills/{p.name} 未在源 skill.json 登记，"
+                "同步后目标端将默认禁用；请先在源端登记（含 enabled 状态）"
+            )
+
+
+def write_atomic(path, payload):
+    payload = dict(payload)
+    payload["version"] = max(
+        int(payload.get("version", 0)) + 1,
+        int(time.time() * 1000),
+    )
+    fd, tmp = tempfile.mkstemp(
+        dir=str(path.parent), prefix=f".{path.stem}_", suffix=path.suffix
+    )
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write(json.dumps(payload, indent=2, ensure_ascii=False))
+        os.replace(tmp, path)
+        tmp = None
+    finally:
+        if tmp and os.path.exists(tmp):
+            os.unlink(tmp)
+
+
+@contextlib.contextmanager
+def manifest_lock(path):
+    lock_path = path.with_name(f".{path.name}.lock")
+    with open(lock_path, "a+", encoding="utf-8") as lf:
+        try:
+            import fcntl
+
+            fcntl.flock(lf.fileno(), fcntl.LOCK_EX)
+        except ImportError:  # 非 POSIX 平台退化为无锁
+            fcntl = None
+        try:
+            yield
+        finally:
+            if fcntl is not None:
+                fcntl.flock(lf.fileno(), fcntl.LOCK_UN)
+
+
+dst_path.parent.mkdir(parents=True, exist_ok=True)
+with manifest_lock(dst_path):
+    if not dst_path.exists():
+        write_atomic(dst_path, src)
+        info(f"{ws}/skill.json 目标缺失，整份 seed（{len(src_skills)} 个技能条目）")
+        sys.exit(0)
+
+    try:
+        dst = json.loads(dst_path.read_text(encoding="utf-8"))
+    except (ValueError, OSError):
+        dst = {}
+    if not isinstance(dst, dict):
+        dst = {}
+    dst.setdefault(
+        "schema_version",
+        src.get("schema_version", "workspace-skill-manifest.v1"),
+    )
+    dst_skills = dst.setdefault("skills", {})
+    if not isinstance(dst_skills, dict):
+        dst_skills = dst["skills"] = {}
+
+    added, updated = [], []
+    for name, entry in src_skills.items():
+        if name not in dst_skills:
+            added.append(name)
+        elif dst_skills[name] != entry:
+            updated.append(name)
+        else:
+            continue
+        dst_skills[name] = entry
+
+    kept = [n for n in dst_skills if n not in src_skills]
+    if added or updated:
+        write_atomic(dst_path, dst)
+        info(
+            f"{ws}/skill.json 合并: 新增 {len(added)}、更新 {len(updated)}、"
+            f"保留目标自有 {len(kept)}"
+        )
+        if not quiet:
+            for n in added:
+                info(f"  + {ws}/{n} (enabled={dst_skills[n].get('enabled')})")
+            for n in updated:
+                info(f"  ~ {ws}/{n} (enabled={dst_skills[n].get('enabled')})")
+    elif not quiet:
+        info(f"{ws}/skill.json 无变化（保留目标自有 {len(kept)}）")
+PYEOF
     done
-
-    for workspace_dir in "${ordered_workspaces[@]}"; do
-        skills_dir="$workspace_dir/skills"
-        [ -d "$skills_dir" ] || continue
-
-        for skill_dir in "$skills_dir"/*; do
-            [ -d "$skill_dir" ] || continue
-            [ -f "$skill_dir/SKILL.md" ] || continue
-
-            skill_name="$(basename "$skill_dir")"
-            if grep -Fqx "$skill_name" "$seen_file"; then
-                skipped_count=$((skipped_count + 1))
-                if [ "$quiet_flag" != true ]; then
-                    info "  skip $(basename "$workspace_dir")/$skill_name"
-                fi
-                continue
-            fi
-
-            printf '%s\n' "$skill_name" >>"$seen_file"
-            target_skill_dir="$pool_dir/$skill_name"
-            mkdir -p "$target_skill_dir"
-            rsync -a --delete \
-                --exclude "__pycache__" \
-                --exclude "__MACOSX" \
-                --exclude ".DS_Store" \
-                --exclude "Thumbs.db" \
-                --exclude "desktop.ini" \
-                "$skill_dir/" "$target_skill_dir/"
-            synced_count=$((synced_count + 1))
-            if [ "$quiet_flag" != true ]; then
-                info "  pool $skill_name <- $(basename "$workspace_dir")"
-            fi
-        done
-    done
-
-    rm -f "$seen_file"
-    trap - RETURN
-
-    if [ "$synced_count" -gt 0 ] || [ "$skipped_count" -gt 0 ]; then
-        info "技能池已同步: ${synced_count} 个自定义技能，跳过 ${skipped_count} 个同名技能"
-    fi
 }
 
 usage() {
@@ -100,18 +172,18 @@ usage() {
 
 说明:
    将 deploy-all/qwenpaw/working/ 下的文件同步到本地工作目录。
-   同时会把各 workspace 里维护的自定义 skill 复制到目标 skill_pool。
    默认目标目录为 ~/.qwenpaw/，也可通过 QWENPAW_WORKING_DIR 环境变量覆盖。
 
 同步规则:
   - 源里有、目标里没有的文件: 直接拷贝过去
   - 两边都有的文件: 以源为准，按内容（checksum）比较后覆盖更新
   - 目标里有、源里没有的文件: 默认保留，加 --delete 才会清理
-  - 同步到 skill_pool 时，gateway 工作区优先；同名 skill 只保留一份，后续重复项直接跳过
-  - 例外保护: workspaces/*/skill.json（二开技能注册表）和 workspaces/*/agent.json
-    （含渠道 token / 自定义 description）只在目标缺失时 seed，已存在的不覆盖，
-    避免把二开技能 / 渠道凭据回滚到出厂态。新装的出厂技能仍会被主 rsync 把
-    目录拷过来，进 portal 点「刷新技能」即可重新入库。
+  - workspaces/*/skill.json（技能注册表）: 按条目合并——源里登记的技能条目
+    （含 enabled 启用状态）以源为准写入目标，目标端运行时自装的技能条目保留；
+    目标缺失该文件时整份 seed。也就是说出厂技能同步过去后就是启用的，
+    无需再进 portal 手动启用。
+  - 例外保护: workspaces/*/agent.json（含渠道 token / 自定义 description）
+    只在目标缺失时 seed，已存在的不覆盖，避免把渠道凭据回滚到出厂态。
 
 参数:
   --delete     删除目标目录中源目录不存在的文件，执行严格镜像
@@ -207,24 +279,22 @@ else
     info "同步模式: 以源为准覆盖更新，目标目录中源没有的文件保留"
 fi
 
-# 「运行时注册表」类文件：workspaces/<agent>/skill.json 记录二开技能注册；
-# workspaces/<agent>/agent.json 可能含 channel token / 自定义 description。
-# 这两类只在目标缺失时 seed 一遍当作 bootstrap，已经存在的一律保留 ——
-# 避免重新跑 sync 时把用户已经装好的二开技能 / 配好的渠道凭据回滚到出厂态。
-# 新装的出厂技能仍会经过主 rsync 把目录拷过来，进 portal 点「刷新」即可入库。
+# workspaces/<agent>/agent.json 可能含 channel token / 自定义 description，
+# 只在目标缺失时 seed 一遍当作 bootstrap，已经存在的一律保留 ——
+# 避免重新跑 sync 时把配好的渠道凭据回滚到出厂态。
 PROTECTED_INCLUDES=(
     --include='*/'
-    --include='workspaces/*/skill.json'
     --include='workspaces/*/agent.json'
     --exclude='*'
 )
-info "保护文件: workspaces/*/skill.json + workspaces/*/agent.json（仅当目标缺失时 seed，已存在的保留）"
+info "保护文件: workspaces/*/agent.json（仅当目标缺失时 seed，已存在的保留）"
 rsync -a --ignore-existing "${PROTECTED_INCLUDES[@]}" "$SOURCE_DIR/" "$TARGET_DIR/"
 
+# skill.json 不走 rsync，由下面的 merge_workspace_skill_manifests 按条目合并
 rsync "${RSYNC_ARGS[@]}" \
     --exclude='workspaces/*/skill.json' \
     --exclude='workspaces/*/agent.json' \
     "$SOURCE_DIR/" "$TARGET_DIR/"
-sync_workspace_skills_to_pool "$SOURCE_DIR" "$TARGET_DIR" "$QUIET_MODE"
+merge_workspace_skill_manifests "$SOURCE_DIR" "$TARGET_DIR" "$QUIET_MODE"
 
 info "同步完成"
