@@ -58,7 +58,7 @@ def _looks_builtin(skill_name: str) -> bool:
     if not skill_name:
         return False
     try:
-        from qwenpaw.agents.skills_manager import (  # type: ignore
+        from qwenpaw.agents.skill_system.registry import (  # type: ignore
             list_builtin_import_candidates,
         )
 
