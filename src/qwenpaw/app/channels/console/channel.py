@@ -12,9 +12,9 @@ pretty-printed to the terminal.
 
 from __future__ import annotations
 
-import copy
 import asyncio
-import json
+import copy
+import json as _json
 import logging
 import os
 import sys
@@ -32,6 +32,7 @@ from agentscope_runtime.engine.schemas.agent_schemas import (
 from ....config.config import ConsoleConfig as ConsoleChannelConfig
 from ...console_push_store import append as push_store_append
 from ....constant import DEFAULT_MEDIA_DIR
+from ....exceptions import ModelQuotaExceededException
 from ..base import (
     BaseChannel,
     AudioContent,
@@ -359,7 +360,7 @@ class ConsoleChannel(BaseChannel):
         if retry_count is not None:
             payload["retry_count"] = retry_count
         payload = self._sanitize_for_json(payload)
-        return f"data: {json.dumps(payload, ensure_ascii=True, default=str)}\n\n"
+        return f"data: {_json.dumps(payload, ensure_ascii=True, default=str)}\n\n"
 
     async def stream_one(self, payload: Any) -> AsyncGenerator[str, None]:
         """Process one payload and yield SSE-formatted events"""
@@ -535,6 +536,18 @@ class ConsoleChannel(BaseChannel):
                     request.session_id or f"{self.channel}:{to_handle}",
                 )
 
+        except ModelQuotaExceededException as e:
+            logger.warning("rate limit hit: %s", e)
+            alternatives = self._get_free_model_alternatives()
+            rl_event = _json.dumps(
+                {
+                    "type": "rate_limited",
+                    "error": str(e).strip(),
+                    "alternatives": alternatives,
+                },
+            )
+            yield f"data: {rl_event}\n\n"
+            self._print_error(str(e).strip())
         except Exception as e:
             logger.exception("console process/reply failed")
             err_msg = str(e).strip() or "An error occurred while processing."
@@ -607,6 +620,38 @@ class ConsoleChannel(BaseChannel):
                 )
                 self._safe_print(f"{_YELLOW}📎 [File: {url}]{_RESET}")
         self._safe_print("")
+
+    def _get_free_model_alternatives(self) -> list:
+        """Return a list of alternative free models."""
+        try:
+            from ....providers.provider_manager import (
+                ProviderManager,
+            )
+
+            pm = ProviderManager.get_instance()
+            if pm is None:
+                return []
+            alternatives = []
+            all_providers = list(
+                pm.builtin_providers.values(),
+            ) + list(pm.custom_providers.values())
+            for p in all_providers:
+                meta = getattr(p, "meta", None) or {}
+                if not meta.get("is_free_tier"):
+                    continue
+                for m in p.models:
+                    if getattr(m, "is_free", False):
+                        alternatives.append(
+                            {
+                                "provider_id": p.id,
+                                "provider_name": p.name,
+                                "model_id": m.id,
+                                "model_name": m.name or m.id,
+                            },
+                        )
+            return alternatives[:8]
+        except Exception:
+            return []
 
     def _print_error(self, err: str) -> None:
         ts = _ts()
