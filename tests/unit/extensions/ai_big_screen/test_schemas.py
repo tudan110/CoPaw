@@ -77,18 +77,27 @@ class TestScreenPlan:
         assert plan.degraded is False
         assert plan.summary == ""
 
-    def test_drops_components_without_id(self) -> None:
+    def test_keeps_idless_components_drops_non_dict(self) -> None:
         plan = ScreenPlan.model_validate(
             {
                 "name": "x",
                 "components": [
                     {"type": "table"},
-                    {"id": "", "type": "table"},
+                    "not-a-component",
                     {"id": "ok", "type": "table"},
                 ],
             },
         )
-        assert [c.id for c in plan.components] == ["ok"]
+        assert [c.id for c in plan.components] == ["", "ok"]
+
+    def test_visual_type_alias_maps_to_type(self) -> None:
+        plan = ScreenPlan.model_validate(
+            {
+                "name": "x",
+                "components": [{"id": "c1", "visualType": "risk-pulse"}],
+            },
+        )
+        assert plan.components[0].type == "risk-pulse"
 
     def test_component_id_sanitized_length(self) -> None:
         plan = ScreenPlan.model_validate(

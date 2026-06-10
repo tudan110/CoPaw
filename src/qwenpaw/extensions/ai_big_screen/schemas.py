@@ -12,7 +12,13 @@ import json
 import re
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    field_validator,
+    model_validator,
+)
 from pydantic.alias_generators import to_camel
 
 SourceStatus = Literal["live", "empty", "failed", "gap"]
@@ -88,9 +94,14 @@ class CapabilityResult(_CamelModel):
 
 
 class PlanComponent(_CamelModel):
-    """One component requested by the L1 planner."""
+    """One component requested by the L1 planner.
 
-    id: str
+    ``id`` may be empty on raw LLM output — the L1 normalizer assigns
+    canonical component ids. The legacy prompt vocabulary uses
+    ``visualType``; it is accepted as an alias for ``type``.
+    """
+
+    id: str = ""
     type: str = "table"
     title: str = ""
     description: str = ""
@@ -107,6 +118,16 @@ class PlanComponent(_CamelModel):
             return value[:_MAX_ID_LENGTH]
         return value
 
+    @model_validator(mode="before")
+    @classmethod
+    def _accept_visual_type_alias(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            visual_type = str(data.get("visualType") or "").strip()
+            if visual_type and not str(data.get("type") or "").strip():
+                data = dict(data)
+                data["type"] = visual_type
+        return data
+
 
 class ScreenPlan(_CamelModel):
     """L1 output: what the screen should contain (no data yet)."""
@@ -122,20 +143,17 @@ class ScreenPlan(_CamelModel):
     @field_validator("components", mode="before")
     @classmethod
     def _drop_invalid_components(cls, value: Any) -> Any:
+        """Drop non-dict component entries; keep id-less ones.
+
+        Raw LLM plans legitimately omit ``id`` (the L1 normalizer
+        assigns canonical ids), so only structurally invalid entries
+        are removed here.
+        """
         if not isinstance(value, list):
             return value
-        kept: list[Any] = []
-        for item in value:
-            if isinstance(item, PlanComponent):
-                if item.id:
-                    kept.append(item)
-                continue
-            if not isinstance(item, dict):
-                continue
-            raw_id = item.get("id")
-            if isinstance(raw_id, str) and raw_id.strip():
-                kept.append(item)
-        return kept
+        return [
+            item for item in value if isinstance(item, (dict, PlanComponent))
+        ]
 
 
 class DataIntent(_CamelModel):
