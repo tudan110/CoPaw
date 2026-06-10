@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 from __future__ import annotations
 
 import json
@@ -32,7 +33,10 @@ def _get_gateway_real_alarm_url() -> str:
         DEFAULT_INOE_API_BASE_URL,
     ).strip()
     base_url = configured or DEFAULT_INOE_API_BASE_URL
-    return urljoin(f"{base_url.rstrip('/')}/", REAL_ALARM_LIST_ENDPOINT.lstrip("/"))
+    return urljoin(
+        f"{base_url.rstrip('/')}/",
+        REAL_ALARM_LIST_ENDPOINT.lstrip("/"),
+    )
 
 
 def _get_real_alarm_timeout_seconds() -> float:
@@ -69,13 +73,16 @@ def _get_alarm_timezone() -> timezone:
         EnvVarLoader.get_str(
             "PORTAL_REAL_ALARM_TIMEZONE_OFFSET",
             str(DEFAULT_REAL_ALARM_TIMEZONE_OFFSET),
-        ).strip() or str(DEFAULT_REAL_ALARM_TIMEZONE_OFFSET)
+        ).strip()
+        or str(DEFAULT_REAL_ALARM_TIMEZONE_OFFSET),
     )
     return timezone(timedelta(hours=offset_hours))
 
 
 def _format_dt(value: datetime) -> str:
-    return value.astimezone(_get_alarm_timezone()).strftime("%Y-%m-%d %H:%M:%S")
+    return value.astimezone(_get_alarm_timezone()).strftime(
+        "%Y-%m-%d %H:%M:%S",
+    )
 
 
 def _build_real_alarm_payload(
@@ -85,7 +92,10 @@ def _build_real_alarm_payload(
     source: str,
     total: Any | None = None,
 ) -> dict[str, Any]:
-    safe_limit = max(1, min(int(limit or DEFAULT_REAL_ALARM_LIMIT), MAX_REAL_ALARM_LIMIT))
+    safe_limit = max(
+        1,
+        min(int(limit or DEFAULT_REAL_ALARM_LIMIT), MAX_REAL_ALARM_LIMIT),
+    )
     items = [_normalize_alarm_row(row) for row in rows[:safe_limit]]
     items.sort(key=lambda a: a.get("eventTime") or "")
     try:
@@ -225,22 +235,49 @@ def _curl_post_real_alarm_json(
             check=False,
         )
         if completed.returncode != 0:
-            error_text = (completed.stderr or completed.stdout or "curl 请求失败").strip()
-            return {"code": 500, "msg": f"curl 请求失败: {error_text}", "total": 0, "rows": []}
+            error_text = (
+                completed.stderr or completed.stdout or "curl 请求失败"
+            ).strip()
+            return {
+                "code": 500,
+                "msg": f"curl 请求失败: {error_text}",
+                "total": 0,
+                "rows": [],
+            }
 
         status_code = int((completed.stdout or "").strip() or "0")
-        with open(body_path, "r", encoding="utf-8", errors="replace") as handle:
+        with open(
+            body_path,
+            "r",
+            encoding="utf-8",
+            errors="replace",
+        ) as handle:
             response_text = handle.read()
         if status_code >= 400:
-            return {"code": status_code, "msg": response_text, "total": 0, "rows": []}
+            return {
+                "code": status_code,
+                "msg": response_text,
+                "total": 0,
+                "rows": [],
+            }
         if not response_text.strip():
             return {"code": 500, "msg": "接口返回空响应", "total": 0, "rows": []}
         result = json.loads(response_text)
         if not isinstance(result, dict):
-            return {"code": 500, "msg": "接口返回格式异常：预期为 JSON 对象", "total": 0, "rows": []}
+            return {
+                "code": 500,
+                "msg": "接口返回格式异常：预期为 JSON 对象",
+                "total": 0,
+                "rows": [],
+            }
         return result
     except Exception as exc:  # noqa: BLE001
-        return {"code": 500, "msg": f"curl 回退失败: {exc}", "total": 0, "rows": []}
+        return {
+            "code": 500,
+            "msg": f"curl 回退失败: {exc}",
+            "total": 0,
+            "rows": [],
+        }
     finally:
         try:
             os.unlink(body_path)
@@ -248,13 +285,28 @@ def _curl_post_real_alarm_json(
             pass
 
 
-def _build_dispatch_content(row: dict[str, Any], *, title: str, device_name: str) -> str:
-    subtype = str(row.get("alarmsubtype") or row.get("alarmSubType") or "").strip()
-    combined_lower = " ".join(filter(None, (title.lower(), device_name.lower(), subtype.lower())))
+def _build_dispatch_content(
+    row: dict[str, Any],
+    *,
+    title: str,
+    device_name: str,
+) -> str:
+    subtype = str(
+        row.get("alarmsubtype") or row.get("alarmSubType") or "",
+    ).strip()
+    combined_lower = " ".join(
+        filter(None, (title.lower(), device_name.lower(), subtype.lower())),
+    )
 
     if "mysql" in combined_lower and any(
         token in combined_lower
-        for token in ("死锁", "数据库锁", "deadlock", "database-lock", "database lock")
+        for token in (
+            "死锁",
+            "数据库锁",
+            "deadlock",
+            "database-lock",
+            "database lock",
+        )
     ):
         return "mysql/死锁 + cmdb/新增/插入"
 
@@ -282,7 +334,11 @@ def _normalize_alarm_row(row: dict[str, Any]) -> dict[str, Any]:
         "deviceName": device_name,
         "manageIp": manage_ip,
         "employeeId": "fault",
-        "dispatchContent": _build_dispatch_content(row, title=title, device_name=device_name),
+        "dispatchContent": _build_dispatch_content(
+            row,
+            title=title,
+            device_name=device_name,
+        ),
         "visibleContent": f"{title}（{device_name} {manage_ip}）",
     }
 
@@ -292,8 +348,12 @@ def query_portal_real_alarms(
     now: datetime | None = None,
     lookback_minutes: int | None = None,
     alarm_status: str | None = None,
+    raise_on_error: bool = False,
 ) -> dict[str, Any]:
-    safe_limit = max(1, min(int(limit or DEFAULT_REAL_ALARM_LIMIT), MAX_REAL_ALARM_LIMIT))
+    safe_limit = max(
+        1,
+        min(int(limit or DEFAULT_REAL_ALARM_LIMIT), MAX_REAL_ALARM_LIMIT),
+    )
     current_time = now or datetime.now(timezone.utc)
     begin_time: str | None = None
     end_time: str | None = None
@@ -311,6 +371,18 @@ def query_portal_real_alarms(
         )
         rows = list(result.get("rows") or [])
     except Exception:
+        # Legacy behaviour swallows backend failures into an empty
+        # "live" payload, which makes outages indistinguishable from a
+        # genuinely quiet system. Honest consumers (AI big-screen L2)
+        # pass raise_on_error=True so failures can be adjudicated as
+        # sourceStatus="failed" instead of "no alarms".
+        if raise_on_error:
+            raise
         return build_empty_portal_real_alarms_payload(safe_limit)
     total = result.get("total") if isinstance(result, dict) else None
-    return _build_real_alarm_payload(rows, limit=safe_limit, source="live", total=total)
+    return _build_real_alarm_payload(
+        rows,
+        limit=safe_limit,
+        source="live",
+        total=total,
+    )

@@ -53,7 +53,7 @@ class CapabilityResult(_CamelModel):
     capability_id: str
     source_status: SourceStatus
     rows: list[dict[str, Any]] | None = None
-    series: list[dict[str, Any]] | None = None
+    series: list[Any] | None = None
     nodes: list[dict[str, Any]] | None = None
     categories: list[Any] | None = None
     metrics: dict[str, Any] | None = None
@@ -188,7 +188,7 @@ def extract_json_object(text: str) -> str:
         return fenced.group(1)
     start = raw.find("{")
     end = raw.rfind("}")
-    if start >= 0 and end > start:
+    if 0 <= start < end:
         return raw[start : end + 1]
     raise ValueError("LLM 响应中未找到 JSON 对象")
 
