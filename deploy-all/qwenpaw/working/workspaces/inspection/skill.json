@@ -1,6 +1,6 @@
 {
   "schema_version": "workspace-skill-manifest.v1",
-  "version": 1778223077761,
+  "version": 1781099247801,
   "skills": {
     "inspection-analyst": {
       "enabled": true,
@@ -76,6 +76,106 @@
         "require_envs": []
       },
       "updated_at": "2026-05-15T10:22:49.041473Z"
+    },
+    "docx": {
+      "enabled": true,
+      "channels": [
+        "all"
+      ],
+      "source": "builtin",
+      "metadata": {
+        "name": "docx",
+        "description": "当用户需要创建、读取、编辑或处理 Word 文档（.docx）时，使用此技能。触发场景包括提到“Word 文档”、“.docx”，或要求生成带目录、标题、页码、信头等格式的专业文档；也包括提取或重组 .docx 内容、插入或替换图片、在 Word 文件中查找替换、处理修订或批注，以及将内容整理为正式 Word 文档。如果用户要求生成“报告”“备忘录”“信函”“模板”等 Word / .docx 交付物，也应使用此技能。不要用于 PDF、电子表格、Google Docs，或与文档生成无关的一般编程任务。",
+        "version_text": "1.1",
+        "commit_text": "",
+        "source": "builtin",
+        "protected": false,
+        "requirements": {
+          "require_bins": [],
+          "require_envs": []
+        },
+        "updated_at": "2026-06-10T13:21:34.588775Z"
+      },
+      "requirements": {
+        "require_bins": [],
+        "require_envs": []
+      },
+      "updated_at": "2026-06-10T13:21:34.588775Z"
+    },
+    "pdf": {
+      "enabled": true,
+      "channels": [
+        "all"
+      ],
+      "source": "builtin",
+      "metadata": {
+        "name": "pdf",
+        "description": "当用户需要对PDF文件进行任何操作时，请使用此技能。包括从 PDF 中读取或提取文本/表格、合并多个 PDF、拆分 PDF、旋转页面、添加水印、创建新PDF、填写PDF表单、加密/解密 PDF、提取图片，以及对扫描版 PDF 进行 OCR 使其可搜索。如果用户提到 .pdf 文件或要求生成 PDF，请使用此技能。",
+        "version_text": "1.1",
+        "commit_text": "",
+        "source": "builtin",
+        "protected": false,
+        "requirements": {
+          "require_bins": [],
+          "require_envs": []
+        },
+        "updated_at": "2026-06-10T13:21:34.618280Z"
+      },
+      "requirements": {
+        "require_bins": [],
+        "require_envs": []
+      },
+      "updated_at": "2026-06-10T13:21:34.618280Z"
+    },
+    "pptx": {
+      "enabled": true,
+      "channels": [
+        "all"
+      ],
+      "source": "builtin",
+      "metadata": {
+        "name": "pptx",
+        "description": "当涉及到 .pptx 文件的任何操作时使用此技能——无论是作为输入、输出还是两者兼有。包括：创建幻灯片、演示文稿或路演材料；读取、解析或提取任何 .pptx 文件中的文本（即使提取的内容将用于其他地方，如邮件或摘要）；编辑、修改或更新现有演示文稿；合并或拆分幻灯片文件；处理模板、布局、演讲者备注或批注。当用户提到“演示文稿”、”幻灯片“、”PPT“或引用 .pptx 文件名时触发，无论他们之后打算如何使用内容。如果需要打开、创建或操作 .pptx 文件，就使用此技能。",
+        "version_text": "1.1",
+        "commit_text": "",
+        "source": "builtin",
+        "protected": false,
+        "requirements": {
+          "require_bins": [],
+          "require_envs": []
+        },
+        "updated_at": "2026-06-10T13:21:34.733371Z"
+      },
+      "requirements": {
+        "require_bins": [],
+        "require_envs": []
+      },
+      "updated_at": "2026-06-10T13:21:34.733371Z"
+    },
+    "xlsx": {
+      "enabled": true,
+      "channels": [
+        "all"
+      ],
+      "source": "builtin",
+      "metadata": {
+        "name": "xlsx",
+        "description": "当电子表格文件是主要输入或输出时使用此技能。这意味着用户想要：打开、读取、编辑或修复现有的 .xlsx、.xlsm、.csv 或 .tsv 文件（例如添加列、计算公式、格式化、制图、清理混乱数据）；从头创建新的电子表格或从其他数据源创建；或在表格文件格式之间进行转换。当用户通过名称或路径引用电子表格文件时特别触发——即使是随意提及（如\"我下载目录里的 xlsx\"）——并且想对其进行操作或从中生成内容。也适用于将混乱的表格数据文件（格式错误的行、错位的表头、垃圾数据）清理或重构为规范的电子表格。交付物必须是电子表格文件。当主要交付物是 Word 文档、HTML 报告、独立 Python 脚本、数据库管道或 Google Sheets API 集成时不触发，即使涉及表格数据也不触发。",
+        "version_text": "1.1",
+        "commit_text": "",
+        "source": "builtin",
+        "protected": false,
+        "requirements": {
+          "require_bins": [],
+          "require_envs": []
+        },
+        "updated_at": "2026-06-10T13:21:34.841984Z"
+      },
+      "requirements": {
+        "require_bins": [],
+        "require_envs": []
+      },
+      "updated_at": "2026-06-10T13:21:34.841984Z"
     }
   }
 }
