@@ -54,6 +54,22 @@ class CapabilityDescriptor:
     metadata: dict[str, Any] = field(default_factory=dict)
 
 
+def _dispatch_fetcher(
+    capability_id: str,
+) -> Callable[[Mapping[str, Any]], dict[str, Any]]:
+    """Late-binding dispatch through ``descriptors.FETCHERS``.
+
+    Resolving at call time (not registry-build time) keeps the fetcher
+    table hot-swappable — tests monkeypatch ``FETCHERS`` entries, and
+    future custom capabilities can replace fetchers at runtime.
+    """
+
+    def _fetch(query_params: Mapping[str, Any]) -> dict[str, Any]:
+        return _d.FETCHERS[capability_id](query_params)
+
+    return _fetch
+
+
 def _build_registry() -> dict[str, CapabilityDescriptor]:
     registry: dict[str, CapabilityDescriptor] = {}
     for meta in _d.CAPABILITY_METADATA:
@@ -62,7 +78,7 @@ def _build_registry() -> dict[str, CapabilityDescriptor]:
             id=capability_id,
             display_name=str(meta.get("name") or capability_id),
             domain=str(meta.get("domain") or ""),
-            fetcher=_d.FETCHERS[capability_id],
+            fetcher=_dispatch_fetcher(capability_id),
             timeout_seconds=DEFAULT_TIMEOUT_SECONDS,
             is_gap=capability_id == "capability-gap",
             metadata=meta,

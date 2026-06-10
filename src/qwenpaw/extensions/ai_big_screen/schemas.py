@@ -179,11 +179,31 @@ class DataIntentPlan(_CamelModel):
 
 
 class PatchOperation(_CamelModel):
-    """A single whitelisted patch operation (no arbitrary mutation)."""
+    """A single whitelisted patch operation (no arbitrary mutation).
+
+    Accepts the legacy ``type`` key as an alias for ``op`` and either
+    ``componentId`` or ``componentIds`` targeting.
+    """
 
     op: PatchOp
     component_id: str = ""
+    component_ids: list[str] = Field(default_factory=list)
     value: Any = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _accept_legacy_type_alias(cls, data: Any) -> Any:
+        if isinstance(data, dict) and "op" not in data and data.get("type"):
+            data = dict(data)
+            data["op"] = data.get("type")
+        return data
+
+    def target_ids(self) -> list[str]:
+        """All component ids this operation targets."""
+        ids = [str(item) for item in self.component_ids if str(item).strip()]
+        if self.component_id and self.component_id not in ids:
+            ids.insert(0, self.component_id)
+        return ids
 
 
 class PatchPlan(_CamelModel):
