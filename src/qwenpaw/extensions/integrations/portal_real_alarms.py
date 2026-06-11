@@ -82,6 +82,49 @@ def _format_dt(value: datetime) -> str:
     return value.astimezone(_get_alarm_timezone()).strftime("%Y-%m-%d %H:%M:%S")
 
 
+def parse_alarm_event_time(text: str) -> datetime | None:
+    """Parse an alarm ``eventTime`` string into an aware datetime.
+
+    Event times arrive as ``"YYYY-MM-DD HH:MM:SS"`` in the alarm
+    platform's local timezone (``timezone_offset_hours`` setting).
+    Returns ``None`` when the text does not match.
+    """
+    raw = str(text or "").strip()
+    if not raw:
+        return None
+    for pattern in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S"):
+        try:
+            parsed = datetime.strptime(raw, pattern)
+        except ValueError:
+            continue
+        return parsed.replace(tzinfo=_get_alarm_timezone())
+    return None
+
+
+def filter_alarms_started_after(
+    payload: dict[str, Any],
+    cutoff: datetime,
+) -> dict[str, Any]:
+    """Keep only alarms whose event time is at or after ``cutoff``.
+
+    Alarms with a missing/unparsable event time are kept (fail-open) so a
+    real incident never gets silently dropped by the analysis window.
+    """
+    items = list(payload.get("items") or [])
+    kept = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        event_time = parse_alarm_event_time(str(item.get("eventTime") or ""))
+        if event_time is None or event_time >= cutoff:
+            kept.append(item)
+    return {
+        **payload,
+        "items": kept,
+        "total": len(kept),
+    }
+
+
 def _build_real_alarm_payload(
     rows: list[dict[str, Any]],
     *,
@@ -114,11 +157,14 @@ def build_real_alarm_list_request_body(
     begin_time: str | None = None,
     end_time: str | None = None,
     alarm_status: str | None = None,
+    alarm_unique_id: str | None = None,
 ) -> dict[str, Any]:
     return {
         "pageNum": page_num,
         "pageSize": page_size,
-        "alarmuniqueid": None,
+        "alarmuniqueid": (
+            str(alarm_unique_id).strip() if alarm_unique_id else None
+        ),
         "alarmclass": None,
         "devName": None,
         "manageIp": None,
@@ -160,6 +206,7 @@ def _post_real_alarm_list(
     begin_time: str | None = None,
     end_time: str | None = None,
     alarm_status: str | None = None,
+    alarm_unique_id: str | None = None,
 ) -> dict[str, Any]:
     body = build_real_alarm_list_request_body(
         page_num=1,
@@ -167,6 +214,7 @@ def _post_real_alarm_list(
         begin_time=begin_time,
         end_time=end_time,
         alarm_status=alarm_status,
+        alarm_unique_id=alarm_unique_id,
     )
     url = _get_gateway_real_alarm_url()
     headers = _build_real_alarm_headers()
@@ -289,6 +337,42 @@ def _normalize_alarm_row(row: dict[str, Any]) -> dict[str, Any]:
         "dispatchContent": _build_dispatch_content(row, title=title, device_name=device_name),
         "visibleContent": f"{title}（{device_name} {manage_ip}）",
     }
+
+
+def query_real_alarm_active_status(alarm_id: str) -> str:
+    """Check whether one alarm is still in the INOE active list.
+
+    Returns ``"still_active"``, ``"cleared"`` or ``"unavailable"``
+    (gateway unreachable / error response). Unlike
+    :func:`query_portal_real_alarms`, query failures are reported
+    instead of masquerading as an empty live result — the recovery
+    verification flow must not mistake "INOE is down" for "alarm gone".
+    """
+    normalized = str(alarm_id or "").strip()
+    if not normalized:
+        return "unavailable"
+    try:
+        result = _post_real_alarm_list(
+            limit=MAX_REAL_ALARM_LIMIT,
+            alarm_status="1",
+            alarm_unique_id=normalized,
+        )
+    except Exception:
+        return "unavailable"
+    if not isinstance(result, dict):
+        return "unavailable"
+    code = result.get("code")
+    if code is not None and str(code) not in ("0", "200"):
+        return "unavailable"
+    for row in result.get("rows") or []:
+        if not isinstance(row, dict):
+            continue
+        candidate = str(
+            row.get("alarmuniqueid") or row.get("alarmtitle") or ""
+        ).strip()
+        if candidate and candidate == normalized:
+            return "still_active"
+    return "cleared"
 
 
 def query_portal_real_alarms(

@@ -27,6 +27,9 @@ const STATUS_LABELS: Record<string, string> = {
   manual_unknown: "人工未知",
   resolved: "已处理",
   ignored: "已忽略",
+  recovery_failed: "清除未恢复",
+  recovery_unknown: "恢复待确认",
+  recurred: "已复发",
 };
 
 const STATUS_TONES: Record<string, string> = {
@@ -40,13 +43,36 @@ const STATUS_TONES: Record<string, string> = {
   manual_unknown: "slate",
   resolved: "green",
   ignored: "slate",
+  recovery_failed: "red",
+  recovery_unknown: "slate",
+  recurred: "amber",
+};
+
+// Recovery-verification verdicts written by the alarm-clear flow.
+const VERIFICATION_LABELS: Record<string, string> = {
+  clear_reported: "INOE 已报清除",
+  verifying: "恢复验证中",
+  recovered: "已验证恢复",
+  unrecovered: "验证未恢复",
+  unknown: "恢复待确认",
+  recurred: "观察期复发",
+};
+
+const VERIFICATION_TONES: Record<string, string> = {
+  clear_reported: "cyan",
+  verifying: "amber",
+  recovered: "green",
+  unrecovered: "red",
+  unknown: "slate",
+  recurred: "amber",
 };
 
 const FILTER_TO_STATUSES: Record<StatusFilter, string> = {
   all: "",
-  active: "new,taken_over,analyzing,analyzed,manual_pending",
+  active: "new,taken_over,analyzing,analyzed,manual_pending,recurred",
   resolved: "manual_recovered,resolved",
-  ignored: "manual_unrecovered,manual_unknown,ignored",
+  ignored:
+    "manual_unrecovered,manual_unknown,ignored,recovery_failed,recovery_unknown",
 };
 
 function formatTime(iso: string) {
@@ -293,6 +319,17 @@ export function AlarmRegistryPanel({ pageTheme, onOpenChat }: AlarmRegistryPanel
                   <span className={`alarm-registry-status-badge tone-${STATUS_TONES[record.status] || "slate"}`}>
                     {STATUS_LABELS[record.status] || record.status}
                   </span>
+                  {record.verificationStatus ? (
+                    <span
+                      className={`alarm-registry-status-badge alarm-registry-verification-badge tone-${
+                        VERIFICATION_TONES[record.verificationStatus] || "slate"
+                      }`}
+                      title="告警清除后的恢复验证结论"
+                    >
+                      {VERIFICATION_LABELS[record.verificationStatus] ||
+                        record.verificationStatus}
+                    </span>
+                  ) : null}
                 </td>
                 <td>{formatTime(record.eventTime)}</td>
                 <td>{formatTime(record.handledAt || record.takenOverAt || record.updatedAt)}</td>

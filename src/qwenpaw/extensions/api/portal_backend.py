@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 from __future__ import annotations
 
 import asyncio
@@ -11,12 +12,21 @@ import threading
 import time
 import traceback
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
-from fastapi import APIRouter, Body, FastAPI, File, HTTPException, Query, Request, UploadFile
+from fastapi import (
+    APIRouter,
+    Body,
+    FastAPI,
+    File,
+    HTTPException,
+    Query,
+    Request,
+    UploadFile,
+)
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, ValidationError
 
@@ -70,7 +80,26 @@ from qwenpaw.extensions.api.fault_manual_workorder_service import (
     evaluate_metric_recovery,
     merge_manual_workorder_notification,
 )
-from qwenpaw.extensions.api.alarm_analyst_service import run_alarm_analyst_diagnose
+from qwenpaw.extensions.api.alarm_analyst_service import (
+    run_alarm_analyst_diagnose,
+)
+from qwenpaw.extensions.api.alarm_clear_models import (
+    AlarmClearNotificationRequest,
+)
+from qwenpaw.extensions.api.recovery_verification_service import (
+    build_recovery_history_message,
+    decide_observation_outcome,
+    decide_verification_outcome,
+    send_recovery_notification_safe,
+)
+from qwenpaw.extensions.portal_alarm_clear_events import (
+    fetch_due_clear_events,
+    list_clear_events,
+    local_now as clear_events_local_now,
+    record_clear_notification,
+    reset_zombie_verifying_events,
+    update_clear_event,
+)
 from qwenpaw.extensions.portal_real_alarm_registry import (
     filter_visible_alarms,
     get_alarm_record,
@@ -86,8 +115,11 @@ from qwenpaw.extensions.integrations.alarm_workorders.query_alarm_workorders imp
     query_alarm_workorders,
 )
 from qwenpaw.extensions.integrations.portal_real_alarms import (
+    MAX_REAL_ALARM_LIMIT,
     build_empty_portal_real_alarms_payload,
+    filter_alarms_started_after,
     query_portal_real_alarms,
+    query_real_alarm_active_status,
 )
 from qwenpaw.extensions.integrations.portal_monitoring_overview import (
     query_active_alarm_total as query_monitoring_active_alarm_total,
@@ -126,34 +158,42 @@ FAULT_DISPOSAL_SCRIPT_TIMEOUT_SECONDS = 45
 PORTAL_REAL_ALARM_ROUTE_DEFAULT_LIMIT = 20
 PORTAL_REAL_ALARM_ROUTE_FETCH_MULTIPLIER = 3
 PORTAL_REAL_ALARM_ROUTE_TIMEOUT_SECONDS = float(
-    os.getenv("QWENPAW_PORTAL_REAL_ALARM_ROUTE_TIMEOUT", "5").strip() or "5"
+    os.getenv("QWENPAW_PORTAL_REAL_ALARM_ROUTE_TIMEOUT", "5").strip() or "5",
 )
 PORTAL_REAL_ALARM_CACHE_TTL_SECONDS = float(
-    os.getenv("QWENPAW_PORTAL_REAL_ALARM_CACHE_TTL", "30").strip() or "30"
+    os.getenv("QWENPAW_PORTAL_REAL_ALARM_CACHE_TTL", "30").strip() or "30",
 )
 PORTAL_REAL_ALARM_DEGRADED_COOLDOWN_SECONDS = float(
-    os.getenv("QWENPAW_PORTAL_REAL_ALARM_DEGRADED_COOLDOWN", "30").strip() or "30"
+    os.getenv("QWENPAW_PORTAL_REAL_ALARM_DEGRADED_COOLDOWN", "30").strip()
+    or "30",
 )
-PORTAL_REAL_ALARM_AUTO_TAKEOVER_ENABLED = (
-    os.getenv("QWENPAW_PORTAL_REAL_ALARM_AUTO_TAKEOVER_ENABLED", "true")
-    .strip()
-    .lower()
-    not in {"0", "false", "off", "no"}
-)
+PORTAL_REAL_ALARM_AUTO_TAKEOVER_ENABLED = os.getenv(
+    "QWENPAW_PORTAL_REAL_ALARM_AUTO_TAKEOVER_ENABLED",
+    "true",
+).strip().lower() not in {"0", "false", "off", "no"}
 PORTAL_REAL_ALARM_AUTO_TAKEOVER_MIN_INTERVAL_SECONDS = 60.0
 PORTAL_REAL_ALARM_AUTO_TAKEOVER_INTERVAL_SECONDS = float(
-    os.getenv("QWENPAW_PORTAL_REAL_ALARM_AUTO_TAKEOVER_INTERVAL", "60").strip() or "60"
+    os.getenv("QWENPAW_PORTAL_REAL_ALARM_AUTO_TAKEOVER_INTERVAL", "60").strip()
+    or "60",
 )
 PORTAL_REAL_ALARM_AUTO_TAKEOVER_LIMIT = int(
-    os.getenv("QWENPAW_PORTAL_REAL_ALARM_AUTO_TAKEOVER_LIMIT", "100").strip() or "100"
+    os.getenv("QWENPAW_PORTAL_REAL_ALARM_AUTO_TAKEOVER_LIMIT", "100").strip()
+    or "100",
 )
 PORTAL_REAL_ALARM_MAX_ACTIVE_ANALYSES = max(
     1,
-    int(os.getenv("QWENPAW_PORTAL_REAL_ALARM_MAX_ACTIVE_ANALYSES", "1").strip() or "1"),
+    int(
+        os.getenv("QWENPAW_PORTAL_REAL_ALARM_MAX_ACTIVE_ANALYSES", "1").strip()
+        or "1",
+    ),
 )
 PORTAL_REAL_ALARM_DEDUP_WINDOW_SECONDS = 120.0
 _portal_real_alarm_last_sent: dict[str, float] = {}
 PORTAL_REAL_ALARM_AUTO_TAKEOVER_TASK: asyncio.Task | None = None
+# Set to interrupt the auto-takeover loop's sleep, so flipping the
+# real-time-analysis switch on starts a round immediately instead of
+# waiting out the polling interval.
+PORTAL_REAL_ALARM_WAKE_EVENT: asyncio.Event | None = None
 PORTAL_REAL_ALARM_REFRESH_TASK: asyncio.Task | None = None
 PORTAL_REAL_ALARM_REFRESH_LIMIT = 0
 PORTAL_REAL_ALARM_DEGRADED_UNTIL_MONOTONIC = 0.0
@@ -179,20 +219,19 @@ PORTAL_EMPLOYEE_STATUS_NAMES = {
     "order": "工单处置员",
 }
 PORTAL_FAULT_ALERT_LIMIT = 20
-PORTAL_EMPLOYEE_STATUS_ALERT_COUNT_ENABLED = (
-    os.getenv("QWENPAW_PORTAL_EMPLOYEE_STATUS_ALERT_COUNT_ENABLED", "true")
-    .strip()
-    .lower()
-    not in {"0", "false", "off", "no"}
-)
+PORTAL_EMPLOYEE_STATUS_ALERT_COUNT_ENABLED = os.getenv(
+    "QWENPAW_PORTAL_EMPLOYEE_STATUS_ALERT_COUNT_ENABLED",
+    "true",
+).strip().lower() not in {"0", "false", "off", "no"}
 PORTAL_STATUS_ALERT_TIMEOUT_SECONDS = float(
-    os.getenv("QWENPAW_PORTAL_STATUS_ALERT_TIMEOUT", "4").strip() or "4"
+    os.getenv("QWENPAW_PORTAL_STATUS_ALERT_TIMEOUT", "4").strip() or "4",
 )
 PORTAL_STATUS_ALERT_FAST_TIMEOUT_SECONDS = float(
-    os.getenv("QWENPAW_PORTAL_STATUS_ALERT_FAST_TIMEOUT", "0.4").strip() or "0.4"
+    os.getenv("QWENPAW_PORTAL_STATUS_ALERT_FAST_TIMEOUT", "0.4").strip()
+    or "0.4",
 )
 PORTAL_STATUS_ALERT_CACHE_TTL_SECONDS = float(
-    os.getenv("QWENPAW_PORTAL_STATUS_ALERT_CACHE_TTL", "30").strip() or "30"
+    os.getenv("QWENPAW_PORTAL_STATUS_ALERT_CACHE_TTL", "30").strip() or "30",
 )
 PORTAL_STATUS_ALERT_COUNT_CACHE: dict[str, Any] = {
     "value": 0,
@@ -200,7 +239,7 @@ PORTAL_STATUS_ALERT_COUNT_CACHE: dict[str, Any] = {
 }
 PORTAL_STATUS_ALERT_COUNT_REFRESH_TASK: asyncio.Task | None = None
 RESOURCE_IMPORT_SCRIPT_TIMEOUT_SECONDS = int(
-    os.environ.get("RESOURCE_IMPORT_SCRIPT_TIMEOUT_SECONDS", "1800")
+    os.environ.get("RESOURCE_IMPORT_SCRIPT_TIMEOUT_SECONDS", "1800"),
 )
 ALARM_ANALYST_SCRIPT_TIMEOUT_SECONDS = 180
 RESOURCE_IMPORT_PREVIEW_JOBS: dict[str, dict[str, Any]] = {}
@@ -216,6 +255,7 @@ PORTAL_INSPECTION_USER_ID = "default"
 PORTAL_INSPECTION_NAME_LIMIT = 80
 PORTAL_INSPECTION_ENSURE_LOCK = asyncio.Lock()
 
+
 def _load_fault_disposal_runtime():
     skill_root = (
         Path(__file__).resolve().parents[2]
@@ -230,7 +270,10 @@ def _load_fault_disposal_runtime():
     from runtime.tool_adapters import FaultDisposalToolbox
     from runtime.router import TicketRouter
     from runtime.models import TicketContext
-    from runtime.playbooks import ApplicationTimeoutPlaybook, GenericAlarmPlaybook
+    from runtime.playbooks import (
+        ApplicationTimeoutPlaybook,
+        GenericAlarmPlaybook,
+    )
 
     return (
         CopawReasoner,
@@ -297,7 +340,11 @@ def _zgops_cmdb_import_skill_root() -> Path:
 
 
 def _resource_import_bridge_script() -> Path:
-    return _zgops_cmdb_import_skill_root() / "scripts" / "resource_import_bridge.py"
+    return (
+        _zgops_cmdb_import_skill_root()
+        / "scripts"
+        / "resource_import_bridge.py"
+    )
 
 
 def _alarm_analyst_skill_root() -> Path:
@@ -305,7 +352,9 @@ def _alarm_analyst_skill_root() -> Path:
 
 
 def _alarm_analyst_metric_script() -> Path:
-    return _alarm_analyst_skill_root() / "scripts" / "get_metric_definitions.py"
+    return (
+        _alarm_analyst_skill_root() / "scripts" / "get_metric_definitions.py"
+    )
 
 
 def _compact_ui_message(message: dict) -> dict:
@@ -316,7 +365,7 @@ def _compact_ui_message(message: dict) -> dict:
     compact_message["processBlocks"] = message.get("processBlocks", []) or []
     compact_message["disposalOperation"] = message.get("disposalOperation")
     compact_message["faultScenarioResult"] = _shape_fault_scenario_result(
-        message.get("faultScenarioResult")
+        message.get("faultScenarioResult"),
     )
     compact_message["timestamp"] = (
         message.get("timestamp") or datetime.now(timezone.utc).isoformat()
@@ -325,7 +374,11 @@ def _compact_ui_message(message: dict) -> dict:
 
 
 def _resolve_request_agent_id(request: Request) -> str:
-    target_agent_id = getattr(request.state, "agent_id", None) or request.headers.get("X-Agent-Id")
+    target_agent_id = getattr(
+        request.state,
+        "agent_id",
+        None,
+    ) or request.headers.get("X-Agent-Id")
     config = load_config()
 
     if not target_agent_id:
@@ -391,17 +444,25 @@ def _build_portal_real_alarm_prompt(alarm: dict[str, Any]) -> str:
     device_name = str(alarm.get("deviceName") or "").strip() or "--"
     manage_ip = str(alarm.get("manageIp") or "").strip() or "--"
     severity_map = {
-        "1": "紧急", "2": "严重", "3": "普通", "4": "预警",
-        "critical": "紧急", "urgent": "严重", "warning": "普通", "info": "预警",
+        "1": "紧急",
+        "2": "严重",
+        "3": "普通",
+        "4": "预警",
+        "critical": "紧急",
+        "urgent": "严重",
+        "warning": "普通",
+        "info": "预警",
     }
     raw_severity = str(
-        alarm.get("alarmseverity") or alarm.get("level") or ""
+        alarm.get("alarmseverity") or alarm.get("level") or "",
     ).strip()
     severity_label = severity_map.get(raw_severity, raw_severity)
     severity_line = (
         f"告警等级：{raw_severity}（{severity_label}）"
         if raw_severity and severity_label != raw_severity
-        else f"告警等级：{severity_label}" if raw_severity else ""
+        else f"告警等级：{severity_label}"
+        if raw_severity
+        else ""
     )
     lines = [
         f"{title}（{device_name} {manage_ip}）",
@@ -430,7 +491,10 @@ def _build_portal_inspection_prompt(inspection_object: str) -> str:
     return "\n".join(lines)
 
 
-def _build_portal_real_alarm_payload(session_id: str, alarm: dict[str, Any]) -> dict[str, Any]:
+def _build_portal_real_alarm_payload(
+    session_id: str,
+    alarm: dict[str, Any],
+) -> dict[str, Any]:
     return {
         "channel_id": PORTAL_REAL_ALARM_CONSOLE_CHANNEL,
         "sender_id": PORTAL_REAL_ALARM_USER_ID,
@@ -438,7 +502,7 @@ def _build_portal_real_alarm_payload(session_id: str, alarm: dict[str, Any]) -> 
             TextContent(
                 type=ContentType.TEXT,
                 text=_build_portal_real_alarm_prompt(alarm),
-            )
+            ),
         ],
         "meta": {
             "session_id": session_id,
@@ -447,7 +511,10 @@ def _build_portal_real_alarm_payload(session_id: str, alarm: dict[str, Any]) -> 
     }
 
 
-def _build_portal_inspection_payload(session_id: str, inspection_object: str) -> dict[str, Any]:
+def _build_portal_inspection_payload(
+    session_id: str,
+    inspection_object: str,
+) -> dict[str, Any]:
     return {
         "channel_id": PORTAL_INSPECTION_CONSOLE_CHANNEL,
         "sender_id": PORTAL_INSPECTION_USER_ID,
@@ -455,7 +522,7 @@ def _build_portal_inspection_payload(session_id: str, inspection_object: str) ->
             TextContent(
                 type=ContentType.TEXT,
                 text=_build_portal_inspection_prompt(inspection_object),
-            )
+            ),
         ],
         "meta": {
             "session_id": session_id,
@@ -474,7 +541,9 @@ async def _drain_portal_real_alarm_stream(
         async for _ in stream_it:
             pass
     except Exception:
-        print(f"[WARN] drain portal real alarm stream failed for chat_id={chat_id}")
+        print(
+            f"[WARN] drain portal real alarm stream failed for chat_id={chat_id}",
+        )
         traceback.print_exc()
     finally:
         await stream_it.aclose()
@@ -499,17 +568,26 @@ async def _ensure_portal_inspection_session(
 ) -> dict[str, Any]:
     normalized_object = str(inspection_object or "").strip()
     if not normalized_object:
-        raise HTTPException(status_code=400, detail="inspectionObject is required")
+        raise HTTPException(
+            status_code=400,
+            detail="inspectionObject is required",
+        )
 
     workspace = await _get_portal_employee_workspace(request, "inspection")
     if workspace is None:
-        raise HTTPException(status_code=404, detail="Inspection workspace not available")
+        raise HTTPException(
+            status_code=404,
+            detail="Inspection workspace not available",
+        )
 
     console_channel = await workspace.channel_manager.get_channel(
-        PORTAL_INSPECTION_CONSOLE_CHANNEL
+        PORTAL_INSPECTION_CONSOLE_CHANNEL,
     )
     if console_channel is None:
-        raise HTTPException(status_code=503, detail="Inspection console channel not available")
+        raise HTTPException(
+            status_code=503,
+            detail="Inspection console channel not available",
+        )
 
     final_session_id = _build_portal_inspection_session_id(
         normalized_object,
@@ -531,7 +609,8 @@ async def _ensure_portal_inspection_session(
                 for item in await workspace.chat_manager.list_chats()
                 if str(item.session_id or "") == final_session_id
                 and str(item.user_id or "") == PORTAL_INSPECTION_USER_ID
-                and str(item.channel or "") == PORTAL_INSPECTION_CONSOLE_CHANNEL
+                and str(item.channel or "")
+                == PORTAL_INSPECTION_CONSOLE_CHANNEL
             ),
             None,
         )
@@ -562,7 +641,10 @@ async def _ensure_portal_inspection_session(
 
         queue, started = await workspace.task_tracker.attach_or_start(
             chat.id,
-            _build_portal_inspection_payload(final_session_id, normalized_object),
+            _build_portal_inspection_payload(
+                final_session_id,
+                normalized_object,
+            ),
             console_channel.stream_one,
         )
         if started:
@@ -572,7 +654,7 @@ async def _ensure_portal_inspection_session(
                     workspace.task_tracker,
                     queue,
                     chat.id,
-                )
+                ),
             )
         else:
             result["skipped"] = 1
@@ -603,7 +685,7 @@ async def _ensure_portal_real_alarm_sessions(
         return result
 
     console_channel = await workspace.channel_manager.get_channel(
-        PORTAL_REAL_ALARM_CONSOLE_CHANNEL
+        PORTAL_REAL_ALARM_CONSOLE_CHANNEL,
     )
     if console_channel is None:
         return result
@@ -613,7 +695,9 @@ async def _ensure_portal_real_alarm_sessions(
         chats_by_session = {
             str(chat.session_id): chat
             for chat in chats
-            if str(chat.session_id or "").startswith(PORTAL_REAL_ALARM_SESSION_PREFIX)
+            if str(chat.session_id or "").startswith(
+                PORTAL_REAL_ALARM_SESSION_PREFIX,
+            )
         }
         active_alarm_analyses = 0
         for chat in chats_by_session.values():
@@ -636,7 +720,9 @@ async def _ensure_portal_real_alarm_sessions(
             if str(alarm.get("employeeId") or "").strip() not in {"", "fault"}:
                 continue
 
-            alarm_id = str(alarm.get("alarmId") or alarm.get("id") or "").strip()
+            alarm_id = str(
+                alarm.get("alarmId") or alarm.get("id") or "",
+            ).strip()
             if not alarm_id:
                 continue
 
@@ -649,11 +735,15 @@ async def _ensure_portal_real_alarm_sessions(
             current_status = ""
             has_history = False
             if chat is not None:
-                current_status = await workspace.task_tracker.get_status(chat.id)
+                current_status = await workspace.task_tracker.get_status(
+                    chat.id,
+                )
                 if current_status == "idle":
-                    state = await workspace.runner.session.get_session_state_dict(
-                        chat.session_id,
-                        chat.user_id,
+                    state = (
+                        await workspace.runner.session.get_session_state_dict(
+                            chat.session_id,
+                            chat.user_id,
+                        )
                     )
                     has_history = _portal_real_alarm_has_history(state)
                     if has_history:
@@ -662,9 +752,14 @@ async def _ensure_portal_real_alarm_sessions(
                         # No AI reply yet – check dedup window to decide
                         # whether this is a stuck session (allow retry) or
                         # a message that was just sent (skip duplicate).
-                        last_sent = _portal_real_alarm_last_sent.get(session_id, 0.0)
+                        last_sent = _portal_real_alarm_last_sent.get(
+                            session_id,
+                            0.0,
+                        )
                         elapsed = time.monotonic() - last_sent
-                        should_start = elapsed > PORTAL_REAL_ALARM_DEDUP_WINDOW_SECONDS
+                        should_start = (
+                            elapsed > PORTAL_REAL_ALARM_DEDUP_WINDOW_SECONDS
+                        )
                 else:
                     should_start = False
 
@@ -684,9 +779,15 @@ async def _ensure_portal_real_alarm_sessions(
 
             if not should_start:
                 registry_status = (
-                    "analyzing" if current_status == "running" else "taken_over"
+                    "analyzing"
+                    if current_status == "running"
+                    else "taken_over"
                 )
-                if not is_new_chat or has_history or current_status == "running":
+                if (
+                    not is_new_chat
+                    or has_history
+                    or current_status == "running"
+                ):
                     _update_portal_real_alarm_registry_safe(
                         alarm=alarm,
                         status=registry_status,
@@ -721,7 +822,7 @@ async def _ensure_portal_real_alarm_sessions(
                         workspace.task_tracker,
                         queue,
                         chat.id,
-                    )
+                    ),
                 )
             else:
                 _update_portal_real_alarm_registry_safe(
@@ -759,7 +860,7 @@ async def _build_portal_real_alarm_trigger_payload(
             "total": len(alarms),
             "items": alarms,
             "source": "request",
-        }
+        },
     )
 
 
@@ -798,13 +899,22 @@ async def _run_portal_real_alarm_auto_takeover_once() -> dict[str, Any]:
             "sessions": [],
         }
 
+    takeover_limit = diagnosis_settings_store.resolve_int(
+        "auto_takeover_limit",
+        "QWENPAW_PORTAL_REAL_ALARM_AUTO_TAKEOVER_LIMIT",
+        PORTAL_REAL_ALARM_AUTO_TAKEOVER_LIMIT,
+        min_value=1,
+    )
+    anchor = diagnosis_settings_store.get_analysis_anchor()
+    # The visible-alarm payload sorts ascending by event time and slices
+    # to the limit, i.e. it keeps the OLDEST alarms. With the analysis
+    # window active that would let old out-of-window alarms crowd the
+    # newest ones out of the slice and the round would see 0 eligible —
+    # so fetch up to the INOE page cap first, window-filter, and only
+    # then truncate to the per-round takeover limit.
+    fetch_limit = MAX_REAL_ALARM_LIMIT if anchor is not None else takeover_limit
     alarms_payload = await _build_portal_real_alarm_trigger_payload(
-        diagnosis_settings_store.resolve_int(
-            "auto_takeover_limit",
-            "QWENPAW_PORTAL_REAL_ALARM_AUTO_TAKEOVER_LIMIT",
-            PORTAL_REAL_ALARM_AUTO_TAKEOVER_LIMIT,
-            min_value=1,
-        ),
+        fetch_limit,
         None,
         allow_stale=False,
     )
@@ -820,6 +930,29 @@ async def _run_portal_real_alarm_auto_takeover_once() -> dict[str, Any]:
             "skipped": 0,
             "sessions": [],
         }
+    # Analysis window: only alarms born after "the moment real-time
+    # analysis was switched on, minus the configured lookback hours" are
+    # auto-analyzed. The portal alarm list and manual takeover are not
+    # affected. Without an anchor (legacy state) behaviour is unchanged.
+    if anchor is not None:
+        lookback_hours = diagnosis_settings_store.resolve_float(
+            "analysis_lookback_hours",
+            "QWENPAW_PORTAL_REAL_ALARM_LOOKBACK_HOURS",
+            0,
+            min_value=0,
+            max_value=720,
+        )
+        alarms_payload = filter_alarms_started_after(
+            alarms_payload,
+            anchor - timedelta(hours=lookback_hours),
+        )
+        eligible_items = list(alarms_payload.get("items") or [])
+        if len(eligible_items) > takeover_limit:
+            alarms_payload = {
+                **alarms_payload,
+                "items": eligible_items[:takeover_limit],
+                "total": takeover_limit,
+            }
     summary = await _ensure_portal_real_alarm_sessions(
         SimpleNamespace(app=runtime_app),
         alarms_payload,
@@ -828,7 +961,10 @@ async def _run_portal_real_alarm_auto_takeover_once() -> dict[str, Any]:
     return {
         "ok": True,
         "alarmSource": alarms_payload.get("source") or "unknown",
-        "alarmTotal": int(alarms_payload.get("total") or len(alarms_payload.get("items") or [])),
+        "alarmTotal": int(
+            alarms_payload.get("total")
+            or len(alarms_payload.get("items") or []),
+        ),
         **summary,
     }
 
@@ -851,6 +987,29 @@ def _portal_real_alarm_auto_takeover_interval() -> float:
     )
 
 
+def _portal_real_alarm_list_limit() -> int:
+    """Max alarms in the portal list / status badge count."""
+    return diagnosis_settings_store.resolve_int(
+        "alarm_list_limit",
+        "QWENPAW_PORTAL_REAL_ALARM_LIST_LIMIT",
+        PORTAL_REAL_ALARM_ROUTE_DEFAULT_LIMIT,
+        min_value=1,
+        max_value=200,
+    )
+
+
+def _get_portal_real_alarm_wake_event() -> asyncio.Event:
+    global PORTAL_REAL_ALARM_WAKE_EVENT
+    if PORTAL_REAL_ALARM_WAKE_EVENT is None:
+        PORTAL_REAL_ALARM_WAKE_EVENT = asyncio.Event()
+    return PORTAL_REAL_ALARM_WAKE_EVENT
+
+
+def _wake_portal_real_alarm_auto_takeover() -> None:
+    """Interrupt the loop's sleep so the next round starts right away."""
+    _get_portal_real_alarm_wake_event().set()
+
+
 async def _portal_real_alarm_auto_takeover_loop() -> None:
     # The loop runs for the whole app lifetime; the master switch is
     # checked every iteration so toggling it on the settings page takes
@@ -859,28 +1018,43 @@ async def _portal_real_alarm_auto_takeover_loop() -> None:
     while True:
         try:
             if _portal_real_alarm_auto_takeover_enabled():
+                if diagnosis_settings_store.get_analysis_anchor() is None:
+                    # First enabled iteration (e.g. enabled via env at
+                    # startup): anchor "now" so only alarms born from
+                    # this point on (minus lookback) get analyzed.
+                    diagnosis_settings_store.set_analysis_anchor(
+                        datetime.now(timezone.utc),
+                    )
                 summary = await _run_portal_real_alarm_auto_takeover_once()
                 if summary.get("started") or summary.get("created"):
                     print(
                         "[INFO] portal real alarm auto takeover: "
                         f"created={summary.get('created', 0)} "
                         f"started={summary.get('started', 0)} "
-                        f"skipped={summary.get('skipped', 0)}"
+                        f"skipped={summary.get('skipped', 0)}",
                     )
         except asyncio.CancelledError:
             raise
         except Exception as exc:
             print(
                 "[WARN] portal real alarm auto takeover failed: "
-                f"{type(exc).__name__}: {exc}"
+                f"{type(exc).__name__}: {exc}",
             )
             traceback.print_exc()
-        await asyncio.sleep(
-            max(
-                PORTAL_REAL_ALARM_AUTO_TAKEOVER_MIN_INTERVAL_SECONDS,
-                _portal_real_alarm_auto_takeover_interval(),
+        # Interruptible sleep: a wake event (switch flipped on) cuts the
+        # wait short so the first round runs immediately.
+        wake_event = _get_portal_real_alarm_wake_event()
+        wake_event.clear()
+        try:
+            await asyncio.wait_for(
+                wake_event.wait(),
+                timeout=max(
+                    PORTAL_REAL_ALARM_AUTO_TAKEOVER_MIN_INTERVAL_SECONDS,
+                    _portal_real_alarm_auto_takeover_interval(),
+                ),
             )
-        )
+        except asyncio.TimeoutError:
+            pass
 
 
 @router.on_event("startup")
@@ -893,7 +1067,7 @@ async def start_portal_real_alarm_auto_takeover() -> None:
         if reset_count > 0:
             print(
                 f"[INFO] portal real alarm startup: reset {reset_count} zombie "
-                f"'analyzing' record(s) to pending_retry"
+                f"'analyzing' record(s) to pending_retry",
             )
     except Exception:
         traceback.print_exc()
@@ -907,7 +1081,7 @@ async def start_portal_real_alarm_auto_takeover() -> None:
     ):
         return
     PORTAL_REAL_ALARM_AUTO_TAKEOVER_TASK = asyncio.create_task(
-        _portal_real_alarm_auto_takeover_loop()
+        _portal_real_alarm_auto_takeover_loop(),
     )
 
 
@@ -917,6 +1091,427 @@ async def stop_portal_real_alarm_auto_takeover() -> None:
 
     task = PORTAL_REAL_ALARM_AUTO_TAKEOVER_TASK
     PORTAL_REAL_ALARM_AUTO_TAKEOVER_TASK = None
+    if task is None or task.done():
+        return
+    task.cancel()
+    try:
+        await task
+    except asyncio.CancelledError:
+        pass
+
+
+# ---------------------------------------------------------------------------
+# Recovery verification for INOE alarm-clear notifications
+# ---------------------------------------------------------------------------
+#
+# INOE pushes a notification when an alarm is cleared on their side. We
+# persist it as an alarm_clear_events row and let the background loop
+# below verify (INOE recheck + metric check + recurrence observation)
+# that the underlying problem actually recovered. The webhook handler
+# itself only validates and stores, so INOE's call returns fast.
+
+RECOVERY_VERIFICATION_TASK: asyncio.Task | None = None
+RECOVERY_VERIFICATION_LOOP_INTERVAL_SECONDS = 30.0
+
+
+def _recovery_verification_enabled() -> bool:
+    return diagnosis_settings_store.resolve_bool(
+        "recovery_verification_enabled",
+        "QWENPAW_RECOVERY_VERIFICATION_ENABLED",
+        True,
+    )
+
+
+def _recovery_verification_settings() -> dict[str, Any]:
+    return {
+        "delay_seconds": diagnosis_settings_store.resolve_float(
+            "recovery_verify_delay_seconds",
+            "QWENPAW_RECOVERY_VERIFY_DELAY",
+            120,
+            min_value=0,
+        ),
+        "retry_count": diagnosis_settings_store.resolve_int(
+            "recovery_verify_retry_count",
+            "QWENPAW_RECOVERY_VERIFY_RETRY_COUNT",
+            3,
+            min_value=0,
+        ),
+        "retry_interval_seconds": diagnosis_settings_store.resolve_float(
+            "recovery_verify_retry_interval_seconds",
+            "QWENPAW_RECOVERY_VERIFY_RETRY_INTERVAL",
+            300,
+            min_value=10,
+        ),
+        "observation_minutes": diagnosis_settings_store.resolve_float(
+            "recovery_observation_minutes",
+            "QWENPAW_RECOVERY_OBSERVATION_MINUTES",
+            30,
+            min_value=0,
+        ),
+        "batch_limit": diagnosis_settings_store.resolve_int(
+            "recovery_verify_batch_limit",
+            "QWENPAW_RECOVERY_VERIFY_BATCH_LIMIT",
+            5,
+            min_value=1,
+        ),
+    }
+
+
+@router.post(
+    "/real-alarms/clear-notifications",
+    name="receive_real_alarm_clear_notification",
+)
+async def receive_real_alarm_clear_notification(
+    payload: dict = Body(default_factory=dict),
+):
+    """Receive an alarm-clear notification pushed by the INOE platform.
+
+    Deliberately unauthenticated (per integration agreement): the
+    endpoint only schedules a verification, it can never directly mark
+    an alarm as recovered, and repeated pushes for the same alarm are
+    deduplicated into one pending event.
+    """
+    try:
+        parsed = AlarmClearNotificationRequest.model_validate(payload)
+    except ValidationError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    try:
+        alarm_id = parsed.alarm_id.strip()
+        registry_record = get_alarm_record(alarm_id)
+        tracked = registry_record is not None
+        res_id = parsed.res_id.strip() or (
+            str(registry_record.get("resId") or "").strip()
+            if registry_record
+            else ""
+        )
+
+        settings = _recovery_verification_settings()
+        next_verify_at = (
+            clear_events_local_now()
+            + timedelta(seconds=settings["delay_seconds"])
+        ).isoformat()
+
+        event = await asyncio.to_thread(
+            record_clear_notification,
+            alarm_id=alarm_id,
+            res_id=res_id,
+            clear_time=parsed.clear_time,
+            clear_type=parsed.clear_type,
+            operator=parsed.operator,
+            reason=parsed.reason,
+            metric_type=parsed.metric_type,
+            raw_payload=json.dumps(payload, ensure_ascii=False),
+            next_verify_at=next_verify_at,
+        )
+
+        if tracked:
+            _update_portal_real_alarm_registry_safe(
+                alarm_id=alarm_id,
+                verification_status="clear_reported",
+                source="inoe-clear-notification",
+            )
+
+        return {
+            "status": "accepted",
+            "eventId": event.get("id"),
+            "alarmId": alarm_id,
+            "tracked": tracked,
+            "deduped": bool(event.get("deduped")),
+            "nextVerifyAt": event.get("nextVerifyAt"),
+            "verificationEnabled": _recovery_verification_enabled(),
+        }
+    except Exception as exc:
+        error_detail = f"{type(exc).__name__}: {str(exc)}"
+        print(
+            "[ERROR] receive_real_alarm_clear_notification failed: "
+            f"{error_detail}",
+        )
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=error_detail) from exc
+
+
+@router.get("/real-alarms/clear-events")
+async def get_real_alarm_clear_events(
+    alarmId: str = Query(default=""),
+    limit: int = Query(default=50, ge=1, le=500),
+):
+    """List received clear notifications and their verification state."""
+    try:
+        items = await asyncio.to_thread(
+            list_clear_events,
+            alarm_id=alarmId,
+            limit=limit,
+        )
+        return {"total": len(items), "items": items}
+    except Exception as exc:
+        error_detail = f"{type(exc).__name__}: {str(exc)}"
+        print(f"[ERROR] get_real_alarm_clear_events failed: {error_detail}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=error_detail) from exc
+
+
+async def _append_recovery_history_message(
+    *,
+    chat_id: str,
+    event: dict[str, Any],
+    outcome: dict[str, Any],
+    verification: dict[str, Any] | None,
+    alarm_record: dict[str, Any] | None,
+) -> None:
+    if not chat_id:
+        return
+    runtime_app = _get_portal_auto_takeover_runtime_app()
+    if runtime_app is None:
+        return
+    request = SimpleNamespace(app=runtime_app)
+    history = await _load_portal_fault_history(request, session_id=chat_id)
+    history.append(
+        _compact_ui_message(
+            {
+                "id": f"agent-{datetime.now(timezone.utc).timestamp()}",
+                **build_recovery_history_message(
+                    event=event,
+                    outcome=outcome,
+                    verification=verification,
+                    alarm_record=alarm_record,
+                ),
+            },
+        ),
+    )
+    await _save_portal_fault_history(
+        request,
+        session_id=chat_id,
+        messages=history,
+    )
+
+
+async def _process_clear_event(
+    event: dict[str, Any],
+    settings: dict[str, Any],
+) -> None:
+    event_id = int(event.get("id") or 0)
+    alarm_id = str(event.get("alarmId") or "").strip()
+    phase = str(event.get("verifyStatus") or "pending").strip()
+    await asyncio.to_thread(
+        update_clear_event,
+        event_id,
+        verify_status="verifying",
+    )
+
+    alarm_record = get_alarm_record(alarm_id)
+    inoe_recheck = await asyncio.to_thread(
+        query_real_alarm_active_status,
+        alarm_id,
+    )
+
+    verification: dict[str, Any] | None = None
+    if phase == "observing":
+        outcome = decide_observation_outcome(inoe_recheck=inoe_recheck)
+        attempts = int(event.get("verifyAttempts") or 0)
+    else:
+        res_id = str(event.get("resId") or "").strip() or (
+            str(alarm_record.get("resId") or "").strip()
+            if alarm_record
+            else ""
+        )
+        metric_type = str(event.get("metricType") or "").strip() or "mysql"
+        if inoe_recheck != "still_active":
+            if res_id:
+                try:
+                    metric_result = await asyncio.to_thread(
+                        _run_alarm_metric_verification,
+                        metric_type=metric_type,
+                        res_id=res_id,
+                    )
+                    verification = evaluate_metric_recovery(metric_result)
+                except Exception as exc:
+                    verification = {
+                        "status": "unknown",
+                        "summary": f"指标查询失败：{exc}",
+                        "usedMock": False,
+                        "checkedMetrics": [],
+                        "abnormalMetrics": [],
+                        "metricDataResults": [],
+                        "source": "error",
+                    }
+            else:
+                verification = {
+                    "status": "unknown",
+                    "summary": "缺少资源 ID (resId)，无法执行指标验证",
+                    "usedMock": False,
+                    "checkedMetrics": [],
+                    "abnormalMetrics": [],
+                    "metricDataResults": [],
+                    "source": "skipped",
+                }
+        attempts = int(event.get("verifyAttempts") or 0) + 1
+        outcome = decide_verification_outcome(
+            inoe_recheck=inoe_recheck,
+            metric_verification=verification,
+            attempt_number=attempts,
+            retry_count=settings["retry_count"],
+            observation_minutes=settings["observation_minutes"],
+        )
+
+    now = clear_events_local_now()
+    next_verify_at = ""
+    if outcome.get("retry"):
+        next_verify_at = (
+            now + timedelta(seconds=settings["retry_interval_seconds"])
+        ).isoformat()
+    elif outcome.get("eventStatus") == "observing":
+        next_verify_at = (
+            now + timedelta(minutes=settings["observation_minutes"])
+        ).isoformat()
+
+    verify_result = json.dumps(
+        {
+            "phase": phase,
+            "inoeRecheck": inoe_recheck,
+            "outcome": outcome,
+            "verification": verification,
+        },
+        ensure_ascii=False,
+    )
+    await asyncio.to_thread(
+        update_clear_event,
+        event_id,
+        verify_status=str(outcome.get("eventStatus") or "unknown"),
+        verify_attempts=attempts,
+        next_verify_at=next_verify_at,
+        verify_result=verify_result,
+    )
+
+    if outcome.get("registryStatus") or outcome.get("verificationStatus"):
+        _update_portal_real_alarm_registry_safe(
+            alarm_id=alarm_id,
+            status=str(outcome.get("registryStatus") or ""),
+            verification_status=str(
+                outcome.get("verificationStatus") or "",
+            ),
+            source="recovery-verification",
+        )
+
+    if outcome.get("notify"):
+        chat_id = (
+            str(alarm_record.get("chatId") or "").strip()
+            if alarm_record
+            else ""
+        )
+        try:
+            await _append_recovery_history_message(
+                chat_id=chat_id,
+                event=event,
+                outcome=outcome,
+                verification=verification,
+                alarm_record=alarm_record,
+            )
+        except Exception as exc:
+            print(
+                "[WARN] recovery verification history append failed: "
+                f"{type(exc).__name__}: {exc}",
+            )
+        await asyncio.to_thread(
+            send_recovery_notification_safe,
+            event=event,
+            outcome=outcome,
+            alarm_record=alarm_record,
+        )
+
+    print(
+        "[INFO] recovery verification: "
+        f"alarm={alarm_id} phase={phase} attempts={attempts} "
+        f"inoe={inoe_recheck} -> {outcome.get('eventStatus')}",
+    )
+
+
+async def _run_recovery_verification_once() -> dict[str, Any]:
+    settings = _recovery_verification_settings()
+    events = await asyncio.to_thread(
+        fetch_due_clear_events,
+        limit=settings["batch_limit"],
+    )
+    for event in events:
+        try:
+            await _process_clear_event(event, settings)
+        except Exception as exc:
+            event_id = int(event.get("id") or 0)
+            print(
+                "[WARN] recovery verification event failed: "
+                f"event={event_id} {type(exc).__name__}: {exc}",
+            )
+            traceback.print_exc()
+            # Put the event back into the queue with a retry delay so a
+            # transient failure (DB lock, network) cannot wedge it in
+            # 'verifying' forever.
+            try:
+                await asyncio.to_thread(
+                    update_clear_event,
+                    event_id,
+                    verify_status="pending",
+                    next_verify_at=(
+                        clear_events_local_now()
+                        + timedelta(
+                            seconds=settings["retry_interval_seconds"],
+                        )
+                    ).isoformat(),
+                )
+            except Exception:
+                traceback.print_exc()
+    return {"processed": len(events)}
+
+
+async def _recovery_verification_loop() -> None:
+    # Mirrors the auto-takeover loop: runs for the app lifetime, checks
+    # the runtime switch every tick so the settings page takes effect
+    # without a restart. Scheduling state lives in the DB, so pending
+    # verifications survive restarts.
+    while True:
+        try:
+            if _recovery_verification_enabled():
+                await _run_recovery_verification_once()
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            print(
+                "[WARN] recovery verification loop failed: "
+                f"{type(exc).__name__}: {exc}",
+            )
+            traceback.print_exc()
+        await asyncio.sleep(RECOVERY_VERIFICATION_LOOP_INTERVAL_SECONDS)
+
+
+@router.on_event("startup")
+async def start_recovery_verification_loop() -> None:
+    global RECOVERY_VERIFICATION_TASK
+
+    try:
+        reset_count = reset_zombie_verifying_events()
+        if reset_count > 0:
+            print(
+                "[INFO] recovery verification startup: reset "
+                f"{reset_count} zombie 'verifying' event(s) to pending",
+            )
+    except Exception:
+        traceback.print_exc()
+
+    if (
+        RECOVERY_VERIFICATION_TASK is not None
+        and not RECOVERY_VERIFICATION_TASK.done()
+    ):
+        return
+    RECOVERY_VERIFICATION_TASK = asyncio.create_task(
+        _recovery_verification_loop(),
+    )
+
+
+@router.on_event("shutdown")
+async def stop_recovery_verification_loop() -> None:
+    global RECOVERY_VERIFICATION_TASK
+
+    task = RECOVERY_VERIFICATION_TASK
+    RECOVERY_VERIFICATION_TASK = None
     if task is None or task.done():
         return
     task.cancel()
@@ -946,10 +1541,20 @@ async def put_diagnosis_settings(
     Page values win over env. A token field left empty keeps the stored
     secret; sending ``diagnosis_settings_store.CLEAR_SENTINEL`` clears it.
     """
+    previous_enabled = _portal_real_alarm_auto_takeover_enabled()
     try:
         diagnosis_settings_store.apply_settings_update(body)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
+    current_enabled = _portal_real_alarm_auto_takeover_enabled()
+    diagnosis_settings_store.sync_analysis_anchor_on_toggle(
+        previous_enabled,
+        current_enabled,
+    )
+    if not previous_enabled and current_enabled:
+        # Kick the poller so the first round runs immediately instead of
+        # waiting out the remaining polling interval.
+        _wake_portal_real_alarm_auto_takeover()
     return diagnosis_settings_store.build_settings_payload()
 
 
@@ -962,10 +1567,20 @@ async def reset_diagnosis_setting(
     Body: ``{"key": "<field>"}``.
     """
     key = str(body.get("key") or "").strip()
+    previous_enabled = _portal_real_alarm_auto_takeover_enabled()
     try:
         diagnosis_settings_store.reset_setting(key)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
+    # Dropping the auto_takeover_enabled override may flip the effective
+    # switch (falls back to env) — keep the analysis anchor in sync.
+    current_enabled = _portal_real_alarm_auto_takeover_enabled()
+    diagnosis_settings_store.sync_analysis_anchor_on_toggle(
+        previous_enabled,
+        current_enabled,
+    )
+    if not previous_enabled and current_enabled:
+        _wake_portal_real_alarm_auto_takeover()
     return diagnosis_settings_store.build_settings_payload()
 
 
@@ -994,7 +1609,10 @@ def _serialize_preview_job(job_id: str) -> dict[str, Any]:
         job = dict(RESOURCE_IMPORT_PREVIEW_JOBS.get(job_id) or {})
 
     if not job:
-        raise HTTPException(status_code=404, detail=f"Preview job '{job_id}' not found")
+        raise HTTPException(
+            status_code=404,
+            detail=f"Preview job '{job_id}' not found",
+        )
 
     progress_events = _read_preview_progress(Path(job["progressFile"]))
     last_event = progress_events[-1] if progress_events else {}
@@ -1026,7 +1644,13 @@ def _set_preview_job_state(job_id: str, **updates: Any) -> None:
         job["updatedAt"] = _utc_now_iso()
 
 
-def _run_preview_job(job_id: str, *, agent_id: str, payload_files: list[dict[str, Any]], temp_dir: str) -> None:
+def _run_preview_job(
+    job_id: str,
+    *,
+    agent_id: str,
+    payload_files: list[dict[str, Any]],
+    temp_dir: str,
+) -> None:
     progress_file = Path(temp_dir) / "preview-progress.jsonl"
     payload = {
         "agentId": agent_id,
@@ -1051,7 +1675,7 @@ def _run_preview_job(job_id: str, *, agent_id: str, payload_files: list[dict[str
                         },
                         ensure_ascii=False,
                     )
-                    + "\n"
+                    + "\n",
                 )
         except OSError:
             pass
@@ -1096,9 +1720,7 @@ def _build_portal_employee_status_payload(
         state_label = "紧急任务"
         progress = "0%"
     elif status == "running":
-        current_job = (
-            f"正在处理 {active_chat_count or active_task_count} 个对话任务"
-        )
+        current_job = f"正在处理 {active_chat_count or active_task_count} 个对话任务"
         work_status = "运行中"
         state_label = "运行中"
         progress = "50%"
@@ -1114,7 +1736,10 @@ def _build_portal_employee_status_payload(
 
     return {
         "employeeId": employee_id,
-        "employeeName": PORTAL_EMPLOYEE_STATUS_NAMES.get(employee_id, employee_id),
+        "employeeName": PORTAL_EMPLOYEE_STATUS_NAMES.get(
+            employee_id,
+            employee_id,
+        ),
         "available": available,
         "status": status,
         "urgent": urgent,
@@ -1174,10 +1799,16 @@ def _get_loaded_portal_employee_workspace_for_status(
 
 
 def _get_cached_fault_alert_count(*, require_fresh: bool) -> int | None:
-    updated_at = float(PORTAL_STATUS_ALERT_COUNT_CACHE.get("updated_at") or 0.0)
+    updated_at = float(
+        PORTAL_STATUS_ALERT_COUNT_CACHE.get("updated_at") or 0.0,
+    )
     if updated_at <= 0:
         return None
-    if require_fresh and time.monotonic() - updated_at > PORTAL_STATUS_ALERT_CACHE_TTL_SECONDS:
+    if (
+        require_fresh
+        and time.monotonic() - updated_at
+        > PORTAL_STATUS_ALERT_CACHE_TTL_SECONDS
+    ):
         return None
     return int(PORTAL_STATUS_ALERT_COUNT_CACHE.get("value") or 0)
 
@@ -1185,7 +1816,7 @@ def _get_cached_fault_alert_count(*, require_fresh: bool) -> int | None:
 async def _refresh_fault_alert_count_cache() -> int:
     try:
         result = await _get_visible_portal_real_alarms(
-            PORTAL_REAL_ALARM_ROUTE_DEFAULT_LIMIT,
+            _portal_real_alarm_list_limit(),
             timeout_seconds=PORTAL_STATUS_ALERT_TIMEOUT_SECONDS,
             require_fresh=True,
         )
@@ -1195,13 +1826,13 @@ async def _refresh_fault_alert_count_cache() -> int:
             {
                 "value": count,
                 "updated_at": time.monotonic(),
-            }
+            },
         )
         return count
     except Exception as exc:
         print(
             "[WARN] portal employee status alert count unavailable: "
-            f"{type(exc).__name__}: {exc}"
+            f"{type(exc).__name__}: {exc}",
         )
         return int(PORTAL_STATUS_ALERT_COUNT_CACHE.get("value") or 0)
 
@@ -1245,9 +1876,15 @@ def _get_cached_portal_real_alarm_payload(
 ) -> dict[str, Any] | None:
     normalized_limit = _normalize_portal_real_alarm_limit(limit)
     payload = PORTAL_REAL_ALARM_PAYLOAD_CACHE.get("payload")
-    updated_at = float(PORTAL_REAL_ALARM_PAYLOAD_CACHE.get("updated_at") or 0.0)
+    updated_at = float(
+        PORTAL_REAL_ALARM_PAYLOAD_CACHE.get("updated_at") or 0.0,
+    )
     cached_limit = int(PORTAL_REAL_ALARM_PAYLOAD_CACHE.get("limit") or 0)
-    if not isinstance(payload, dict) or updated_at <= 0 or cached_limit < normalized_limit:
+    if (
+        not isinstance(payload, dict)
+        or updated_at <= 0
+        or cached_limit < normalized_limit
+    ):
         return None
     cache_ttl = diagnosis_settings_store.resolve_float(
         "cache_ttl_seconds",
@@ -1265,13 +1902,16 @@ def _store_cached_portal_real_alarm_payload(
     payload: dict[str, Any],
 ) -> dict[str, Any]:
     normalized_limit = _normalize_portal_real_alarm_limit(limit)
-    sliced_payload = _slice_portal_real_alarm_payload(payload, normalized_limit)
+    sliced_payload = _slice_portal_real_alarm_payload(
+        payload,
+        normalized_limit,
+    )
     PORTAL_REAL_ALARM_PAYLOAD_CACHE.update(
         {
             "payload": sliced_payload,
             "limit": normalized_limit,
             "updated_at": time.monotonic(),
-        }
+        },
     )
     return sliced_payload
 
@@ -1280,7 +1920,8 @@ def _enter_portal_real_alarm_degraded_mode(reason: str) -> None:
     global PORTAL_REAL_ALARM_DEGRADED_UNTIL_MONOTONIC
     PORTAL_REAL_ALARM_DEGRADED_UNTIL_MONOTONIC = max(
         PORTAL_REAL_ALARM_DEGRADED_UNTIL_MONOTONIC,
-        time.monotonic() + max(0.0, PORTAL_REAL_ALARM_DEGRADED_COOLDOWN_SECONDS),
+        time.monotonic()
+        + max(0.0, PORTAL_REAL_ALARM_DEGRADED_COOLDOWN_SECONDS),
     )
     print(f"[WARN] portal real alarm backend degraded: {reason}")
 
@@ -1294,7 +1935,9 @@ def _portal_real_alarm_backend_is_degraded() -> bool:
     return time.monotonic() < PORTAL_REAL_ALARM_DEGRADED_UNTIL_MONOTONIC
 
 
-def _load_visible_portal_real_alarm_fallback_payload(limit: int) -> dict[str, Any]:
+def _load_visible_portal_real_alarm_fallback_payload(
+    limit: int,
+) -> dict[str, Any]:
     normalized_limit = _normalize_portal_real_alarm_limit(limit)
     return build_empty_portal_real_alarms_payload(normalized_limit)
 
@@ -1302,7 +1945,7 @@ def _load_visible_portal_real_alarm_fallback_payload(limit: int) -> dict[str, An
 def _query_visible_portal_real_alarms(limit: int) -> dict[str, Any]:
     normalized_limit = _normalize_portal_real_alarm_limit(limit)
     raw_payload = query_portal_real_alarms(
-        normalized_limit * PORTAL_REAL_ALARM_ROUTE_FETCH_MULTIPLIER
+        normalized_limit * PORTAL_REAL_ALARM_ROUTE_FETCH_MULTIPLIER,
     )
     visible_payload = filter_visible_alarms(raw_payload)
     visible_items = list(visible_payload.get("items") or [])[:normalized_limit]
@@ -1319,8 +1962,14 @@ async def _refresh_portal_real_alarm_payload(limit: int) -> dict[str, Any]:
 
     normalized_limit = _normalize_portal_real_alarm_limit(limit)
     try:
-        payload = await asyncio.to_thread(_query_visible_portal_real_alarms, normalized_limit)
-        cached_payload = _store_cached_portal_real_alarm_payload(normalized_limit, payload)
+        payload = await asyncio.to_thread(
+            _query_visible_portal_real_alarms,
+            normalized_limit,
+        )
+        cached_payload = _store_cached_portal_real_alarm_payload(
+            normalized_limit,
+            payload,
+        )
         if cached_payload.get("source") == "live":
             _clear_portal_real_alarm_degraded_mode()
         return cached_payload
@@ -1340,7 +1989,9 @@ def _ensure_portal_real_alarm_refresh(limit: int) -> asyncio.Task:
     if task is not None and not task.done():
         return task
 
-    task = asyncio.create_task(_refresh_portal_real_alarm_payload(normalized_limit))
+    task = asyncio.create_task(
+        _refresh_portal_real_alarm_payload(normalized_limit),
+    )
     PORTAL_REAL_ALARM_REFRESH_TASK = task
     PORTAL_REAL_ALARM_REFRESH_LIMIT = normalized_limit
     return task
@@ -1359,7 +2010,10 @@ async def _get_visible_portal_real_alarms(
         require_fresh=True,
     )
     stale_cached = (
-        _get_cached_portal_real_alarm_payload(normalized_limit, require_fresh=False)
+        _get_cached_portal_real_alarm_payload(
+            normalized_limit,
+            require_fresh=False,
+        )
         if allow_stale
         else None
     )
@@ -1373,8 +2027,11 @@ async def _get_visible_portal_real_alarms(
         return stale_cached
 
     if _portal_real_alarm_backend_is_degraded():
-        return stale_cached or _load_visible_portal_real_alarm_fallback_payload(
-            normalized_limit
+        return (
+            stale_cached
+            or _load_visible_portal_real_alarm_fallback_payload(
+                normalized_limit,
+            )
         )
 
     task = _ensure_portal_real_alarm_refresh(normalized_limit)
@@ -1385,21 +2042,29 @@ async def _get_visible_portal_real_alarms(
         )
     except asyncio.TimeoutError:
         _enter_portal_real_alarm_degraded_mode(
-            f"timeout after {float(timeout_seconds):.1f}s"
+            f"timeout after {float(timeout_seconds):.1f}s",
         )
-        return stale_cached or _load_visible_portal_real_alarm_fallback_payload(
-            normalized_limit
+        return (
+            stale_cached
+            or _load_visible_portal_real_alarm_fallback_payload(
+                normalized_limit,
+            )
         )
     except Exception as exc:
         _enter_portal_real_alarm_degraded_mode(f"{type(exc).__name__}: {exc}")
-        return stale_cached or _load_visible_portal_real_alarm_fallback_payload(
-            normalized_limit
+        return (
+            stale_cached
+            or _load_visible_portal_real_alarm_fallback_payload(
+                normalized_limit,
+            )
         )
 
     return _slice_portal_real_alarm_payload(payload, normalized_limit)
 
 
-def _build_portal_registry_status_from_verification(verification: dict[str, Any]) -> str:
+def _build_portal_registry_status_from_verification(
+    verification: dict[str, Any],
+) -> str:
     status = str(verification.get("status") or "").strip().lower()
     if status == "recovered":
         return "manual_recovered"
@@ -1437,12 +2102,12 @@ def _update_portal_real_alarm_registry_safe(
     except ValueError as exc:
         print(
             "[WARN] portal real alarm registry skipped update: "
-            f"{type(exc).__name__}: {exc}"
+            f"{type(exc).__name__}: {exc}",
         )
     except Exception as exc:
         print(
             "[WARN] portal real alarm registry update failed: "
-            f"{type(exc).__name__}: {exc}"
+            f"{type(exc).__name__}: {exc}",
         )
         traceback.print_exc()
     return None
@@ -1455,7 +2120,9 @@ def _persist_analysis_result_to_registry(
 ) -> None:
     """Persist the card display fields as analysis_result JSON in the alarm registry."""
     try:
-        alarm_id = session_id.removeprefix(PORTAL_REAL_ALARM_SESSION_PREFIX).strip()
+        alarm_id = session_id.removeprefix(
+            PORTAL_REAL_ALARM_SESSION_PREFIX,
+        ).strip()
         if not alarm_id:
             return
         display_fields = extract_card_display_fields(card)
@@ -1467,11 +2134,15 @@ def _persist_analysis_result_to_registry(
     except Exception as exc:
         print(
             f"[WARN] _persist_analysis_result_to_registry failed: "
-            f"{type(exc).__name__}: {exc}"
+            f"{type(exc).__name__}: {exc}",
         )
 
 
-async def _get_employee_alert_count(employee_id: str, *, include_alert_count: bool = True) -> int:
+async def _get_employee_alert_count(
+    employee_id: str,
+    *,
+    include_alert_count: bool = True,
+) -> int:
     if (
         employee_id != "fault"
         or not include_alert_count
@@ -1505,7 +2176,10 @@ async def collect_portal_employee_statuses(
     now_iso = datetime.now(timezone.utc).isoformat()
 
     for employee_id in employee_ids:
-        is_configured, workspace = _get_loaded_portal_employee_workspace_for_status(
+        (
+            is_configured,
+            workspace,
+        ) = _get_loaded_portal_employee_workspace_for_status(
             request,
             employee_id,
         )
@@ -1520,7 +2194,7 @@ async def collect_portal_employee_statuses(
                     alert_count=0,
                     latest_session_title="",
                     updated_at=now_iso,
-                )
+                ),
             )
             continue
 
@@ -1535,13 +2209,17 @@ async def collect_portal_employee_statuses(
                     alert_count=0,
                     latest_session_title="",
                     updated_at=now_iso,
-                )
+                ),
             )
             continue
 
         chats = await workspace.chat_manager.list_chats()
-        active_task_keys = set(await workspace.task_tracker.list_active_tasks())
-        active_chat_count = sum(1 for chat in chats if chat.id in active_task_keys)
+        active_task_keys = set(
+            await workspace.task_tracker.list_active_tasks(),
+        )
+        active_chat_count = sum(
+            1 for chat in chats if chat.id in active_task_keys
+        )
         latest_chat = max(
             chats,
             key=lambda chat: chat.updated_at or chat.created_at,
@@ -1565,7 +2243,7 @@ async def collect_portal_employee_statuses(
                 alert_count=alert_count,
                 latest_session_title=latest_session_title,
                 updated_at=updated_at,
-            )
+            ),
         )
 
     return statuses
@@ -1607,7 +2285,10 @@ async def _load_portal_manual_workorders(
 ) -> dict[str, dict]:
     _workspace, session = await _get_workspace_and_session(request)
     state = await session.get_session_state_dict(session_id, user_id)
-    records = state.get("portal_fault_manual_workorders", {}).get("records", {})
+    records = state.get("portal_fault_manual_workorders", {}).get(
+        "records",
+        {},
+    )
     return records if isinstance(records, dict) else {}
 
 
@@ -1668,6 +2349,7 @@ def _load_cards_for_chat_from_db_by_session(
     from qwenpaw.extensions.portal_alarm_analyst_card_store import (
         load_all_cards_for_session,
     )
+
     return load_all_cards_for_session(session_id)
 
 
@@ -1709,14 +2391,22 @@ def _shape_fault_scenario_result(result: Any) -> dict | None:
     shaped = dict(payload)
     shaped["summary"] = str(payload.get("summary") or "诊断已完成")
     shaped["rootCause"] = (
-        payload.get("rootCause") if isinstance(payload.get("rootCause"), dict) else {}
+        payload.get("rootCause")
+        if isinstance(payload.get("rootCause"), dict)
+        else {}
     )
-    shaped["steps"] = payload.get("steps") if isinstance(payload.get("steps"), list) else []
+    shaped["steps"] = (
+        payload.get("steps") if isinstance(payload.get("steps"), list) else []
+    )
     shaped["logEntries"] = (
-        payload.get("logEntries") if isinstance(payload.get("logEntries"), list) else []
+        payload.get("logEntries")
+        if isinstance(payload.get("logEntries"), list)
+        else []
     )
     shaped["actions"] = (
-        payload.get("actions") if isinstance(payload.get("actions"), list) else []
+        payload.get("actions")
+        if isinstance(payload.get("actions"), list)
+        else []
     )
     return shaped
 
@@ -1733,15 +2423,23 @@ def _shape_fault_scenario_response(result: dict[str, Any]) -> dict[str, Any]:
     return shaped
 
 
-def _normalize_portal_fault_history_messages(messages: list[dict]) -> list[dict]:
-    return [_compact_ui_message(message) for message in messages if isinstance(message, dict)]
+def _normalize_portal_fault_history_messages(
+    messages: list[dict],
+) -> list[dict]:
+    return [
+        _compact_ui_message(message)
+        for message in messages
+        if isinstance(message, dict)
+    ]
 
 
 def _shape_alarm_analyst_card_payload(payload: Any) -> dict | None:
     if not isinstance(payload, dict):
         return None
     try:
-        return AlarmAnalystCard.model_validate(payload).model_dump(by_alias=True)
+        return AlarmAnalystCard.model_validate(payload).model_dump(
+            by_alias=True,
+        )
     except ValidationError:
         return None
 
@@ -1785,7 +2483,11 @@ def _extract_portal_action_from_markdown(markdown_text: str) -> dict | None:
     if not text:
         return None
 
-    match = re.search(r"```portal-action\s*([\s\S]*?)```", text, flags=re.IGNORECASE)
+    match = re.search(
+        r"```portal-action\s*([\s\S]*?)```",
+        text,
+        flags=re.IGNORECASE,
+    )
     if not match:
         return None
 
@@ -1803,15 +2505,28 @@ def _extract_portal_action_from_markdown(markdown_text: str) -> dict | None:
 def _run_fault_disposal_chat_skill(command: str, payload: dict) -> dict:
     script_path = _fault_disposal_bridge_script()
     if not script_path.exists():
-        raise FileNotFoundError(f"fault-disposal chat skill bridge not found: {script_path}")
+        raise FileNotFoundError(
+            f"fault-disposal chat skill bridge not found: {script_path}",
+        )
 
-    with tempfile.NamedTemporaryFile("w", suffix=".json", encoding="utf-8", delete=False) as handle:
+    with tempfile.NamedTemporaryFile(
+        "w",
+        suffix=".json",
+        encoding="utf-8",
+        delete=False,
+    ) as handle:
         json.dump(payload, handle, ensure_ascii=False)
         context_file = handle.name
 
     try:
         completed = subprocess.run(
-            [sys.executable, str(script_path), command, "--context-file", context_file],
+            [
+                sys.executable,
+                str(script_path),
+                command,
+                "--context-file",
+                context_file,
+            ],
             cwd=str(_fault_disposal_skill_root()),
             capture_output=True,
             text=True,
@@ -1828,7 +2543,9 @@ def _run_fault_disposal_chat_skill(command: str, payload: dict) -> dict:
     stdout_text = (completed.stdout or "").strip()
     stderr_text = (completed.stderr or "").strip()
     if completed.returncode != 0:
-        error_text = stderr_text or stdout_text or "fault-disposal skill bridge failed"
+        error_text = (
+            stderr_text or stdout_text or "fault-disposal skill bridge failed"
+        )
         raise RuntimeError(error_text)
 
     if not stdout_text:
@@ -1854,15 +2571,25 @@ def _run_fault_disposal_chat_skill(command: str, payload: dict) -> dict:
     }
 
 
-def _run_resource_import_skill(command: str, payload: dict | None = None) -> dict:
+def _run_resource_import_skill(
+    command: str,
+    payload: dict | None = None,
+) -> dict:
     script_path = _resource_import_bridge_script()
     if not script_path.exists():
-        raise FileNotFoundError(f"resource-import skill bridge not found: {script_path}")
+        raise FileNotFoundError(
+            f"resource-import skill bridge not found: {script_path}",
+        )
 
     command_args = [sys.executable, str(script_path), command]
     context_file = None
     if payload is not None:
-        with tempfile.NamedTemporaryFile("w", suffix=".json", encoding="utf-8", delete=False) as handle:
+        with tempfile.NamedTemporaryFile(
+            "w",
+            suffix=".json",
+            encoding="utf-8",
+            delete=False,
+        ) as handle:
             json.dump(payload, handle, ensure_ascii=False)
             context_file = handle.name
         command_args.extend(["--context-file", context_file])
@@ -1887,10 +2614,14 @@ def _run_resource_import_skill(command: str, payload: dict | None = None) -> dic
     stdout_text = (completed.stdout or "").strip()
     stderr_text = (completed.stderr or "").strip()
     if completed.returncode != 0:
-        error_text = stderr_text or stdout_text or "resource-import skill bridge failed"
+        error_text = (
+            stderr_text or stdout_text or "resource-import skill bridge failed"
+        )
         raise RuntimeError(error_text)
     if not stdout_text:
-        raise RuntimeError("resource-import skill bridge returned empty output")
+        raise RuntimeError(
+            "resource-import skill bridge returned empty output",
+        )
     return json.loads(stdout_text)
 
 
@@ -1910,7 +2641,9 @@ def _run_alarm_metric_verification(
 ) -> dict[str, Any]:
     script_path = _alarm_analyst_metric_script()
     if not script_path.exists():
-        raise FileNotFoundError(f"alarm-analyst metric script not found: {script_path}")
+        raise FileNotFoundError(
+            f"alarm-analyst metric script not found: {script_path}",
+        )
 
     completed = subprocess.run(
         [
@@ -1963,7 +2696,9 @@ async def get_resource_import_start_payload():
         return await asyncio.to_thread(_run_resource_import_skill, "start")
     except Exception as exc:
         error_detail = f"{type(exc).__name__}: {str(exc)}"
-        print(f"[ERROR] get_resource_import_start_payload failed: {error_detail}")
+        print(
+            f"[ERROR] get_resource_import_start_payload failed: {error_detail}",
+        )
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=error_detail) from exc
 
@@ -2007,7 +2742,7 @@ async def preview_resource_import_flow(
                 agent_id=agent_id,
                 payload_files=payload_files,
                 temp_dir=temp_dir,
-            )
+            ),
         )
         return _serialize_preview_job(job_id)
     except Exception as exc:
@@ -2025,7 +2760,9 @@ async def get_preview_resource_import_flow(job_id: str):
         raise
     except Exception as exc:
         error_detail = f"{type(exc).__name__}: {str(exc)}"
-        print(f"[ERROR] get_preview_resource_import_flow failed: {error_detail}")
+        print(
+            f"[ERROR] get_preview_resource_import_flow failed: {error_detail}",
+        )
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=error_detail) from exc
 
@@ -2096,11 +2833,13 @@ async def get_monitoring_overview_dashboard():
 
 @router.get("/real-alarms")
 async def get_real_alarms(
-    limit: int = PORTAL_REAL_ALARM_ROUTE_DEFAULT_LIMIT,
+    limit: int | None = None,
 ):
+    # Without an explicit ?limit= the configurable list size applies
+    # (settings page > env > default 20).
     try:
         return await _get_visible_portal_real_alarms(
-            limit,
+            limit or _portal_real_alarm_list_limit(),
             timeout_seconds=PORTAL_REAL_ALARM_ROUTE_TIMEOUT_SECONDS,
         )
     except Exception as exc:
@@ -2123,7 +2862,10 @@ async def trigger_real_alarm_sessions(
                 detail="MultiAgentManager not initialized",
             )
 
-        alarms_payload = await _build_portal_real_alarm_trigger_payload(limit, payload)
+        alarms_payload = await _build_portal_real_alarm_trigger_payload(
+            limit,
+            payload,
+        )
         summary = await _ensure_portal_real_alarm_sessions(
             request,
             alarms_payload,
@@ -2132,7 +2874,10 @@ async def trigger_real_alarm_sessions(
         return {
             "ok": True,
             "alarmSource": alarms_payload.get("source") or "unknown",
-            "alarmTotal": int(alarms_payload.get("total") or len(alarms_payload.get("items") or [])),
+            "alarmTotal": int(
+                alarms_payload.get("total")
+                or len(alarms_payload.get("items") or []),
+            ),
             **summary,
         }
     except HTTPException:
@@ -2161,9 +2906,11 @@ async def trigger_inspection_sessions(
             body.get("inspectionObject")
             or body.get("inspection_object")
             or body.get("target")
-            or ""
+            or "",
         ).strip()
-        session_id = str(body.get("sessionId") or body.get("session_id") or "").strip()
+        session_id = str(
+            body.get("sessionId") or body.get("session_id") or "",
+        ).strip()
         summary = await _ensure_portal_inspection_session(
             request,
             inspection_object=inspection_object,
@@ -2231,7 +2978,10 @@ async def get_fault_disposal_recovery_visualization(
             simulated_result, _ = toolbox.execute_kill_slow_sql(operation)
             recovery = simulated_result.get("recovery") or {}
 
-        verification, _ = toolbox.collect_recovery_verification(operation, recovery)
+        verification, _ = toolbox.collect_recovery_verification(
+            operation,
+            recovery,
+        )
         visualization = reasoner.build_recovery_visualization_payload(
             verification=verification,
             recovery=recovery,
@@ -2244,7 +2994,9 @@ async def get_fault_disposal_recovery_visualization(
         }
     except Exception as exc:
         error_detail = f"{type(exc).__name__}: {str(exc)}"
-        print(f"[ERROR] get_fault_disposal_recovery_visualization failed: {error_detail}")
+        print(
+            f"[ERROR] get_fault_disposal_recovery_visualization failed: {error_detail}",
+        )
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=error_detail) from exc
 
@@ -2260,7 +3012,10 @@ async def fault_disposal_diagnose(
             raise ValueError("sessionId is required")
         visible_content = str(payload.get("visibleContent") or "").strip()
         result = _run_fault_disposal_diagnose(payload)
-        history = await _load_portal_fault_history(request, session_id=session_id)
+        history = await _load_portal_fault_history(
+            request,
+            session_id=session_id,
+        )
         if visible_content:
             history.append(
                 _compact_ui_message(
@@ -2269,7 +3024,7 @@ async def fault_disposal_diagnose(
                         "type": "user",
                         "content": visible_content,
                     },
-                )
+                ),
             )
         for message in result.get("messages", []) or []:
             history.append(
@@ -2281,9 +3036,13 @@ async def fault_disposal_diagnose(
                         "processBlocks": message.get("processBlocks", []),
                         "disposalOperation": message.get("action"),
                     },
-                )
+                ),
             )
-        await _save_portal_fault_history(request, session_id=session_id, messages=history)
+        await _save_portal_fault_history(
+            request,
+            session_id=session_id,
+            messages=history,
+        )
         return result
     except Exception as exc:
         error_detail = f"{type(exc).__name__}: {str(exc)}"
@@ -2303,7 +3062,10 @@ async def fault_disposal_execute(
             raise ValueError("sessionId is required")
         visible_content = str(payload.get("visibleContent") or "").strip()
         result = _run_fault_disposal_execute(payload)
-        history = await _load_portal_fault_history(request, session_id=session_id)
+        history = await _load_portal_fault_history(
+            request,
+            session_id=session_id,
+        )
         if visible_content:
             history.append(
                 _compact_ui_message(
@@ -2312,7 +3074,7 @@ async def fault_disposal_execute(
                         "type": "user",
                         "content": visible_content,
                     },
-                )
+                ),
             )
         for message in result.get("messages", []) or []:
             history.append(
@@ -2324,9 +3086,13 @@ async def fault_disposal_execute(
                         "processBlocks": message.get("processBlocks", []),
                         "disposalOperation": message.get("action"),
                     },
-                )
+                ),
             )
-        await _save_portal_fault_history(request, session_id=session_id, messages=history)
+        await _save_portal_fault_history(
+            request,
+            session_id=session_id,
+            messages=history,
+        )
         return result
     except Exception as exc:
         error_detail = f"{type(exc).__name__}: {str(exc)}"
@@ -2349,10 +3115,13 @@ async def dispatch_fault_manual_workorder(
                 detail="alarm.alarmId is required",
             )
         callback_url = str(
-            request.url_for("notify_fault_manual_workorder_closed")
+            request.url_for("notify_fault_manual_workorder_closed"),
         )
         record = build_analysis_record(parsed, callback_url=callback_url)
-        records = await _load_portal_manual_workorders(request, session_id=parsed.chat_id)
+        records = await _load_portal_manual_workorders(
+            request,
+            session_id=parsed.chat_id,
+        )
         records[alarm_id] = record
         await _save_portal_manual_workorders(
             request,
@@ -2367,16 +3136,23 @@ async def dispatch_fault_manual_workorder(
             source="manual-dispatch",
         )
 
-        history = await _load_portal_fault_history(request, session_id=parsed.chat_id)
+        history = await _load_portal_fault_history(
+            request,
+            session_id=parsed.chat_id,
+        )
         history.append(
             _compact_ui_message(
                 {
                     "id": f"agent-{datetime.now(timezone.utc).timestamp()}",
                     **build_analysis_dispatch_history_message(record),
-                }
-            )
+                },
+            ),
         )
-        await _save_portal_fault_history(request, session_id=parsed.chat_id, messages=history)
+        await _save_portal_fault_history(
+            request,
+            session_id=parsed.chat_id,
+            messages=history,
+        )
 
         return {
             "status": "pending_manual",
@@ -2390,18 +3166,25 @@ async def dispatch_fault_manual_workorder(
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except Exception as exc:
         error_detail = f"{type(exc).__name__}: {str(exc)}"
-        print(f"[ERROR] dispatch_fault_manual_workorder failed: {error_detail}")
+        print(
+            f"[ERROR] dispatch_fault_manual_workorder failed: {error_detail}",
+        )
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=error_detail) from exc
 
 
-@router.post("/fault-disposal/manual-workorders/notify-closed", name="notify_fault_manual_workorder_closed")
+@router.post(
+    "/fault-disposal/manual-workorders/notify-closed",
+    name="notify_fault_manual_workorder_closed",
+)
 async def notify_fault_manual_workorder_closed(
     request: Request,
     payload: dict = Body(default_factory=dict),
 ):
     try:
-        parsed = ManualWorkorderCloseNotificationRequest.model_validate(payload)
+        parsed = ManualWorkorderCloseNotificationRequest.model_validate(
+            payload,
+        )
 
         # Resolve alarm_id and chat_id for record lookup
         alarm_id = parsed.alarm_id.strip()
@@ -2425,7 +3208,10 @@ async def notify_fault_manual_workorder_closed(
         # Try to find the record: first by alarm_id, then fall back to res_id (legacy)
         record = None
         if chat_id:
-            records = await _load_portal_manual_workorders(request, session_id=chat_id)
+            records = await _load_portal_manual_workorders(
+                request,
+                session_id=chat_id,
+            )
             if alarm_id:
                 record = records.get(alarm_id)
             if not record and res_id:
@@ -2489,7 +3275,9 @@ async def notify_fault_manual_workorder_closed(
             )
         _update_portal_real_alarm_registry_safe(
             alarm_id=alarm_id,
-            status=_build_portal_registry_status_from_verification(verification),
+            status=_build_portal_registry_status_from_verification(
+                verification,
+            ),
             chat_id=chat_id,
             res_id=effective_res_id,
             source="manual-close",
@@ -2497,7 +3285,10 @@ async def notify_fault_manual_workorder_closed(
         )
 
         if chat_id:
-            history = await _load_portal_fault_history(request, session_id=chat_id)
+            history = await _load_portal_fault_history(
+                request,
+                session_id=chat_id,
+            )
             history.append(
                 _compact_ui_message(
                     {
@@ -2506,10 +3297,14 @@ async def notify_fault_manual_workorder_closed(
                             merged_record,
                             verification=verification,
                         ),
-                    }
-                )
+                    },
+                ),
             )
-            await _save_portal_fault_history(request, session_id=chat_id, messages=history)
+            await _save_portal_fault_history(
+                request,
+                session_id=chat_id,
+                messages=history,
+            )
 
         return {
             "status": verification.get("status") or "unknown",
@@ -2525,7 +3320,9 @@ async def notify_fault_manual_workorder_closed(
         raise
     except Exception as exc:
         error_detail = f"{type(exc).__name__}: {str(exc)}"
-        print(f"[ERROR] notify_fault_manual_workorder_closed failed: {error_detail}")
+        print(
+            f"[ERROR] notify_fault_manual_workorder_closed failed: {error_detail}",
+        )
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=error_detail) from exc
 
@@ -2538,19 +3335,27 @@ async def portal_alarm_analyst_diagnose(
     try:
         session_id = str(payload.get("sessionId") or "").strip()
         if not session_id:
-            raise HTTPException(status_code=422, detail="sessionId is required")
+            raise HTTPException(
+                status_code=422,
+                detail="sessionId is required",
+            )
 
-        result = _shape_fault_scenario_response(run_alarm_analyst_diagnose(payload))
+        result = _shape_fault_scenario_response(
+            run_alarm_analyst_diagnose(payload),
+        )
         if hasattr(request.app.state, "multi_agent_manager"):
-            history = await _load_portal_fault_history(request, session_id=session_id)
+            history = await _load_portal_fault_history(
+                request,
+                session_id=session_id,
+            )
             history.append(
                 _compact_ui_message(
                     {
                         "id": f"user-{datetime.now(timezone.utc).timestamp()}",
                         "type": "user",
                         "content": payload.get("content", ""),
-                    }
-                )
+                    },
+                ),
             )
             history.append(
                 _compact_ui_message(
@@ -2559,8 +3364,8 @@ async def portal_alarm_analyst_diagnose(
                         "type": "agent",
                         "content": result["result"]["summary"],
                         "faultScenarioResult": result["result"],
-                    }
-                )
+                    },
+                ),
             )
             await _save_portal_fault_history(
                 request,
@@ -2592,7 +3397,9 @@ async def create_portal_alarm_analyst_card(
             process_blocks=parsed.process_blocks,
         )
         if not matched:
-            return AlarmAnalystCardCreateResponse(matched=False).model_dump(by_alias=True)
+            return AlarmAnalystCardCreateResponse(matched=False).model_dump(
+                by_alias=True,
+            )
 
         card = build_alarm_analyst_card(
             chat_id=parsed.chat_id,
@@ -2634,7 +3441,9 @@ async def create_portal_alarm_analyst_card(
         raise
     except Exception as exc:
         error_detail = f"{type(exc).__name__}: {str(exc)}"
-        print(f"[ERROR] create_portal_alarm_analyst_card failed: {error_detail}")
+        print(
+            f"[ERROR] create_portal_alarm_analyst_card failed: {error_detail}",
+        )
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=error_detail) from exc
 
@@ -2647,7 +3456,9 @@ async def list_portal_alarm_analyst_cards(
 ):
     try:
         if not hasattr(request.app.state, "multi_agent_manager"):
-            return AlarmAnalystCardListResponse(cards=[]).model_dump(by_alias=True)
+            return AlarmAnalystCardListResponse(cards=[]).model_dump(
+                by_alias=True,
+            )
 
         # Fast path: load from SQLite directly by chat_id
         db_chat_records = _load_cards_for_chat_from_db(chat_id)
@@ -2658,11 +3469,16 @@ async def list_portal_alarm_analyst_cards(
                 if shaped:
                     cards.append(shaped)
             return AlarmAnalystCardListResponse(
-                cards=[AlarmAnalystCard.model_validate(card) for card in cards],
+                cards=[
+                    AlarmAnalystCard.model_validate(card) for card in cards
+                ],
             ).model_dump(by_alias=True)
 
         # Fallback: load from session state (triggers migration)
-        records = await _load_portal_alarm_analyst_cards(request, session_id=session_id)
+        records = await _load_portal_alarm_analyst_cards(
+            request,
+            session_id=session_id,
+        )
         cards = _list_alarm_analyst_cards_for_chat(records, chat_id)
         return AlarmAnalystCardListResponse(
             cards=[AlarmAnalystCard.model_validate(card) for card in cards],
@@ -2673,7 +3489,9 @@ async def list_portal_alarm_analyst_cards(
         raise
     except Exception as exc:
         error_detail = f"{type(exc).__name__}: {str(exc)}"
-        print(f"[ERROR] list_portal_alarm_analyst_cards failed: {error_detail}")
+        print(
+            f"[ERROR] list_portal_alarm_analyst_cards failed: {error_detail}",
+        )
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=error_detail) from exc
 
@@ -2689,21 +3507,46 @@ async def get_alarm_analysis_result(alarm_id: str):
     try:
         record = get_alarm_record(alarm_id)
         if not record:
-            return {"code": 200, "analyst_result": 1, "message": f"Alarm not found: {alarm_id}", "data": None}
+            return {
+                "code": 200,
+                "analyst_result": 1,
+                "message": f"Alarm not found: {alarm_id}",
+                "data": None,
+            }
 
         analysis_json = record.get("analysisResult", "")
         if not analysis_json:
             status = record.get("status", "")
             if status == "analyzing":
-                return {"code": 200, "analyst_result": 0, "message": "分析进行中", "data": None}
-            return {"code": 200, "analyst_result": 0, "message": "暂无分析结果", "data": None}
+                return {
+                    "code": 200,
+                    "analyst_result": 0,
+                    "message": "分析进行中",
+                    "data": None,
+                }
+            return {
+                "code": 200,
+                "analyst_result": 0,
+                "message": "暂无分析结果",
+                "data": None,
+            }
 
         analysis_data = json.loads(analysis_json)
-        return {"code": 200, "analyst_result": 0, "message": "success", "data": analysis_data}
+        return {
+            "code": 200,
+            "analyst_result": 0,
+            "message": "success",
+            "data": analysis_data,
+        }
     except HTTPException:
         raise
     except json.JSONDecodeError:
-        return {"code": 200, "analyst_result": 0, "message": "分析结果数据异常", "data": None}
+        return {
+            "code": 200,
+            "analyst_result": 0,
+            "message": "分析结果数据异常",
+            "data": None,
+        }
     except Exception as exc:
         error_detail = f"{type(exc).__name__}: {str(exc)}"
         print(f"[ERROR] get_alarm_analysis_result failed: {error_detail}")
@@ -2717,7 +3560,10 @@ async def fault_disposal_history(
     session_id: str,
 ):
     try:
-        history = await _load_portal_fault_history(request, session_id=session_id)
+        history = await _load_portal_fault_history(
+            request,
+            session_id=session_id,
+        )
         return {
             "messages": _normalize_portal_fault_history_messages(history),
             "status": "idle",
@@ -2769,7 +3615,9 @@ async def synthesize_knowledge_base_answer(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except Exception as exc:
         error_detail = f"{type(exc).__name__}: {str(exc)}"
-        print(f"[ERROR] synthesize_knowledge_base_answer failed: {error_detail}")
+        print(
+            f"[ERROR] synthesize_knowledge_base_answer failed: {error_detail}",
+        )
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=error_detail) from exc
 
@@ -2817,26 +3665,34 @@ def get_knowledge_base_source_detail(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except Exception as exc:
         error_detail = f"{type(exc).__name__}: {str(exc)}"
-        print(f"[ERROR] get_knowledge_base_source_detail failed: {error_detail}")
+        print(
+            f"[ERROR] get_knowledge_base_source_detail failed: {error_detail}",
+        )
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=error_detail) from exc
 
 
 @router.post("/knowledge-base/manual-entry")
-def create_knowledge_base_manual_entry(payload: dict[str, Any] | None = Body(default=None)):
+def create_knowledge_base_manual_entry(
+    payload: dict[str, Any] | None = Body(default=None),
+):
     try:
         return knowledge_base.manual_entry(payload)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
         error_detail = f"{type(exc).__name__}: {str(exc)}"
-        print(f"[ERROR] create_knowledge_base_manual_entry failed: {error_detail}")
+        print(
+            f"[ERROR] create_knowledge_base_manual_entry failed: {error_detail}",
+        )
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=error_detail) from exc
 
 
 @router.post("/knowledge-base/sources/update")
-def update_knowledge_base_source(payload: dict[str, Any] | None = Body(default=None)):
+def update_knowledge_base_source(
+    payload: dict[str, Any] | None = Body(default=None),
+):
     try:
         return knowledge_base.update_source(payload)
     except ValueError as exc:
@@ -2849,7 +3705,9 @@ def update_knowledge_base_source(payload: dict[str, Any] | None = Body(default=N
 
 
 @router.post("/knowledge-base/sources/archive")
-def archive_knowledge_base_sources(payload: dict[str, Any] | None = Body(default=None)):
+def archive_knowledge_base_sources(
+    payload: dict[str, Any] | None = Body(default=None),
+):
     try:
         return knowledge_base.archive_sources(payload)
     except Exception as exc:
@@ -2860,23 +3718,31 @@ def archive_knowledge_base_sources(payload: dict[str, Any] | None = Body(default
 
 
 @router.post("/knowledge-base/sources/unarchive")
-def unarchive_knowledge_base_sources(payload: dict[str, Any] | None = Body(default=None)):
+def unarchive_knowledge_base_sources(
+    payload: dict[str, Any] | None = Body(default=None),
+):
     try:
         return knowledge_base.unarchive_sources(payload)
     except Exception as exc:
         error_detail = f"{type(exc).__name__}: {str(exc)}"
-        print(f"[ERROR] unarchive_knowledge_base_sources failed: {error_detail}")
+        print(
+            f"[ERROR] unarchive_knowledge_base_sources failed: {error_detail}",
+        )
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=error_detail) from exc
 
 
 @router.post("/knowledge-base/embedding/toggle")
-def toggle_knowledge_base_embedding(payload: dict[str, Any] | None = Body(default=None)):
+def toggle_knowledge_base_embedding(
+    payload: dict[str, Any] | None = Body(default=None),
+):
     try:
         return knowledge_base.set_embedding_enabled(payload)
     except Exception as exc:
         error_detail = f"{type(exc).__name__}: {str(exc)}"
-        print(f"[ERROR] toggle_knowledge_base_embedding failed: {error_detail}")
+        print(
+            f"[ERROR] toggle_knowledge_base_embedding failed: {error_detail}",
+        )
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=error_detail) from exc
 
@@ -2889,7 +3755,9 @@ def reindex_knowledge_base_embeddings(force: bool = Query(False)):
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except Exception as exc:
         error_detail = f"{type(exc).__name__}: {str(exc)}"
-        print(f"[ERROR] reindex_knowledge_base_embeddings failed: {error_detail}")
+        print(
+            f"[ERROR] reindex_knowledge_base_embeddings failed: {error_detail}",
+        )
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=error_detail) from exc
 
@@ -2918,7 +3786,9 @@ def list_knowledge_base_ingestion_jobs(limit: int = Query(20)):
         return knowledge_base.ingestion_jobs(limit=limit)
     except Exception as exc:
         error_detail = f"{type(exc).__name__}: {str(exc)}"
-        print(f"[ERROR] list_knowledge_base_ingestion_jobs failed: {error_detail}")
+        print(
+            f"[ERROR] list_knowledge_base_ingestion_jobs failed: {error_detail}",
+        )
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=error_detail) from exc
 
@@ -2931,7 +3801,9 @@ def get_knowledge_base_ingestion_progress(job_id: str):
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except Exception as exc:
         error_detail = f"{type(exc).__name__}: {str(exc)}"
-        print(f"[ERROR] get_knowledge_base_ingestion_progress failed: {error_detail}")
+        print(
+            f"[ERROR] get_knowledge_base_ingestion_progress failed: {error_detail}",
+        )
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=error_detail) from exc
 
@@ -2942,7 +3814,9 @@ def get_knowledge_base_source_summary():
         return knowledge_base.source_summary()
     except Exception as exc:
         error_detail = f"{type(exc).__name__}: {str(exc)}"
-        print(f"[ERROR] get_knowledge_base_source_summary failed: {error_detail}")
+        print(
+            f"[ERROR] get_knowledge_base_source_summary failed: {error_detail}",
+        )
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=error_detail) from exc
 
@@ -2980,18 +3854,24 @@ def list_knowledge_base_builtin_packs():
         return knowledge_base.builtin_packs()
     except Exception as exc:
         error_detail = f"{type(exc).__name__}: {str(exc)}"
-        print(f"[ERROR] list_knowledge_base_builtin_packs failed: {error_detail}")
+        print(
+            f"[ERROR] list_knowledge_base_builtin_packs failed: {error_detail}",
+        )
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=error_detail) from exc
 
 
 @router.post("/knowledge-base/builtin-packs/reload")
-def reload_knowledge_base_builtin_packs(payload: dict[str, Any] | None = Body(default=None)):
+def reload_knowledge_base_builtin_packs(
+    payload: dict[str, Any] | None = Body(default=None),
+):
     try:
         return knowledge_base.reload_builtin_pack(payload)
     except Exception as exc:
         error_detail = f"{type(exc).__name__}: {str(exc)}"
-        print(f"[ERROR] reload_knowledge_base_builtin_packs failed: {error_detail}")
+        print(
+            f"[ERROR] reload_knowledge_base_builtin_packs failed: {error_detail}",
+        )
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=error_detail) from exc
 
@@ -3040,7 +3920,11 @@ async def portal_mcp_import(request: Request, body: _PortalMcpImportRequest):
     """
     from qwenpaw.app.agent_context import get_agent_for_request
     from qwenpaw.app.utils import schedule_agent_reload
-    from qwenpaw.config.config import MCPClientConfig, MCPConfig, save_agent_config
+    from qwenpaw.config.config import (
+        MCPClientConfig,
+        MCPConfig,
+        save_agent_config,
+    )
     from qwenpaw.extensions.api.domain_guard import judge_text_async
 
     client_key = (body.client_key or "").strip()
@@ -3050,7 +3934,8 @@ async def portal_mcp_import(request: Request, body: _PortalMcpImportRequest):
     transport = (c.transport or "streamable_http").strip()
     if transport not in ("stdio", "streamable_http", "sse"):
         raise HTTPException(
-            status_code=400, detail=f"不支持的 transport: {transport}"
+            status_code=400,
+            detail=f"不支持的 transport: {transport}",
         )
 
     agent = await get_agent_for_request(request)
@@ -3059,7 +3944,11 @@ async def portal_mcp_import(request: Request, body: _PortalMcpImportRequest):
     cmd_line = " ".join(
         x for x in [(c.command or "").strip(), " ".join(c.args or [])] if x
     ).strip()
-    extra = {"transport": transport, "url": (c.url or "").strip(), "command": cmd_line}
+    extra = {
+        "transport": transport,
+        "url": (c.url or "").strip(),
+        "command": cmd_line,
+    }
     content = "\n".join(
         x for x in [c.description, extra["url"], cmd_line] if x
     )
@@ -3073,7 +3962,10 @@ async def portal_mcp_import(request: Request, body: _PortalMcpImportRequest):
     if not verdict.allowed:
         return JSONResponse(
             status_code=422,
-            content=verdict.to_payload(kind="mcp", name=(c.name or client_key)),
+            content=verdict.to_payload(
+                kind="mcp",
+                name=(c.name or client_key),
+            ),
         )
 
     # ---- create (mirror app/routers/mcp.py::create_mcp_client) ----
@@ -3164,7 +4056,8 @@ async def fde_generate(body: FdeGenerateRequest):
 async def fde_show_staged(skill_name: str):
     try:
         return await asyncio.to_thread(
-            fde_workbench_service.staged_detail_with_review, skill_name,
+            fde_workbench_service.staged_detail_with_review,
+            skill_name,
         )
     except fde_workbench_service.FdeWorkbenchError as exc:
         return _fde_error_response(exc)
@@ -3174,7 +4067,8 @@ async def fde_show_staged(skill_name: str):
 async def fde_selfcheck_staged(skill_name: str):
     try:
         return await asyncio.to_thread(
-            fde_workbench_service.selfcheck_staged_skill, skill_name,
+            fde_workbench_service.selfcheck_staged_skill,
+            skill_name,
         )
     except fde_workbench_service.FdeWorkbenchError as exc:
         return _fde_error_response(exc)
@@ -3182,7 +4076,8 @@ async def fde_selfcheck_staged(skill_name: str):
 
 @router.put("/fde/staged/{skill_name}/fields")
 async def fde_edit_staged_fields(
-    skill_name: str, body: FdeEditFieldsRequest,
+    skill_name: str,
+    body: FdeEditFieldsRequest,
 ):
     try:
         return await asyncio.to_thread(
@@ -3201,7 +4096,8 @@ async def fde_edit_staged_fields(
 
 @router.put("/fde/staged/{skill_name}/files")
 async def fde_edit_staged_files(
-    skill_name: str, body: FdeEditFilesRequest,
+    skill_name: str,
+    body: FdeEditFilesRequest,
 ):
     try:
         return await asyncio.to_thread(
@@ -3237,7 +4133,8 @@ async def fde_probe_staged(
     try:
         return await asyncio.to_thread(
             lambda: fde_workbench_service.probe_staged_skill(
-                skill_name, context=context,
+                skill_name,
+                context=context,
             ),
         )
     except fde_workbench_service.FdeWorkbenchError as exc:
@@ -3299,7 +4196,8 @@ async def fde_install_staged(
 async def fde_discard_staged(skill_name: str):
     try:
         return await asyncio.to_thread(
-            fde_workbench_service.discard_staged_skill, skill_name,
+            fde_workbench_service.discard_staged_skill,
+            skill_name,
         )
     except fde_workbench_service.FdeWorkbenchError as exc:
         return _fde_error_response(exc)
@@ -3327,6 +4225,7 @@ async def fde_list_installed():
 # --- installed-skill .env configuration -----------------------------------
 # Lets operators fill credentials from the panel after install instead of
 # SSH'ing to ``~/.qwenpaw/workspaces/<agent>/skills/<skill>/.env``.
+
 
 @router.get(
     "/fde/installed/{target_workspace}/{skill_name}/env",
@@ -3427,7 +4326,8 @@ async def fde_delete_installed(
         schedule_agent_reload(request, target_workspace)
         if result.get("gateway_mirror_removed"):
             schedule_agent_reload(
-                request, fde_workbench_service.GATEWAY_AGENT_ID,
+                request,
+                fde_workbench_service.GATEWAY_AGENT_ID,
             )
     except Exception:  # noqa: BLE001 - reload is best-effort
         pass
@@ -3456,11 +4356,14 @@ async def fde_write_installed_env(
 def register_app_routes(fastapi_app) -> None:
     """Register portal routes on the main QwenPaw FastAPI app."""
     if not getattr(fastapi_app.state, "portal_api_compat_installed", False):
+
         @fastapi_app.middleware("http")
         async def portal_api_compat_middleware(request: Request, call_next):
             path = request.scope.get("path", "")
             if isinstance(path, str) and path.startswith("/portal-api/"):
-                request.scope["path"] = f"/api/portal{path[len('/portal-api'):]}"
+                request.scope[
+                    "path"
+                ] = f"/api/portal{path[len('/portal-api'):]}"
             return await call_next(request)
 
         fastapi_app.state.portal_api_compat_installed = True
@@ -3475,10 +4378,16 @@ def register_app_routes(fastapi_app) -> None:
 
 @router.get("/alarm-registry/records")
 async def list_alarm_registry_records(
-    status: str = Query(default="", description="Filter by status (comma-separated)"),
+    status: str = Query(
+        default="",
+        description="Filter by status (comma-separated)",
+    ),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=200),
-    search: str = Query(default="", description="Search in title/deviceName/manageIp/alarmId"),
+    search: str = Query(
+        default="",
+        description="Search in title/deviceName/manageIp/alarmId",
+    ),
 ):
     """List all alarm registry records with filtering and pagination."""
     try:
@@ -3487,14 +4396,19 @@ async def list_alarm_registry_records(
 
         # Filter by status
         if status.strip():
-            allowed_statuses = {s.strip() for s in status.split(",") if s.strip()}
-            items = [r for r in items if r.get("status", "") in allowed_statuses]
+            allowed_statuses = {
+                s.strip() for s in status.split(",") if s.strip()
+            }
+            items = [
+                r for r in items if r.get("status", "") in allowed_statuses
+            ]
 
         # Search filter
         search_term = search.strip().lower()
         if search_term:
             items = [
-                r for r in items
+                r
+                for r in items
                 if search_term in str(r.get("title", "")).lower()
                 or search_term in str(r.get("deviceName", "")).lower()
                 or search_term in str(r.get("manageIp", "")).lower()
@@ -3506,7 +4420,10 @@ async def list_alarm_registry_records(
         items.sort(
             key=lambda r: (
                 r.get("eventTime", "") or "",
-                r.get("handledAt", "") or r.get("takenOverAt", "") or r.get("updatedAt", "") or "",
+                r.get("handledAt", "")
+                or r.get("takenOverAt", "")
+                or r.get("updatedAt", "")
+                or "",
             ),
             reverse=True,
         )
@@ -3520,7 +4437,9 @@ async def list_alarm_registry_records(
             "total": total,
             "page": page,
             "pageSize": page_size,
-            "totalPages": (total + page_size - 1) // page_size if total > 0 else 0,
+            "totalPages": (total + page_size - 1) // page_size
+            if total > 0
+            else 0,
             "items": page_items,
         }
     except Exception as exc:
@@ -3536,12 +4455,22 @@ async def update_alarm_registry_status(
     new_status = str(payload.get("status", "")).strip()
     new_chat_id = str(payload.get("chatId", "")).strip()
     if not new_status and not new_chat_id:
-        raise HTTPException(status_code=422, detail="status or chatId is required")
+        raise HTTPException(
+            status_code=422,
+            detail="status or chatId is required",
+        )
     if new_status:
         allowed_statuses = {
-            "new", "taken_over", "analyzing", "analyzed", "manual_pending",
-            "manual_recovered", "manual_unrecovered", "manual_unknown",
-            "resolved", "ignored",
+            "new",
+            "taken_over",
+            "analyzing",
+            "analyzed",
+            "manual_pending",
+            "manual_recovered",
+            "manual_unrecovered",
+            "manual_unknown",
+            "resolved",
+            "ignored",
         }
         if new_status not in allowed_statuses:
             raise HTTPException(
@@ -3590,9 +4519,13 @@ async def register_alarm_registry_record(
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
+
 @router.get("/alarm-registry/export")
 async def export_alarm_registry_records(
-    status: str = Query(default="", description="Filter by status (comma-separated)"),
+    status: str = Query(
+        default="",
+        description="Filter by status (comma-separated)",
+    ),
 ):
     """Export alarm registry records as JSON."""
     try:
@@ -3600,13 +4533,20 @@ async def export_alarm_registry_records(
         items = list(all_records.values())
 
         if status.strip():
-            allowed_statuses = {s.strip() for s in status.split(",") if s.strip()}
-            items = [r for r in items if r.get("status", "") in allowed_statuses]
+            allowed_statuses = {
+                s.strip() for s in status.split(",") if s.strip()
+            }
+            items = [
+                r for r in items if r.get("status", "") in allowed_statuses
+            ]
 
         items.sort(
             key=lambda r: (
                 r.get("eventTime", "") or "",
-                r.get("handledAt", "") or r.get("takenOverAt", "") or r.get("updatedAt", "") or "",
+                r.get("handledAt", "")
+                or r.get("takenOverAt", "")
+                or r.get("updatedAt", "")
+                or "",
             ),
             reverse=True,
         )

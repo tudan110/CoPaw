@@ -193,6 +193,12 @@
 .alarm-registry-status-badge.tone-red { background: #fef2f2; color: #991b1b; }
 .alarm-registry-status-badge.tone-slate { background: #f1f5f9; color: #475569; }
 
+.alarm-registry-verification-badge {
+  margin-left: 4px;
+  font-size: 10px;
+  padding: 1px 6px;
+}
+
 .alarm-registry-empty {
   text-align: center;
   color: #94a3b8;

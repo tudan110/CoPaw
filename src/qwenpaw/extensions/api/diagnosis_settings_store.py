@@ -24,6 +24,7 @@ read the toggle on every iteration without hitting disk.
 """
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -64,6 +65,72 @@ def delete_override(key: str, *, db_path: Path = DEFAULT_DB_PATH) -> None:
 def has_override(key: str, *, db_path: Path = DEFAULT_DB_PATH) -> bool:
     """Whether ``key`` currently has a stored page override."""
     return key in get_overrides(db_path=db_path)
+
+
+# ---------------------------------------------------------------------------
+# Analysis anchor — when real-time analysis was last switched on
+# ---------------------------------------------------------------------------
+#
+# The auto-takeover poller only analyzes alarms whose event time is no
+# older than ``anchor - analysis_lookback_hours``. The anchor is system
+# state, not a user setting: it lives in the same namespace under a key
+# that is deliberately NOT in FIELD_SPECS, so the PUT endpoint can never
+# touch it and it never shows up in the ``overrides`` map.
+
+_ANALYSIS_ANCHOR_KEY = "analysis_started_at"
+
+
+def get_analysis_anchor(
+    *,
+    db_path: Path = DEFAULT_DB_PATH,
+) -> datetime | None:
+    """Return the moment real-time analysis was last enabled, if known."""
+    raw = get_overrides(db_path=db_path).get(_ANALYSIS_ANCHOR_KEY)
+    if not isinstance(raw, str) or not raw.strip():
+        return None
+    try:
+        parsed = datetime.fromisoformat(raw.strip())
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed
+
+
+def set_analysis_anchor(
+    now: datetime,
+    *,
+    db_path: Path = DEFAULT_DB_PATH,
+) -> None:
+    if now.tzinfo is None:
+        now = now.replace(tzinfo=timezone.utc)
+    set_overrides(
+        {_ANALYSIS_ANCHOR_KEY: now.isoformat()},
+        db_path=db_path,
+    )
+
+
+def clear_analysis_anchor(*, db_path: Path = DEFAULT_DB_PATH) -> None:
+    delete_override(_ANALYSIS_ANCHOR_KEY, db_path=db_path)
+
+
+def sync_analysis_anchor_on_toggle(
+    previous_enabled: bool,
+    current_enabled: bool,
+    *,
+    now: datetime | None = None,
+    db_path: Path = DEFAULT_DB_PATH,
+) -> None:
+    """Re-anchor on off->on, drop the anchor on on->off, else no-op."""
+    if previous_enabled == current_enabled:
+        return
+    if current_enabled:
+        set_analysis_anchor(
+            now or datetime.now(timezone.utc),
+            db_path=db_path,
+        )
+    else:
+        clear_analysis_anchor(db_path=db_path)
 
 
 # ---------------------------------------------------------------------------
@@ -298,6 +365,17 @@ FIELD_SPECS: dict[str, FieldSpec] = {
             "polling",
             min_value=1,
         ),
+        # Hours to look back from the moment real-time analysis is
+        # switched on. 0 = only alarms born after the switch flip.
+        FieldSpec(
+            "analysis_lookback_hours",
+            "QWENPAW_PORTAL_REAL_ALARM_LOOKBACK_HOURS",
+            0,
+            "float",
+            "polling",
+            min_value=0,
+            max_value=720,
+        ),
         # --- B. INOE gateway connection ---
         FieldSpec(
             "inoe_api_base_url",
@@ -339,6 +417,65 @@ FIELD_SPECS: dict[str, FieldSpec] = {
             "float",
             "query_window",
             min_value=0,
+        ),
+        # Max alarms shown in the portal real-alarm list (and counted in
+        # the status badge). The INOE query itself is capped at 200.
+        FieldSpec(
+            "alarm_list_limit",
+            "QWENPAW_PORTAL_REAL_ALARM_LIST_LIMIT",
+            20,
+            "int",
+            "query_window",
+            min_value=1,
+            max_value=200,
+        ),
+        # --- D. Recovery verification (INOE clear notifications) ---
+        FieldSpec(
+            "recovery_verification_enabled",
+            "QWENPAW_RECOVERY_VERIFICATION_ENABLED",
+            True,
+            "bool",
+            "recovery",
+        ),
+        FieldSpec(
+            "recovery_verify_delay_seconds",
+            "QWENPAW_RECOVERY_VERIFY_DELAY",
+            120,
+            "float",
+            "recovery",
+            min_value=0,
+        ),
+        FieldSpec(
+            "recovery_verify_retry_count",
+            "QWENPAW_RECOVERY_VERIFY_RETRY_COUNT",
+            3,
+            "int",
+            "recovery",
+            min_value=0,
+        ),
+        FieldSpec(
+            "recovery_verify_retry_interval_seconds",
+            "QWENPAW_RECOVERY_VERIFY_RETRY_INTERVAL",
+            300,
+            "float",
+            "recovery",
+            min_value=10,
+        ),
+        FieldSpec(
+            "recovery_observation_minutes",
+            "QWENPAW_RECOVERY_OBSERVATION_MINUTES",
+            30,
+            "float",
+            "recovery",
+            min_value=0,
+        ),
+        FieldSpec(
+            "recovery_verify_batch_limit",
+            "QWENPAW_RECOVERY_VERIFY_BATCH_LIMIT",
+            5,
+            "int",
+            "recovery",
+            min_value=1,
         ),
     )
 }
@@ -385,11 +522,16 @@ def build_settings_payload(
         else:
             effective[key] = spec.resolve(db_path=db_path)
             env[key] = spec.env_value()
+    anchor = get_analysis_anchor(db_path=db_path)
     return {
         "effective": effective,
         "env": env,
         "overrides": override_keys,
         "groups": groups,
+        # Read-only runtime state for the UI (never settable via PUT).
+        "state": {
+            "analysis_started_at": anchor.isoformat() if anchor else "",
+        },
     }
 
 

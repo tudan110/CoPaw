@@ -29,6 +29,11 @@ PORTAL_REAL_ALARM_HIDDEN_STATUSES = frozenset(
         "manual_unknown",
         "resolved",
         "ignored",
+        # Recovery verification verdicts after an INOE clear notification.
+        # Deliberately NOT hidden: "recurred" — a recurred alarm must
+        # surface again so the auto-takeover loop re-analyzes it.
+        "recovery_failed",
+        "recovery_unknown",
     }
 )
 _PORTAL_REAL_ALARM_TERMINAL_STATUSES = frozenset(
@@ -40,6 +45,8 @@ _PORTAL_REAL_ALARM_TERMINAL_STATUSES = frozenset(
         "manual_unknown",
         "resolved",
         "ignored",
+        "recovery_failed",
+        "recovery_unknown",
     }
 )
 _REGISTRY_LOCK = threading.Lock()
