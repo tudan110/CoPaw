@@ -10,6 +10,7 @@ import pytest
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 
+from qwenpaw.extensions.api import settings_store
 from qwenpaw.extensions.api.notification_settings_api import router
 
 app = FastAPI()
@@ -18,7 +19,9 @@ app.include_router(router, prefix="/api/portal")
 
 async def _request(method: str, path: str, **kwargs):
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
+    async with AsyncClient(
+        transport=transport, base_url="http://test"
+    ) as client:
         return await client.request(method, path, **kwargs)
 
 
@@ -38,6 +41,7 @@ def _default_scope() -> dict[str, object]:
 def _use_tmp_settings(tmp_path: Path):
     settings_file = tmp_path / "extensions" / "notifications" / "settings.json"
     legacy_settings_file = tmp_path / "settings.json"
+    settings_db = tmp_path / "extensions" / "settings" / "settings.db"
     with (
         patch(
             "qwenpaw.extensions.api.notification_settings_api._SETTINGS_FILE",
@@ -48,13 +52,14 @@ def _use_tmp_settings(tmp_path: Path):
             legacy_settings_file,
         ),
         patch(
-            "qwenpaw.extensions.api.notification_settings_api.NOTIFICATIONS_DATA_DIR",
-            settings_file.parent,
+            "qwenpaw.extensions.api.notification_settings_api._SETTINGS_DB",
+            settings_db,
         ),
     ):
         yield {
             "current": settings_file,
             "legacy": legacy_settings_file,
+            "db": settings_db,
         }
 
 
@@ -69,7 +74,9 @@ async def test_get_notification_channels_defaults():
     }
 
 
-async def test_put_notification_channels_roundtrip(_use_tmp_settings: dict[str, Path]):
+async def test_put_notification_channels_roundtrip(
+    _use_tmp_settings: dict[str, Path]
+):
     payload = {
         "alarm_analyst": {
             "push_url": "http://notify.example.com/push",
@@ -79,7 +86,7 @@ async def test_put_notification_channels_roundtrip(_use_tmp_settings: dict[str, 
             "feishu_secret": "feishu-secret",
             "timeout_seconds": 12,
             "mention_all": True,
-        }
+        },
     }
 
     put_resp = await _request(
@@ -87,15 +94,20 @@ async def test_put_notification_channels_roundtrip(_use_tmp_settings: dict[str, 
         "/api/portal/settings/notification-channels",
         json=payload,
     )
-    get_resp = await _request("GET", "/api/portal/settings/notification-channels")
+    get_resp = await _request(
+        "GET", "/api/portal/settings/notification-channels"
+    )
 
     assert put_resp.status_code == 200
     assert get_resp.status_code == 200
     assert get_resp.json()["alarm_analyst"] == payload["alarm_analyst"]
     assert get_resp.json()["order_workflow"]["timeout_seconds"] == 8
 
-    data = json.loads(_use_tmp_settings["current"].read_text("utf-8"))
-    assert data["notification_channels"]["alarm_analyst"] == payload["alarm_analyst"]
+    stored = settings_store.get_namespace(
+        "notification_channels",
+        db_path=_use_tmp_settings["db"],
+    )
+    assert stored["alarm_analyst"] == payload["alarm_analyst"]
 
 
 async def test_put_notification_channels_accepts_custom_scope(
@@ -106,7 +118,7 @@ async def test_put_notification_channels_accepts_custom_scope(
             "push_url": " http://notify.example.com/web ",
             "timeout_seconds": "10",
             "mention_all": "true",
-        }
+        },
     }
 
     put_resp = await _request(
@@ -114,7 +126,9 @@ async def test_put_notification_channels_accepts_custom_scope(
         "/api/portal/settings/notification-channels",
         json=payload,
     )
-    get_resp = await _request("GET", "/api/portal/settings/notification-channels")
+    get_resp = await _request(
+        "GET", "/api/portal/settings/notification-channels"
+    )
 
     assert put_resp.status_code == 200
     assert get_resp.status_code == 200
@@ -125,8 +139,11 @@ async def test_put_notification_channels_accepts_custom_scope(
         "mention_all": True,
     }
 
-    data = json.loads(_use_tmp_settings["current"].read_text("utf-8"))
-    assert data["notification_channels"]["web_monitor"]["push_url"] == (
+    stored = settings_store.get_namespace(
+        "notification_channels",
+        db_path=_use_tmp_settings["db"],
+    )
+    assert stored["web_monitor"]["push_url"] == (
         "http://notify.example.com/web"
     )
 
@@ -154,17 +171,21 @@ async def test_delete_notification_channels_rejects_builtin_scope():
     )
 
     assert resp.status_code == 400
-    assert "Built-in notification scope cannot be deleted" in resp.json()["detail"]
+    assert (
+        "Built-in notification scope cannot be deleted"
+        in resp.json()["detail"]
+    )
 
 
 async def test_put_notification_channels_preserves_other_settings(
     _use_tmp_settings: dict[str, Path],
 ):
+    # Seed an existing scope via the legacy JSON, which is migrated into the
+    # shared settings DB on first access.
     _use_tmp_settings["current"].parent.mkdir(parents=True, exist_ok=True)
     _use_tmp_settings["current"].write_text(
         json.dumps(
             {
-                "theme": "dark",
                 "notification_channels": {
                     "order_workflow": {
                         "push_url": "http://order.example.com/push",
@@ -174,9 +195,9 @@ async def test_put_notification_channels_preserves_other_settings(
                         "feishu_secret": "",
                         "timeout_seconds": 9,
                         "mention_all": True,
-                    }
+                    },
                 },
-            }
+            },
         ),
         "utf-8",
     )
@@ -189,18 +210,27 @@ async def test_put_notification_channels_preserves_other_settings(
                 "push_url": "http://inspection.example.com/push",
                 "timeout_seconds": 15,
                 "mention_all": False,
-            }
+            },
         },
     )
 
     assert resp.status_code == 200
-    data = json.loads(_use_tmp_settings["current"].read_text("utf-8"))
-    assert data["theme"] == "dark"
-    assert data["notification_channels"]["order_workflow"]["push_url"] == (
+    # Updating one scope must not drop the other; verify through the API.
+    payload = resp.json()
+    assert payload["order_workflow"]["push_url"] == (
         "http://order.example.com/push"
     )
-    assert data["notification_channels"]["alarm_analyst"]["push_url"] == (
+    assert payload["alarm_analyst"]["push_url"] == (
         "http://inspection.example.com/push"
+    )
+
+    get_resp = await _request(
+        "GET",
+        "/api/portal/settings/notification-channels",
+    )
+    assert get_resp.status_code == 200
+    assert get_resp.json()["order_workflow"]["push_url"] == (
+        "http://order.example.com/push"
     )
 
 
@@ -243,9 +273,9 @@ async def test_get_notification_channels_ignores_deprecated_keyword(
                         "feishu_secret": "",
                         "timeout_seconds": 10,
                         "mention_all": True,
-                    }
-                }
-            }
+                    },
+                },
+            },
         ),
         "utf-8",
     )
@@ -254,7 +284,10 @@ async def test_get_notification_channels_ignores_deprecated_keyword(
 
     assert resp.status_code == 200
     assert "dingtalk_keyword" not in resp.json()["inspection"]
-    assert resp.json()["inspection"]["push_url"] == "http://notify.example.com/push"
+    assert (
+        resp.json()["inspection"]["push_url"]
+        == "http://notify.example.com/push"
+    )
 
 
 async def test_get_notification_channels_maps_legacy_order_create_scope(
@@ -274,9 +307,9 @@ async def test_get_notification_channels_maps_legacy_order_create_scope(
                         "feishu_secret": "",
                         "timeout_seconds": 11,
                         "mention_all": True,
-                    }
-                }
-            }
+                    },
+                },
+            },
         ),
         "utf-8",
     )
@@ -284,5 +317,11 @@ async def test_get_notification_channels_maps_legacy_order_create_scope(
     resp = await _request("GET", "/api/portal/settings/notification-channels")
 
     assert resp.status_code == 200
-    assert resp.json()["alarm_analyst"]["push_url"] == "http://legacy.example.com/push"
-    assert resp.json()["order_workflow"]["push_url"] == "http://legacy.example.com/push"
+    assert (
+        resp.json()["alarm_analyst"]["push_url"]
+        == "http://legacy.example.com/push"
+    )
+    assert (
+        resp.json()["order_workflow"]["push_url"]
+        == "http://legacy.example.com/push"
+    )

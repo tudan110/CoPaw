@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 from __future__ import annotations
 
 import json
@@ -11,7 +10,7 @@ from urllib.parse import urljoin
 
 import requests
 
-from qwenpaw.constant import EnvVarLoader
+from qwenpaw.extensions.api import diagnosis_settings_store
 
 DEFAULT_INOE_API_BASE_URL = "http://gateway:30080"
 REAL_ALARM_LIST_ENDPOINT = "/resource/realalarm/list"
@@ -28,7 +27,8 @@ SEVERITY_TO_LEVEL = {
 
 
 def _get_gateway_real_alarm_url() -> str:
-    configured = EnvVarLoader.get_str(
+    configured = diagnosis_settings_store.resolve_str(
+        "inoe_api_base_url",
         "INOE_API_BASE_URL",
         DEFAULT_INOE_API_BASE_URL,
     ).strip()
@@ -40,7 +40,8 @@ def _get_gateway_real_alarm_url() -> str:
 
 
 def _get_real_alarm_timeout_seconds() -> float:
-    return EnvVarLoader.get_float(
+    return diagnosis_settings_store.resolve_float(
+        "inoe_api_timeout_seconds",
         "INOE_API_TIMEOUT",
         REAL_ALARM_TIMEOUT_SECONDS,
         min_value=0.1,
@@ -52,7 +53,8 @@ def _build_real_alarm_headers() -> dict[str, str]:
         "Accept": "application/json, text/plain, */*",
         "Content-Type": "application/json;charset=UTF-8",
     }
-    bearer_token = EnvVarLoader.get_str(
+    bearer_token = diagnosis_settings_store.resolve_str(
+        "inoe_api_token",
         "INOE_API_TOKEN",
         "",
     ).strip()
@@ -69,12 +71,12 @@ DEFAULT_REAL_ALARM_TIMEZONE_OFFSET = 8
 
 
 def _get_alarm_timezone() -> timezone:
-    offset_hours = float(
-        EnvVarLoader.get_str(
-            "PORTAL_REAL_ALARM_TIMEZONE_OFFSET",
-            str(DEFAULT_REAL_ALARM_TIMEZONE_OFFSET),
-        ).strip()
-        or str(DEFAULT_REAL_ALARM_TIMEZONE_OFFSET),
+    offset_hours = diagnosis_settings_store.resolve_float(
+        "timezone_offset_hours",
+        "PORTAL_REAL_ALARM_TIMEZONE_OFFSET",
+        float(DEFAULT_REAL_ALARM_TIMEZONE_OFFSET),
+        min_value=-12,
+        max_value=14,
     )
     return timezone(timedelta(hours=offset_hours))
 

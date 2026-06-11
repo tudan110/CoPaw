@@ -90,6 +90,7 @@ from qwenpaw.extensions.integrations.portal_monitoring_overview import (
     query_topology as query_monitoring_topology,
 )
 from qwenpaw.extensions.integrations import knowledge_base
+from qwenpaw.extensions.api import diagnosis_settings_store
 from qwenpaw.extensions.api import fde_workbench_service
 from qwenpaw.extensions.api.fde_workbench_models import (
     FdeCopyInstalledRequest,
@@ -612,7 +613,13 @@ async def _ensure_portal_real_alarm_sessions(
                 active_alarm_analyses += 1
         start_budget = max(
             0,
-            PORTAL_REAL_ALARM_MAX_ACTIVE_ANALYSES - active_alarm_analyses,
+            diagnosis_settings_store.resolve_int(
+                "max_active_analyses",
+                "QWENPAW_PORTAL_REAL_ALARM_MAX_ACTIVE_ANALYSES",
+                PORTAL_REAL_ALARM_MAX_ACTIVE_ANALYSES,
+                min_value=1,
+            )
+            - active_alarm_analyses,
         )
 
         for alarm in items:
@@ -784,7 +791,12 @@ async def _run_portal_real_alarm_auto_takeover_once() -> dict[str, Any]:
         }
 
     alarms_payload = await _build_portal_real_alarm_trigger_payload(
-        PORTAL_REAL_ALARM_AUTO_TAKEOVER_LIMIT,
+        diagnosis_settings_store.resolve_int(
+            "auto_takeover_limit",
+            "QWENPAW_PORTAL_REAL_ALARM_AUTO_TAKEOVER_LIMIT",
+            PORTAL_REAL_ALARM_AUTO_TAKEOVER_LIMIT,
+            min_value=1,
+        ),
         None,
         allow_stale=False,
     )
@@ -813,17 +825,40 @@ async def _run_portal_real_alarm_auto_takeover_once() -> dict[str, Any]:
     }
 
 
+def _portal_real_alarm_auto_takeover_enabled() -> bool:
+    """Runtime master switch: page (DB) override wins over env."""
+    return diagnosis_settings_store.resolve_bool(
+        "auto_takeover_enabled",
+        "QWENPAW_PORTAL_REAL_ALARM_AUTO_TAKEOVER_ENABLED",
+        PORTAL_REAL_ALARM_AUTO_TAKEOVER_ENABLED,
+    )
+
+
+def _portal_real_alarm_auto_takeover_interval() -> float:
+    return diagnosis_settings_store.resolve_float(
+        "auto_takeover_interval_seconds",
+        "QWENPAW_PORTAL_REAL_ALARM_AUTO_TAKEOVER_INTERVAL",
+        PORTAL_REAL_ALARM_AUTO_TAKEOVER_INTERVAL_SECONDS,
+        min_value=PORTAL_REAL_ALARM_AUTO_TAKEOVER_MIN_INTERVAL_SECONDS,
+    )
+
+
 async def _portal_real_alarm_auto_takeover_loop() -> None:
+    # The loop runs for the whole app lifetime; the master switch is
+    # checked every iteration so toggling it on the settings page takes
+    # effect without a restart. When disabled we only sleep — no alarm
+    # query, no model call, no token spend.
     while True:
         try:
-            summary = await _run_portal_real_alarm_auto_takeover_once()
-            if summary.get("started") or summary.get("created"):
-                print(
-                    "[INFO] portal real alarm auto takeover: "
-                    f"created={summary.get('created', 0)} "
-                    f"started={summary.get('started', 0)} "
-                    f"skipped={summary.get('skipped', 0)}"
-                )
+            if _portal_real_alarm_auto_takeover_enabled():
+                summary = await _run_portal_real_alarm_auto_takeover_once()
+                if summary.get("started") or summary.get("created"):
+                    print(
+                        "[INFO] portal real alarm auto takeover: "
+                        f"created={summary.get('created', 0)} "
+                        f"started={summary.get('started', 0)} "
+                        f"skipped={summary.get('skipped', 0)}"
+                    )
         except asyncio.CancelledError:
             raise
         except Exception as exc:
@@ -835,7 +870,7 @@ async def _portal_real_alarm_auto_takeover_loop() -> None:
         await asyncio.sleep(
             max(
                 PORTAL_REAL_ALARM_AUTO_TAKEOVER_MIN_INTERVAL_SECONDS,
-                PORTAL_REAL_ALARM_AUTO_TAKEOVER_INTERVAL_SECONDS,
+                _portal_real_alarm_auto_takeover_interval(),
             )
         )
 
@@ -855,8 +890,9 @@ async def start_portal_real_alarm_auto_takeover() -> None:
     except Exception:
         traceback.print_exc()
 
-    if not PORTAL_REAL_ALARM_AUTO_TAKEOVER_ENABLED:
-        return
+    # The loop always starts; the master switch (env or page override) is
+    # evaluated inside the loop on every iteration, so it can be toggled at
+    # runtime from the settings page without restarting the app.
     if (
         PORTAL_REAL_ALARM_AUTO_TAKEOVER_TASK is not None
         and not PORTAL_REAL_ALARM_AUTO_TAKEOVER_TASK.done()
@@ -880,6 +916,49 @@ async def stop_portal_real_alarm_auto_takeover() -> None:
         await task
     except asyncio.CancelledError:
         pass
+
+
+@router.get("/diagnosis-settings")
+async def get_diagnosis_settings() -> dict[str, Any]:
+    """Return alarm-diagnosis settings as ``{effective, env, overrides}``.
+
+    ``effective`` is what currently applies (page override > env > default);
+    ``env`` is what would apply with no page override (for the "reset to
+    default" hint). Sensitive fields (token) are masked in both layers.
+    """
+    return diagnosis_settings_store.build_settings_payload()
+
+
+@router.put("/diagnosis-settings")
+async def put_diagnosis_settings(
+    body: dict[str, Any] = Body(default_factory=dict),
+) -> dict[str, Any]:
+    """Persist a partial update of alarm-diagnosis settings.
+
+    Page values win over env. A token field left empty keeps the stored
+    secret; sending ``diagnosis_settings_store.CLEAR_SENTINEL`` clears it.
+    """
+    try:
+        diagnosis_settings_store.apply_settings_update(body)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return diagnosis_settings_store.build_settings_payload()
+
+
+@router.post("/diagnosis-settings/reset")
+async def reset_diagnosis_setting(
+    body: dict[str, Any] = Body(default_factory=dict),
+) -> dict[str, Any]:
+    """Drop one field's override so it falls back to env/default.
+
+    Body: ``{"key": "<field>"}``.
+    """
+    key = str(body.get("key") or "").strip()
+    try:
+        diagnosis_settings_store.reset_setting(key)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return diagnosis_settings_store.build_settings_payload()
 
 
 def _read_preview_progress(progress_file: Path) -> list[dict[str, Any]]:
@@ -1162,7 +1241,13 @@ def _get_cached_portal_real_alarm_payload(
     cached_limit = int(PORTAL_REAL_ALARM_PAYLOAD_CACHE.get("limit") or 0)
     if not isinstance(payload, dict) or updated_at <= 0 or cached_limit < normalized_limit:
         return None
-    if require_fresh and time.monotonic() - updated_at > PORTAL_REAL_ALARM_CACHE_TTL_SECONDS:
+    cache_ttl = diagnosis_settings_store.resolve_float(
+        "cache_ttl_seconds",
+        "QWENPAW_PORTAL_REAL_ALARM_CACHE_TTL",
+        PORTAL_REAL_ALARM_CACHE_TTL_SECONDS,
+        min_value=0,
+    )
+    if require_fresh and time.monotonic() - updated_at > cache_ttl:
         return None
     return _slice_portal_real_alarm_payload(payload, normalized_limit)
 

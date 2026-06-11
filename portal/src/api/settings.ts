@@ -47,3 +47,41 @@ export const settingsApi = {
       },
     ),
 };
+
+// --- Alarm diagnosis settings (DB override > env > default) ---
+
+// Masked representation returned for sensitive fields (token).
+export interface MaskedSecret {
+  is_set: boolean;
+  masked: string;
+}
+
+// Effective / env layers. Non-sensitive fields are raw scalars; the token
+// field is a MaskedSecret. `overrides[key]` is true when the field has a
+// page-set value (vs. falling back to env).
+export interface DiagnosisSettingsPayload {
+  effective: Record<string, number | boolean | string | MaskedSecret>;
+  env: Record<string, number | boolean | string | MaskedSecret>;
+  overrides: Record<string, boolean>;
+  groups: Record<string, string>;
+}
+
+// Sentinel a PUT sends for the token field to clear its override.
+export const DIAGNOSIS_TOKEN_CLEAR = "__CLEAR__";
+
+export const diagnosisSettingsApi = {
+  get: () =>
+    requestSettings<DiagnosisSettingsPayload>("/diagnosis-settings"),
+
+  update: (body: Record<string, number | boolean | string>) =>
+    requestSettings<DiagnosisSettingsPayload>("/diagnosis-settings", {
+      method: "PUT",
+      body: JSON.stringify(body),
+    }),
+
+  reset: (key: string) =>
+    requestSettings<DiagnosisSettingsPayload>("/diagnosis-settings/reset", {
+      method: "POST",
+      body: JSON.stringify({ key }),
+    }),
+};
