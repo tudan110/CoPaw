@@ -22,12 +22,17 @@ const NEW_AGENT_SENTINEL = "__fde_new_agent__";
 const FDE_AGENT_ID = "fde";
 const FDE_AGENT_NAME = "FDE 交付助手";
 
+// 顺序必须与 currentStep 的闸门映射一致：
+// AI 自检（gate 1）在前，人工审查（gate 2）在后，两道都过才能安装。
 const PIPELINE_STEPS = [
   { key: "talk", label: "对话生成", hint: "把需求与现状告诉 FDE" },
-  { key: "review", label: "审查代码", hint: "看生成的技能文件" },
-  { key: "selfcheck", label: "自检", hint: "域审查 + 沙箱试跑" },
+  { key: "selfcheck", label: "AI 自检", hint: "域审查 + 安全扫描 + 语法" },
+  { key: "review", label: "人工审查", hint: "审查代码后标记通过" },
   { key: "install", label: "确认安装", hint: "装进目标业务智能体" },
 ] as const;
+
+// staged 内部簿记文件：服务端拒绝改写，代码 Tab 里只读展示。
+const STAGED_INTERNAL_FILES = new Set(["_fde_meta.json", "GENERATION.md"]);
 
 type Notice = { type: "success" | "error" | "info"; message: string } | null;
 
@@ -246,7 +251,9 @@ export function FdeWorkbenchPanel() {
       });
       setNotice({
         type: "success",
-        message: `已生成骨架 ${result.skill_name}（自检${result.selfcheck?.ready_for_review ? "通过" : "未通过"}）。接下来在上面的对话里让 FDE 把 runtime/tool_adapters.py 接上真实接口。`,
+        message: `已生成骨架 ${result.skill_name}（自检${
+          result.selfcheck?.ready_for_review ? "通过" : "未通过"
+        }）。接下来在上面的对话里让 FDE 把 runtime/tool_adapters.py 接上真实接口。`,
       });
       setGenName("");
       setGenDescription("");
@@ -375,9 +382,8 @@ export function FdeWorkbenchPanel() {
   );
 
   const targetWorkspace = useMemo(() => {
-    const fromList = staged.find(
-      (s) => s.skill_name === selectedName,
-    )?.target_workspace;
+    const fromList = staged.find((s) => s.skill_name === selectedName)
+      ?.target_workspace;
     return fromList || "";
   }, [staged, selectedName]);
 
@@ -390,7 +396,16 @@ export function FdeWorkbenchPanel() {
   const reviewOk = review?.effective === "approved";
   const aiOk = Boolean(detail?.selfcheck?.ready_for_review);
 
+  // 只在「换了一个技能」时重置 Tab / 未保存编辑 / 引导字段草稿。
+  // detail 在自检、保存等操作后也会整体替换 —— 那些场景不能清掉用户
+  // 正在编辑的内容，也不该把 Tab 跳回概览。
+  const seededSkillRef = useRef<string | null>(null);
   useEffect(() => {
+    const name = detail?.skill_name ?? null;
+    if (name === seededSkillRef.current) {
+      return;
+    }
+    seededSkillRef.current = name;
     // seed guided fields from the freshly-loaded SKILL.md frontmatter
     setCodeEdits({});
     setTab("overview");
@@ -398,8 +413,7 @@ export function FdeWorkbenchPanel() {
       setFieldDraft({ description: "", triggers: "" });
       return;
     }
-    const md =
-      detail.files.find((f) => f.path === "SKILL.md")?.content || "";
+    const md = detail.files.find((f) => f.path === "SKILL.md")?.content || "";
     const desc = /^description:\s*(.*)$/m.exec(md)?.[1] || "";
     const trig = /^triggers:\s*\[(.*)\]/m.exec(md)?.[1] || "";
     setFieldDraft({
@@ -672,7 +686,9 @@ export function FdeWorkbenchPanel() {
       // Quick path: prompt for target id. Could later be a proper modal,
       // but a prompt covers the common "fix wrong destination" case in
       // one click without dragging in a whole picker UI.
-      const knownIds = agents.map((a) => a.id).filter((id) => id !== skill.agent_id);
+      const knownIds = agents
+        .map((a) => a.id)
+        .filter((id) => id !== skill.agent_id);
       const hint =
         knownIds.length > 0
           ? `\n\n已有业务智能体（建议从中选）：\n  ${knownIds.join("  /  ")}`
@@ -772,21 +788,11 @@ export function FdeWorkbenchPanel() {
   }, [detail, activeFile]);
 
   const heroState: "loading" | "down" | "ok" =
-    infoLoading || info === null
-      ? "loading"
-      : info.available
-        ? "ok"
-        : "down";
+    infoLoading || info === null ? "loading" : info.available ? "ok" : "down";
   const available = heroState === "ok";
-  // 步进贴合状态：没选→对话生成；选了但 AI 自检没过→审查代码；
-  // AI 自检过、人工审查没过→自检；两道闸门都过→确认安装。
-  const currentStep = !selectedName
-    ? 0
-    : !aiOk
-      ? 1
-      : !reviewOk
-        ? 2
-        : 3;
+  // 步进贴合状态：没选→对话生成；选了但 AI 自检没过→AI 自检；
+  // AI 自检过、人工审查没过→人工审查；两道闸门都过→确认安装。
+  const currentStep = !selectedName ? 0 : !aiOk ? 1 : !reviewOk ? 2 : 3;
 
   return (
     <div className="fde-wb">
@@ -807,8 +813,11 @@ export function FdeWorkbenchPanel() {
             {heroState === "ok"
               ? "把客户需求与系统现状交给 FDE，它走完「访谈 → 方案 → 生成」并把可上线的技能暂存到这里，由你审查、试跑、确认安装。"
               : heroState === "loading"
-                ? "正在连接 FDE 交付助手…"
-                : `FDE 交付助手暂不可用：${info?.reason || "请先 sync-qwenpaw-working.sh 同步工作区并重启服务"}`}
+              ? "正在连接 FDE 交付助手…"
+              : `FDE 交付助手暂不可用：${
+                  info?.reason ||
+                  "请先 sync-qwenpaw-working.sh 同步工作区并重启服务"
+                }`}
           </p>
         </div>
         {heroState === "ok" ? (
@@ -854,8 +863,8 @@ export function FdeWorkbenchPanel() {
                 idx < currentStep
                   ? " is-done"
                   : idx === currentStep
-                    ? " is-active"
-                    : ""
+                  ? " is-active"
+                  : ""
               }`}
             >
               <span className="fde-step-no">{idx + 1}</span>
@@ -874,8 +883,8 @@ export function FdeWorkbenchPanel() {
             {notice.type === "success"
               ? "✓"
               : notice.type === "error"
-                ? "!"
-                : "i"}
+              ? "!"
+              : "i"}
           </span>
           <span>{notice.message}</span>
           <button
@@ -902,7 +911,9 @@ export function FdeWorkbenchPanel() {
               onClick={() => setChatOpen((prev) => !prev)}
             >
               <i
-                className={`fas ${chatOpen ? "fa-chevron-up" : "fa-chevron-down"}`}
+                className={`fas ${
+                  chatOpen ? "fa-chevron-up" : "fa-chevron-down"
+                }`}
               />
               {chatOpen ? "收起" : "展开"}
             </button>
@@ -917,7 +928,8 @@ export function FdeWorkbenchPanel() {
             </div>
           ) : (
             <p className="fde-chat-foot">
-              展开后可直接和 {FDE_AGENT_NAME}对话；它生成技能后会自动出现在右侧。
+              展开后可直接和 {FDE_AGENT_NAME}
+              对话；它生成技能后会自动出现在右侧。
             </p>
           )}
         </section>
@@ -968,7 +980,9 @@ export function FdeWorkbenchPanel() {
                           {item.skill_name}
                         </span>
                         <span
-                          className={`fde-pill fde-pill--${pending ? "warn" : "muted"}`}
+                          className={`fde-pill fde-pill--${
+                            pending ? "warn" : "muted"
+                          }`}
                         >
                           {pending ? `待确认 ${pending}` : "草稿"}
                         </span>
@@ -999,9 +1013,7 @@ export function FdeWorkbenchPanel() {
               >
                 <i
                   className={`fas ${
-                    installedLoading
-                      ? "fa-spinner fa-spin"
-                      : "fa-arrows-rotate"
+                    installedLoading ? "fa-spinner fa-spin" : "fa-arrows-rotate"
                   }`}
                 />
                 {installedLoading ? "扫描…" : "刷新"}
@@ -1010,8 +1022,8 @@ export function FdeWorkbenchPanel() {
             {installed.length === 0 ? (
               <div className="fde-empty">
                 <span className="fde-empty-glyph">∅</span>
-                还没有装出去的技能。在上面的对话里走完「访谈 → 方案 → 生成」，再点
-                「确认安装」就会出现在这里。
+                还没有装出去的技能。在上面的对话里走完「访谈 → 方案 →
+                生成」，再点 「确认安装」就会出现在这里。
               </div>
             ) : (
               <div className="fde-staged-list">
@@ -1027,7 +1039,9 @@ export function FdeWorkbenchPanel() {
                     <div className="fde-staged-top">
                       <span className="fde-staged-name">{it.skill_name}</span>
                       <span
-                        className={`fde-pill fde-pill--${it.enabled ? "ok" : "muted"}`}
+                        className={`fde-pill fde-pill--${
+                          it.enabled ? "ok" : "muted"
+                        }`}
                       >
                         {it.enabled ? "已启用" : "未启用"}
                       </span>
@@ -1132,7 +1146,9 @@ export function FdeWorkbenchPanel() {
               >
                 <i
                   className={`fas ${
-                    busy === "generate" ? "fa-spinner fa-spin" : "fa-wand-magic-sparkles"
+                    busy === "generate"
+                      ? "fa-spinner fa-spin"
+                      : "fa-wand-magic-sparkles"
                   }`}
                 />
                 {busy === "generate" ? "生成中…" : "生成骨架"}
@@ -1144,7 +1160,9 @@ export function FdeWorkbenchPanel() {
         <div className="fde-col">
           {!detail ? (
             <section className="fde-section fde-board-empty">
-              <span className="fde-board-glyph">{selectedName ? "…" : "▤"}</span>
+              <span className="fde-board-glyph">
+                {selectedName ? "…" : "▤"}
+              </span>
               <p>
                 {selectedName
                   ? "正在加载技能详情…"
@@ -1184,8 +1202,8 @@ export function FdeWorkbenchPanel() {
                     reviewOk
                       ? "is-ok"
                       : review?.effective === "stale"
-                        ? "is-warn"
-                        : "is-wait"
+                      ? "is-warn"
+                      : "is-wait"
                   }`}
                   title="人工审查闸门"
                 >
@@ -1193,8 +1211,8 @@ export function FdeWorkbenchPanel() {
                   {reviewOk
                     ? "✓ 通过"
                     : review?.effective === "stale"
-                      ? "⚠ 已失效"
-                      : "○ 待审"}
+                    ? "⚠ 已失效"
+                    : "○ 待审"}
                 </span>
               </div>
 
@@ -1257,7 +1275,9 @@ export function FdeWorkbenchPanel() {
                     </label>
                     {envFields.map((field) => (
                       <label className="fde-guide-row" key={field.key}>
-                        <span className="fde-guide-key">{field.key}</span>
+                        <span className="fde-guide-key" title={field.key}>
+                          {field.key}
+                        </span>
                         <input
                           className="fde-field"
                           type={
@@ -1302,17 +1322,25 @@ export function FdeWorkbenchPanel() {
                       (f) => f.path === activeFile,
                     );
                     const editable = Boolean(
-                      file && !file.binary && !file.truncated,
+                      file &&
+                        !file.binary &&
+                        !file.truncated &&
+                        !STAGED_INTERNAL_FILES.has(file.path),
                     );
                     const value =
                       activeFile != null && codeEdits[activeFile] != null
                         ? codeEdits[activeFile]
-                        : (activeFileContent ?? "");
+                        : activeFileContent ?? "";
                     return (
                       <textarea
                         className="fde-code-edit"
                         value={value}
                         readOnly={!editable}
+                        title={
+                          editable
+                            ? undefined
+                            : "该文件只读（内部簿记 / 二进制 / 超大文件）"
+                        }
                         spellCheck={false}
                         onChange={(e) => {
                           if (!activeFile) return;
@@ -1418,8 +1446,8 @@ export function FdeWorkbenchPanel() {
                     !aiOk
                       ? "AI 自检未通过"
                       : !reviewOk
-                        ? "人工审查未通过"
-                        : undefined
+                      ? "人工审查未通过"
+                      : undefined
                   }
                 >
                   {busy === "install"
