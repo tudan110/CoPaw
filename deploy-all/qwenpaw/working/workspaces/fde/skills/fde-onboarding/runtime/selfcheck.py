@@ -127,7 +127,10 @@ def _todo(skill_dir: Path) -> list[str]:
 
 
 def run_selfcheck(
-    skill_dir: str | Path, *, with_domain: bool = True
+    skill_dir: str | Path,
+    *,
+    with_scan: bool = True,
+    with_domain: bool = True,
 ) -> dict[str, Any]:
     skill_dir = Path(skill_dir).resolve()
     if not skill_dir.is_dir():
@@ -138,22 +141,31 @@ def run_selfcheck(
     name = fm.get("name") or skill_dir.name
     description = fm.get("description") or ""
 
-    scan = _scan(skill_dir, name)
-    # 领域审查是一次 LLM 调用，可能卡在限流/超时上。加载技能详情时
-    # （with_domain=False）跳过它，让呈现文件保持纯本地、秒回；显式
-    # 重新自检与安装闸门仍跑完整领域审查（权威，不放水）。
+    # 安全扫描是本地操作但要 import skill_scanner（~数秒）。加载详情时
+    # （with_scan=False）跳过，让“呈现文件”秒回；点『重新自检』再跑。
+    if with_scan:
+        scan = _scan(skill_dir, name)
+    else:
+        scan = {
+            "status": "skipped",
+            "reason": "加载详情时不跑安全扫描；点『重新自检』开始体检",
+        }
+    # 领域审查是一次 LLM 调用，受 TPM 限流。整个交互路径都不跑它；
+    # 确认安装时由 create_skill 权威校验域审查（不放水）。
     if with_domain:
         domain = _domain(name, description, skill_md)
     else:
         domain = {
             "status": "skipped",
             "decision": "",
-            "reason": "加载详情时不跑领域审查（避免卡限流）；点『重新自检』运行",
+            "reason": "领域审查在确认安装时自动校验",
         }
     syntax = _syntax(skill_dir)
     todo = _todo(skill_dir)
 
     blocked_reasons: list[str] = []
+    if scan.get("status") == "skipped":
+        blocked_reasons.append("尚未体检（点『重新自检』跑安全扫描）")
     if scan.get("status") == "blocked":
         blocked_reasons.append("安全扫描发现高危项（skill_scanner）")
     if domain.get("status") == "blocked":

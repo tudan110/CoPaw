@@ -395,6 +395,8 @@ export function FdeWorkbenchPanel() {
   const review: FdeReviewState | undefined = detail?.review;
   const reviewOk = review?.effective === "approved";
   const aiOk = Boolean(detail?.selfcheck?.ready_for_review);
+  // 加载详情时安全扫描被跳过（秒回）；区分"待体检"与"未通过"。
+  const scanPending = detail?.selfcheck?.scan?.status === "skipped";
 
   // 只在「换了一个技能」时重置 Tab / 未保存编辑 / 引导字段草稿。
   // detail 在自检、保存等操作后也会整体替换 —— 那些场景不能清掉用户
@@ -1192,10 +1194,16 @@ export function FdeWorkbenchPanel() {
                 </label>
                 <span className="fde-strip-gap" />
                 <span
-                  className={`fde-gate ${aiOk ? "is-ok" : "is-bad"}`}
-                  title="AI 自检（域审查 + 安全扫描 + 语法）"
+                  className={`fde-gate ${
+                    aiOk ? "is-ok" : scanPending ? "is-wait" : "is-bad"
+                  }`}
+                  title={
+                    scanPending
+                      ? "加载只呈现文件（秒回）；点「重新自检」跑安全扫描+语法。域审查在确认安装时校验。"
+                      : "AI 自检（安全扫描 + 语法）；域审查在确认安装时校验"
+                  }
                 >
-                  AI自检 {aiOk ? "✓ 通过" : "✗ 未过"}
+                  AI自检 {aiOk ? "✓ 通过" : scanPending ? "○ 待体检" : "✗ 未过"}
                 </span>
                 <span
                   className={`fde-gate ${

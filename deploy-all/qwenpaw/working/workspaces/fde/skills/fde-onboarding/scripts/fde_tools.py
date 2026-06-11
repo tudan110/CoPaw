@@ -92,7 +92,11 @@ def cmd_scaffold(args) -> int:
 
 
 def cmd_selfcheck(args) -> int:
-    result = run_selfcheck(Path(args.skill_dir).expanduser())
+    # 交互式体检：安全扫描 + 语法，不跑领域审查那次 LLM（受限流）。
+    # 领域审查在确认安装时由 create_skill 权威校验。
+    result = run_selfcheck(
+        Path(args.skill_dir).expanduser(), with_domain=False
+    )
     human = (
         f"{'✅ 自检通过' if result.get('ready_for_review') else '⛔ 自检未通过'}：{result.get('skill_name')}\n"
         + ("阻塞：" + "; ".join(result.get("blocked_reasons") or []) + "\n" if result.get("blocked_reasons") else "")
@@ -175,9 +179,10 @@ def cmd_show_staged(args) -> int:
         _emit({"error": f"未找到 staged 技能 {name}"}, as_json=args.json, human=f"未找到 staged 技能 {name}")
         return 1
     files = _read_tree(skill_dir, max_bytes=args.max_bytes)
-    # 加载详情=呈现文件，必须秒回：跳过领域审查那次 LLM 调用（会卡
-    # 限流）。完整自检走 selfcheck 子命令与安装闸门。
-    selfcheck = run_selfcheck(skill_dir, with_domain=False)
+    # 加载详情=纯文件呈现，必须秒回：跳过安全扫描（要 import
+    # skill_scanner，数秒）和领域审查（LLM，受限流）。点『重新自检』
+    # 跑扫描；领域审查在确认安装时权威校验。
+    selfcheck = run_selfcheck(skill_dir, with_scan=False, with_domain=False)
     payload = {"skill_name": name, "staged_dir": str(skill_dir), "files": files, "selfcheck": selfcheck}
     human = (
         f"# {name}（{len(files)} 个文件）\n"

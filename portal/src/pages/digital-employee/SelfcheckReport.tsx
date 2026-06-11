@@ -57,7 +57,10 @@ export function SelfcheckReport({
   }
   const scan = result.scan;
   const findings: FdeScanFinding[] = scan?.findings || [];
+  // 加载详情时扫描/域审查被跳过（秒回）；显示提醒而非"未发现问题"。
+  const scanSkipped = (scan?.status as string | undefined) === "skipped";
   const domain = (result.domain || {}) as Record<string, unknown>;
+  const domainSkipped = domain.status === "skipped";
   const syntax = (result.syntax || {}) as Record<string, unknown>;
   const syntaxErrors = (syntax.errors as unknown[] | undefined) || [];
   const todo = result.todo || [];
@@ -71,7 +74,11 @@ export function SelfcheckReport({
       {/* 安全扫描 */}
       <div className="fde-report-row">
         <span className="fde-report-key">安全扫描</span>
-        {findings.length === 0 ? (
+        {scanSkipped ? (
+          <span className="fde-report-note">
+            未运行 · 点「重新自检」开始体检
+          </span>
+        ) : findings.length === 0 ? (
           <span className="fde-chip fde-chip--g">未发现问题</span>
         ) : (
           <span className="fde-chip fde-chip--a">{findings.length} 项</span>
@@ -91,10 +98,14 @@ export function SelfcheckReport({
             </span>
           ) : domain.decision === "reject" ? (
             <span className="fde-chip fde-chip--r">reject</span>
+          ) : domainSkipped ? (
+            <span className="fde-report-note">
+              {String(domain.reason || "确认安装时自动校验")}
+            </span>
           ) : (
             <span className="fde-chip">未执行</span>
           )}
-          {domain.reason ? (
+          {!domainSkipped && domain.reason ? (
             <span className="fde-report-note"> {String(domain.reason)}</span>
           ) : null}
         </span>
