@@ -49,12 +49,16 @@ def _default_staged_dir() -> Path:
 
 
 def _emit(payload, *, as_json: bool, human=None) -> None:
+    # ensure_ascii=True keeps JSON stdout pure ASCII so it survives any
+    # host code page (a Windows zh-CN GBK pipe) byte-for-byte; the
+    # parent's json.loads restores the unicode. No stdout reconfigure /
+    # no parent-side encoding= needed, and nothing to restart.
     if as_json:
-        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        print(json.dumps(payload, ensure_ascii=True, indent=2))
     elif human is not None:
         print(human)
     else:
-        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        print(json.dumps(payload, ensure_ascii=True, indent=2))
 
 
 def _read_brief(path: str | None) -> dict:
@@ -171,7 +175,9 @@ def cmd_show_staged(args) -> int:
         _emit({"error": f"未找到 staged 技能 {name}"}, as_json=args.json, human=f"未找到 staged 技能 {name}")
         return 1
     files = _read_tree(skill_dir, max_bytes=args.max_bytes)
-    selfcheck = run_selfcheck(skill_dir)
+    # 加载详情=呈现文件，必须秒回：跳过领域审查那次 LLM 调用（会卡
+    # 限流）。完整自检走 selfcheck 子命令与安装闸门。
+    selfcheck = run_selfcheck(skill_dir, with_domain=False)
     payload = {"skill_name": name, "staged_dir": str(skill_dir), "files": files, "selfcheck": selfcheck}
     human = (
         f"# {name}（{len(files)} 个文件）\n"

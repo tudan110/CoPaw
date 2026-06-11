@@ -126,7 +126,9 @@ def _todo(skill_dir: Path) -> list[str]:
     return items
 
 
-def run_selfcheck(skill_dir: str | Path) -> dict[str, Any]:
+def run_selfcheck(
+    skill_dir: str | Path, *, with_domain: bool = True
+) -> dict[str, Any]:
     skill_dir = Path(skill_dir).resolve()
     if not skill_dir.is_dir():
         return {"ok": False, "error": f"目录不存在：{skill_dir}"}
@@ -137,7 +139,17 @@ def run_selfcheck(skill_dir: str | Path) -> dict[str, Any]:
     description = fm.get("description") or ""
 
     scan = _scan(skill_dir, name)
-    domain = _domain(name, description, skill_md)
+    # 领域审查是一次 LLM 调用，可能卡在限流/超时上。加载技能详情时
+    # （with_domain=False）跳过它，让呈现文件保持纯本地、秒回；显式
+    # 重新自检与安装闸门仍跑完整领域审查（权威，不放水）。
+    if with_domain:
+        domain = _domain(name, description, skill_md)
+    else:
+        domain = {
+            "status": "skipped",
+            "decision": "",
+            "reason": "加载详情时不跑领域审查（避免卡限流）；点『重新自检』运行",
+        }
     syntax = _syntax(skill_dir)
     todo = _todo(skill_dir)
 
