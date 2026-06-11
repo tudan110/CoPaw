@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 from __future__ import annotations
 
 from typing import Annotated
@@ -30,6 +31,7 @@ from qwenpaw.extensions.api.ai_big_screen_service import (
     list_screen_assets,
     patch_screen_asset,
     publish_screen_asset,
+    refresh_screen_asset,
     rename_screen_asset,
     save_screen_asset,
 )
@@ -101,7 +103,9 @@ def save_ai_big_screen(payload: AiBigScreenSaveRequest) -> AiBigScreenResponse:
 @router.get("/{screen_id}", response_model=AiBigScreenResponse)
 def get_ai_big_screen(screen_id: str) -> AiBigScreenResponse:
     try:
-        return AiBigScreenResponse(screen=get_screen_asset(screen_id=screen_id))
+        return AiBigScreenResponse(
+            screen=get_screen_asset(screen_id=screen_id)
+        )
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except Exception as exc:
@@ -111,7 +115,9 @@ def get_ai_big_screen(screen_id: str) -> AiBigScreenResponse:
 @router.delete("/{screen_id}", response_model=AiBigScreenDeleteResponse)
 def delete_ai_big_screen(screen_id: str) -> AiBigScreenDeleteResponse:
     try:
-        return AiBigScreenDeleteResponse(**delete_screen_asset(screen_id=screen_id))
+        return AiBigScreenDeleteResponse(
+            **delete_screen_asset(screen_id=screen_id)
+        )
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except Exception as exc:
@@ -152,6 +158,19 @@ def duplicate_ai_big_screen(
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@router.post("/{screen_id}/refresh", response_model=AiBigScreenResponse)
+async def refresh_ai_big_screen(screen_id: str) -> AiBigScreenResponse:
+    """Re-run data hydration only — keeps published screens alive."""
+    try:
+        return AiBigScreenResponse(
+            screen=await refresh_screen_asset(screen_id=screen_id),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 

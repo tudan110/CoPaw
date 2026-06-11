@@ -28,6 +28,7 @@ from qwenpaw.extensions.api.ai_big_screen_api import (
     list_ai_big_screens,
     patch_ai_big_screen,
     publish_ai_big_screen,
+    refresh_ai_big_screen,
     rename_ai_big_screen,
     save_ai_big_screen,
 )
@@ -186,6 +187,41 @@ class TestCrudEndpoints:
             t for t in published.publishTargets if t["type"] == "external-link"
         )
         assert external["url"] == f"/big-screen/{saved['id']}"
+
+
+class TestRefreshEndpoint:
+    async def test_refresh_rehydrates_and_persists(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from qwenpaw.extensions.integrations import order_workflow
+
+        saved = await _draft_and_save()
+        assert saved["components"][0]["data"]["rows"][0]["id"] == "wo-1"
+
+        monkeypatch.setattr(
+            order_workflow,
+            "query_order_workorders",
+            lambda **_kw: {
+                "source": "live",
+                "total": 2,
+                "items": [
+                    {"id": "wo-9", "title": "新工单", "status": "todo"},
+                ],
+                "stats": {"todo": 1},
+            },
+        )
+        refreshed = (await refresh_ai_big_screen(saved["id"])).screen
+        assert refreshed["components"][0]["data"]["rows"][0]["id"] == "wo-9"
+        assert len(refreshed["versions"]) == len(saved["versions"])
+
+        persisted = get_ai_big_screen(saved["id"]).screen
+        assert persisted["components"][0]["data"]["rows"][0]["id"] == "wo-9"
+
+    async def test_refresh_missing_screen_is_404(self) -> None:
+        with pytest.raises(HTTPException) as excinfo:
+            await refresh_ai_big_screen("screen-missing")
+        assert excinfo.value.status_code == 404
 
 
 class TestPatchEndpoint:

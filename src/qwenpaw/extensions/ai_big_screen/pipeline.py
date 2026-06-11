@@ -123,3 +123,40 @@ async def run_draft_pipeline(
 
     _notify(on_stage, DRAFT_STAGES[3], "正在固化大屏资产")
     return screen
+
+
+async def refresh_screen_data(screen: dict[str, Any]) -> dict[str, Any]:
+    """Re-run L2 only for a saved screen — the live-data heartbeat.
+
+    Layout, visualSpec and versions are untouched (data is not config,
+    so no version is appended); each component's ``data`` is replaced
+    by a fresh honest fetch, failures becoming ``failed`` badges
+    without blocking the rest. Fetch-once dedupes identical
+    (capability, params) pairs within one refresh.
+    """
+    components = [
+        component
+        for component in (screen.get("components") or [])
+        if isinstance(component, dict)
+    ]
+    if not components:
+        return screen
+    cache = CapabilityCache()
+
+    async def _fetch(component: dict[str, Any]):
+        capability_id = str(
+            component.get("capabilityId") or component.get("pluginId") or "",
+        )
+        result = await execute_capability(
+            component.get("queryParams") or {},
+            capability_id=capability_id,
+            cache=cache,
+        )
+        return component, result
+
+    fetched = await asyncio.gather(
+        *(_fetch(component) for component in components),
+    )
+    for component, result in fetched:
+        component["data"] = result.to_legacy_data()
+    return screen

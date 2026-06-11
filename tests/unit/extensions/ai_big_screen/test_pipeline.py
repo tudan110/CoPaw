@@ -175,3 +175,77 @@ class TestDraftPipeline:
     async def test_empty_prompt_raises(self) -> None:
         with pytest.raises(ValueError):
             await run_draft_pipeline(prompt="   ", model=FakeModel())
+
+
+class TestRefreshScreenData:
+    @staticmethod
+    def _screen() -> dict[str, Any]:
+        return {
+            "id": "screen-x",
+            "name": "刷新测试",
+            "layout": {"type": "grid"},
+            "theme": {"mode": "dark"},
+            "components": [
+                {
+                    "id": "c-wo",
+                    "type": "table",
+                    "capabilityId": "workorders",
+                    "pluginId": "workorders",
+                    "queryParams": {"timeRange": "today", "limit": 20},
+                    "visualSpec": {"composition": "primary"},
+                    "layoutPosition": {"x": 0, "y": 0, "w": 6, "h": 4},
+                    "data": {"sourceStatus": "live", "rows": [{"id": "old"}]},
+                },
+                {
+                    "id": "c-wo-2",
+                    "type": "metric-card",
+                    "capabilityId": "workorders",
+                    "pluginId": "workorders",
+                    "queryParams": {"timeRange": "today", "limit": 20},
+                    "visualSpec": {},
+                    "layoutPosition": {"x": 6, "y": 0, "w": 6, "h": 4},
+                    "data": {"sourceStatus": "live", "rows": [{"id": "old"}]},
+                },
+            ],
+            "versions": [{"versionId": "v1"}],
+        }
+
+    async def test_refresh_updates_data_only(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from qwenpaw.extensions.ai_big_screen.pipeline import (
+            refresh_screen_data,
+        )
+
+        calls = _mock_workorders(monkeypatch)
+        screen = self._screen()
+        before_layout = dict(screen["components"][0]["layoutPosition"])
+        refreshed = await refresh_screen_data(screen)
+        by_id = {c["id"]: c for c in refreshed["components"]}
+        assert by_id["c-wo"]["data"]["rows"][0]["id"] == "wo-1"  # 新数据
+        assert by_id["c-wo"]["layoutPosition"] == before_layout  # 版式不动
+        assert by_id["c-wo"]["visualSpec"] == {"composition": "primary"}
+        assert refreshed["versions"] == [{"versionId": "v1"}]  # 无新版本
+        assert len(calls) == 1  # fetch-once 共享两个组件
+
+    async def test_refresh_failure_becomes_failed_badge(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from qwenpaw.extensions.ai_big_screen.pipeline import (
+            refresh_screen_data,
+        )
+        from qwenpaw.extensions.integrations import order_workflow
+
+        monkeypatch.setattr(
+            order_workflow,
+            "query_order_workorders",
+            lambda **_kw: (_ for _ in ()).throw(
+                ConnectionError("refresh outage"),
+            ),
+        )
+        refreshed = await refresh_screen_data(self._screen())
+        component = refreshed["components"][0]
+        assert component["data"]["sourceStatus"] == "failed"
+        assert "refresh outage" in component["data"]["message"]

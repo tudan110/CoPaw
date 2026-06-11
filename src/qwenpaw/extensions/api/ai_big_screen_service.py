@@ -26,7 +26,10 @@ from qwenpaw.extensions.ai_big_screen.orchestration import (
     now_iso,
 )
 from qwenpaw.extensions.ai_big_screen.patch import apply_patch
-from qwenpaw.extensions.ai_big_screen.pipeline import run_draft_pipeline
+from qwenpaw.extensions.ai_big_screen.pipeline import (
+    refresh_screen_data,
+    run_draft_pipeline,
+)
 from qwenpaw.extensions.api.ai_big_screen_models import (
     AiBigScreenDraftRequest,
     AiBigScreenPatchRequest,
@@ -47,6 +50,7 @@ __all__ = [
     "duplicate_screen_asset",
     "publish_screen_asset",
     "patch_screen_asset",
+    "refresh_screen_asset",
 ]
 
 AI_BIG_SCREEN_CONFIGURE_LLM_MESSAGE = CONFIGURE_LLM_MESSAGE
@@ -153,6 +157,13 @@ async def _run_screen_draft_task(
 
 def _update_screen_draft_task(task_id: str, **updates: Any) -> None:
     store.update_task(task_id=task_id, updates=updates)
+
+
+async def refresh_screen_asset(*, screen_id: str) -> dict[str, Any]:
+    """Re-hydrate a saved screen's data (L2 only) and persist it."""
+    screen = store.get_screen(screen_id=screen_id)
+    refreshed = await refresh_screen_data(screen)
+    return store.save_screen(screen=refreshed, requested_by="auto-refresh")
 
 
 # ---------------------------------------------------------------------------
