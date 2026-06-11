@@ -9,6 +9,7 @@ from typing import Any
 
 from qwenpaw.extensions.api.app_artifacts_models import (
     AppArtifactCreate,
+    AppArtifactListingRequest,
     AppArtifactListResponse,
     AppArtifactResponse,
     AppArtifactUpdate,
@@ -26,6 +27,7 @@ from qwenpaw.extensions.api.app_artifacts_service import (
     list_apps,
     rollback_to_version,
     list_widgets,
+    set_app_listing,
     update_app,
     update_dashboard_items,
 )
@@ -51,9 +53,12 @@ async def publish_app(body: AppArtifactCreate):
 
 @router.get("", response_model=AppArtifactListResponse)
 async def list_artifacts(
-    type: str | None = Query(default=None, description="过滤类型: app|widget|dashboard"),
-    status: str | None = Query(default=None, description="过滤状态: draft|published|offline"),
+    type: str
+    | None = Query(default=None, description="过滤类型: app|widget|dashboard"),
+    status: str
+    | None = Query(default=None, description="过滤状态: draft|published|offline"),
     search: str | None = Query(default=None, description="搜索标题/描述/标签"),
+    listed: bool | None = Query(default=None, description="过滤是否已上架应用中心"),
     page: int = Query(default=1, ge=1, description="页码"),
     page_size: int = Query(default=20, ge=1, le=100, description="每页数量"),
 ):
@@ -62,6 +67,7 @@ async def list_artifacts(
         app_type=type,
         status=status,
         search=search,
+        listed=listed,
         page=page,
         page_size=page_size,
     )
@@ -108,6 +114,21 @@ async def delete_artifact(app_id: str):
     return {"detail": "已删除"}
 
 
+@router.post("/{app_id}/listing", response_model=AppArtifactResponse)
+async def update_artifact_listing(
+    app_id: str,
+    body: AppArtifactListingRequest,
+):
+    """上架/下架应用到应用中心（仅 published 应用可上架）。"""
+    try:
+        result = set_app_listing(app_id, listed=body.listed)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if result is None:
+        raise HTTPException(status_code=404, detail="应用不存在")
+    return result
+
+
 @router.get("/{app_id}/versions")
 async def get_artifact_versions(app_id: str):
     """获取应用版本历史。"""
@@ -133,7 +154,8 @@ async def rollback_artifact(
 @router.get("/{app_id}/preview", response_class=HTMLResponse)
 async def preview_artifact(
     app_id: str,
-    version: int | None = Query(default=None, ge=1, description="预览指定历史版本，默认当前版本"),
+    version: int
+    | None = Query(default=None, ge=1, description="预览指定历史版本，默认当前版本"),
 ):
     """预览应用的 HTML 内容（直接返回 HTML）。"""
     html = get_html_content(app_id, version=version)
@@ -147,6 +169,7 @@ async def preview_artifact(
 
 class DashboardUpdateItems(BaseModel):
     """更新仪表盘布局的请求体。"""
+
     items: list[DashboardItemCreate] = Field(default_factory=list)
 
 
@@ -174,7 +197,10 @@ async def get_dashboard_detail(dashboard_id: str):
 
 
 @router.put("/dashboards/{dashboard_id}/items")
-async def update_dashboard_layout(dashboard_id: str, body: DashboardUpdateItems):
+async def update_dashboard_layout(
+    dashboard_id: str,
+    body: DashboardUpdateItems,
+):
     """更新仪表盘的 widget 布局。"""
     result = update_dashboard_items(
         dashboard_id,

@@ -38,7 +38,7 @@ const AGENT_ID = "gateway";
 const COPAW_USER_ID = "default";
 const COPAW_CHANNEL = "console";
 
-const WORKBENCH_SYSTEM_PREFIX = `你现在处于「AI 应用开发工作台」模式。用户会描述想要的应用、图表或页面，你需要生成**完整的、可独立运行的 HTML 文件**。
+const WORKBENCH_SYSTEM_PREFIX_HEAD = `你现在处于「AI 应用开发工作台」模式。用户会描述想要的应用、图表或页面，你需要生成**完整的、可独立运行的 HTML 文件**。
 
 要求：
 1. 始终返回一个 \`\`\`html 代码块，包含完整的 <!DOCTYPE html> 页面
@@ -53,8 +53,54 @@ const WORKBENCH_SYSTEM_PREFIX = `你现在处于「AI 应用开发工作台」�
 - Chart.js: https://cdn.jsdelivr.net/npm/chart.js
 - D3.js: https://cdn.jsdelivr.net/npm/d3@7
 - Animate.css: https://cdn.jsdelivr.net/npm/animate.css
+`;
 
+/** Build the workbench system prefix, optionally with a real-data catalog. */
+function buildWorkbenchSystemPrefix(datasourceCatalog: string): string {
+  const dataSection = datasourceCatalog
+    ? `
+可用的真实数据接口（同源代理转发，生成的 HTML 可直接 fetch，无需任何鉴权头）：
+${datasourceCatalog}
+
+数据使用规则：
+- 页面优先调用以上真实接口获取数据，而不是只写示例数据
+- 请求失败时回退到内置示例数据，并在页面上明显标注「示例数据」
+- 统一使用相对路径 /portal-api/proxy/{数据源ID}，预览与发布后的页面均同源可用
+`
+    : "";
+  return `${WORKBENCH_SYSTEM_PREFIX_HEAD}${dataSection}
 用户需求：`;
+}
+
+interface WorkbenchDatasourceSummary {
+  id: string;
+  name: string;
+  description: string;
+  url_template: string;
+  method: string;
+  default_params: Record<string, unknown>;
+  enabled: boolean;
+}
+
+/** Render the datasource catalog lines injected into the system prefix. */
+function buildDatasourceCatalogText(items: WorkbenchDatasourceSummary[]): string {
+  if (!items.length) return "";
+  return items
+    .map((d) => {
+      const method = (d.method || "GET").toUpperCase();
+      const params =
+        d.default_params && Object.keys(d.default_params).length
+          ? `；默认参数 ${JSON.stringify(d.default_params)}`
+          : "";
+      const example =
+        method === "GET"
+          ? `fetch("/portal-api/proxy/${d.id}?参数名=值")`
+          : `fetch("/portal-api/proxy/${d.id}", { method: "${method}", headers: { "Content-Type": "application/json" }, body: JSON.stringify({}) })`;
+      const desc = d.description ? `：${d.description}` : "";
+      return `- /portal-api/proxy/${d.id} — ${d.name}${desc}（${method} 转发${params}；调用示例 ${example}）`;
+    })
+    .join("\n");
+}
 
 /* ------------------------------------------------------------------ */
 /*  Helpers                                                            */
@@ -116,9 +162,24 @@ html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden;
 </html>`;
 }
 
+/**
+ * Inject a <base> tag so relative URLs (e.g. /portal-api/proxy/...) resolve
+ * against the portal origin instead of the blob: URL. Only the preview blob
+ * copy is patched — the published HTML stays untouched (the published
+ * preview endpoint is same-origin and needs no base).
+ */
+function withBaseHref(html: string): string {
+  if (/<base\s/i.test(html)) return html;
+  const tag = `<base href="${window.location.origin}/">`;
+  if (/<head[^>]*>/i.test(html)) {
+    return html.replace(/<head[^>]*>/i, (m) => `${m}\n${tag}`);
+  }
+  return `${tag}\n${html}`;
+}
+
 /** Build a sandboxed data-URI or blob URL for the HTML to render in iframe. */
 function buildPreviewUrl(html: string): string {
-  const blob = new Blob([html], { type: "text/html;charset=utf-8" });
+  const blob = new Blob([withBaseHref(html)], { type: "text/html;charset=utf-8" });
   return URL.createObjectURL(blob);
 }
 
@@ -129,9 +190,11 @@ function buildPreviewUrl(html: string): string {
 export function AppWorkbenchPanel({
   onBack,
   editAppId,
+  initialPrompt,
 }: {
   onBack?: () => void;
   editAppId?: string;
+  initialPrompt?: { token: string; prompt: string };
 }) {
   /* ---- chat state ---- */
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -368,16 +431,45 @@ export function AppWorkbenchPanel({
 
   const isFirstMessageRef = useRef(true);
 
-  const sendMessage = useCallback(async () => {
-    const content = inputValue.trim();
+  /* ---- real-data catalog (proxy datasources), fetched once ---- */
+  const catalogPromiseRef = useRef<Promise<string> | null>(null);
+  const getDatasourceCatalog = useCallback(() => {
+    if (!catalogPromiseRef.current) {
+      catalogPromiseRef.current = fetch("/portal-api/proxy/datasources")
+        .then((res) => (res.ok ? res.json() : []))
+        .then((items: WorkbenchDatasourceSummary[]) =>
+          buildDatasourceCatalogText(
+            (Array.isArray(items) ? items : []).filter((d) => d.enabled !== false),
+          ),
+        )
+        .catch(() => "");
+    }
+    // 数据源接口挂掉时不能阻塞首条消息：3 秒超时回退为空目录
+    return Promise.race([
+      catalogPromiseRef.current,
+      new Promise<string>((resolve) => {
+        window.setTimeout(() => resolve(""), 3000);
+      }),
+    ]);
+  }, []);
+
+  useEffect(() => {
+    void getDatasourceCatalog();
+  }, [getDatasourceCatalog]);
+
+  const sendMessage = useCallback(async (contentOverride?: string) => {
+    const content = (contentOverride ?? inputValue).trim();
     if (!content || isStreaming) return;
 
-    setInputValue("");
+    if (contentOverride === undefined) {
+      setInputValue("");
+    }
     appendMessage({ id: uid(), role: "user", content });
 
     // Prepend system instructions on first message of a session
+    const catalog = isFirstMessageRef.current ? await getDatasourceCatalog() : "";
     const effectiveContent = isFirstMessageRef.current
-      ? `${WORKBENCH_SYSTEM_PREFIX}${content}`
+      ? `${buildWorkbenchSystemPrefix(catalog)}${content}`
       : content;
 
     // Reset streaming state
@@ -465,7 +557,24 @@ export function AppWorkbenchPanel({
         void refreshPreviewFromBackend();
       }
     }
-  }, [inputValue, isStreaming, appendMessage, handleStreamEvent, refreshPreviewFromBackend]);
+  }, [
+    inputValue,
+    isStreaming,
+    appendMessage,
+    getDatasourceCatalog,
+    handleStreamEvent,
+    refreshPreviewFromBackend,
+  ]);
+
+  /* ---- auto-send the prompt handed over from 轻应用工坊 ---- */
+  const consumedInitialTokenRef = useRef("");
+  useEffect(() => {
+    if (!initialPrompt?.prompt) return;
+    if (consumedInitialTokenRef.current === initialPrompt.token) return;
+    if (isStreaming) return;
+    consumedInitialTokenRef.current = initialPrompt.token;
+    void sendMessage(initialPrompt.prompt);
+  }, [initialPrompt, isStreaming, sendMessage]);
 
   const handleStop = useCallback(async () => {
     const controller = streamAbortRef.current;

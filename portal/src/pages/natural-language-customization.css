@@ -816,3 +816,119 @@
   background: rgba(16, 185, 129, 0.14);
   color: #34d399;
 }
+
+/* ---- 统一入口：一句话生成轻应用 ---- */
+
+.nl-entry-card {
+  margin-bottom: 18px;
+}
+
+.nl-entry-textarea {
+  width: 100%;
+  box-sizing: border-box;
+  resize: vertical;
+  min-height: 76px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(148, 163, 184, 0.4);
+  background: rgba(255, 255, 255, 0.92);
+  font-size: 14px;
+  line-height: 1.6;
+  color: #0f172a;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.nl-entry-textarea:focus {
+  border-color: #4f6ef7;
+}
+
+.nl-entry-kinds {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.nl-entry-kind-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 14px 16px;
+  border-radius: 14px;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  background: rgba(255, 255, 255, 0.85);
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.15s;
+}
+
+.nl-entry-kind-card:hover {
+  border-color: rgba(79, 110, 247, 0.5);
+}
+
+.nl-entry-kind-card.active {
+  border-color: #4f6ef7;
+  background: rgba(79, 110, 247, 0.06);
+  box-shadow: 0 0 0 2px rgba(79, 110, 247, 0.12);
+}
+
+.nl-entry-kind-icon {
+  font-size: 20px;
+}
+
+.nl-entry-kind-name {
+  font-size: 15px;
+  font-weight: 600;
+  color: #0f172a;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.nl-entry-kind-recommend {
+  font-style: normal;
+  font-size: 11px;
+  font-weight: 500;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(16, 185, 129, 0.12);
+  color: #10b981;
+}
+
+.nl-entry-kind-desc {
+  font-size: 12px;
+  color: #64748b;
+  line-height: 1.5;
+}
+
+.nl-entry-actions {
+  margin-top: 14px;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.portal-digital-employee.theme-dark .nl-entry-textarea {
+  background: rgba(15, 23, 42, 0.6);
+  border-color: #334155;
+  color: #e2e8f0;
+}
+
+.portal-digital-employee.theme-dark .nl-entry-kind-card {
+  background: rgba(15, 23, 42, 0.5);
+  border-color: #334155;
+}
+
+.portal-digital-employee.theme-dark .nl-entry-kind-card.active {
+  border-color: #6f89ff;
+  background: rgba(79, 110, 247, 0.14);
+}
+
+.portal-digital-employee.theme-dark .nl-entry-kind-name {
+  color: #e2e8f0;
+}
+
+.portal-digital-employee.theme-dark .nl-entry-kind-desc {
+  color: #94a3b8;
+}

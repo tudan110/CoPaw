@@ -160,6 +160,21 @@ export function getActiveNlCustomization() {
   return requestPortalApi<NlCustomizationActiveResponse>("/nl-customization/active");
 }
 
+export function classifyNlCustomizationPrompt(prompt: string) {
+  return requestPortalApi<{
+    recommendedKind: "page" | "task";
+    scenarioType: string;
+    triggerType: string;
+    confidence: number;
+  }>("/nl-customization/classify", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ prompt }),
+  });
+}
+
 export function listNlCustomizationApps(limit = 50) {
   return requestPortalApi<NlCustomizationAppListResponse>(
     `/nl-customization/apps?limit=${encodeURIComponent(String(limit))}`,

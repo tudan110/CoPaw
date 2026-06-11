@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 from __future__ import annotations
 
 import json
@@ -22,9 +23,7 @@ from qwenpaw.extensions.natural_language_customization_registry import (
     update_customization_app_listing,
 )
 
-CONFIGURE_DEFAULT_LLM_MESSAGE = (
-    "未配置默认大模型，请先到“模型配置”里设置默认 LLM 后再生成结构化预览。"
-)
+CONFIGURE_DEFAULT_LLM_MESSAGE = "未配置默认大模型，请先到“模型配置”里设置默认 LLM 后再生成结构化预览。"
 
 _ALLOWED_SCENARIO_TYPES = {
     "inspection",
@@ -75,6 +74,33 @@ _TEMPLATE_CATALOG: dict[str, dict[str, Any]] = {
 }
 
 
+_PAGE_HINT_KEYWORDS = ("页面", "网页", "图表", "可视化", "html")
+
+
+def classify_nl_customization_prompt(prompt: str) -> dict[str, Any]:
+    """轻量分类入口需求（纯规则，不调用 LLM）。
+
+    页面类（报表呈现 → 应用开发工作台）与任务类（固化任务 →
+    结构化定制流程）的路由依据：场景识别为 portal-dashboard，
+    或描述中带页面类关键词，推荐 page；否则推荐 task。
+    """
+    cleaned = str(prompt or "").strip()
+    if not cleaned:
+        raise ValueError("prompt 不能为空")
+
+    intent = _extract_rule_intent(cleaned)
+    normalized = cleaned.lower()
+    is_page = intent["scenarioType"] == "portal-dashboard" or any(
+        keyword in normalized for keyword in _PAGE_HINT_KEYWORDS
+    )
+    return {
+        "recommendedKind": "page" if is_page else "task",
+        "scenarioType": intent["scenarioType"],
+        "triggerType": intent["triggerType"],
+        "confidence": intent["confidence"],
+    }
+
+
 async def build_nl_customization_preview(
     request: NlCustomizationPreviewRequest,
 ) -> NlCustomizationPreviewResponse:
@@ -85,8 +111,15 @@ async def build_nl_customization_preview(
     intent, parser_warnings = await _extract_intent(prompt)
     matched_template = _match_template(intent)
     title = str(request.title or "").strip() or _build_default_title(intent)
-    bundle = _build_bundle(title=title, prompt=prompt, intent=intent, matched_template=matched_template)
-    warnings = _unique_items([*parser_warnings, *_build_warnings(intent, matched_template)])
+    bundle = _build_bundle(
+        title=title,
+        prompt=prompt,
+        intent=intent,
+        matched_template=matched_template,
+    )
+    warnings = _unique_items(
+        [*parser_warnings, *_build_warnings(intent, matched_template)],
+    )
     missing_inputs = _build_missing_inputs(intent)
 
     return NlCustomizationPreviewResponse(
@@ -251,14 +284,20 @@ async def _extract_intent_with_llm(
     except ProviderError as exc:
         raise _map_provider_error(exc) from exc
     except Exception as exc:
-        raise ValueError(f"默认大模型初始化失败：{_extract_exception_message(exc)}") from exc
+        raise ValueError(
+            f"默认大模型初始化失败：{_extract_exception_message(exc)}",
+        ) from exc
 
     try:
         response_text = await _consume_model_response(model, messages)
     except ProviderError as exc:
-        raise ValueError(f"默认大模型调用失败：{_extract_exception_message(exc)}") from exc
+        raise ValueError(
+            f"默认大模型调用失败：{_extract_exception_message(exc)}",
+        ) from exc
     except Exception as exc:
-        raise ValueError(f"默认大模型调用失败：{_extract_exception_message(exc)}") from exc
+        raise ValueError(
+            f"默认大模型调用失败：{_extract_exception_message(exc)}",
+        ) from exc
 
     parsed_payload = _parse_llm_json_payload(response_text)
     if not isinstance(parsed_payload, dict):
@@ -273,7 +312,10 @@ def _map_provider_error(exc: ProviderError) -> ValueError:
     return ValueError(f"默认大模型不可用：{message}")
 
 
-async def _consume_model_response(model: Any, messages: list[dict[str, str]]) -> str:
+async def _consume_model_response(
+    model: Any,
+    messages: list[dict[str, str]],
+) -> str:
     response = await model(messages)
     if hasattr(response, "__aiter__"):
         accumulated = ""
@@ -291,7 +333,9 @@ def _extract_model_text(payload: Any) -> str:
     if isinstance(payload, str):
         return payload
     if isinstance(payload, list):
-        return "\n".join(filter(None, (_extract_model_text(item) for item in payload)))
+        return "\n".join(
+            filter(None, (_extract_model_text(item) for item in payload)),
+        )
     if isinstance(payload, dict):
         for key in ("text", "content", "response", "message"):
             value = payload.get(key)
@@ -316,7 +360,11 @@ def _parse_llm_json_payload(raw_text: str) -> dict[str, Any] | None:
     if not text:
         return None
 
-    fenced_match = re.search(r"```(?:json)?\s*(\{.*\})\s*```", text, flags=re.DOTALL)
+    fenced_match = re.search(
+        r"```(?:json)?\s*(\{.*\})\s*```",
+        text,
+        flags=re.DOTALL,
+    )
     candidate = fenced_match.group(1) if fenced_match else text
     if not fenced_match and "{" in text and "}" in text:
         candidate = text[text.find("{") : text.rfind("}") + 1]
@@ -429,9 +477,14 @@ def _detect_scenario_type(prompt: str, normalized: str) -> str:
         return "inspection"
     if any(keyword in prompt for keyword in ("首页", "卡片", "菜单", "报表")):
         return "portal-dashboard"
-    if "工单" in prompt and not any(keyword in prompt for keyword in ("告警", "报警")):
+    if "工单" in prompt and not any(
+        keyword in prompt for keyword in ("告警", "报警")
+    ):
         return "workorder"
-    if any(keyword in prompt for keyword in ("告警", "报警", "root cause", "rca", "分析")):
+    if any(
+        keyword in prompt
+        for keyword in ("告警", "报警", "root cause", "rca", "分析")
+    ):
         return "alert-analysis"
     if "dashboard" in normalized:
         return "portal-dashboard"
@@ -469,7 +522,9 @@ def _detect_target_type(prompt: str, normalized: str) -> str:
         ("首页", ("首页", "dashboard")),
     )
     for label, keywords in candidates:
-        if any(keyword in prompt or keyword in normalized for keyword in keywords):
+        if any(
+            keyword in prompt or keyword in normalized for keyword in keywords
+        ):
             return label
     return ""
 
@@ -565,7 +620,9 @@ def _estimate_confidence(
 
 def _match_template(intent: dict[str, Any]) -> dict[str, Any]:
     scenario_type = str(intent.get("scenarioType") or "generic")
-    template = dict(_TEMPLATE_CATALOG.get(scenario_type, _TEMPLATE_CATALOG["generic"]))
+    template = dict(
+        _TEMPLATE_CATALOG.get(scenario_type, _TEMPLATE_CATALOG["generic"]),
+    )
     reasons = [f"识别到场景类型：{scenario_type}"]
     target_type = str(intent.get("targetType") or "")
     if target_type:
@@ -578,7 +635,9 @@ def _match_template(intent: dict[str, Any]) -> dict[str, Any]:
 
 def _build_default_title(intent: dict[str, Any]) -> str:
     scenario_type = intent.get("scenarioType")
-    target_name = str(intent.get("targetName") or intent.get("targetType") or "").strip()
+    target_name = str(
+        intent.get("targetName") or intent.get("targetType") or "",
+    ).strip()
     if scenario_type == "inspection":
         return f"{target_name or '通用'}巡检助手"
     if scenario_type == "alert-analysis":
@@ -601,7 +660,9 @@ def _build_bundle(
         "禁止自动变更" in restriction or "禁止自动执行高风险动作" in restriction
         for restriction in intent.get("restrictions") or []
     )
-    allow_write = "ticket" in (intent.get("actions") or []) or allow_production_change
+    allow_write = (
+        "ticket" in (intent.get("actions") or []) or allow_production_change
+    )
     approval_mode = str(intent.get("approvalMode") or "none")
     template_kind = str(matched_template.get("templateKind") or "")
     display_targets = intent.get("displayTargets") or ["assistant-entry"]
@@ -655,22 +716,28 @@ def _build_bundle(
     }
 
 
-def _build_warnings(intent: dict[str, Any], matched_template: dict[str, Any]) -> list[str]:
+def _build_warnings(
+    intent: dict[str, Any],
+    matched_template: dict[str, Any],
+) -> list[str]:
     warnings: list[str] = []
     if not intent.get("targetType"):
         warnings.append("未识别到明确目标对象，已生成通用草案。")
     if intent.get("scenarioType") == "generic":
         warnings.append("未命中明确模板，当前使用通用定制模板。")
-    if matched_template.get("templateKind") == "portal-template" and "render" not in (
-        intent.get("actions") or []
-    ):
+    if matched_template.get(
+        "templateKind",
+    ) == "portal-template" and "render" not in (intent.get("actions") or []):
         warnings.append("门户展示模板缺少明确展示动作，建议补充页面展示要求。")
     return warnings
 
 
 def _build_missing_inputs(intent: dict[str, Any]) -> list[str]:
     missing_inputs: list[str] = []
-    if intent.get("scenarioType") == "inspection" and intent.get("triggerType") != "schedule":
+    if (
+        intent.get("scenarioType") == "inspection"
+        and intent.get("triggerType") != "schedule"
+    ):
         missing_inputs.append("建议补充巡检执行频率")
     if "notify" in (intent.get("actions") or []) and not any(
         keyword in (intent.get("targetType") or "")
@@ -691,10 +758,20 @@ def _build_summary_markdown(
     bundle: dict[str, Any],
     warnings: list[str],
 ) -> str:
-    scheduler = bundle.get("scheduler") if isinstance(bundle.get("scheduler"), dict) else {}
-    policies = bundle.get("policies") if isinstance(bundle.get("policies"), dict) else {}
+    scheduler = (
+        bundle.get("scheduler")
+        if isinstance(bundle.get("scheduler"), dict)
+        else {}
+    )
+    policies = (
+        bundle.get("policies")
+        if isinstance(bundle.get("policies"), dict)
+        else {}
+    )
     actions = "、".join(intent.get("actions") or []) or "configure"
-    warnings_block = "\n".join(f"- {item}" for item in warnings) if warnings else "- 无"
+    warnings_block = (
+        "\n".join(f"- {item}" for item in warnings) if warnings else "- 无"
+    )
     return (
         f"# {title}\n\n"
         f"## 原始需求\n\n"

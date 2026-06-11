@@ -12,7 +12,11 @@ class AppArtifactCreate(BaseModel):
 
     title: str = Field(..., min_length=1, max_length=200, description="应用标题")
     description: str = Field(default="", max_length=2000, description="应用描述")
-    type: str = Field(default="app", pattern=r"^(app|widget|dashboard)$", description="类型")
+    type: str = Field(
+        default="app",
+        pattern=r"^(app|widget|dashboard)$",
+        description="类型",
+    )
     html_content: str = Field(..., min_length=1, description="HTML 内容")
     config: dict[str, Any] | None = Field(default=None, description="配置信息")
     tags: list[str] = Field(default_factory=list, description="标签")
@@ -27,7 +31,10 @@ class AppArtifactUpdate(BaseModel):
     html_content: str | None = Field(default=None, min_length=1)
     config: dict[str, Any] | None = None
     tags: list[str] | None = None
-    status: str | None = Field(default=None, pattern=r"^(draft|published|offline)$")
+    status: str | None = Field(
+        default=None,
+        pattern=r"^(draft|published|offline)$",
+    )
 
 
 class AppArtifactResponse(BaseModel):
@@ -45,6 +52,7 @@ class AppArtifactResponse(BaseModel):
     config: dict[str, Any] | None
     tags: list[str]
     version: int
+    listed_at: str = ""
     created_at: str
     updated_at: str
 
@@ -61,8 +69,15 @@ class AppArtifactListItem(BaseModel):
     url: str
     tags: list[str]
     version: int
+    listed_at: str = ""
     created_at: str
     updated_at: str
+
+
+class AppArtifactListingRequest(BaseModel):
+    """上架/下架应用的请求体。"""
+
+    listed: bool
 
 
 class AppArtifactListResponse(BaseModel):

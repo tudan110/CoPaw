@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
 import PortalTraditionalViewButton from "../components/PortalTraditionalViewButton";
 import {
   applyNlCustomizationVersion,
+  classifyNlCustomizationPrompt,
   deleteNlCustomizationVersion,
   getNlCustomizationVersion,
   listNlCustomizationVersions,
@@ -15,6 +16,7 @@ import type {
   NlCustomizationPreviewResponse,
   NlCustomizationVersionRecord,
 } from "../types/naturalLanguageCustomization";
+import type { PortalLocationState } from "./digital-employee/pageHelpers";
 import "./natural-language-customization.css";
 
 type WorkspaceMode = "list" | "workspace";
@@ -45,8 +47,13 @@ export function NaturalLanguageCustomizationWorkspace({
 }: {
   embedded?: boolean;
 }) {
+  const navigate = useNavigate();
   const [mode, setMode] = useState<WorkspaceMode>("list");
   const [selectedAppId, setSelectedAppId] = useState("");
+  const [entryPrompt, setEntryPrompt] = useState("");
+  const [entryKind, setEntryKind] = useState<"page" | "task">("task");
+  const [recommendedKind, setRecommendedKind] = useState<"page" | "task" | "">("");
+  const userPickedKindRef = useRef(false);
   const [needsModelConfig, setNeedsModelConfig] = useState(false);
   const [title, setTitle] = useState("");
   const [prompt, setPrompt] = useState("");
@@ -189,10 +196,61 @@ export function NaturalLanguageCustomizationWorkspace({
     setMode("list");
   };
 
-  const openCreateView = () => {
+  const openCreateView = (prefillPrompt?: string) => {
     resetDraft();
     setSelectedAppId("");
+    if (prefillPrompt) {
+      setPrompt(prefillPrompt);
+    }
     setMode("workspace");
+  };
+
+  // 防抖调用规则分类端点，给统一入口的类型卡打推荐标
+  useEffect(() => {
+    const trimmed = entryPrompt.trim();
+    if (trimmed.length < 4) {
+      setRecommendedKind("");
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      classifyNlCustomizationPrompt(trimmed)
+        .then((result) => {
+          setRecommendedKind(result.recommendedKind);
+          if (!userPickedKindRef.current) {
+            setEntryKind(result.recommendedKind);
+          }
+        })
+        .catch(() => {
+          setRecommendedKind("");
+        });
+    }, 500);
+    return () => window.clearTimeout(timer);
+  }, [entryPrompt]);
+
+  const handlePickEntryKind = (kind: "page" | "task") => {
+    userPickedKindRef.current = true;
+    setEntryKind(kind);
+  };
+
+  const handleStartCreate = () => {
+    const trimmed = entryPrompt.trim();
+    if (!trimmed) {
+      setError("请先描述你想要的轻应用");
+      return;
+    }
+    if (entryKind === "page") {
+      navigate("/app-workbench", {
+        state: {
+          workbenchInitialPrompt: {
+            token: `nlc-entry-${Date.now()}`,
+            prompt: trimmed,
+            source: "nl-customization",
+          },
+        } satisfies PortalLocationState,
+      });
+      return;
+    }
+    openCreateView(trimmed);
   };
 
   const openManageView = (appId: string) => {
@@ -456,6 +514,78 @@ export function NaturalLanguageCustomizationWorkspace({
     </article>
   );
 
+  const renderUnifiedEntry = () => (
+    <section className="nl-card nl-entry-card">
+      <div className="nl-card-header">
+        <div>
+          <h2>一句话生成轻应用</h2>
+          <p>描述你的需求，系统会推荐生成「报表页面」或「固化任务」，发布后统一在应用中心访问使用。</p>
+        </div>
+      </div>
+      <div className="nl-card-body">
+        <textarea
+          className="nl-entry-textarea"
+          rows={3}
+          placeholder="例如：做一个展示本周告警 TOP10 的报表页面；或：每天 8 点对 Oracle 做巡检并通知我"
+          value={entryPrompt}
+          onChange={(event) => setEntryPrompt(event.target.value)}
+        />
+        <div className="nl-entry-kinds">
+          <button
+            type="button"
+            className={
+              entryKind === "page"
+                ? "nl-entry-kind-card active"
+                : "nl-entry-kind-card"
+            }
+            onClick={() => handlePickEntryKind("page")}
+          >
+            <span className="nl-entry-kind-icon">📄</span>
+            <span className="nl-entry-kind-name">
+              报表页面
+              {recommendedKind === "page" ? (
+                <em className="nl-entry-kind-recommend">推荐</em>
+              ) : null}
+            </span>
+            <span className="nl-entry-kind-desc">
+              对话式生成可视化 HTML 页面，可调用真实数据接口
+            </span>
+          </button>
+          <button
+            type="button"
+            className={
+              entryKind === "task"
+                ? "nl-entry-kind-card active"
+                : "nl-entry-kind-card"
+            }
+            onClick={() => handlePickEntryKind("task")}
+          >
+            <span className="nl-entry-kind-icon">⚡</span>
+            <span className="nl-entry-kind-name">
+              固化任务
+              {recommendedKind === "task" ? (
+                <em className="nl-entry-kind-recommend">推荐</em>
+              ) : null}
+            </span>
+            <span className="nl-entry-kind-desc">
+              固化成一键执行的任务应用，支持定时触发与审批边界
+            </span>
+          </button>
+        </div>
+        <div className="nl-entry-actions">
+          <button
+            type="button"
+            className="primary-btn"
+            disabled={!entryPrompt.trim()}
+            onClick={handleStartCreate}
+          >
+            开始创建
+          </button>
+        </div>
+      </div>
+    </section>
+  );
+
   const renderListView = () => (
     <section className="nl-card">
       <div className="nl-card-header">
@@ -464,7 +594,7 @@ export function NaturalLanguageCustomizationWorkspace({
             <h2>应用列表</h2>
             <p>先找到要维护的应用，再进入应用工作台新建版本、修改需求或调整上架状态。</p>
           </div>
-          <button type="button" className="primary-btn" onClick={openCreateView}>
+          <button type="button" className="primary-btn" onClick={() => openCreateView()}>
             新建应用
           </button>
         </div>
@@ -478,7 +608,7 @@ export function NaturalLanguageCustomizationWorkspace({
               <strong>当前还没有应用记录</strong>
               <span>可以先新建第一个应用，再用自然语言生成结构化预览并发布版本。</span>
               <div className="nl-empty-state-actions">
-                <button type="button" className="primary-btn" onClick={openCreateView}>
+                <button type="button" className="primary-btn" onClick={() => openCreateView()}>
                   新建第一个应用
                 </button>
               </div>
@@ -647,7 +777,7 @@ export function NaturalLanguageCustomizationWorkspace({
                         {selectedGroup.listedVersion ? <span>已上架</span> : <span>未上架</span>}
                       </div>
                     </div>
-                    <button type="button" className="ghost-btn" onClick={openCreateView}>
+                    <button type="button" className="ghost-btn" onClick={() => openCreateView()}>
                       新建应用
                     </button>
                   </div>
@@ -823,7 +953,14 @@ export function NaturalLanguageCustomizationWorkspace({
         </header>
         <div className={embedded ? "nl-customization-content" : undefined}>
           <div className={embedded ? "nl-customization-scroll" : undefined}>
-            {mode === "list" ? renderListView() : renderWorkspaceView()}
+            {mode === "list" ? (
+              <>
+                {renderUnifiedEntry()}
+                {renderListView()}
+              </>
+            ) : (
+              renderWorkspaceView()
+            )}
           </div>
         </div>
       </div>

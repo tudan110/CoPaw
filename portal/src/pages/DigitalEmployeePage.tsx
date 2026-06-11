@@ -1266,6 +1266,31 @@ export default function DigitalEmployeePage({
     navigate,
   ]);
 
+  const [workbenchBootstrap, setWorkbenchBootstrap] = useState<{
+    token: string;
+    prompt: string;
+    source?: "nl-customization";
+  } | null>(null);
+
+  useEffect(() => {
+    const workbenchInitialPrompt = locationState?.workbenchInitialPrompt;
+    if (!workbenchInitialPrompt || !isAppWorkbenchMode) {
+      return;
+    }
+    setWorkbenchBootstrap(workbenchInitialPrompt);
+    // 清掉 history state，防止刷新后重复自动发送
+    navigate(`${location.pathname}${location.search}`, {
+      replace: true,
+      state: {},
+    });
+  }, [
+    isAppWorkbenchMode,
+    location.pathname,
+    location.search,
+    locationState,
+    navigate,
+  ]);
+
   const handleOpenExecutionHistory = (type: "executions" | "running" | "success") => {
     if (type === "executions") {
       setExecutionTitle("执行历史 - 全部任务");
@@ -1735,8 +1760,15 @@ export default function DigitalEmployeePage({
             />)
           ) : isAppWorkbenchMode ? (
             renderDeferredPanel(<AppWorkbenchPanel
-              onBack={() => navigate("/app-artifacts")}
+              onBack={() =>
+                navigate(
+                  workbenchBootstrap?.source === "nl-customization"
+                    ? "/nl-customization"
+                    : "/app-artifacts",
+                )
+              }
               editAppId={routeSearchParams.get("edit") || undefined}
+              initialPrompt={workbenchBootstrap ?? undefined}
             />)
           ) : isDashboardAssemblyMode ? (
             renderDeferredPanel(<DashboardAssemblyPanel

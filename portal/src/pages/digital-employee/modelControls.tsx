@@ -470,8 +470,8 @@ export function AdvancedModelEntry({
             </span>
           </div>
           <div className="sidebar-advanced-item-name">轻应用工坊</div>
-          <div className="sidebar-advanced-item-desc">轻应用生成与管理</div>
-          <div className="sidebar-advanced-item-meta">预览 / 发布 / 版本留档</div>
+          <div className="sidebar-advanced-item-desc">一句话生成页面或任务应用</div>
+          <div className="sidebar-advanced-item-meta">报表页面 / 固化任务</div>
         </button>
         <button
           className={isAiBigScreenActive ? "sidebar-advanced-item active" : "sidebar-advanced-item"}
@@ -496,8 +496,8 @@ export function AdvancedModelEntry({
             </span>
           </div>
           <div className="sidebar-advanced-item-name">应用中心</div>
-          <div className="sidebar-advanced-item-desc">已上架的定制应用</div>
-          <div className="sidebar-advanced-item-meta">浏览 / 启动 / 统一入口</div>
+          <div className="sidebar-advanced-item-desc">页面应用与任务应用统一货架</div>
+          <div className="sidebar-advanced-item-meta">页面应用 / 任务应用 / 一键启动</div>
         </button>
         <button
           className={isAppArtifactsActive ? "sidebar-advanced-item active" : "sidebar-advanced-item"}
@@ -510,7 +510,7 @@ export function AdvancedModelEntry({
           </div>
           <div className="sidebar-advanced-item-name">我的应用</div>
           <div className="sidebar-advanced-item-desc">AI 生成的页面与卡片</div>
-          <div className="sidebar-advanced-item-meta">发布 / 预览 / 管理</div>
+          <div className="sidebar-advanced-item-meta">发布 / 上架 / 版本管理</div>
         </button>
         <button
           className={

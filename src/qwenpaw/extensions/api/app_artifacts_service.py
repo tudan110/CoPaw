@@ -32,13 +32,15 @@ def _get_db() -> sqlite3.Connection:
 
     if not _DB_INITIALIZED:
         _init_tables(conn)
+        _migrate_tables(conn)
         _DB_INITIALIZED = True
 
     return conn
 
 
 def _init_tables(conn: sqlite3.Connection) -> None:
-    conn.executescript("""
+    conn.executescript(
+        """
         CREATE TABLE IF NOT EXISTS apps (
             id TEXT PRIMARY KEY,
             title TEXT NOT NULL,
@@ -51,6 +53,7 @@ def _init_tables(conn: sqlite3.Connection) -> None:
             config TEXT,
             tags TEXT NOT NULL DEFAULT '[]',
             version INTEGER NOT NULL DEFAULT 1,
+            listed_at TEXT NOT NULL DEFAULT '',
             created_at TEXT NOT NULL,
             updated_at TEXT NOT NULL
         );
@@ -79,7 +82,21 @@ def _init_tables(conn: sqlite3.Connection) -> None:
         CREATE INDEX IF NOT EXISTS idx_apps_status ON apps(status);
         CREATE INDEX IF NOT EXISTS idx_app_versions_app_id ON app_versions(app_id);
         CREATE INDEX IF NOT EXISTS idx_dashboard_items_dashboard_id ON dashboard_items(dashboard_id);
-    """)
+    """,
+    )
+
+
+def _migrate_tables(conn: sqlite3.Connection) -> None:
+    """对存量库做幂等列迁移（CREATE TABLE IF NOT EXISTS 不会补列）。"""
+    columns = {
+        str(row["name"])
+        for row in conn.execute("PRAGMA table_info(apps)").fetchall()
+    }
+    if "listed_at" not in columns:
+        conn.execute(
+            "ALTER TABLE apps ADD COLUMN listed_at TEXT NOT NULL DEFAULT ''",
+        )
+        conn.commit()
 
 
 def _now_iso() -> str:
@@ -191,7 +208,10 @@ def get_app(app_id: str) -> dict[str, Any] | None:
     """获取应用详情。"""
     conn = _get_db()
     try:
-        row = conn.execute("SELECT * FROM apps WHERE id = ?", (app_id,)).fetchone()
+        row = conn.execute(
+            "SELECT * FROM apps WHERE id = ?",
+            (app_id,),
+        ).fetchone()
         if row is None:
             return None
         d = _row_to_dict(row)
@@ -208,6 +228,7 @@ def list_apps(
     app_type: str | None = None,
     status: str | None = None,
     search: str | None = None,
+    listed: bool | None = None,
     page: int = 1,
     page_size: int = 20,
 ) -> dict[str, Any]:
@@ -223,15 +244,24 @@ def list_apps(
         if status:
             conditions.append("status = ?")
             params.append(status)
+        if listed is True:
+            conditions.append("listed_at != ''")
+        elif listed is False:
+            conditions.append("listed_at = ''")
         if search:
-            conditions.append("(title LIKE ? OR description LIKE ? OR tags LIKE ?)")
+            conditions.append(
+                "(title LIKE ? OR description LIKE ? OR tags LIKE ?)",
+            )
             like_val = f"%{search}%"
             params.extend([like_val, like_val, like_val])
 
-        where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+        where_clause = (
+            f"WHERE {' AND '.join(conditions)}" if conditions else ""
+        )
 
         total_row = conn.execute(
-            f"SELECT COUNT(*) as cnt FROM apps {where_clause}", params
+            f"SELECT COUNT(*) as cnt FROM apps {where_clause}",
+            params,
         ).fetchone()
         total = total_row["cnt"] if total_row else 0
 
@@ -272,7 +302,10 @@ def update_app(
     """更新应用，如果有新 HTML 则创建新版本。"""
     conn = _get_db()
     try:
-        existing = conn.execute("SELECT * FROM apps WHERE id = ?", (app_id,)).fetchone()
+        existing = conn.execute(
+            "SELECT * FROM apps WHERE id = ?",
+            (app_id,),
+        ).fetchone()
         if existing is None:
             return None
 
@@ -314,7 +347,8 @@ def update_app(
             params.append(now)
             params.append(app_id)
             conn.execute(
-                f"UPDATE apps SET {', '.join(updates)} WHERE id = ?", params
+                f"UPDATE apps SET {', '.join(updates)} WHERE id = ?",
+                params,
             )
             conn.commit()
 
@@ -323,14 +357,52 @@ def update_app(
         conn.close()
 
 
+def set_app_listing(
+    app_id: str,
+    *,
+    listed: bool,
+) -> dict[str, Any] | None:
+    """上架/下架应用到应用中心。
+
+    仅 published 状态的应用允许上架；下架不受状态限制。
+    """
+    conn = _get_db()
+    try:
+        existing = conn.execute(
+            "SELECT id, status FROM apps WHERE id = ?",
+            (app_id,),
+        ).fetchone()
+        if existing is None:
+            return None
+        if listed and existing["status"] != "published":
+            raise ValueError("仅已发布的应用可以上架")
+
+        now = _now_iso()
+        conn.execute(
+            "UPDATE apps SET listed_at = ?, updated_at = ? WHERE id = ?",
+            (now if listed else "", now, app_id),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    return get_app(app_id)
+
+
 def delete_app(app_id: str) -> bool:
     """删除应用及其 HTML 文件。"""
     conn = _get_db()
     try:
-        existing = conn.execute("SELECT id FROM apps WHERE id = ?", (app_id,)).fetchone()
+        existing = conn.execute(
+            "SELECT id FROM apps WHERE id = ?",
+            (app_id,),
+        ).fetchone()
         if existing is None:
             return False
-        conn.execute("DELETE FROM dashboard_items WHERE dashboard_id = ?", (app_id,))
+        conn.execute(
+            "DELETE FROM dashboard_items WHERE dashboard_id = ?",
+            (app_id,),
+        )
         conn.execute("DELETE FROM app_versions WHERE app_id = ?", (app_id,))
         conn.execute("DELETE FROM apps WHERE id = ?", (app_id,))
         conn.commit()
@@ -364,7 +436,8 @@ def get_html_content(app_id: str, version: int | None = None) -> str | None:
     try:
         if version is None:
             row = conn.execute(
-                "SELECT html_path FROM apps WHERE id = ?", (app_id,)
+                "SELECT html_path FROM apps WHERE id = ?",
+                (app_id,),
             ).fetchone()
         else:
             row = conn.execute(
@@ -441,7 +514,7 @@ def create_dashboard(
         )
 
         # Insert widget items
-        for item in (items or []):
+        for item in items or []:
             conn.execute(
                 """INSERT INTO dashboard_items
                    (dashboard_id, widget_id, position_x, position_y, width, height, config)
@@ -453,7 +526,9 @@ def create_dashboard(
                     item.get("position_y", 0),
                     item.get("width", 1),
                     item.get("height", 1),
-                    json.dumps(item.get("config")) if item.get("config") else None,
+                    json.dumps(item.get("config"))
+                    if item.get("config")
+                    else None,
                 ),
             )
 
@@ -468,7 +543,10 @@ def get_dashboard(dashboard_id: str) -> dict[str, Any] | None:
     """获取仪表盘详情（含关联的 widget 列表）。"""
     conn = _get_db()
     try:
-        row = conn.execute("SELECT * FROM apps WHERE id = ? AND type = 'dashboard'", (dashboard_id,)).fetchone()
+        row = conn.execute(
+            "SELECT * FROM apps WHERE id = ? AND type = 'dashboard'",
+            (dashboard_id,),
+        ).fetchone()
         if row is None:
             return None
         d = _row_to_dict(row)
@@ -486,7 +564,10 @@ def get_dashboard(dashboard_id: str) -> dict[str, Any] | None:
             item_d = _row_to_dict(item_row)
             item_d["config"] = _parse_config(item_d.get("config"))
             # Attach widget title
-            widget = conn.execute("SELECT title, type FROM apps WHERE id = ?", (item_d["widget_id"],)).fetchone()
+            widget = conn.execute(
+                "SELECT title, type FROM apps WHERE id = ?",
+                (item_d["widget_id"],),
+            ).fetchone()
             item_d["widget_title"] = widget["title"] if widget else "未知卡片"
             item_d["widget_type"] = widget["type"] if widget else "widget"
             d["items"].append(item_d)
@@ -504,7 +585,8 @@ def update_dashboard_items(
     conn = _get_db()
     try:
         existing = conn.execute(
-            "SELECT * FROM apps WHERE id = ? AND type = 'dashboard'", (dashboard_id,)
+            "SELECT * FROM apps WHERE id = ? AND type = 'dashboard'",
+            (dashboard_id,),
         ).fetchone()
         if existing is None:
             return None
@@ -512,7 +594,10 @@ def update_dashboard_items(
         now = _now_iso()
 
         # Delete old items and insert new ones
-        conn.execute("DELETE FROM dashboard_items WHERE dashboard_id = ?", (dashboard_id,))
+        conn.execute(
+            "DELETE FROM dashboard_items WHERE dashboard_id = ?",
+            (dashboard_id,),
+        )
         for item in items:
             conn.execute(
                 """INSERT INTO dashboard_items
@@ -525,7 +610,9 @@ def update_dashboard_items(
                     item.get("position_y", 0),
                     item.get("width", 1),
                     item.get("height", 1),
-                    json.dumps(item.get("config")) if item.get("config") else None,
+                    json.dumps(item.get("config"))
+                    if item.get("config")
+                    else None,
                 ),
             )
 

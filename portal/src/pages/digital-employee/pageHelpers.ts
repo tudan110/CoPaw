@@ -919,6 +919,11 @@ export type PortalLocationState = {
     employeeId: string;
     sessionId: string;
   };
+  workbenchInitialPrompt?: {
+    token: string;
+    prompt: string;
+    source?: "nl-customization";
+  };
 };
 
 export type PortalOpsAlertLevel = "critical" | "urgent" | "warning" | "info";

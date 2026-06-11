@@ -504,6 +504,52 @@
   background: #eff6ff;
 }
 
+.app-artifacts-btn-listing {
+  padding: 4px 8px;
+  border-radius: 5px;
+  border: 1px solid #e2e8f0;
+  background: #fff;
+  color: #475569;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+  line-height: 1;
+}
+
+.app-artifacts-btn-listing:hover {
+  border-color: #10b981;
+  color: #10b981;
+  background: #ecfdf5;
+}
+
+.app-artifacts-btn-listing.listed {
+  border-color: #a7f3d0;
+  color: #10b981;
+  background: #ecfdf5;
+}
+
+.app-artifacts-card-listed {
+  font-size: 11px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: rgba(16, 185, 129, 0.12);
+  color: #10b981;
+}
+
+.portal-digital-employee.theme-dark .app-artifacts-btn-listing {
+  border-color: #334155;
+  background: #1e293b;
+  color: #94a3b8;
+}
+
+.portal-digital-employee.theme-dark .app-artifacts-btn-listing:hover,
+.portal-digital-employee.theme-dark .app-artifacts-btn-listing.listed {
+  border-color: #10b981;
+  color: #34d399;
+  background: #0c2a22;
+}
+
 /* ---- Version history modal ---- */
 
 .app-artifacts-modal-overlay {
