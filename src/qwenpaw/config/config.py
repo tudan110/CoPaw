@@ -1780,7 +1780,8 @@ class DomainGuardConfig(BaseModel):
 
     Before importing a skill / MCP the system checks whether it belongs to
     this deployment's domain (network management / ops). ``mode``:
-    * ``"block"`` – reject off-domain (and check-unavailable) imports (default).
+    * ``"block"`` – reject off-domain (and check-unavailable) imports
+      (default).
     * ``"warn"``  – run the check but only log; do not reject.
     * ``"off"``   – disable the domain check entirely.
 
@@ -1796,8 +1797,8 @@ class DomainGuardConfig(BaseModel):
         default=0.7,
         ge=0.0,
         le=1.0,
-        description="LLM verdict confidence below which the verdict is treated "
-        "as borderline and rejected (strict).",
+        description="LLM verdict confidence below which the verdict is "
+        "treated as borderline and rejected (strict).",
     )
     llm_timeout_seconds: float = Field(
         default=15.0,
@@ -1812,6 +1813,43 @@ class DomainGuardConfig(BaseModel):
     )
 
 
+class OutputGuardConfig(BaseModel):
+    """Outgoing-message redaction settings under ``security.output_guard``.
+
+    Every outgoing chat message (all channels) is scanned for credentials
+    (API keys, tokens, passwords, private keys, JWTs, DB URIs) and entries
+    from a user-maintained lexicon; matched fragments are masked in place.
+
+    The corresponding ``QWENPAW_OUTPUT_GUARD_*`` env vars override these
+    fields when set.
+    """
+
+    enabled: bool = Field(
+        default=True,
+        description="Master switch for outgoing-message redaction.",
+    )
+    mode: Literal["mask", "off"] = Field(
+        default="mask",
+        description="Redaction mode: mask sensitive fragments, or off.",
+    )
+    lexicon_path: str = Field(
+        default="",
+        description="Path to a custom lexicon YAML (words/regexes). "
+        "Empty means the bundled lexicon.yaml. Hot-reloaded on mtime "
+        "change.",
+    )
+    disabled_patterns: List[str] = Field(
+        default_factory=list,
+        description="Built-in pattern ids to disable "
+        "(e.g. kv_secret_assignment).",
+    )
+    mask_streaming: bool = Field(
+        default=True,
+        description="Also redact accumulated streaming text "
+        "(dingtalk/feishu/telegram/wecom bubbles).",
+    )
+
+
 class SecurityConfig(BaseModel):
     """Top-level ``security`` section in config.json."""
 
@@ -1822,6 +1860,9 @@ class SecurityConfig(BaseModel):
     )
     domain_guard: DomainGuardConfig = Field(
         default_factory=DomainGuardConfig,
+    )
+    output_guard: OutputGuardConfig = Field(
+        default_factory=OutputGuardConfig,
     )
     delete_ops_disabled: bool = Field(
         default=True,
