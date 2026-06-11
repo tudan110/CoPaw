@@ -184,6 +184,8 @@ usage() {
     无需再进 portal 手动启用。
   - 例外保护: workspaces/*/agent.json（含渠道 token / 自定义 description）
     只在目标缺失时 seed，已存在的不覆盖，避免把渠道凭据回滚到出厂态。
+  - 例外保护: extensions/reports/（智能体运行时生成的报告产物）不参与同步，
+    --delete 严格镜像时也不会清掉。
 
 参数:
   --delete     删除目标目录中源目录不存在的文件，执行严格镜像
@@ -290,10 +292,13 @@ PROTECTED_INCLUDES=(
 info "保护文件: workspaces/*/agent.json（仅当目标缺失时 seed，已存在的保留）"
 rsync -a --ignore-existing "${PROTECTED_INCLUDES[@]}" "$SOURCE_DIR/" "$TARGET_DIR/"
 
-# skill.json 不走 rsync，由下面的 merge_workspace_skill_manifests 按条目合并
+# skill.json 不走 rsync，由下面的 merge_workspace_skill_manifests 按条目合并；
+# extensions/reports/ 是目标端运行时生成的报告产物（report-export 技能），
+# 源里永远没有，必须排除以免 --delete 严格镜像时被清掉。
 rsync "${RSYNC_ARGS[@]}" \
     --exclude='workspaces/*/skill.json' \
     --exclude='workspaces/*/agent.json' \
+    --exclude='extensions/reports/' \
     "$SOURCE_DIR/" "$TARGET_DIR/"
 merge_workspace_skill_manifests "$SOURCE_DIR" "$TARGET_DIR" "$QUIET_MODE"
 
