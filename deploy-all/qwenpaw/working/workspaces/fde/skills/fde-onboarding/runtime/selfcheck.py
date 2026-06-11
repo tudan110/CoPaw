@@ -5,9 +5,7 @@
 from __future__ import annotations
 
 import json
-import py_compile
 import re
-import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -89,11 +87,21 @@ def _domain(name: str, description: str, skill_md: str) -> dict[str, Any]:
 def _syntax(skill_dir: Path) -> dict[str, Any]:
     errors: list[dict[str, str]] = []
     for py in sorted(skill_dir.rglob("*.py")):
+        rel = str(py.relative_to(skill_dir))
         try:
-            with tempfile.NamedTemporaryFile(suffix=".pyc", delete=True) as tmp:
-                py_compile.compile(str(py), cfile=tmp.name, doraise=True)
-        except py_compile.PyCompileError as exc:
-            errors.append({"file": str(py.relative_to(skill_dir)), "error": str(exc)})
+            source = py.read_bytes()
+        except OSError as exc:
+            errors.append({"file": rel, "error": f"读取失败: {exc}"})
+            continue
+        try:
+            # 纯语法校验，跨平台无副作用：内建 compile 不写任何文件
+            # （旧实现用 py_compile 往临时 .pyc 落盘，Windows 上 rename
+            # 覆盖打开的句柄会 WinError 5，只读/受限 TMPDIR 下也可能失败）。
+            # 传 bytes 让 compile 按 PEP 263 自行探测编码（默认 utf-8，
+            # 兼容 BOM 与 `# -*- coding: -*-` 声明），不强制 utf-8 误报。
+            compile(source, str(py), "exec", dont_inherit=True)
+        except (SyntaxError, ValueError) as exc:
+            errors.append({"file": rel, "error": str(exc)})
     return {"status": "ok" if not errors else "error", "errors": errors}
 
 
