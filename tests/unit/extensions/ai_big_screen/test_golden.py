@@ -92,6 +92,57 @@ async def test_golden_explicit_risk_ask_enables_analysis() -> None:
     assert log_component.query_params.get("analysisMode") == "risk_summary"
 
 
+async def test_golden_dmax_visual_types_survive_normalization() -> None:
+    """Regression: capability supportedVisuals must include the D-max
+    palette — the legacy whitelist squashed every LLM-chosen type
+    (flip-number/donut/alarm-stream/...) down to table, which is why
+    generated screens looked like the old template."""
+    plan_json = json.dumps(
+        {
+            "name": "态势大屏",
+            "components": [
+                {
+                    "title": "告警总数",
+                    "capabilityId": "real-alarms",
+                    "visualType": "flip-number",
+                },
+                {
+                    "title": "分级占比",
+                    "capabilityId": "real-alarms",
+                    "visualType": "donut",
+                },
+                {
+                    "title": "实时告警流",
+                    "capabilityId": "real-alarms",
+                    "visualType": "alarm-stream",
+                },
+                {
+                    "title": "工单达成率",
+                    "capabilityId": "workorders",
+                    "visualType": "gauge",
+                },
+                {
+                    "title": "资源水位",
+                    "capabilityId": "cmdb-resources",
+                    "visualType": "liquid-ball",
+                },
+            ],
+        },
+        ensure_ascii=False,
+    )
+    plan = await build_screen_plan(
+        "做一个炫酷的多视角运维态势分析大屏",
+        model=FakeModel([plan_json]),
+    )
+    types = [c.type for c in plan.components]
+    assert "flip-number" in types
+    assert "donut" in types
+    assert "alarm-stream" in types
+    assert "gauge" in types
+    assert "liquid-ball" in types
+    assert "table" not in types[:5]
+
+
 async def test_golden_llm_cannot_force_risk_on_plain_query() -> None:
     """Even if the model claims risk-pulse, a plain query stays plain."""
     plan_json = json.dumps(
