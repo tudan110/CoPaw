@@ -191,28 +191,8 @@ export const DMAX_OPS_FIXTURE: DashboardSpec = {
       },
     },
 
-    // ── Lower-A (charts) ──────────────────────────────────────
-    {
-      id: "area-trend",
-      type: "area-chart",
-      title: "24 小时告警趋势",
-      layoutPosition: { x: 24, y: 670, w: 456, h: 176 },
-      visualSpec: { bindings: { x: "x", y: "y" } },
-      data: {
-        capabilityId: "alarm.trend24h",
-        sourceStatus: "live",
-        rows: [
-          { x: "00:00", y: 42 },
-          { x: "03:00", y: 28 },
-          { x: "06:00", y: 35 },
-          { x: "09:00", y: 88 },
-          { x: "12:00", y: 67 },
-          { x: "15:00", y: 120 },
-          { x: "18:00", y: 95 },
-          { x: "21:00", y: 58 },
-        ],
-      },
-    },
+    // ── Lower-A (charts + generative showcase) ────────────────
+    // Slot 1 showcases the composed/blueprint generative widget.
     {
       id: "line-latency",
       type: "line-chart",
@@ -262,6 +242,86 @@ export const DMAX_OPS_FIXTURE: DashboardSpec = {
         sourceStatus: "empty",
         message: "暂无评估数据",
         metrics: {},
+      },
+    },
+
+    // ── Composed (generative blueprint) showcase ──────────────
+    {
+      id: "composed-core",
+      type: "composed",
+      title: "告警态势核心舱（即时创作）",
+      layoutPosition: { x: 24, y: 670, w: 456, h: 176 },
+      visualSpec: {
+        composition: "primary",
+        blueprint: {
+          layout: "columns",
+          gap: "m",
+          cells: [
+            {
+              span: 1,
+              element: {
+                kind: "group",
+                layout: "rows",
+                gap: "s",
+                cells: [
+                  {
+                    element: {
+                      kind: "value",
+                      style: "flip",
+                      size: "l",
+                      bind: { value: "total", unit: "条", label: "活动告警" },
+                    },
+                  },
+                  {
+                    element: {
+                      kind: "badge",
+                      text: "实时监控中",
+                      tone: "cool",
+                    },
+                  },
+                ],
+              },
+            },
+            {
+              span: 2,
+              element: {
+                kind: "group",
+                layout: "rows",
+                gap: "s",
+                cells: [
+                  { element: { kind: "label", text: "24H 告警走势" } },
+                  {
+                    element: {
+                      kind: "sparkline",
+                      bind: { x: "x", y: "y" },
+                    },
+                  },
+                  {
+                    element: {
+                      kind: "progress",
+                      style: "bar",
+                      bind: { value: "handled" },
+                      max: 100,
+                    },
+                  },
+                ],
+              },
+            },
+          ],
+        },
+      },
+      data: {
+        capabilityId: "alarm.composite",
+        sourceStatus: "live",
+        metrics: { total: 47, handled: 72 },
+        series: [
+          { x: "00", y: 12 },
+          { x: "04", y: 8 },
+          { x: "08", y: 21 },
+          { x: "12", y: 34 },
+          { x: "16", y: 47 },
+          { x: "20", y: 29 },
+        ],
       },
     },
 

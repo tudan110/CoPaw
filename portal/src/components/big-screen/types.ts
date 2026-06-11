@@ -27,6 +27,8 @@ export interface VisualSpec {
   bindings?: Record<string, string>;
   highlightRules?: VisualRule[];
   emphasisRules?: VisualRule[];
+  /** Generative composition (composed type) — validated by blueprint.ts. */
+  blueprint?: unknown;
 }
 
 export interface LayoutPosition { x: number; y: number; w: number; h: number; }

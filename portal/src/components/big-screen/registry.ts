@@ -40,6 +40,8 @@ export const KNOWN_COMPONENT_TYPES = [
   "timeline",
   "bar3d",
   "text",
+  // Generative: declarative blueprint of controlled atoms (P2b).
+  "composed",
 ] as const;
 
 export type KnownComponentType = (typeof KNOWN_COMPONENT_TYPES)[number];

@@ -33,6 +33,9 @@ import { ChartWidget } from "./ChartWidget.tsx";
 // Simple text widget
 import { TextWidget } from "./TextWidget.tsx";
 
+// Generative blueprint interpreter
+import { ComposedWidget } from "./ComposedWidget.tsx";
+
 // ── Register non-chart widgets ─────────────────────────────────
 COMPONENT_REGISTRY["flip-number"] = FlipNumber;
 COMPONENT_REGISTRY["metric-kpi"] = MetricKpi;
@@ -63,3 +66,6 @@ for (const t of CHART_TYPES) {
 
 // ── Text / fallback ────────────────────────────────────────────
 COMPONENT_REGISTRY["text"] = TextWidget;
+
+// ── Generative composed widget (visualSpec.blueprint) ─────────
+COMPONENT_REGISTRY["composed"] = ComposedWidget;
