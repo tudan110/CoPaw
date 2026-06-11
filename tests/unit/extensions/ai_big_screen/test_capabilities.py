@@ -318,6 +318,49 @@ class TestHonestIntegrationWiring:
         assert result.rows in (None, [])
 
 
+class TestFriendlyFailureMessage:
+    async def test_cli_trace_collapsed_for_screen(self) -> None:
+        cli_text = (
+            "未指定日志数据源 ID。请通过 --datasource <id> 传入，"
+            "或在 .env 里设置 N9E_LOG_DATASOURCE_ID。"
+        )
+        result = await execute_capability(
+            {},
+            descriptor=_descriptor(
+                lambda _p: {
+                    "sourceStatus": "unavailable",
+                    "source": "zhiguan-log-service",
+                    "message": cli_text,
+                },
+            ),
+        )
+        assert result.source_status == "failed"
+        assert "--datasource" not in result.message
+        assert ".env" not in result.message
+        assert "数据源暂不可用" in result.message
+        assert "zhiguan-log-service" in result.message
+
+    async def test_business_message_passes_through(self) -> None:
+        result = await execute_capability(
+            {},
+            descriptor=_descriptor(
+                lambda _p: {
+                    "sourceStatus": "unavailable",
+                    "message": "工单能力未返回实时来源，已阻断展示。",
+                },
+            ),
+        )
+        assert result.message == "工单能力未返回实时来源，已阻断展示。"
+
+    async def test_exception_with_cli_marker_collapsed(self) -> None:
+        def _boom(_p: Mapping[str, Any]) -> dict[str, Any]:
+            raise RuntimeError("请通过 --token 传入凭据")
+
+        result = await execute_capability({}, descriptor=_descriptor(_boom))
+        assert "--token" not in result.message
+        assert "数据源暂不可用" in result.message
+
+
 class TestTtlCache:
     @staticmethod
     def _ttl_descriptor(fetcher: Any, ttl: float) -> CapabilityDescriptor:

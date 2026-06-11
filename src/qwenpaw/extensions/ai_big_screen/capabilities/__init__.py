@@ -16,6 +16,8 @@ from __future__ import annotations
 import asyncio
 import copy
 import json
+import logging
+import re
 import time
 from dataclasses import dataclass, field
 from typing import Any, Callable, Mapping
@@ -131,6 +133,34 @@ class CapabilityCache:
         return await asyncio.shield(task)
 
 
+_LOGGER = logging.getLogger(__name__)
+
+# Developer/CLI-flavoured failure text must not reach an ops screen —
+# flags, env-file hints and stack traces mean nothing to the viewer.
+_CLI_TRACE_RE = re.compile(
+    r"(^|\s)--[A-Za-z][\w-]*|\.env\b|Traceback|File \"|Errno \d+"
+    r"|stack ?trace",
+    re.IGNORECASE,
+)
+
+
+def friendly_failure_message(raw: str, *, source: str) -> str:
+    """Collapse CLI/stack-trace failure text into an operator-friendly
+    message (the original goes to the log); business-worded messages
+    pass through untouched."""
+    message = str(raw or "").strip()
+    if not message:
+        return f"数据源暂不可用（{source or '未知来源'}）"
+    if _CLI_TRACE_RE.search(message):
+        _LOGGER.warning(
+            "big-screen capability failure (source=%s): %s",
+            source or "unknown",
+            message,
+        )
+        return f"数据源暂不可用（{source or '未知来源'}），" "请检查该数据源的配置或服务状态。"
+    return message
+
+
 class TtlResultCache:
     """Cross-request result cache honouring capability cachePolicy.
 
@@ -211,6 +241,12 @@ def _to_result(
     metrics = data.get("metrics")
     columns = data.get("columns")
     total = data.get("total")
+    message = str(data.get("message") or "")
+    if status == "failed":
+        message = friendly_failure_message(
+            message,
+            source=str(data.get("source") or ""),
+        )
     return CapabilityResult(
         capability_id=descriptor.id,
         source_status=status,
@@ -227,7 +263,7 @@ def _to_result(
             if isinstance(total, (int, float)) and not isinstance(total, bool)
             else None
         ),
-        message=str(data.get("message") or ""),
+        message=message,
         extra=extra,
     )
 
@@ -245,7 +281,7 @@ def _failed_result(
     return CapabilityResult(
         capability_id=capability_id,
         source_status=status,
-        message=message,
+        message=friendly_failure_message(message, source=source),
         extra=extra,
     )
 
