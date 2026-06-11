@@ -43,6 +43,9 @@ from qwenpaw.extensions.api.notification_settings_api import (
 from qwenpaw.extensions.api.app_artifacts_api import (
     router as app_artifacts_router,
 )
+from qwenpaw.extensions.api.agent_reports import (
+    router as agent_reports_router,
+)
 from qwenpaw.extensions.api.qiming_openai_adapter import (
     router as qiming_openai_adapter_router,
 )
@@ -110,6 +113,7 @@ router.include_router(nl_customization_router)
 router.include_router(ai_big_screen_router)
 router.include_router(notification_settings_router)
 router.include_router(app_artifacts_router)
+router.include_router(agent_reports_router)
 router.include_router(qiming_openai_adapter_router)
 router.include_router(xingchen_openai_adapter_router)
 router.include_router(proxy_router)
