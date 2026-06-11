@@ -600,7 +600,11 @@ CAPABILITY_METADATA: list[dict[str, Any]] = [
             "fromTime": "",
             "toTime": "",
             "timeMode": "relative",
-            "searchStrategy": "single_window",
+            # Default to latest_non_empty: try the requested window first,
+            # then walk back to the most recent window that actually has
+            # logs (and label the range), so a quiet index shows real
+            # historical data instead of an empty screen.
+            "searchStrategy": "latest_non_empty",
             "maxLookbackDays": 45,
             "fields": DEFAULT_CAPABILITY_FIELDS["system-logs"],
         },

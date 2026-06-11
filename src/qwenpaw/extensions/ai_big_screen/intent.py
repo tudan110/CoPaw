@@ -183,9 +183,52 @@ def _should_use_log_risk_fast_path(prompt: str) -> bool:
     return any(term in text for term in ("分析", "高危", "危险", "动态", "突出", "有哪些"))
 
 
+_REQUEST_SPLIT_RE = re.compile(r"[,，、;；]|和|以及|还有|还要|另外|顺便")
+_CLAUSE_NOISE_RE = re.compile(
+    r"查询|查看|看一下|看下|展示|显示|最近|当前|实时|今日|本周|本月|"
+    r"分钟|小时|天|的|了|一下|帮我|生成|大屏|"
+    # analysis-intent words modify a known capability (e.g. "分析日志高危
+    # 情况") — they are not standalone data objects, so they count as
+    # noise when deciding whether a clause is an uncovered new request.
+    r"分析|风险|高危|危险|严重|异常|故障|错误|失败|超时|攻击|"
+    r"动态|突出|渲染|情况|监控|根因|趋势|走势|变化|对比|比较|"
+    r"同比|环比|统计|汇总|排行|排名|关联|影响",
+)
+
+
+def _clause_has_substance(clause: str) -> bool:
+    """A clause carries a real data request if, after stripping query
+    verbs / time words / fillers, a meaningful noun still remains."""
+    stripped = _CLAUSE_NOISE_RE.sub("", clause)
+    stripped = re.sub(r"[\d\s]", "", stripped)
+    return len(stripped) >= 2
+
+
+def _has_uncovered_request(prompt: str) -> bool:
+    """True if a multi-clause prompt has a substantive clause matching no
+    known capability (e.g. "查询系统日志，南京天气"). Such prompts must go
+    to the LLM, which turns the unknown ask into an honest capability-gap
+    instead of the keyword fast-path silently dropping it."""
+    clauses = [
+        c.strip()
+        for c in _REQUEST_SPLIT_RE.split(str(prompt or ""))
+        if c.strip()
+    ]
+    if len(clauses) <= 1:
+        return False
+    for clause in clauses:
+        if extract_semantic_capability_ids(clause):
+            continue
+        if _clause_has_substance(clause):
+            return True
+    return False
+
+
 def should_use_semantic_fast_path(prompt: str) -> bool:
     capability_ids = extract_semantic_capability_ids(prompt)
     if not capability_ids:
+        return False
+    if _has_uncovered_request(prompt):
         return False
     return prompt_is_simple_data_query(
         prompt,

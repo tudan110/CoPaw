@@ -57,6 +57,17 @@ class TestPromptHeuristics:
         assert extract_lookback_minutes("最近2小时告警") == 120
         assert extract_lookback_minutes("看下日志") == 15
 
+    def test_uncovered_clause_falls_back_to_llm(self) -> None:
+        # "南京天气" matches no capability — must leave the keyword
+        # fast-path so the unknown ask reaches the LLM instead of being
+        # silently dropped.
+        assert should_use_semantic_fast_path("查询15分钟系统日志，南京天气") is False
+
+    def test_all_known_clauses_keep_fast_path(self) -> None:
+        # every clause maps to a known capability → fast-path stays
+        assert should_use_semantic_fast_path("查询日志和告警") is True
+        assert should_use_semantic_fast_path("查询最近15分钟告警") is True
+
 
 class TestFastPath:
     async def test_simple_query_skips_llm(self) -> None:
@@ -85,6 +96,18 @@ class TestFastPath:
         assert logs[0].type == "risk-pulse"
         assert logs[0].query_params.get("analysisMode") == "risk_summary"
         assert logs[0].visual_spec.get("kind") == "risk-field"
+
+    async def test_log_query_defaults_to_latest_non_empty(self) -> None:
+        # A quiet log index must still show real (historical) data, so
+        # the default search walks back to the latest non-empty window
+        # rather than returning empty for "last 15 minutes".
+        spy = SpyModel()
+        plan = await build_screen_plan("查询最近15分钟系统日志", model=spy)
+        assert spy.calls == 0
+        log = next(
+            c for c in plan.components if c.capability_id == "system-logs"
+        )
+        assert log.query_params.get("searchStrategy") == "latest_non_empty"
 
 
 class TestLlmPathNormalization:
