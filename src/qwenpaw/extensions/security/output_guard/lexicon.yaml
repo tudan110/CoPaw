@@ -1,0 +1,25 @@
+# 出口脱敏业务词库 (output_guard lexicon)
+#
+# 运维管理员可直接编辑本文件，保存后立即生效（按 mtime 热加载，无需重启）。
+# 也可通过 config.json 的 security.output_guard.lexicon_path（或环境变量
+# QWENPAW_OUTPUT_GUARD_LEXICON_PATH）指向工作目录下的自定义词库文件。
+#
+# 格式说明：
+#
+# words:                       # 字面词条
+#   - "内部项目代号示例"        # 简单写法：整词打码为 ****
+#   - text: "客户XX集团"        # 完整写法：text 为命中词
+#     mask: "客户***"           # mask 为替换文本
+#
+# regexes:                     # 正则词条
+#   - pattern: "PRJ-\\d{4,}"   # Python 正则
+#     style: partial           # partial(留前后缀) | full(全掩) | fixed(替换)
+#     keep_prefix: 4           # partial 时保留的前缀长度
+#     keep_suffix: 0           # partial 时保留的后缀长度
+#   - pattern: "(?i)contract\\s+no\\.?\\s*\\S+"
+#     style: fixed
+#     replacement: "[合同编号已脱敏]"
+
+words: []
+
+regexes: []

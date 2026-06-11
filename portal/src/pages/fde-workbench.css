@@ -1616,12 +1616,6 @@ textarea.fde-field {
   margin-top: 6px;
   display: flex;
   justify-content: flex-end;
-}
-
-.fde-installed-actions {
-  margin-top: 6px;
-  display: flex;
-  justify-content: flex-end;
   gap: 6px;
 }
 .fde-link-btn--danger {
@@ -1635,7 +1629,7 @@ textarea.fde-field {
 
 /* --- 体检报告（缺口B） --- */
 .fde-report {
-  border: 1px solid var(--fde-border, rgba(128, 128, 128, 0.4));
+  border: 1px solid var(--fde-line);
   border-radius: 10px;
   padding: 10px 12px;
   display: flex;
@@ -1698,6 +1692,8 @@ textarea.fde-field {
   font-family: ui-monospace, Menlo, Consolas, monospace;
   font-size: 10px;
   opacity: 0.75;
+  max-width: 100%;
+  overflow-wrap: anywhere;
 }
 .fde-find-snip {
   margin: 5px 0 0;
@@ -1750,6 +1746,16 @@ textarea.fde-field {
 }
 
 /* --- Layout A：状态条 / Tabs / 引导字段 / 编辑器 / 底栏 --- */
+/* 右栏审查面板：.fde-section 自身没有内边距（列表类子元素各自带 padding），
+   Layout A 的子元素都是裸的，这里统一给一层，免得内容贴着卡片边缘。 */
+.fde-board {
+  display: flex;
+  flex-direction: column;
+  padding: 14px 16px 12px;
+  /* .fde-section 默认 overflow:hidden 会把自己变成 sticky 的限位容器，
+     底栏就永远贴不住视口底部 —— 审查面板放开它。 */
+  overflow: visible;
+}
 .fde-strip {
   display: flex;
   align-items: center;
@@ -1834,24 +1840,40 @@ textarea.fde-field {
   align-items: center;
 }
 .fde-guide-key {
-  width: 96px;
+  /* env key 可能很长（如 ALARM_WORKORDER_BASE_URL）——固定宽 + 省略号，
+     完整名靠 title 悬浮提示，避免文字压到右侧输入框上。 */
+  width: 150px;
   flex: none;
   font-size: 11px;
   opacity: 0.7;
   font-family: ui-monospace, monospace;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .fde-code-edit {
   flex: 1;
   min-height: 320px;
   width: 100%;
+  box-sizing: border-box;
   resize: vertical;
   font-family: ui-monospace, Menlo, Consolas, monospace;
   font-size: 12px;
   line-height: 1.5;
   padding: 10px;
-  border: 1px solid rgba(128, 128, 128, 0.4);
+  border: 1px solid var(--fde-line);
   border-radius: 8px;
-  background: var(--fde-code-bg, rgba(0, 0, 0, 0.18));
+  background: var(--bg-light, #f8fafc);
+  color: var(--fde-ink);
+}
+.fde-code-edit:focus {
+  outline: none;
+  border-color: var(--fde-accent);
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.16);
+}
+.fde-code-edit:read-only {
+  opacity: 0.75;
+  cursor: default;
 }
 .fde-code-file.is-dirty {
   color: #c89a2b;
@@ -1859,13 +1881,16 @@ textarea.fde-field {
 .fde-foot {
   position: sticky;
   bottom: 0;
+  z-index: 2;
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 8px;
   padding: 10px 0 2px;
   margin-top: 10px;
-  border-top: 1px solid rgba(128, 128, 128, 0.4);
-  background: var(--fde-panel-bg, inherit);
+  border-top: 1px solid var(--fde-line);
+  /* 必须不透明：sticky 底栏下面会滚过正文，透明背景会让文字叠在按钮上 */
+  background: var(--fde-surface);
 }
 .fde-foot-gap {
   flex: 1;

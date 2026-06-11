@@ -40,13 +40,17 @@ function getExternalTarget(screen: AiBigScreenApp | null): AiBigScreenPublishTar
   );
 }
 
-const GENERATION_STEPS = [
-  "语义解析",
-  "数据能力规划",
-  "实时接口取数",
-  "视觉编排",
-  "资产固化",
-];
+// Must match the backend pipeline stage names (DRAFT_STAGES in
+// extensions/ai_big_screen/pipeline.py); "planning" is the legacy
+// backend's only mid-flight stage, kept as an alias of step 1.
+const GENERATION_STEPS = ["意图解析", "取数", "视觉编排", "资产固化"];
+
+function generationStepIndex(stage: string): number {
+  if (stage === "planning") {
+    return 0;
+  }
+  return GENERATION_STEPS.indexOf(stage);
+}
 
 function getStatusLabel(status: string) {
   if (status === "published") {
@@ -80,20 +84,28 @@ function AiBigScreenGenerationStage({ task }: { task: AiBigScreenTask | null }) 
         <p>{task?.message || "复杂大屏会持续调用模型和数据接口，可能需要数分钟。"}</p>
       </div>
       <div className="ai-big-screen-generation-flow">
-        {GENERATION_STEPS.map((step, index) => (
-          <div
-            key={step}
-            className={[
-              "ai-big-screen-generation-step",
-              index === 0 && activeStage === "planning" ? "active" : "",
-              index === GENERATION_STEPS.length - 1 && activeStage === "completed" ? "done" : "",
-            ].filter(Boolean).join(" ")}
-            style={{ animationDelay: `${index * 0.28}s` }}
-          >
-            <span>{String(index + 1).padStart(2, "0")}</span>
-            <strong>{step}</strong>
-          </div>
-        ))}
+        {GENERATION_STEPS.map((step, index) => {
+          const activeIndex = generationStepIndex(activeStage);
+          const allDone = activeStage === "completed";
+          return (
+            <div
+              key={step}
+              className={[
+                "ai-big-screen-generation-step",
+                !allDone && index === activeIndex ? "active" : "",
+                allDone || (activeIndex >= 0 && index < activeIndex)
+                  ? "done"
+                  : "",
+              ]
+                .filter(Boolean)
+                .join(" ")}
+              style={{ animationDelay: `${index * 0.28}s` }}
+            >
+              <span>{String(index + 1).padStart(2, "0")}</span>
+              <strong>{step}</strong>
+            </div>
+          );
+        })}
       </div>
       <div className="ai-big-screen-generation-grid" aria-hidden="true">
         <span />
@@ -666,6 +678,26 @@ export function AiBigScreenPanel() {
                 selectedComponentIds={selectedComponentIds}
                 onSelectComponent={handleSelectComponent}
               />
+              {(screen.aiConversationContext as Record<string, unknown>)
+                ?.degraded === true ? (
+                <div
+                  style={{
+                    position: "absolute",
+                    top: 12,
+                    right: 12,
+                    zIndex: 20,
+                    padding: "6px 10px",
+                    borderRadius: 8,
+                    background: "rgba(245, 158, 11, 0.16)",
+                    color: "#fbbf24",
+                    fontSize: 12,
+                    backdropFilter: "blur(4px)",
+                  }}
+                  title="大模型未能生成结构化方案，本屏由关键词护栏兜底生成"
+                >
+                  AI 降级 · 护栏方案
+                </div>
+              ) : null}
             </div>
           ) : (
             <AiBigScreenEmptyState />

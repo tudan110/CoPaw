@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """Service layer for the Portal FDE delivery workbench.
 
 Resolves the ``fde`` agent's workspace, then drives the meta-skill's
@@ -25,16 +26,19 @@ FDE_AGENT_ID = "fde"
 # Portal "对外入口" agent. Skills mirrored here are reachable from the
 # portal main chat box directly. Configurable for deployments that
 # rename the entry agent (mirrors the frontend's portalBranding).
-GATEWAY_AGENT_ID = os.environ.get(
-    "QWENPAW_PORTAL_GATEWAY_AGENT_ID",
-    "",
-).strip() or "gateway"
+GATEWAY_AGENT_ID = (
+    os.environ.get(
+        "QWENPAW_PORTAL_GATEWAY_AGENT_ID",
+        "",
+    ).strip()
+    or "gateway"
+)
 FDE_ONBOARDING_SKILL = "fde-onboarding"
 FDE_TOOLS_TIMEOUT_SECONDS = int(
-    os.environ.get("QWENPAW_FDE_TOOLS_TIMEOUT", "60") or "60"
+    os.environ.get("QWENPAW_FDE_TOOLS_TIMEOUT", "60") or "60",
 )
 FDE_PROBE_TIMEOUT_SECONDS = int(
-    os.environ.get("QWENPAW_FDE_PROBE_TIMEOUT", "60") or "60"
+    os.environ.get("QWENPAW_FDE_PROBE_TIMEOUT", "60") or "60",
 )
 
 _SKILL_NAME_RE = re.compile(r"^[a-z0-9]([a-z0-9-]*[a-z0-9])?$")
@@ -48,8 +52,7 @@ def _validate_skill_name(name: str) -> str:
     norm = str(name or "").strip()
     if not _SKILL_NAME_RE.match(norm):
         raise FdeWorkbenchError(
-            "非法技能名：只能用小写字母、数字、连字符，"
-            "且不以连字符开头/结尾"
+            "非法技能名：只能用小写字母、数字、连字符，" "且不以连字符开头/结尾",
         )
     return norm
 
@@ -62,8 +65,7 @@ def fde_workspace_dir() -> Path:
     profiles = getattr(config.agents, "profiles", {}) or {}
     if FDE_AGENT_ID not in profiles:
         raise FdeWorkbenchError(
-            "FDE 交付助手未配置"
-            "（config.json 缺少 agents.profiles.fde）"
+            "FDE 交付助手未配置" "（config.json 缺少 agents.profiles.fde）",
         )
     ref = profiles[FDE_AGENT_ID]
     if not getattr(ref, "enabled", True):
@@ -105,16 +107,13 @@ def _run_fde_tools(
         )
     except subprocess.TimeoutExpired as exc:  # pragma: no cover - timing
         raise FdeWorkbenchError(
-            f"FDE 工具执行超时（{timeout}s）：{' '.join(args)}"
+            f"FDE 工具执行超时（{timeout}s）：{' '.join(args)}",
         ) from exc
     stdout = (proc.stdout or "").strip()
     if proc.returncode != 0 and not stdout:
         raise FdeWorkbenchError(
             (proc.stderr or "").strip()
-            or (
-                f"FDE 工具执行失败（rc={proc.returncode}）："
-                f"{' '.join(args)}"
-            )
+            or (f"FDE 工具执行失败（rc={proc.returncode}）：" f"{' '.join(args)}"),
         )
     if not stdout:
         raise FdeWorkbenchError(f"FDE 工具无输出：{' '.join(args)}")
@@ -122,7 +121,7 @@ def _run_fde_tools(
         payload = json.loads(stdout)
     except json.JSONDecodeError as exc:
         raise FdeWorkbenchError(
-            f"FDE 工具输出不是合法 JSON：{stdout[:400]}"
+            f"FDE 工具输出不是合法 JSON：{stdout[:400]}",
         ) from exc
     if not isinstance(payload, dict):
         raise FdeWorkbenchError("FDE 工具输出不是 JSON 对象")
@@ -151,7 +150,7 @@ def list_staged_skills() -> dict[str, Any]:
 def show_staged_skill(name: str, *, max_bytes: int = 40_000) -> dict[str, Any]:
     name = _validate_skill_name(name)
     return _run_fde_tools(
-        ["show-staged", "--name", name, "--max-bytes", str(int(max_bytes))]
+        ["show-staged", "--name", name, "--max-bytes", str(int(max_bytes))],
     )
 
 
@@ -247,7 +246,8 @@ def edit_staged_fields(
         if not md_path.is_file():
             raise FdeWorkbenchError("staged 技能缺少 SKILL.md")
         new_md = _rewrite_frontmatter(
-            md_path.read_text(encoding="utf-8"), updates,
+            md_path.read_text(encoding="utf-8"),
+            updates,
         )
         try:  # never write frontmatter that doesn't parse
             import yaml
@@ -255,7 +255,7 @@ def edit_staged_fields(
             yaml.safe_load(new_md.split("---", 2)[1])
         except Exception as exc:  # noqa: BLE001
             raise FdeWorkbenchError(
-                f"改写后的 frontmatter 非法 YAML：{exc}"
+                f"改写后的 frontmatter 非法 YAML：{exc}",
             ) from exc
         md_path.write_text(new_md, encoding="utf-8")
     if env:
@@ -264,13 +264,15 @@ def edit_staged_fields(
             example.read_text(encoding="utf-8") if example.is_file() else ""
         )
         example.write_text(
-            _update_env_example(current, env), encoding="utf-8",
+            _update_env_example(current, env),
+            encoding="utf-8",
         )
     return _mutation_result(name)
 
 
 def edit_staged_files(
-    name: str, files: list[dict[str, Any]],
+    name: str,
+    files: list[dict[str, Any]],
 ) -> dict[str, Any]:
     """Advanced raw-file edit: path-safe write of each file, then re-check."""
     name = _validate_skill_name(name)
@@ -318,7 +320,7 @@ def set_staged_review(
         if not sc.get("ready_for_review"):
             raise FdeWorkbenchError(
                 "AI 自检未通过，不能标记审查通过："
-                + "；".join(sc.get("blocked_reasons") or ["未知原因"])
+                + "；".join(sc.get("blocked_reasons") or ["未知原因"]),
             )
         label = str(approved_by or "").strip() or None
         meta["review"] = {
@@ -350,8 +352,7 @@ def generate_skill(
     target_workspace = str(target_workspace or "").strip()
     if not target_workspace:
         raise FdeWorkbenchError(
-            "必须指定 target_workspace"
-            "（这个技能最终装到哪个业务智能体）"
+            "必须指定 target_workspace" "（这个技能最终装到哪个业务智能体）",
         )
     staged = fde_staged_dir()
     staged.mkdir(parents=True, exist_ok=True)
@@ -430,7 +431,7 @@ def parse_env_example(text: str) -> list[dict[str, str]]:
                 "key": key,
                 "default": default,
                 "hint": "\n".join(pending).strip(),
-            }
+            },
         )
         pending = []
     return fields
@@ -498,7 +499,7 @@ def _installed_skill_dir(target_workspace: str, skill_name: str) -> Path:
     skill_dir = workspace_dir / "skills" / name
     if not skill_dir.is_dir():
         raise FdeWorkbenchError(
-            f"业务智能体 {target_workspace} 的工作区里找不到技能 {name}"
+            f"业务智能体 {target_workspace} 的工作区里找不到技能 {name}",
         )
     return skill_dir
 
@@ -698,9 +699,7 @@ def copy_installed_skill(
         create_business_agent(
             agent_id=target_workspace,
             name=target_workspace,
-            description=(
-                f"由 FDE 交付工作台在复制 `{skill_name}` 时自动创建"
-            ),
+            description=(f"由 FDE 交付工作台在复制 `{skill_name}` 时自动创建"),
             active_model=_pick_default_active_model(),
         )
         target_created = True
@@ -730,8 +729,7 @@ def copy_installed_skill(
         raise FdeWorkbenchError(f"复制失败：{exc}") from exc
     if not created:
         raise FdeWorkbenchError(
-            f"目标工作区已存在同名技能：{skill_name}"
-            "（在技能面板里先处理掉）",
+            f"目标工作区已存在同名技能：{skill_name}" "（在技能面板里先处理掉）",
         )
     try:
         service.set_skill_tags(created, [ERKAI_TAG])
@@ -751,7 +749,9 @@ def copy_installed_skill(
             # leaving the source enabled for a moment longer is fine.
             try:
                 source_service.disable_skill(skill_name)
-            except Exception:  # noqa: BLE001 - delete will surface a real error
+            except (
+                Exception
+            ):  # noqa: BLE001 - delete will surface a real error
                 pass
             ok = source_service.delete_skill(skill_name)
             if not ok:
@@ -767,8 +767,7 @@ def copy_installed_skill(
         "mirrored": False,
         "gateway_agent": GATEWAY_AGENT_ID,
         "skipped_reason": (
-            "目标本身就是 gateway" if target_workspace == GATEWAY_AGENT_ID
-            else None
+            "目标本身就是 gateway" if target_workspace == GATEWAY_AGENT_ID else None
         ),
     }
     if mirror_to_gateway and target_workspace != GATEWAY_AGENT_ID:
@@ -919,7 +918,7 @@ def list_installed_erkai_skills() -> dict[str, Any]:
                         or "",
                     ),
                     "tags": [str(t) for t in tags],
-                }
+                },
             )
     out.sort(key=lambda s: (s["agent_id"], s["skill_name"]))
     return {"count": len(out), "skills": out}
@@ -1045,6 +1044,18 @@ def create_business_agent(
         language=norm_lang,
     )
 
+    # 业务智能体是预设角色（人设由 FDE/操作员定），不走个人助手的
+    # 「首次见面起名」仪式 —— 否则它第一句话会让用户给自己起名字，
+    # 用户会懵。对齐内置 QA 工作区的处理（agents/utils/setup_utils.py
+    # 同样会删掉 BOOTSTRAP.md）。
+    try:
+        bootstrap_md = workspace_dir / "BOOTSTRAP.md"
+        if bootstrap_md.exists():
+            bootstrap_md.unlink()
+        (workspace_dir / ".bootstrap_completed").touch()
+    except OSError:
+        pass  # best-effort：留着也只是首次对话多一段开场白
+
     agent_ref = AgentProfileRef(
         id=norm_id,
         workspace_dir=str(workspace_dir),
@@ -1079,7 +1090,7 @@ def _tree_insert(tree: dict[str, Any], parts: list[str], content: str) -> None:
         node = node.setdefault(part, {})
         if not isinstance(node, dict):
             raise FdeWorkbenchError(
-                f"staged 目录结构异常：{'/'.join(parts)}"
+                f"staged 目录结构异常：{'/'.join(parts)}",
             )
     node[parts[-1]] = content
 
@@ -1111,29 +1122,31 @@ def _load_staged_meta(skill_dir: Path) -> dict[str, Any]:
     meta_path = skill_dir / "_fde_meta.json"
     if not meta_path.exists():
         raise FdeWorkbenchError(
-            f"staged 技能缺少 _fde_meta.json：{skill_dir.name}"
+            f"staged 技能缺少 _fde_meta.json：{skill_dir.name}",
         )
     try:
         data = json.loads(meta_path.read_text(encoding="utf-8"))
     except json.JSONDecodeError as exc:
         raise FdeWorkbenchError(
-            f"_fde_meta.json 不是合法 JSON：{skill_dir.name}"
+            f"_fde_meta.json 不是合法 JSON：{skill_dir.name}",
         ) from exc
     if not isinstance(data, dict):
         raise FdeWorkbenchError(
-            f"_fde_meta.json 不是 JSON 对象：{skill_dir.name}"
+            f"_fde_meta.json 不是 JSON 对象：{skill_dir.name}",
         )
     return data
 
 
 def _save_staged_meta(skill_dir: Path, meta: dict[str, Any]) -> None:
     (skill_dir / "_fde_meta.json").write_text(
-        json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8",
+        json.dumps(meta, ensure_ascii=False, indent=2),
+        encoding="utf-8",
     )
 
 
 def _review_state(
-    skill_dir: Path, meta: dict[str, Any],
+    skill_dir: Path,
+    meta: dict[str, Any],
 ) -> dict[str, Any]:
     """Derive the human-review verdict. ``effective`` is computed, never
     stored: approved only when status==approved AND the stored digest
@@ -1187,7 +1200,7 @@ def _rewrite_frontmatter(skill_md: str, updates: dict[str, Any]) -> str:
     m = re.match(r"^(---\s*\n)(.*?)(\n---\s*\n)(.*)$", skill_md, re.S)
     if not m:
         raise FdeWorkbenchError(
-            "SKILL.md 缺少合法 YAML frontmatter，无法安全改写"
+            "SKILL.md 缺少合法 YAML frontmatter，无法安全改写",
         )
     head, block, fence, body = m.group(1), m.group(2), m.group(3), m.group(4)
     seen: set[str] = set()
@@ -1216,11 +1229,7 @@ def _safe_staged_target(skill_dir: Path, rel: str) -> Path:
     rel = str(rel or "").strip()
     if not rel:
         raise FdeWorkbenchError("文件路径不能为空")
-    if (
-        rel.startswith("/")
-        or rel.startswith("\\")
-        or ":" in rel.split("/")[0]
-    ):
+    if rel.startswith("/") or rel.startswith("\\") or ":" in rel.split("/")[0]:
         raise FdeWorkbenchError(f"不允许绝对路径：{rel}")
     base = skill_dir.resolve()
     target = (base / rel).resolve()
@@ -1256,7 +1265,7 @@ def _read_staged_bundle(skill_dir: Path) -> dict[str, Any]:
             text = path.read_text(encoding="utf-8")
         except UnicodeDecodeError as exc:  # pragma: no cover - defensive
             raise FdeWorkbenchError(
-                f"staged 文件不是文本：{rel}"
+                f"staged 文件不是文本：{rel}",
             ) from exc
         if parts == ["SKILL.md"]:
             content = text
@@ -1297,9 +1306,7 @@ def _try_mirror_to_gateway(
         "skipped_reason": None,
     }
     if not _target_agent_exists(GATEWAY_AGENT_ID):
-        status["skipped_reason"] = (
-            f"gateway 智能体 `{GATEWAY_AGENT_ID}` 未配置，跳过镜像"
-        )
+        status["skipped_reason"] = f"gateway 智能体 `{GATEWAY_AGENT_ID}` 未配置，跳过镜像"
         return status
     try:
         gateway_dir = _resolve_workspace_dir(GATEWAY_AGENT_ID)
@@ -1328,9 +1335,7 @@ def _try_mirror_to_gateway(
         status["skipped_reason"] = f"gateway 镜像失败：{exc}"
         return status
     if not created:
-        status["skipped_reason"] = (
-            f"gateway 已经有同名技能 `{skill_name}`，不覆盖"
-        )
+        status["skipped_reason"] = f"gateway 已经有同名技能 `{skill_name}`，不覆盖"
         return status
     try:
         service.set_skill_tags(created, [ERKAI_TAG])
@@ -1402,17 +1407,17 @@ def install_staged_skill(
     if review["effective"] != "approved":
         if review["effective"] == "stale":
             raise FdeWorkbenchError(
-                "内容在审查通过后被修改，请复审后再安装"
+                "内容在审查通过后被修改，请复审后再安装",
             )
         raise FdeWorkbenchError(
-            "人工审查未通过，不能安装（请先在工作台点「审查通过」）"
+            "人工审查未通过，不能安装（请先在工作台点「审查通过」）",
         )
     override = str(target_override or "").strip()
     recorded = str(meta.get("target_workspace") or "").strip()
     target_workspace = override or recorded
     if not target_workspace:
         raise FdeWorkbenchError(
-            f"staged 技能没有标注目标业务智能体：{name}"
+            f"staged 技能没有标注目标业务智能体：{name}",
         )
 
     bundle = _read_staged_bundle(skill_dir)
@@ -1422,9 +1427,7 @@ def install_staged_skill(
         create_business_agent(
             agent_id=target_workspace,
             name=target_workspace,
-            description=(
-                f"由 FDE 交付工作台在安装 `{name}` 时自动创建"
-            ),
+            description=(f"由 FDE 交付工作台在安装 `{name}` 时自动创建"),
             active_model=_pick_default_active_model(),
         )
         target_created = True
@@ -1450,14 +1453,13 @@ def install_staged_skill(
         )
     except SkillScanError as exc:
         raise FdeWorkbenchError(
-            f"安装时安全扫描未通过：{exc}"
+            f"安装时安全扫描未通过：{exc}",
         ) from exc
     except Exception as exc:  # noqa: BLE001 - normalize for the panel
         raise FdeWorkbenchError(f"安装失败：{exc}") from exc
     if not created:
         raise FdeWorkbenchError(
-            f"目标工作区已存在同名技能：{name}"
-            "（在技能面板里先处理掉）"
+            f"目标工作区已存在同名技能：{name}" "（在技能面板里先处理掉）",
         )
     try:
         service.set_skill_tags(created, [ERKAI_TAG])
@@ -1479,8 +1481,7 @@ def install_staged_skill(
         "mirrored": False,
         "gateway_agent": GATEWAY_AGENT_ID,
         "skipped_reason": (
-            "目标本身就是 gateway" if target_workspace == GATEWAY_AGENT_ID
-            else None
+            "目标本身就是 gateway" if target_workspace == GATEWAY_AGENT_ID else None
         ),
     }
     if mirror_to_gateway and target_workspace != GATEWAY_AGENT_ID:

@@ -691,6 +691,13 @@ app.include_router(voice_router, tags=["voice"])
 # Custom channel routes (before SPA catch-all to ensure route priority)
 register_custom_channel_routes(app)
 
+# Security hardening: outbound redaction + high-risk boundary check.
+# Installed after custom channels load so their classes get wrapped too.
+# pylint: disable-next=wrong-import-position
+from ..extensions.security import install_security_hardening  # noqa: E402
+
+install_security_hardening()  # never raises; logs on failure
+
 # Console static files and SPA fallback
 # Register these AFTER API routes to ensure proper routing priority
 if os.path.isdir(_CONSOLE_STATIC_DIR):
