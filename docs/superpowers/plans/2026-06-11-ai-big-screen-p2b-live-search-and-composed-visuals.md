@@ -33,7 +33,10 @@ visualSpec.blueprint = {
 - 后端:`sanitizer.py` 增加 `_sanitize_blueprint`(枚举白名单、bind 走 safe_visual_token、limit/span/depth/cells 钳制、静态 text 消毒);`intent.ALLOWED_COMPONENT_TYPES += composed`;各能力 `supportedVisuals += composed`;L1 prompt 教语法 + 强示例,鼓励把 1-2 个核心组件做成 composed 创作。
 - 前端:`types.ts` blueprint 类型;`visualSpec.ts` 白名单镜像;`widgets/ComposedWidget.tsx` 解释器(flex/grid 布局,复用 EChart option builders、FlipNumber、LiquidBall、binding.ts、rules.ts);registry 注册 `composed`;CSS;node 测试(纯逻辑:blueprint 规范化/绑定解析);`pnpm build` 门禁。
 
-## 验收
-- 单测全绿(后端 pytest + 前端 node --test);pre-commit 干净。
-- 端到端(真后端):"查询15分钟系统日志,南京天气" → 日志 live(历史窗口标注)+ 天气卡 live(真实气温,来源 wttr.in);"做一个炫酷的告警态势大屏" → 含 composed 创作组件且正常渲染。
-- 失败诚实:断网/提供方 4xx → failed 徽章,不出假数据。
+## 验收(2026-06-11 已全部通过)
+- [x] 单测全绿:后端 133 pytest + 前端 48 node --test;pre-commit 干净。
+- [x] 端到端(真后端):"查询15分钟系统日志,南京天气" → 日志 live(359,773 条,历史窗口标注)+ 天气 live(32°C,来源 wttr.in)。
+- [x] 创作端到端:"炫酷态势创作大屏" → composed[columns: group/chart/list] 挂 200 条真实告警 + 天气/工单/Top5/CMDB 水球全部 live,零降级。
+- [x] 失败诚实:提供方异常→注册表裁决 failed;空检索→empty;blueprint 无效→忽略并提示,不破屏。
+
+提交:`c34a33c3`(A 后端)`27a00197`(B 后端)`38311a73`(B 前端)。
