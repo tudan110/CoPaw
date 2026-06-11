@@ -75,13 +75,25 @@ def _resolve_db_path(path: str | Path | None) -> Path:
     return Path(path) if path is not None else DEFAULT_DB_PATH
 
 
+_DEFAULT_MIGRATION_DONE = False
+
+
 def _connect(path: str | Path | None) -> sqlite3.Connection:
+    global _DEFAULT_MIGRATION_DONE
     db_path = _resolve_db_path(path)
     ensure_extension_data_dir(db_path.parent)
     connection = sqlite3.connect(str(db_path), timeout=15)
     connection.execute("PRAGMA journal_mode=WAL")
     connection.execute("PRAGMA busy_timeout=15000")
     connection.executescript(_SCHEMA)
+    if path is None and not _DEFAULT_MIGRATION_DONE:
+        # One-time per process: import the legacy registry.json into an
+        # empty default database. Explicit paths (tests) skip this.
+        _DEFAULT_MIGRATION_DONE = True
+        try:
+            _migrate_into(connection, DEFAULT_REGISTRY_PATH)
+        except Exception:  # migration must never block normal use
+            pass
     return connection
 
 
@@ -354,6 +366,31 @@ def purge_tasks(
 # ---------------------------------------------------------------------------
 
 
+def _migrate_into(connection: sqlite3.Connection, source: Path) -> int:
+    existing = connection.execute(
+        "SELECT COUNT(*) FROM screens",
+    ).fetchone()[0]
+    if existing:
+        return 0
+    if not source.is_file():
+        return 0
+    try:
+        payload = json.loads(source.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return 0
+    items = payload.get("items") if isinstance(payload, dict) else None
+    migrated = 0
+    for item in items if isinstance(items, list) else []:
+        if not isinstance(item, dict):
+            continue
+        if not str(item.get("id") or "").strip():
+            continue
+        _upsert_screen_unlocked(connection, dict(item))
+        migrated += 1
+    connection.commit()
+    return migrated
+
+
 def migrate_from_registry(
     *,
     registry_path: str | Path | None = None,
@@ -370,24 +407,4 @@ def migrate_from_registry(
         else DEFAULT_REGISTRY_PATH
     )
     with _connect(path) as connection:
-        existing = connection.execute(
-            "SELECT COUNT(*) FROM screens",
-        ).fetchone()[0]
-        if existing:
-            return 0
-        if not source.is_file():
-            return 0
-        try:
-            payload = json.loads(source.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            return 0
-        items = payload.get("items") if isinstance(payload, dict) else None
-        migrated = 0
-        for item in items if isinstance(items, list) else []:
-            if not isinstance(item, dict):
-                continue
-            if not str(item.get("id") or "").strip():
-                continue
-            _upsert_screen_unlocked(connection, dict(item))
-            migrated += 1
-    return migrated
+        return _migrate_into(connection, source)

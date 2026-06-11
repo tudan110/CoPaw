@@ -3,10 +3,10 @@
 
 Generation (L1/L2/L3), patching, sanitization and capability execution
 live in ``qwenpaw.extensions.ai_big_screen`` (the P2 redesign). This
-module keeps the HTTP-facing surface stable: asset CRUD over the
-registry, in-memory draft tasks with real stage progression, and thin
-wrappers around the pipeline. Persistence (registry.json) and the task
-dict are replaced by SQLite in P3.
+module keeps the HTTP-facing surface stable: asset CRUD and draft
+tasks over the SQLite store (restart-safe, multi-worker consistent;
+the legacy registry.json is auto-migrated on first use) plus thin
+wrappers around the pipeline.
 """
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ import copy
 import uuid
 from typing import Any, Mapping
 
-from qwenpaw.extensions import ai_big_screen_registry as registry
+from qwenpaw.extensions.ai_big_screen import store
 from qwenpaw.extensions.ai_big_screen.capabilities import (
     list_capability_metadata,
 )
@@ -80,7 +80,7 @@ async def build_screen_draft(
     )
 
 
-_DRAFT_TASKS: dict[str, dict[str, Any]] = {}
+_TASK_TTL_SECONDS = 24 * 3600
 
 
 def create_screen_draft_task(
@@ -98,16 +98,20 @@ def create_screen_draft_task(
         "screen": None,
         "error": "",
     }
-    _DRAFT_TASKS[task_id] = task
+    # SQLite-backed: tasks survive restarts and are visible from every
+    # uvicorn worker (the legacy in-memory dict 404'd when the poll
+    # request landed on a different worker than the creator).
+    store.create_task(task=task)
+    try:
+        store.purge_tasks(ttl_seconds=_TASK_TTL_SECONDS)
+    except Exception:  # housekeeping must never block creation
+        pass
     asyncio.create_task(_run_screen_draft_task(task_id, request))
     return dict(task)
 
 
 def get_screen_draft_task(task_id: str) -> dict[str, Any]:
-    normalized_task_id = str(task_id or "").strip()
-    if not normalized_task_id or normalized_task_id not in _DRAFT_TASKS:
-        raise ValueError(f"未找到生成任务：{normalized_task_id}")
-    return dict(_DRAFT_TASKS[normalized_task_id])
+    return store.get_task(task_id=task_id)
 
 
 async def _run_screen_draft_task(
@@ -148,11 +152,7 @@ async def _run_screen_draft_task(
 
 
 def _update_screen_draft_task(task_id: str, **updates: Any) -> None:
-    task = _DRAFT_TASKS.get(task_id)
-    if not isinstance(task, dict):
-        return
-    task.update(updates)
-    task["updatedAt"] = _now_iso()
+    store.update_task(task_id=task_id, updates=updates)
 
 
 # ---------------------------------------------------------------------------
@@ -165,7 +165,7 @@ async def patch_screen_asset(
     screen_id: str,
     request: AiBigScreenPatchRequest,
 ) -> dict[str, Any]:
-    screen = registry.get_screen(screen_id=screen_id)
+    screen = store.get_screen(screen_id=screen_id)
     outcome = await apply_patch(
         screen=screen,
         instruction=str(request.instruction or ""),
@@ -175,7 +175,7 @@ async def patch_screen_asset(
         selection_context=request.selectionContext or {},
         requested_by=str(request.requestedBy or "portal"),
     )
-    saved = registry.save_screen(
+    saved = store.save_screen(
         screen=outcome["screen"],
         requested_by=str(request.requestedBy or "portal"),
     )
@@ -208,19 +208,19 @@ def save_screen_asset(
 ) -> dict[str, Any]:
     normalized = dict(screen)
     _validate_screen(normalized)
-    return registry.save_screen(screen=normalized, requested_by=requested_by)
+    return store.save_screen(screen=normalized, requested_by=requested_by)
 
 
 def list_screen_assets(*, limit: int = 50) -> list[dict[str, Any]]:
-    return registry.list_screens(limit=limit)
+    return store.list_screens(limit=limit)
 
 
 def get_screen_asset(*, screen_id: str) -> dict[str, Any]:
-    return registry.get_screen(screen_id=screen_id)
+    return store.get_screen(screen_id=screen_id)
 
 
 def delete_screen_asset(*, screen_id: str) -> dict[str, Any]:
-    deleted = registry.delete_screen(screen_id=screen_id)
+    deleted = store.delete_screen(screen_id=screen_id)
     return {
         "screenId": str(deleted.get("id") or screen_id),
         "deleted": True,
@@ -236,14 +236,14 @@ def rename_screen_asset(
     next_name = str(name or "").strip()
     if not next_name:
         raise ValueError("name 不能为空")
-    screen = registry.get_screen(screen_id=screen_id)
+    screen = store.get_screen(screen_id=screen_id)
     screen["name"] = next_name[:80]
     raw_context = screen.get("aiConversationContext")
     screen["aiConversationContext"] = {
         **(dict(raw_context) if isinstance(raw_context, dict) else {}),
         "lastInstruction": "重命名大屏",
     }
-    return registry.save_screen(screen=screen, requested_by=requested_by)
+    return store.save_screen(screen=screen, requested_by=requested_by)
 
 
 def duplicate_screen_asset(
@@ -252,7 +252,7 @@ def duplicate_screen_asset(
     name: str = "",
     requested_by: str = "portal",
 ) -> dict[str, Any]:
-    source = registry.get_screen(screen_id=screen_id)
+    source = store.get_screen(screen_id=screen_id)
     now = _now_iso()
     duplicated = copy.deepcopy(source)
     duplicated["id"] = f"screen-{uuid.uuid4().hex[:10]}"
@@ -284,7 +284,7 @@ def duplicate_screen_asset(
         "duplicatedFrom": screen_id,
     }
     _validate_screen(duplicated)
-    return registry.save_screen(screen=duplicated, requested_by=requested_by)
+    return store.save_screen(screen=duplicated, requested_by=requested_by)
 
 
 def publish_screen_asset(
@@ -293,7 +293,7 @@ def publish_screen_asset(
     requested_by: str = "portal",
     visibility: str = "internal",
 ) -> dict[str, Any]:
-    screen = registry.get_screen(screen_id=screen_id)
+    screen = store.get_screen(screen_id=screen_id)
     now = _now_iso()
     normalized_visibility = str(visibility or "internal").strip() or "internal"
     publish_targets = [
@@ -331,5 +331,5 @@ def publish_screen_asset(
         **(dict(raw_context) if isinstance(raw_context, dict) else {}),
         "lastInstruction": "发布大屏",
     }
-    saved = registry.save_screen(screen=screen, requested_by=requested_by)
+    saved = store.save_screen(screen=screen, requested_by=requested_by)
     return {"screen": saved, "publishTargets": publish_targets}

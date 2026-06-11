@@ -16,7 +16,7 @@ from typing import Any
 import pytest
 from fastapi import HTTPException
 
-from qwenpaw.extensions import ai_big_screen_registry as registry
+from qwenpaw.extensions.ai_big_screen import store
 from qwenpaw.extensions.api.ai_big_screen_api import (
     create_ai_big_screen_draft_task,
     delete_ai_big_screen,
@@ -42,12 +42,19 @@ from qwenpaw.extensions.api.ai_big_screen_models import (
 
 
 @pytest.fixture(autouse=True)
-def _tmp_registry(monkeypatch: pytest.MonkeyPatch, tmp_path: Any) -> None:
+def _tmp_store(monkeypatch: pytest.MonkeyPatch, tmp_path: Any) -> None:
     monkeypatch.setattr(
-        registry,
-        "AI_BIG_SCREEN_REGISTRY_PATH",
+        store,
+        "DEFAULT_DB_PATH",
+        tmp_path / "ai_big_screen" / "ai_big_screen.sqlite3",
+    )
+    # keep the one-time default migration away from the real registry
+    monkeypatch.setattr(
+        store,
+        "DEFAULT_REGISTRY_PATH",
         tmp_path / "ai_big_screen" / "registry.json",
     )
+    monkeypatch.setattr(store, "_DEFAULT_MIGRATION_DONE", False)
 
 
 @pytest.fixture(autouse=True)
