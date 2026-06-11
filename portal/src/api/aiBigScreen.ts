@@ -145,6 +145,19 @@ export function duplicateAiBigScreen(
   );
 }
 
+export function refreshAiBigScreen(screenId: string) {
+  return requestPortalApi<AiBigScreenResponse>(
+    `/ai-big-screens/${encodeURIComponent(screenId)}/refresh`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+    },
+    AI_BIG_SCREEN_TIMEOUT_MS,
+  );
+}
+
 export function patchAiBigScreen(
   screenId: string,
   payload: {

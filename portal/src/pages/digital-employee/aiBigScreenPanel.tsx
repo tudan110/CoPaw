@@ -8,6 +8,7 @@ import {
   listAiBigScreens,
   patchAiBigScreen,
   publishAiBigScreen,
+  refreshAiBigScreen,
   renameAiBigScreen,
   saveAiBigScreen,
 } from "../../api/aiBigScreen";
@@ -340,6 +341,24 @@ export function AiBigScreenPanel() {
     }
   };
 
+  const handleRefreshData = async () => {
+    if (!screen) {
+      return;
+    }
+    setError("");
+    setNotice("");
+    try {
+      // refresh works on persisted screens; persist first so a fresh
+      // draft can be refreshed too (no-op when already saved).
+      const saved = await persistScreen(screen);
+      const response = await refreshAiBigScreen(saved.id);
+      setScreen(response.screen);
+      setNotice("已重新拉取各组件实时数据。");
+    } catch (requestError) {
+      setError(extractErrorMessage(requestError) || "刷新数据失败");
+    }
+  };
+
   const handleOpenPublished = () => {
     if (!externalTarget?.url) {
       return;
@@ -527,6 +546,15 @@ export function AiBigScreenPanel() {
               >
                 <i className="fas fa-satellite-dish" aria-hidden="true" />
                 {publishing ? "发布中..." : "发布大屏"}
+              </button>
+              <button
+                type="button"
+                className="ai-big-screen-action-btn"
+                disabled={!screen}
+                onClick={() => void handleRefreshData()}
+              >
+                <i className="fas fa-rotate" aria-hidden="true" />
+                刷新数据
               </button>
               <button
                 type="button"
