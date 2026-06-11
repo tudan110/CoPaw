@@ -75,6 +75,8 @@ ALLOWED_COMPONENT_TYPES = {
     "funnel",
     "timeline",
     "bar3d",
+    # Generative: declarative blueprint of controlled atoms (P2b).
+    "composed",
 }
 
 _FALLBACK_POSITIONS = [
@@ -990,6 +992,27 @@ def _build_intent_messages(prompt: str, title: str) -> list[dict[str, str]]:
         "新版大屏据此自动排版铺满整屏。layoutPosition 仍用 12 列网格 "
         "x,y,w,h，但仅作兜底、不必追求精确。"
         "尽量生成 4-8 个主次分明、类型多样的组件，让大屏丰富炫酷而不单薄。"
+        "【即时创作】当成品组件不足以表达数据时，"
+        "用 visualType=composed 自由创作：在 visualSpec.blueprint 里声明版式，"
+        "blueprint={layout, gap?, cells:[{span?, element}]}；"
+        "layout 只能是 rows、columns、grid、overlay、radial，"
+        "gap 只能是 s、m、l，span 1-4，cells 最多 12 个。"
+        "element.kind 只能是："
+        "value(大数字，bind{value,unit,label,prefix}，style plain/flip/glow，"
+        "size m/l/xl)、"
+        "chart(图表，chart line/area/bar/donut/gauge/radar/heatmap，"
+        "bind{x,y,name,value})、"
+        "list(列表，style stream/rank/plain，"
+        "bind{title,message,time,tone,value,name}，limit≤20)、"
+        "badge(状态徽章，text 静态文本或 bind{text}，tone)、"
+        "label(静态说明文字 text)、"
+        "progress(进度，style bar/ring/liquid，bind{value,max})、"
+        "sparkline(迷你趋势线，bind{x,y})、"
+        "group(嵌套一层子版式，含 layout 和 cells)。"
+        "bind 的值一律写数据列名/指标名，渲染器据此绑定真实数据。"
+        "鼓励把每屏最重要的 1-2 个组件用 composed 创作出与众不同的版式"
+        "（例如：翻牌大数 + 迷你趋势 + 状态徽章的组合卡，"
+        "或环图叠加中心数值再配滚动列表），不要与成品组件简单重复。"
     )
     output_example = {
         "name": "15分钟运行态势",
@@ -1053,6 +1076,72 @@ def _build_intent_messages(prompt: str, title: str) -> list[dict[str, str]]:
                 },
                 "visualSpec": {"composition": "supporting"},
                 "layoutPosition": {"x": 0, "y": 2, "w": 4, "h": 2},
+            },
+            {
+                "title": "告警态势核心舱",
+                "description": "翻牌总数 + 趋势 + 实时流的即时创作组合。",
+                "capabilityId": "real-alarms",
+                "visualType": "composed",
+                "queryParams": {"lookbackMinutes": 60, "limit": 200},
+                "visualSpec": {
+                    "composition": "primary",
+                    "blueprint": {
+                        "layout": "columns",
+                        "gap": "m",
+                        "cells": [
+                            {
+                                "span": 1,
+                                "element": {
+                                    "kind": "group",
+                                    "layout": "rows",
+                                    "cells": [
+                                        {
+                                            "element": {
+                                                "kind": "value",
+                                                "style": "flip",
+                                                "size": "xl",
+                                                "bind": {
+                                                    "value": "total",
+                                                    "unit": "条",
+                                                    "label": "活动告警",
+                                                },
+                                            },
+                                        },
+                                        {
+                                            "element": {
+                                                "kind": "badge",
+                                                "text": "实时监控中",
+                                                "tone": "cool",
+                                            },
+                                        },
+                                    ],
+                                },
+                            },
+                            {
+                                "span": 2,
+                                "element": {
+                                    "kind": "chart",
+                                    "chart": "area",
+                                    "bind": {"x": "eventTime", "y": "value"},
+                                },
+                            },
+                            {
+                                "span": 1,
+                                "element": {
+                                    "kind": "list",
+                                    "style": "stream",
+                                    "limit": 6,
+                                    "bind": {
+                                        "title": "title",
+                                        "time": "eventTime",
+                                        "tone": "level",
+                                    },
+                                },
+                            },
+                        ],
+                    },
+                },
+                "layoutPosition": {"x": 4, "y": 2, "w": 8, "h": 4},
             },
         ],
         "summary": "告警从总数、分级、实时流三个视角展开，并覆盖系统日志需求。",

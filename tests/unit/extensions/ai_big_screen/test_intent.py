@@ -217,6 +217,57 @@ class TestLlmPathNormalization:
         assert component.type == "table"  # first supported visual
 
 
+class TestComposedCreation:
+    async def test_composed_blueprint_survives_normalization(self) -> None:
+        model = SpyModel(
+            [
+                _llm_plan(
+                    [
+                        {
+                            "title": "告警核心舱",
+                            "capabilityId": "real-alarms",
+                            "visualType": "composed",
+                            "visualSpec": {
+                                "composition": "primary",
+                                "blueprint": {
+                                    "layout": "columns",
+                                    "cells": [
+                                        {
+                                            "element": {
+                                                "kind": "value",
+                                                "style": "flip",
+                                                "bind": {"value": "total"},
+                                            },
+                                        },
+                                        {
+                                            "element": {
+                                                "kind": "chart",
+                                                "chart": "donut",
+                                                "bind": {
+                                                    "name": "level",
+                                                    "value": "value",
+                                                },
+                                            },
+                                        },
+                                    ],
+                                },
+                            },
+                        },
+                    ],
+                ),
+            ],
+        )
+        plan = await build_screen_plan("做一个告警态势创作大屏", model=model)
+        component = plan.components[0]
+        assert component.type == "composed"
+        blueprint = component.visual_spec.get("blueprint")
+        assert blueprint is not None
+        assert [c["element"]["kind"] for c in blueprint["cells"]] == [
+            "value",
+            "chart",
+        ]
+
+
 class TestDegradedFallback:
     async def test_invalid_llm_output_degrades_to_guardrail(self) -> None:
         model = SpyModel(["不是 JSON", "还不是 JSON", "依旧不是 JSON"])

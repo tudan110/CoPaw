@@ -11,7 +11,7 @@ Token whitelists are unchanged and stay aligned with
 """
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Callable, Mapping
 
 from qwenpaw.extensions.ai_big_screen.capabilities.fields import safe_int
 
@@ -68,6 +68,47 @@ ALLOWED_RULE_TONES = {"critical", "high", "medium", "normal", "cool", "warm"}
 
 MAX_HIGHLIGHT_RULES = 8
 MAX_LAYERS = 6
+
+# --- blueprint (composed component) grammar -------------------------------
+# The generative layer: the LLM composes a screen panel from controlled
+# atoms instead of picking a prefab. Everything is whitelisted data; the
+# renderer interprets it — never executes it.
+BLUEPRINT_LAYOUTS = {"rows", "columns", "grid", "overlay", "radial"}
+BLUEPRINT_GAPS = {"s", "m", "l"}
+BLUEPRINT_ELEMENT_KINDS = {
+    "value",
+    "chart",
+    "list",
+    "badge",
+    "label",
+    "progress",
+    "sparkline",
+    "group",
+}
+BLUEPRINT_VALUE_STYLES = {"plain", "flip", "glow"}
+BLUEPRINT_VALUE_SIZES = {"m", "l", "xl"}
+BLUEPRINT_CHARTS = {
+    "line",
+    "area",
+    "bar",
+    "donut",
+    "gauge",
+    "radar",
+    "heatmap",
+}
+BLUEPRINT_LIST_STYLES = {"stream", "rank", "plain"}
+BLUEPRINT_PROGRESS_STYLES = {"bar", "ring", "liquid"}
+BLUEPRINT_BIND_KEYS = {
+    "value": {"value", "unit", "label", "prefix"},
+    "chart": {"x", "y", "name", "value"},
+    "list": {"title", "message", "time", "tone", "value", "name"},
+    "badge": {"text"},
+    "progress": {"value", "max"},
+    "sparkline": {"x", "y"},
+}
+MAX_BLUEPRINT_CELLS = 12
+MAX_BLUEPRINT_DEPTH = 2
+MAX_BLUEPRINT_LIST_LIMIT = 20
 
 _BLOCKED_FRAGMENTS = (
     "<",
@@ -170,6 +211,173 @@ def _sanitize_layers(raw_layers: Any) -> list[dict[str, Any]]:
     return layers
 
 
+def _sanitize_bind(kind: str, raw_bind: Any) -> dict[str, str]:
+    allowed = BLUEPRINT_BIND_KEYS.get(kind, set())
+    if not isinstance(raw_bind, dict) or not allowed:
+        return {}
+    bind: dict[str, str] = {}
+    for key, value in raw_bind.items():
+        normalized_key = str(key or "").strip()
+        if normalized_key not in allowed:
+            continue
+        field = safe_visual_token(value, max_length=80)
+        if field:
+            bind[normalized_key] = field
+    return bind
+
+
+def _sanitize_group(raw: Mapping[str, Any], *, depth: int) -> dict[str, Any]:
+    if depth >= MAX_BLUEPRINT_DEPTH:
+        return {}
+    nested = sanitize_blueprint(raw, depth=depth + 1)
+    if not nested:
+        return {}
+    return {"kind": "group", **nested}
+
+
+def _raw_style(raw: Mapping[str, Any]) -> str:
+    return str(raw.get("style") or "").strip()
+
+
+def _finish_value(
+    element: dict[str, Any],
+    raw: Mapping[str, Any],
+    bind: dict[str, str],
+) -> bool:
+    if _raw_style(raw) in BLUEPRINT_VALUE_STYLES:
+        element["style"] = _raw_style(raw)
+    size = str(raw.get("size") or "").strip()
+    if size in BLUEPRINT_VALUE_SIZES:
+        element["size"] = size
+    return "value" in bind  # core binding survived sanitization?
+
+
+def _finish_chart(
+    element: dict[str, Any],
+    raw: Mapping[str, Any],
+    _bind: dict[str, str],
+) -> bool:
+    chart = str(raw.get("chart") or "").strip()
+    if chart in BLUEPRINT_CHARTS:
+        element["chart"] = chart
+        return True
+    return False
+
+
+def _finish_list(
+    element: dict[str, Any],
+    raw: Mapping[str, Any],
+    _bind: dict[str, str],
+) -> bool:
+    if _raw_style(raw) in BLUEPRINT_LIST_STYLES:
+        element["style"] = _raw_style(raw)
+    element["limit"] = max(
+        1,
+        min(MAX_BLUEPRINT_LIST_LIMIT, safe_int(raw.get("limit"), 6)),
+    )
+    return True
+
+
+def _finish_progress(
+    element: dict[str, Any],
+    raw: Mapping[str, Any],
+    bind: dict[str, str],
+) -> bool:
+    if _raw_style(raw) in BLUEPRINT_PROGRESS_STYLES:
+        element["style"] = _raw_style(raw)
+    if "max" in raw and isinstance(raw.get("max"), (int, float)):
+        element["max"] = float(raw["max"])
+    return "value" in bind
+
+
+def _finish_sparkline(
+    _element: dict[str, Any],
+    _raw: Mapping[str, Any],
+    bind: dict[str, str],
+) -> bool:
+    return "y" in bind
+
+
+def _finish_text(
+    element: dict[str, Any],
+    raw: Mapping[str, Any],
+    bind: dict[str, str],
+) -> bool:
+    text = safe_visual_token(raw.get("text"), max_length=60)
+    if text:
+        element["text"] = text
+    tone = str(raw.get("tone") or "").strip()
+    if tone in ALLOWED_RULE_TONES:
+        element["tone"] = tone
+    return bool(text or bind)
+
+
+_ELEMENT_FINISHERS: dict[
+    str,
+    Callable[[dict[str, Any], Mapping[str, Any], dict[str, str]], bool],
+] = {
+    "value": _finish_value,
+    "chart": _finish_chart,
+    "list": _finish_list,
+    "progress": _finish_progress,
+    "sparkline": _finish_sparkline,
+    "badge": _finish_text,
+    "label": _finish_text,
+}
+
+
+def _sanitize_element(raw: Any, *, depth: int) -> dict[str, Any]:
+    if not isinstance(raw, dict):
+        return {}
+    kind = str(raw.get("kind") or "").strip()
+    if kind not in BLUEPRINT_ELEMENT_KINDS:
+        return {}
+    if kind == "group":
+        return _sanitize_group(raw, depth=depth)
+
+    element: dict[str, Any] = {"kind": kind}
+    bind = _sanitize_bind(kind, raw.get("bind"))
+    if bind:
+        element["bind"] = bind
+    ok = _ELEMENT_FINISHERS[kind](element, raw, bind)
+    return element if ok else {}
+
+
+def sanitize_blueprint(raw: Any, *, depth: int = 0) -> dict[str, Any]:
+    """Whitelist-sanitize a composed-component blueprint.
+
+    Returns ``{}`` when nothing valid remains, so a malformed blueprint
+    degrades to an ordinary prefab render instead of breaking the
+    screen.
+    """
+    if not isinstance(raw, dict):
+        return {}
+    layout = str(raw.get("layout") or "").strip()
+    if layout not in BLUEPRINT_LAYOUTS:
+        layout = "rows"
+    cells_raw = raw.get("cells")
+    if not isinstance(cells_raw, list):
+        return {}
+    cells: list[dict[str, Any]] = []
+    for cell_raw in cells_raw[:MAX_BLUEPRINT_CELLS]:
+        if not isinstance(cell_raw, dict):
+            continue
+        element = _sanitize_element(cell_raw.get("element"), depth=depth)
+        if not element:
+            continue
+        cell: dict[str, Any] = {"element": element}
+        if "span" in cell_raw:
+            cell["span"] = max(1, min(4, safe_int(cell_raw.get("span"), 1)))
+        cells.append(cell)
+    if not cells:
+        return {}
+    blueprint: dict[str, Any] = {"layout": layout, "cells": cells}
+    gap = str(raw.get("gap") or "").strip()
+    if gap in BLUEPRINT_GAPS:
+        blueprint["gap"] = gap
+    return blueprint
+
+
 def sanitize_visual_spec(raw_visual_spec: Any) -> dict[str, Any]:
     """Whitelist-sanitize an AI-supplied ``visualSpec``.
 
@@ -220,5 +428,9 @@ def sanitize_visual_spec(raw_visual_spec: Any) -> dict[str, Any]:
     layers = _sanitize_layers(raw_visual_spec.get("layers"))
     if layers:
         visual_spec["layers"] = layers
+
+    blueprint = sanitize_blueprint(raw_visual_spec.get("blueprint"))
+    if blueprint:
+        visual_spec["blueprint"] = blueprint
 
     return visual_spec

@@ -171,6 +171,172 @@ class TestSanitizeVisualSpec:
         )
         assert spec["layers"][0]["limit"] == 20
 
+    def test_blueprint_round_trips(self) -> None:
+        spec = sanitize_visual_spec(
+            {
+                "composition": "primary",
+                "blueprint": {
+                    "layout": "columns",
+                    "gap": "m",
+                    "cells": [
+                        {
+                            "span": 1,
+                            "element": {
+                                "kind": "value",
+                                "style": "flip",
+                                "size": "xl",
+                                "bind": {"value": "total", "unit": "条"},
+                            },
+                        },
+                        {
+                            "span": 2,
+                            "element": {
+                                "kind": "chart",
+                                "chart": "area",
+                                "bind": {"x": "eventTime", "y": "value"},
+                            },
+                        },
+                        {
+                            "element": {
+                                "kind": "group",
+                                "layout": "rows",
+                                "cells": [
+                                    {
+                                        "element": {
+                                            "kind": "badge",
+                                            "text": "实时监控",
+                                            "tone": "cool",
+                                        },
+                                    },
+                                    {
+                                        "element": {
+                                            "kind": "sparkline",
+                                            "bind": {"x": "x", "y": "y"},
+                                        },
+                                    },
+                                ],
+                            },
+                        },
+                    ],
+                },
+            },
+        )
+        blueprint = spec["blueprint"]
+        assert blueprint["layout"] == "columns"
+        assert blueprint["gap"] == "m"
+        assert len(blueprint["cells"]) == 3
+        assert blueprint["cells"][0]["element"]["style"] == "flip"
+        assert blueprint["cells"][1]["element"]["chart"] == "area"
+        group = blueprint["cells"][2]["element"]
+        assert group["kind"] == "group"
+        assert len(group["cells"]) == 2
+
+    def test_blueprint_invalid_atoms_dropped(self) -> None:
+        spec = sanitize_visual_spec(
+            {
+                "blueprint": {
+                    "layout": "explode",  # invalid → rows
+                    "cells": [
+                        {"element": {"kind": "iframe", "src": "evil"}},
+                        {
+                            "element": {
+                                "kind": "chart",
+                                "chart": "3d-globe",  # invalid chart
+                            },
+                        },
+                        {
+                            "element": {
+                                "kind": "value",
+                                "bind": {
+                                    "value": "<script>",  # injected field
+                                    "unit": "条",
+                                },
+                            },
+                        },
+                        {
+                            "element": {
+                                "kind": "badge",
+                                "text": "javascript:alert(1)",
+                            },
+                        },
+                        {
+                            "element": {
+                                "kind": "value",
+                                "size": "xl",
+                                "bind": {"value": "total"},
+                            },
+                        },
+                    ],
+                },
+            },
+        )
+        blueprint = spec["blueprint"]
+        assert blueprint["layout"] == "rows"
+        # only the last valid value cell survives
+        assert len(blueprint["cells"]) == 1
+        survivor = blueprint["cells"][0]["element"]
+        assert survivor["kind"] == "value"
+        assert survivor["bind"] == {"value": "total"}
+
+    def test_blueprint_depth_and_caps(self) -> None:
+        deep = {
+            "kind": "group",
+            "layout": "rows",
+            "cells": [
+                {
+                    "element": {
+                        "kind": "group",
+                        "layout": "rows",
+                        "cells": [
+                            {
+                                "element": {
+                                    "kind": "group",  # depth 3 → dropped
+                                    "layout": "rows",
+                                    "cells": [
+                                        {
+                                            "element": {
+                                                "kind": "label",
+                                                "text": "太深了",
+                                            },
+                                        },
+                                    ],
+                                },
+                            },
+                            {"element": {"kind": "label", "text": "ok"}},
+                        ],
+                    },
+                },
+            ],
+        }
+        spec = sanitize_visual_spec(
+            {
+                "blueprint": {
+                    "layout": "grid",
+                    "cells": [{"element": deep, "span": 99}]
+                    + [
+                        {"element": {"kind": "label", "text": f"c{i}"}}
+                        for i in range(20)
+                    ],
+                },
+            },
+        )
+        blueprint = spec["blueprint"]
+        assert len(blueprint["cells"]) <= 12
+        assert blueprint["cells"][0]["span"] == 4  # clamped 99→4
+        level2 = blueprint["cells"][0]["element"]["cells"][0]["element"]
+        level2_kinds = [c["element"]["kind"] for c in level2["cells"]]
+        assert "group" not in level2_kinds  # depth-3 group dropped
+        assert "label" in level2_kinds
+
+    def test_blueprint_empty_when_no_valid_cells(self) -> None:
+        spec = sanitize_visual_spec(
+            {
+                "kind": "metric-cluster",
+                "blueprint": {"layout": "rows", "cells": [{"bogus": 1}]},
+            },
+        )
+        assert "blueprint" not in spec
+
     def test_emphasis_rules_supported(self) -> None:
         spec = sanitize_visual_spec(
             {
