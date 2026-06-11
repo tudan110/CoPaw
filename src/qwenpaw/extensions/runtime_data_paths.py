@@ -58,6 +58,10 @@ AI_BIG_SCREEN_REGISTRY_FILE = "registry.json"
 AI_BIG_SCREEN_REGISTRY_PATH = (
     AI_BIG_SCREEN_DATA_DIR / AI_BIG_SCREEN_REGISTRY_FILE
 )
+# SQLite home (M1): screens + versions + draft tasks. The legacy
+# registry.json is kept as a one-time migration source.
+AI_BIG_SCREEN_DB_FILE = "ai_big_screen.sqlite3"
+AI_BIG_SCREEN_DB_PATH = AI_BIG_SCREEN_DATA_DIR / AI_BIG_SCREEN_DB_FILE
 
 PROXY_DATASOURCES_DATA_DIR = EXTENSIONS_DATA_DIR / "proxy_datasources"
 PROXY_DATASOURCES_CONFIG_FILE = "config.json"
