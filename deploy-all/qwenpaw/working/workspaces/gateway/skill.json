@@ -1,6 +1,6 @@
 {
   "schema_version": "workspace-skill-manifest.v1",
-  "version": 1781075914885,
+  "version": 1781147406172,
   "skills": {
     "inspection-analyst": {
       "enabled": true,
@@ -326,6 +326,31 @@
         "require_envs": []
       },
       "updated_at": "2026-06-10T07:11:12.325511Z"
+    },
+    "report-export": {
+      "enabled": true,
+      "channels": [
+        "all"
+      ],
+      "source": "customized",
+      "metadata": {
+        "name": "report-export",
+        "description": "当用户要求“生成报告”“导出报告”“生成巡检报告”“生成告警分析报告”“生成运维报表”等可下载的报告类交付物时使用此技能。它把基于会话上下文撰写的报告文件归档到统一下载目录，并生成可点击下载的链接。默认生成 Markdown 格式；用户明确要求 PDF / Word / Excel / PPT 时，先用对应的 pdf / docx / xlsx / pptx 技能生成文件，再用本技能归档。",
+        "version_text": "",
+        "commit_text": "",
+        "source": "customized",
+        "protected": false,
+        "requirements": {
+          "require_bins": [],
+          "require_envs": []
+        },
+        "updated_at": "2026-06-11T02:53:36.801122Z"
+      },
+      "requirements": {
+        "require_bins": [],
+        "require_envs": []
+      },
+      "updated_at": "2026-06-11T02:53:36.801122Z"
     }
   }
 }
