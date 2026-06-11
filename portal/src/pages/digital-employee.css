@@ -5372,6 +5372,38 @@
   border-color: transparent;
 }
 
+/* 聊天回复中的报告下载按钮（report-export 技能输出的下载链接） */
+.portal-digital-employee .portal-report-download-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 4px 0;
+  padding: 8px 16px;
+  border-radius: 12px;
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+  background: linear-gradient(135deg, #4f46e5, #2563eb);
+  color: #fff !important;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.portal-digital-employee .portal-report-download-link:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 8px 18px rgba(79, 70, 229, 0.28);
+  text-decoration: none;
+}
+
+.portal-digital-employee .portal-report-download-link .fas {
+  font-size: 12px;
+}
+
+.portal-digital-employee.theme-dark .portal-report-download-link {
+  background: linear-gradient(135deg, #6366f1, #3b82f6);
+}
+
 .portal-digital-employee .alarm-workorder-empty {
   min-height: 220px;
   display: flex;
