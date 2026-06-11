@@ -151,6 +151,7 @@ async def refresh_screen_data(screen: dict[str, Any]) -> dict[str, Any]:
             component.get("queryParams") or {},
             capability_id=capability_id,
             cache=cache,
+            fresh=True,  # refresh semantics: bypass the TTL read
         )
         return component, result
 

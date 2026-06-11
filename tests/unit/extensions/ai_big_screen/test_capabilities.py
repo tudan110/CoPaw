@@ -318,6 +318,81 @@ class TestHonestIntegrationWiring:
         assert result.rows in (None, [])
 
 
+class TestTtlCache:
+    @staticmethod
+    def _ttl_descriptor(fetcher: Any, ttl: float) -> CapabilityDescriptor:
+        return CapabilityDescriptor(
+            id="ttl-cap",
+            display_name="TTL 能力",
+            domain="test",
+            fetcher=fetcher,
+            timeout_seconds=5.0,
+            metadata={"id": "ttl-cap", "cachePolicy": {"ttlSeconds": ttl}},
+        )
+
+    async def test_cross_request_hit_within_ttl(self) -> None:
+        calls: list[int] = []
+
+        def _fetcher(_p: Mapping[str, Any]) -> dict[str, Any]:
+            calls.append(1)
+            return {"rows": [{"n": len(calls)}]}
+
+        descriptor = self._ttl_descriptor(_fetcher, ttl=60)
+        first = await execute_capability({"q": 1}, descriptor=descriptor)
+        second = await execute_capability({"q": 1}, descriptor=descriptor)
+        assert len(calls) == 1  # second served from TTL cache
+        assert first.rows == second.rows
+
+    async def test_expired_entry_refetches(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        import time as time_module
+
+        calls: list[int] = []
+
+        def _fetcher(_p: Mapping[str, Any]) -> dict[str, Any]:
+            calls.append(1)
+            return {"rows": []}
+
+        descriptor = self._ttl_descriptor(_fetcher, ttl=10)
+        base = time_module.monotonic()
+        await execute_capability({}, descriptor=descriptor)
+        monkeypatch.setattr(
+            "qwenpaw.extensions.ai_big_screen.capabilities.time.monotonic",
+            lambda: base + 99,
+        )
+        await execute_capability({}, descriptor=descriptor)
+        assert len(calls) == 2
+
+    async def test_failed_results_not_cached(self) -> None:
+        state = {"fail": True}
+
+        def _fetcher(_p: Mapping[str, Any]) -> dict[str, Any]:
+            if state["fail"]:
+                raise ConnectionError("down")
+            return {"rows": [{"ok": 1}]}
+
+        descriptor = self._ttl_descriptor(_fetcher, ttl=60)
+        first = await execute_capability({}, descriptor=descriptor)
+        assert first.source_status == "failed"
+        state["fail"] = False
+        second = await execute_capability({}, descriptor=descriptor)
+        assert second.source_status == "live"  # 恢复立即可见
+
+    async def test_zero_ttl_never_caches(self) -> None:
+        calls: list[int] = []
+
+        def _fetcher(_p: Mapping[str, Any]) -> dict[str, Any]:
+            calls.append(1)
+            return {"rows": []}
+
+        descriptor = self._ttl_descriptor(_fetcher, ttl=0)
+        await execute_capability({}, descriptor=descriptor)
+        await execute_capability({}, descriptor=descriptor)
+        assert len(calls) == 2
+
+
 class TestConcurrency:
     async def test_parallel_execution_shares_cache(self) -> None:
         calls: list[int] = []

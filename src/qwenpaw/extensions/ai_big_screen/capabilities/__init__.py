@@ -16,6 +16,7 @@ from __future__ import annotations
 import asyncio
 import copy
 import json
+import time
 from dataclasses import dataclass, field
 from typing import Any, Callable, Mapping
 
@@ -130,6 +131,48 @@ class CapabilityCache:
         return await asyncio.shield(task)
 
 
+class TtlResultCache:
+    """Cross-request result cache honouring capability cachePolicy.
+
+    One instance per process; keys match the per-run fetch-once cache.
+    Only honest successes (live/empty) are cached so a failing backend
+    is re-probed immediately on the next request. TTL 0 disables
+    caching for a capability (e.g. capability-gap).
+    """
+
+    def __init__(self) -> None:
+        self._entries: dict[str, tuple[float, CapabilityResult]] = {}
+
+    def get(self, key: str, ttl_seconds: float) -> CapabilityResult | None:
+        entry = self._entries.get(key)
+        if entry is None:
+            return None
+        stored_at, result = entry
+        if time.monotonic() - stored_at >= ttl_seconds:
+            self._entries.pop(key, None)
+            return None
+        return result
+
+    def set(self, key: str, result: CapabilityResult) -> None:
+        self._entries[key] = (time.monotonic(), result)
+
+    def clear(self) -> None:
+        self._entries.clear()
+
+
+TTL_CACHE = TtlResultCache()
+
+
+def _capability_ttl_seconds(descriptor: CapabilityDescriptor) -> float:
+    policy = descriptor.metadata.get("cachePolicy")
+    if not isinstance(policy, dict):
+        return 0.0
+    try:
+        return max(0.0, float(policy.get("ttlSeconds") or 0))
+    except (TypeError, ValueError):
+        return 0.0
+
+
 def _adjudicate(
     descriptor: CapabilityDescriptor,
     data: Mapping[str, Any],
@@ -211,7 +254,15 @@ async def _run_fetch(
     descriptor: CapabilityDescriptor,
     query_params: Mapping[str, Any],
     timeout: float,
+    cache_key: str | None = None,
+    read_ttl: bool = True,
 ) -> CapabilityResult:
+    ttl_seconds = _capability_ttl_seconds(descriptor)
+    if read_ttl and cache_key is not None and ttl_seconds > 0:
+        cached = TTL_CACHE.get(cache_key, ttl_seconds)
+        if cached is not None:
+            return cached
+
     source = str(descriptor.metadata.get("dataSource") or "")
     try:
         data = await asyncio.wait_for(
@@ -237,7 +288,14 @@ async def _run_fetch(
             "数据能力返回了无法识别的载荷",
             source=source,
         )
-    return _to_result(descriptor, data, _adjudicate(descriptor, data))
+    result = _to_result(descriptor, data, _adjudicate(descriptor, data))
+    if (
+        cache_key is not None
+        and ttl_seconds > 0
+        and result.source_status in ("live", "empty")
+    ):
+        TTL_CACHE.set(cache_key, result)
+    return result
 
 
 async def execute_capability(
@@ -247,11 +305,14 @@ async def execute_capability(
     descriptor: CapabilityDescriptor | None = None,
     cache: CapabilityCache | None = None,
     timeout: float | None = None,
+    fresh: bool = False,
 ) -> CapabilityResult:
     """Execute one capability honestly; never raises.
 
     Pass either a ``descriptor`` (tests / custom capabilities) or a
-    ``capability_id`` resolved against the registry.
+    ``capability_id`` resolved against the registry. ``fresh=True``
+    bypasses the cross-request TTL cache *read* (refresh semantics)
+    while still writing the new result back for other readers.
     """
     if descriptor is None:
         descriptor = get_descriptor(capability_id or "")
@@ -264,12 +325,25 @@ async def execute_capability(
     effective_timeout = (
         timeout if timeout is not None else descriptor.timeout_seconds
     )
+    cache_key = CapabilityCache.key(descriptor.id, query_params)
+    read_ttl = not fresh
 
     if cache is None:
-        return await _run_fetch(descriptor, query_params, effective_timeout)
+        return await _run_fetch(
+            descriptor,
+            query_params,
+            effective_timeout,
+            cache_key=cache_key,
+            read_ttl=read_ttl,
+        )
 
-    cache_key = CapabilityCache.key(descriptor.id, query_params)
     return await cache.get_or_run(
         cache_key,
-        lambda: _run_fetch(descriptor, query_params, effective_timeout),
+        lambda: _run_fetch(
+            descriptor,
+            query_params,
+            effective_timeout,
+            cache_key=cache_key,
+            read_ttl=read_ttl,
+        ),
     )
