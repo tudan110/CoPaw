@@ -235,7 +235,89 @@ async def test_golden_backend_outage_is_failed_not_empty(
 
 
 # ---------------------------------------------------------------------------
-# golden 5: patch locality — only the selected component changes
+# golden 5: uncovered public ask routes to web-live-data with real fetch
+# ---------------------------------------------------------------------------
+
+
+async def test_golden_public_ask_routes_to_web_live_data(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """'查询15分钟系统日志，南京天气': the weather clause must reach the
+    LLM, route to web-live-data, and hydrate from the live provider —
+    never silently dropped, never answered from model knowledge."""
+    from qwenpaw.extensions.ai_big_screen.capabilities import (
+        descriptors,
+        web_live,
+    )
+    from qwenpaw.extensions.integrations import nightingale_logs
+
+    monkeypatch.setattr(
+        nightingale_logs,
+        "query_nightingale_logs",
+        lambda **_kw: {
+            "sourceStatus": "live",
+            "rows": [{"time": "10:00", "message": "boot ok"}],
+            "total": 1,
+        },
+    )
+    weather_queries: list[str] = []
+
+    def _fake_weather(params: Any) -> dict[str, Any]:
+        weather_queries.append(str(params.get("query")))
+        return {
+            "source": "wttr.in",
+            "sourceStatus": "live",
+            "value": 32,
+            "unit": "°C",
+            "metrics": {"气温": "32°C", "天气": "局部多云"},
+            "rows": [{"date": "2026-06-11", "max": 35, "min": 22}],
+            "total": 1,
+        }
+
+    monkeypatch.setitem(descriptors.FETCHERS, "web-live-data", _fake_weather)
+    monkeypatch.setattr(
+        web_live,
+        "_http_get",
+        lambda *a, **k: (_ for _ in ()).throw(
+            AssertionError("must use mocked fetcher"),
+        ),
+    )
+
+    plan_json = json.dumps(
+        {
+            "name": "日志与天气",
+            "components": [
+                {
+                    "title": "系统日志",
+                    "capabilityId": "system-logs",
+                    "visualType": "table",
+                    "queryParams": {"lookbackMinutes": 15},
+                },
+                {
+                    "title": "南京天气",
+                    "capabilityId": "web-live-data",
+                    "visualType": "metric-kpi",
+                    "queryParams": {"query": "南京天气"},
+                },
+            ],
+        },
+        ensure_ascii=False,
+    )
+    screen = await run_draft_pipeline(
+        prompt="查询15分钟系统日志，南京天气",
+        model=FakeModel([plan_json]),
+    )
+    by_capability = {c["capabilityId"]: c for c in screen["components"]}
+    assert "web-live-data" in by_capability, "天气需求不得被吞掉"
+    weather = by_capability["web-live-data"]
+    assert weather["data"]["sourceStatus"] == "live"
+    assert weather["data"]["value"] == 32
+    assert weather_queries == ["南京天气"]
+    assert by_capability["system-logs"]["data"]["sourceStatus"] == "live"
+
+
+# ---------------------------------------------------------------------------
+# golden 6: patch locality — only the selected component changes
 # ---------------------------------------------------------------------------
 
 

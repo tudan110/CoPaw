@@ -782,6 +782,42 @@ CAPABILITY_METADATA: list[dict[str, Any]] = [
         "examplePrompts": ["拓扑影响范围", "资源链路影响"],
     },
     {
+        "id": "web-live-data",
+        "name": "实时公开数据",
+        "domain": "public",
+        "description": (
+            "联网实时查询公开互联网信息（城市天气、汇率、新闻资讯检索、"
+            "百科常识等公开数据），返回真实检索结果并标注来源。"
+            "当用户需要的数据是公开信息、且不属于已接入的内部运维能力时"
+            "使用本能力（queryParams.query 写明要查什么，如“南京天气”）。"
+            "内部系统/业务数据未接入时不要用本能力，请用 capability-gap。"
+        ),
+        "inputSchema": {"query": "", "kind": "auto"},
+        "outputSchema": {
+            "rows": "array",
+            "columns": "array",
+            "value": "number",
+            "sourceStatus": "string",
+        },
+        "supportedVisuals": [
+            "text",
+            "table",
+            "metric-card",
+            "metric-kpi",
+            "flip-number",
+            "line-chart",
+            "area-chart",
+            "alarm-stream",
+            "top-n",
+        ],
+        "permissionScope": "public-web:read",
+        "cachePolicy": {"ttlSeconds": 120},
+        "refreshPolicy": {"intervalSeconds": 300},
+        "dataSource": "web-live-providers",
+        "skillName": "",
+        "examplePrompts": ["南京天气", "美元兑人民币汇率", "搜索最新AI资讯"],
+    },
+    {
         "id": "capability-gap",
         "name": "待接入数据能力",
         "domain": "planning",
@@ -812,6 +848,13 @@ CAPABILITY_METADATA: list[dict[str, Any]] = [
     },
 ]
 
+
+def fetch_web_live(query_params: Mapping[str, Any]) -> dict[str, Any]:
+    from qwenpaw.extensions.ai_big_screen.capabilities import web_live
+
+    return web_live.fetch_web_live_data(query_params)
+
+
 FETCHERS: dict[str, Fetcher] = {
     "system-logs": fetch_system_logs,
     "real-alarms": fetch_real_alarms,
@@ -819,5 +862,6 @@ FETCHERS: dict[str, Fetcher] = {
     "workorders": fetch_workorders,
     "alarm-top5": fetch_alarm_top5,
     "topology-impact": fetch_topology_impact,
+    "web-live-data": fetch_web_live,
     "capability-gap": fetch_capability_gap,
 }
