@@ -22,6 +22,7 @@ from __future__ import annotations
 import json
 import sqlite3
 import threading
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -33,8 +34,14 @@ from qwenpaw.extensions.runtime_data_paths import (
 _META_NAMESPACE = "_meta"
 
 _LOCK = threading.Lock()
-# Cache of namespace contents keyed by "<db_path>\x00<namespace>".
-_CACHE: dict[str, dict[str, Any]] = {}
+# Cache of namespace contents keyed by "<db_path>\x00<namespace>",
+# valued as (monotonic_read_time, mapping). Entries expire after a short
+# TTL: the app may run several uvicorn worker processes sharing one
+# SQLite file, and a write in one worker can only invalidate that
+# worker's own cache — without expiry the other workers would serve
+# stale settings forever (e.g. a toggle "reverting" on page refresh).
+_CACHE: dict[str, tuple[float, dict[str, Any]]] = {}
+_CACHE_TTL_SECONDS = 2.0
 
 _CREATE_TABLE_SQL = """\
 CREATE TABLE IF NOT EXISTS settings (
@@ -76,6 +83,16 @@ def _invalidate(db_path: Path, namespace: str) -> None:
 # ---------------------------------------------------------------------------
 
 
+def _fresh_cached(cache_key: str) -> dict[str, Any] | None:
+    cached = _CACHE.get(cache_key)
+    if cached is None:
+        return None
+    read_at, mapping = cached
+    if time.monotonic() - read_at >= _CACHE_TTL_SECONDS:
+        return None
+    return mapping
+
+
 def get_namespace(
     namespace: str,
     *,
@@ -83,11 +100,11 @@ def get_namespace(
 ) -> dict[str, Any]:
     """Return all ``{key: value}`` pairs stored under ``namespace``."""
     cache_key = _cache_key(db_path, namespace)
-    cached = _CACHE.get(cache_key)
+    cached = _fresh_cached(cache_key)
     if cached is not None:
         return dict(cached)
     with _LOCK:
-        cached = _CACHE.get(cache_key)
+        cached = _fresh_cached(cache_key)
         if cached is not None:
             return dict(cached)
         result: dict[str, Any] = {}
@@ -107,7 +124,7 @@ def get_namespace(
                     continue
         except sqlite3.Error:
             result = {}
-        _CACHE[cache_key] = dict(result)
+        _CACHE[cache_key] = (time.monotonic(), dict(result))
         return dict(result)
 
 

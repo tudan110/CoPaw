@@ -279,3 +279,85 @@ def test_alarm_analyst_card_protocol_keeps_all_report_sections_across_separators
     assert "锁等待放大" in card.summary.conclusion
     assert card.impact.affected_applications[0].name == "CMDB"
     assert card.recommendations[0].priority == "p0"
+
+
+def test_build_alarm_analyst_card_extracts_root_cause_candidates() -> None:
+    card = build_alarm_analyst_card(
+        chat_id="chat-7",
+        message_id="assistant-7",
+        employee_id="fault",
+        report_markdown=(
+            "🔴 数据库锁异常 — 完整故障分析报告\n"
+            "## 根因判断\n"
+            "- 根因：InnoDB 行锁竞争阻塞链。\n"
+            "\n"
+            "### 候选根因\n"
+            "| 排名 | 候选根因 | 关联资源 | 置信度 | 关键证据 |\n"
+            "|---|---|---|---|---|\n"
+            "| 1 | InnoDB 行锁竞争阻塞链 | db_mysql_001（3094） | 86% "
+            "| 锁等待告警 12 条；时序先于应用异常 |\n"
+            "| 2 | 慢 SQL 导致连接池耗尽 | db_mysql_001（3094） | 45% "
+            "| 慢查询数上升；无变更命中 |\n"
+            "\n"
+            "## 影响范围\n"
+            "- 受影响应用：CMDB\n"
+            "## 处置建议\n"
+            "- P0：终止异常慢 SQL 会话。\n"
+        ),
+        process_blocks=[],
+    )
+
+    candidates = card.root_cause.candidates
+    assert len(candidates) == 2
+    assert candidates[0].rank == 1
+    assert candidates[0].reason == "InnoDB 行锁竞争阻塞链"
+    assert candidates[0].resource_name == "db_mysql_001（3094）"
+    assert candidates[0].confidence == "86%"
+    assert candidates[0].evidence == "锁等待告警 12 条；时序先于应用异常"
+    assert candidates[1].rank == 2
+    assert candidates[1].confidence == "45%"
+
+    serialized = card.model_dump(by_alias=True)
+    assert serialized["rootCause"]["candidates"][0]["resourceName"] == (
+        "db_mysql_001（3094）"
+    )
+
+
+def test_build_alarm_analyst_card_without_candidates_subsection() -> None:
+    card = build_alarm_analyst_card(
+        chat_id="chat-8",
+        message_id="assistant-8",
+        employee_id="fault",
+        report_markdown=(
+            "🔴 数据库锁异常 — 完整故障分析报告\n"
+            "## 根因分析结论\n"
+            "- 根因：MySQL 资源 3094 存在锁等待放大。\n"
+            "## 处置建议\n"
+            "- P0：终止异常慢 SQL 会话。\n"
+        ),
+        process_blocks=[],
+    )
+
+    assert card.root_cause.candidates == []
+
+
+def test_extract_root_cause_candidates_tolerates_messy_table() -> None:
+    from qwenpaw.extensions.api.alarm_analyst_card_service import (
+        _extract_root_cause_candidates,
+    )
+
+    # Reordered columns, a row with no reason, and a separator row.
+    candidates = _extract_root_cause_candidates(
+        "### 候选根因\n"
+        "| 候选根因 | 置信度 | 排名 |\n"
+        "|---|---|---|\n"
+        "| 仅有根因列 | | 1 |\n"
+        "| | 50% | 2 |\n"
+        "| 第三条 | 30% | 3 |\n"
+    )
+
+    assert [item.reason for item in candidates] == ["仅有根因列", "第三条"]
+    assert candidates[0].rank == 1
+    assert candidates[0].confidence == ""
+    assert candidates[1].rank == 3
+    assert candidates[1].confidence == "30%"

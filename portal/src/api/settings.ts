@@ -64,6 +64,9 @@ export interface DiagnosisSettingsPayload {
   env: Record<string, number | boolean | string | MaskedSecret>;
   overrides: Record<string, boolean>;
   groups: Record<string, string>;
+  // Read-only runtime state, e.g. analysis_started_at (ISO time when
+  // real-time analysis was last switched on). Never settable via PUT.
+  state?: Record<string, string>;
 }
 
 // Sentinel a PUT sends for the token field to clear its override.

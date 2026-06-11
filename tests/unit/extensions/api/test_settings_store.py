@@ -64,3 +64,31 @@ def test_migration_flag(tmp_path: Path) -> None:
     assert store.is_migrated("flag-x", db_path=db) is False
     store.mark_migrated("flag-x", db_path=db)
     assert store.is_migrated("flag-x", db_path=db) is True
+
+
+def test_cache_expires_so_cross_process_writes_become_visible(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    import json
+    import sqlite3
+
+    db = _db(tmp_path)
+    store.set_values("alpha", {"a": 1}, db_path=db)
+    assert store.get_namespace("alpha", db_path=db) == {"a": 1}
+
+    # Simulate another worker process writing the same DB directly —
+    # this never touches our in-process cache.
+    conn = sqlite3.connect(str(db))
+    conn.execute(
+        "UPDATE settings SET value = ? WHERE namespace = ? AND key = ?",
+        (json.dumps(2), "alpha", "a"),
+    )
+    conn.commit()
+    conn.close()
+
+    # Within the TTL the cached snapshot is still served...
+    assert store.get_namespace("alpha", db_path=db) == {"a": 1}
+    # ...but once it expires the fresh value is read from the DB.
+    monkeypatch.setattr(store, "_CACHE_TTL_SECONDS", 0.0)
+    assert store.get_namespace("alpha", db_path=db) == {"a": 2}

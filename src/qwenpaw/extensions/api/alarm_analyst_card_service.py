@@ -13,6 +13,7 @@ from qwenpaw.extensions.api.alarm_analyst_card_models import (
     AlarmAnalystCardProcessBlock,
     AlarmAnalystCardRecommendation,
     AlarmAnalystCardRootCause,
+    AlarmAnalystCardRootCauseCandidate,
     AlarmAnalystCardSource,
     AlarmAnalystCardSummary,
     AlarmAnalystCardTopology,
@@ -157,6 +158,9 @@ def build_alarm_analyst_card(
             resource_name=resource_name or None,
             ci_id=resource_id or None,
             reason=conclusion,
+            candidates=_extract_root_cause_candidates(
+                root_section or report_text,
+            ),
         ),
         impact=AlarmAnalystCardImpact(
             affected_applications=applications,
@@ -266,6 +270,96 @@ def _extract_named_section(report_markdown: str, names: tuple[str, ...]) -> str:
 
 def _normalize_heading(value: str) -> str:
     return re.sub(r"\s+", "", str(value or "").strip().lower())
+
+
+CANDIDATE_HEADING_RE = re.compile(
+    r"^(?:#{2,6}\s*|\*\*)候选根因",
+    re.MULTILINE,
+)
+MAX_ROOT_CAUSE_CANDIDATES = 5
+_CANDIDATE_COLUMN_ALIASES = {
+    "rank": ("排名", "序号", "top"),
+    "reason": ("候选根因", "根因描述", "根因方向", "根因"),
+    "resource_name": ("关联资源", "根因资源", "资源", "对象"),
+    "confidence": ("置信度",),
+    "evidence": ("关键证据", "证据", "依据"),
+}
+
+
+def _extract_root_cause_candidates(
+    text: str,
+) -> list[AlarmAnalystCardRootCauseCandidate]:
+    """Parse the "候选根因" Top-N table from the report.
+
+    Best-effort by design: tolerate column reordering via header-name
+    matching, skip malformed rows, and return [] when the model did not
+    emit the optional subsection — never fail the card build.
+    """
+    source = str(text or "")
+    heading_match = CANDIDATE_HEADING_RE.search(source)
+    if heading_match is None:
+        return []
+    tail = source[heading_match.end():]
+    next_heading = re.search(r"^#{1,6}\s", tail, re.MULTILINE)
+    if next_heading is not None:
+        tail = tail[: next_heading.start()]
+
+    table_lines = [
+        line.strip()
+        for line in tail.splitlines()
+        if line.strip().startswith("|")
+    ]
+    if len(table_lines) < 2:
+        return []
+
+    def _split_row(line: str) -> list[str]:
+        return [cell.strip() for cell in line.strip().strip("|").split("|")]
+
+    header_cells = [
+        _normalize_heading(cell) for cell in _split_row(table_lines[0])
+    ]
+    column_index: dict[str, int] = {}
+    for field, aliases in _CANDIDATE_COLUMN_ALIASES.items():
+        for index, cell in enumerate(header_cells):
+            if any(alias in cell for alias in aliases):
+                column_index[field] = index
+                break
+    if "reason" not in column_index:
+        return []
+
+    def _cell(cells: list[str], field: str) -> str:
+        index = column_index.get(field)
+        if index is None or index >= len(cells):
+            return ""
+        return _sanitize_inline_text(cells[index])
+
+    candidates: list[AlarmAnalystCardRootCauseCandidate] = []
+    for line in table_lines[1:]:
+        cells = _split_row(line)
+        if all(re.fullmatch(r":?-{2,}:?", cell or "-") for cell in cells):
+            continue  # markdown separator row
+        reason = _cell(cells, "reason")
+        if not reason:
+            continue
+        rank_text = _cell(cells, "rank")
+        rank_match = re.search(r"\d+", rank_text)
+        rank = (
+            int(rank_match.group(0))
+            if rank_match
+            else len(candidates) + 1
+        )
+        candidates.append(
+            AlarmAnalystCardRootCauseCandidate(
+                rank=rank,
+                reason=reason,
+                resource_name=_cell(cells, "resource_name") or None,
+                confidence=_cell(cells, "confidence"),
+                evidence=_cell(cells, "evidence") or None,
+            )
+        )
+        if len(candidates) >= MAX_ROOT_CAUSE_CANDIDATES:
+            break
+    return candidates
 
 
 TABLE_KV_RE = re.compile(

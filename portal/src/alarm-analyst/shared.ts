@@ -6,6 +6,16 @@ import {
 export type AlarmAnalystCardPriority = "p0" | "p1" | "p2";
 export type AlarmAnalystCardEvidenceKind = "alarm" | "metric" | "cmdb" | "tool";
 
+// One row of the report's "候选根因" Top-N table.
+// `confidence` keeps the raw report text (e.g. "86%").
+export type AlarmAnalystCardRootCauseCandidate = {
+  rank: number;
+  reason: string;
+  resourceName?: string;
+  confidence: string;
+  evidence?: string;
+};
+
 export type AlarmAnalystCardV1 = {
   type: "alarm-analyst-card";
   version: "v1";
@@ -27,6 +37,7 @@ export type AlarmAnalystCardV1 = {
     resourceName?: string;
     ciId?: string;
     reason: string;
+    candidates?: AlarmAnalystCardRootCauseCandidate[];
   };
   impact: {
     affectedApplications: Array<{ id?: string; name: string; type?: string }>;

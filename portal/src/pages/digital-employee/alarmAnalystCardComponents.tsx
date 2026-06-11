@@ -777,6 +777,20 @@ function buildDisplayModel(card: AlarmAnalystCardV1, showConfidence: boolean) {
       : null,
   ].filter((item): item is AlarmAnalystDecisionCard => Boolean(item));
 
+  // Ranked Top-N candidate root causes; per-candidate confidence obeys the
+  // same visibility toggle as the main confidence badge.
+  const rootCauseCandidates = (card.rootCause.candidates || [])
+    .filter((item) => Boolean(item?.reason))
+    .map((item) => ({
+      rank: item.rank,
+      reason: stripMarkdownInline(item.reason),
+      resourceName: stripMarkdownInline(item.resourceName || ""),
+      confidence: showConfidence
+        ? stripMarkdownInline(item.confidence || "")
+        : "",
+      evidence: stripMarkdownInline(item.evidence || ""),
+    }));
+
   return {
     title: titleText,
     lead,
@@ -788,6 +802,7 @@ function buildDisplayModel(card: AlarmAnalystCardV1, showConfidence: boolean) {
     automationCards,
     statusChecklist,
     decisionCards,
+    rootCauseCandidates,
   };
 }
 
@@ -886,6 +901,43 @@ export const AlarmAnalystCardPanel = memo(function AlarmAnalystCardPanel({
                 <div className="alarm-analyst-spotlight-value">{item.value}</div>
               </article>
             ))}
+          </div>
+        ) : null}
+
+        {display.rootCauseCandidates.length ? (
+          <div className="alarm-analyst-candidate-strip">
+            <div className="alarm-analyst-candidate-head">
+              <span className="alarm-analyst-candidate-label">候选根因排序</span>
+              <small>按置信度降序 Top-{display.rootCauseCandidates.length}</small>
+            </div>
+            <ol className="alarm-analyst-candidate-list">
+              {display.rootCauseCandidates.map((item) => (
+                <li
+                  key={`${item.rank}-${item.reason}`}
+                  className="alarm-analyst-candidate-item"
+                >
+                  <span className="alarm-analyst-candidate-rank">{item.rank}</span>
+                  <div className="alarm-analyst-candidate-body">
+                    <div className="alarm-analyst-candidate-main">
+                      <strong>{item.reason}</strong>
+                      {item.resourceName ? (
+                        <span className="alarm-analyst-candidate-resource">
+                          {item.resourceName}
+                        </span>
+                      ) : null}
+                      {item.confidence ? (
+                        <span className="alarm-analyst-candidate-confidence">
+                          {item.confidence}
+                        </span>
+                      ) : null}
+                    </div>
+                    {item.evidence ? (
+                      <p className="alarm-analyst-candidate-evidence">{item.evidence}</p>
+                    ) : null}
+                  </div>
+                </li>
+              ))}
+            </ol>
           </div>
         ) : null}
 
