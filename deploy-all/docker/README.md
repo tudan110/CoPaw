@@ -10,6 +10,31 @@
 
 ---
 
+## 0. 离线一键部署（推荐）
+
+把 `deploy-offline.sh`（本目录）与两个镜像 tar 放在离线服务器的同一目录，执行：
+
+```bash
+chmod +x deploy-offline.sh
+./deploy-offline.sh                # docker load 两个镜像 + 重建两个容器
+./deploy-offline.sh --skip-load    # 镜像已 load 过，只重建容器
+```
+
+脚本做的事 = 本文档第 2–7 节的全部手工步骤：load 镜像、建持久化目录与
+`qwenpaw-net` 网络、按下文参数重建 `qwenpaw` 与 `portal` 容器、等待就绪并
+打印访问地址。端口 / 数据目录 / 镜像名等均可用环境变量覆盖（见脚本头部
+配置区），例如：
+
+```bash
+DATA_ROOT=/srv/qwenpaw QWENPAW_HOST_PORT=18088 ./deploy-offline.sh
+```
+
+> 注意：`docker load` 只导入镜像，**不会**自动更新正在运行的容器 ——
+> 脚本因此总是 stop + rm + run 重建。挂载卷中的旧技能代码同样不会被
+> 镜像覆盖，升级技能请按 `deploy-all/SYNC_GUIDE.md` 同步卷内文件。
+
+---
+
 ## 1. 部署目标
 
 `deploy-all` 这一套一体化部署包含两个容器：
