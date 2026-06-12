@@ -16,6 +16,27 @@ test("unwraps inspection report instead of trailing supplement after marker", ()
   assert.doesNotMatch(unwrapped, /^> 补充说明/u);
 });
 
+test("rejoins report sections when the agent puts --- between every section", () => {
+  // Regression: reports that place a `---` rule between every section used to be
+  // chopped down to just `## 巡检结果`, leaving 基本信息 / 指标数据 dropped and the
+  // summary card all `--`. Also covers the `资源状态` field-name alias for `状态`.
+  const raw =
+    "# PORTAL INSPECTION CARD MODE\n---\n\n## 巡检结果\n\n⚠️ MySQL 当前无实时监控数据采集\n\n---\n\n## 基本信息\n\n| 项目 | 值 |\n|------|-----|\n| 巡检对象 | db_mysql_001 |\n| 资源名称 | MySQL_tyzg |\n| 资源类型 | mysql |\n| 资源状态 | 在线 |\n| 指标总数 | 25 |\n| 数据来源 | live |\n| 巡检时间 | 2026-06-12 |\n\n---\n\n## 指标数据\n\n| 指标名 | 指标编码 | 最近值 | 状态 | 判定依据 |\n|--------|----------|--------|------|----------|\n| 连接数使用率 | mysql_conn_usage | - | ⚠️ 无数据 | 规则：≤ 95% 为正常 |\n\n---\n\n## 巡检结论\n\n监控采集链路当前未产生数据。";
+
+  const unwrapped = unwrapPortalInspectionCardContent(raw);
+  assert.match(unwrapped, /## 基本信息/u);
+  assert.match(unwrapped, /## 指标数据/u);
+  assert.match(unwrapped, /## 巡检结论/u);
+
+  const display = buildInspectionDisplayModel(raw);
+  assert.ok(display);
+  const stats = Object.fromEntries((display.stats ?? []).map((s) => [s.label, s.value]));
+  assert.equal(stats["指标总数"], "25");
+  assert.equal(stats["资源类型"], "mysql");
+  assert.equal(stats["巡检时间"], "2026-06-12");
+  assert.equal(stats["在线状态"], "在线");
+});
+
 test("builds per-resource metric groups for multi-resource inspection reports", () => {
   const raw =
     "# PORTAL INSPECTION CARD MODE\n\n---\n\n## 巡检结果\n\n天翼智观系统共 2 个 Redis 缓存实例，redis-01 指标数据正常采集，redis-02 指标暂无数据返回。\n\n## 基本信息\n\n| 字段 | 值 |\n| --- | --- |\n| 巡检对象 | 缓存 |\n| 资源名称 | redis-01 / redis-02 |\n| 资源类型 | Redis |\n| 状态 | redis-01 需关注，redis-02 无数据 |\n| 指标总数 | 2 个实例共 36 个指标定义 |\n| 数据来源 | INOE 实时指标 |\n| 巡检时间 | 2026-04-29 |\n\n## 指标数据\n\n### redis-01（CI ID: 3019，IP: 10.43.33.251:6379）— 需关注\n\n| 指标名 | 指标编码 | 最近值 | 采样时间 | Min/Avg/Max |\n| --- | --- | --- | --- | --- |\n| 当前连接数 | redis_connected_clients | 50 | 2026-04-29 14:10 | 50/50/50 |\n| **内存碎片率** | redis_mem_fragmentation_ratio | **3.51** | 2026-04-29 14:10 | **3.51/3.51/3.51** |\n| **阻塞 Key 数** | redis_total_blocking_keys | **2** | 2026-04-29 14:10 | 2/2/2 |\n| 服务状态 | redis_up | 1 | 2026-04-29 14:10 | 1/1/1 |\n\n### redis-02（CI ID: 3020，IP: 10.43.95.171:30079）— 无数据\n\n18 个指标定义已注册，但当前所有指标均无实时数据返回，可能采集器尚未接入或数据延迟。\n";

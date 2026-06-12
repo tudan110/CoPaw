@@ -74,6 +74,20 @@ function normalizeCardFieldValue(value: string) {
   return normalized === "-" || normalized === "--" ? "" : normalized;
 }
 
+// The card contract field is `状态`, but reports frequently emit close
+// variants (资源状态 / 在线状态 / 运行状态). Accept those aliases so the
+// online-status stat does not fall back to `--`. Note `告警状态` is a
+// distinct field and is intentionally not matched here.
+function getStatusFieldValue(map: Map<string, string>) {
+  return normalizeCardFieldValue(
+    map.get("状态")
+      || map.get("资源状态")
+      || map.get("在线状态")
+      || map.get("运行状态")
+      || "",
+  );
+}
+
 function buildMetricDetail(row: string[]) {
   const sampleTime = normalizeCardFieldValue(row[3] || "");
   const source = normalizeCardFieldValue(row[5] || "");
@@ -424,7 +438,7 @@ function buildAggregateInspectionReportModel(content: string): InspectionDisplay
     .map((section) => normalizeCardFieldValue(section.basicInfoMap.get("资源名称") || ""))
     .filter(Boolean);
   const statuses = resourceSections
-    .map((section) => normalizeCardFieldValue(section.basicInfoMap.get("状态") || ""))
+    .map((section) => getStatusFieldValue(section.basicInfoMap))
     .filter(Boolean);
   const inspectionTimes = resourceSections
     .map((section) => normalizeCardFieldValue(section.basicInfoMap.get("巡检时间") || ""))
@@ -513,7 +527,7 @@ function buildInspectionReportModel(content: string): InspectionDisplayModel {
   const inspectionObject = normalizeCardFieldValue(basicInfoMap.get("巡检对象") || "");
   const resourceType = normalizeCardFieldValue(basicInfoMap.get("资源类型") || "");
   const manageIp = normalizeCardFieldValue(basicInfoMap.get("管理 IP") || "");
-  const status = normalizeCardFieldValue(basicInfoMap.get("状态") || "");
+  const status = getStatusFieldValue(basicInfoMap);
   const metricsCount = normalizeCardFieldValue(basicInfoMap.get("指标总数") || "");
   const dataSource = normalizeCardFieldValue(basicInfoMap.get("数据来源") || "");
   const inspectionTime = normalizeCardFieldValue(basicInfoMap.get("巡检时间") || "");

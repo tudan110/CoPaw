@@ -942,7 +942,16 @@ export function unwrapPortalInspectionCardContent(content: string) {
     const segments = normalized.split(/\n---\n/);
     const markerIndex = segments.findIndex((segment) => segment.includes(PORTAL_INSPECTION_CARD_MARKER));
     if (markerIndex !== -1) {
+      // The report body is a run of `##`-headed sections. Some agents place a
+      // `---` rule between *every* section, which this split would otherwise
+      // chop into pieces — keeping only one section drops 基本信息 / 指标数据 and
+      // leaves the card empty. So collect every heading-bearing segment after
+      // the marker and rejoin them. Stop at the first non-heading segment once
+      // collection has started: that is a trailing supplement (notification
+      // logs, blockquote notes) that must not override the report.
+      const hasHeading = (segment: string) => /(?:^|\n)#{2,6}\s/u.test(segment);
       let fallback = "";
+      const collected: string[] = [];
       for (const segment of segments.slice(markerIndex + 1)) {
         const candidate = segment.trim();
         if (!candidate) {
@@ -951,20 +960,16 @@ export function unwrapPortalInspectionCardContent(content: string) {
         if (!fallback) {
           fallback = candidate;
         }
-        if (
-          /(?:^|\n)##+\s*.*巡检结果/u.test(candidate)
-          || /(?:^|\n)##+\s*.*健康状态评估/u.test(candidate)
-        ) {
-          return candidate;
+        if (!hasHeading(candidate)) {
+          if (collected.length) {
+            break;
+          }
+          continue;
         }
+        collected.push(candidate);
       }
-      const combined = segments
-        .slice(markerIndex + 1)
-        .map((segment) => segment.trim())
-        .filter(Boolean)
-        .join("\n\n---\n\n");
-      if (combined) {
-        return combined;
+      if (collected.length) {
+        return collected.join("\n\n---\n\n");
       }
       if (fallback) {
         return fallback;
