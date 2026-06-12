@@ -12,10 +12,11 @@ from __future__ import annotations
 
 import asyncio
 import copy
+import time
 import uuid
 from typing import Any, Mapping
 
-from qwenpaw.extensions.ai_big_screen import store
+from qwenpaw.extensions.ai_big_screen import store, telemetry
 from qwenpaw.extensions.ai_big_screen.capabilities import (
     list_capability_metadata,
 )
@@ -51,6 +52,7 @@ __all__ = [
     "publish_screen_asset",
     "patch_screen_asset",
     "refresh_screen_asset",
+    "summarize_generation_metrics",
 ]
 
 AI_BIG_SCREEN_CONFIGURE_LLM_MESSAGE = CONFIGURE_LLM_MESSAGE
@@ -62,6 +64,11 @@ def _now_iso() -> str:
 
 def list_builtin_plugins() -> list[dict[str, Any]]:
     return list_capability_metadata()
+
+
+def summarize_generation_metrics(*, limit: int = 100) -> dict[str, Any]:
+    """Quality signals over the recent generation window (M2)."""
+    return telemetry.summarize(limit=limit)
 
 
 def _extract_exception_message(exc: Exception) -> str:
@@ -145,6 +152,17 @@ async def _run_screen_draft_task(
             message="生成失败",
             error=_extract_exception_message(exc),
         )
+        # the success path records inside run_draft_pipeline; failures
+        # would otherwise be invisible to the quality metrics
+        telemetry.record_generation(
+            {
+                "kind": "draft",
+                "success": False,
+                "degraded": False,
+                "error": _extract_exception_message(exc)[:300],
+                "promptChars": len(str(request.prompt or "")),
+            },
+        )
         return
     _update_screen_draft_task(
         task_id,
@@ -159,11 +177,37 @@ def _update_screen_draft_task(task_id: str, **updates: Any) -> None:
     store.update_task(task_id=task_id, updates=updates)
 
 
+def _component_statuses(screen: Mapping[str, Any]) -> dict[str, str]:
+    statuses: dict[str, str] = {}
+    for component in screen.get("components") or []:
+        if not isinstance(component, dict):
+            continue
+        capability_id = str(
+            component.get("capabilityId") or component.get("pluginId") or "",
+        )
+        data = component.get("data")
+        if capability_id and isinstance(data, dict):
+            statuses[capability_id] = str(data.get("sourceStatus") or "")
+    return statuses
+
+
 async def refresh_screen_asset(*, screen_id: str) -> dict[str, Any]:
     """Re-hydrate a saved screen's data (L2 only) and persist it."""
+    started = time.monotonic()
     screen = store.get_screen(screen_id=screen_id)
     refreshed = await refresh_screen_data(screen)
-    return store.save_screen(screen=refreshed, requested_by="auto-refresh")
+    saved = store.save_screen(screen=refreshed, requested_by="auto-refresh")
+    telemetry.record_generation(
+        {
+            "kind": "refresh",
+            "success": True,
+            "degraded": False,
+            "durationMs": int((time.monotonic() - started) * 1000),
+            "screenId": screen_id,
+            "capabilityStatuses": _component_statuses(saved),
+        },
+    )
+    return saved
 
 
 # ---------------------------------------------------------------------------
@@ -176,19 +220,46 @@ async def patch_screen_asset(
     screen_id: str,
     request: AiBigScreenPatchRequest,
 ) -> dict[str, Any]:
+    started = time.monotonic()
     screen = store.get_screen(screen_id=screen_id)
-    outcome = await apply_patch(
-        screen=screen,
-        instruction=str(request.instruction or ""),
-        selected_component_id=str(request.selectedComponentId or ""),
-        selected_component_ids=list(request.selectedComponentIds or []),
-        selected_region=request.selectedRegion or {},
-        selection_context=request.selectionContext or {},
-        requested_by=str(request.requestedBy or "portal"),
-    )
+    try:
+        outcome = await apply_patch(
+            screen=screen,
+            instruction=str(request.instruction or ""),
+            selected_component_id=str(request.selectedComponentId or ""),
+            selected_component_ids=list(request.selectedComponentIds or []),
+            selected_region=request.selectedRegion or {},
+            selection_context=request.selectionContext or {},
+            requested_by=str(request.requestedBy or "portal"),
+        )
+    except Exception as exc:
+        telemetry.record_generation(
+            {
+                "kind": "patch",
+                "success": False,
+                "degraded": False,
+                "durationMs": int((time.monotonic() - started) * 1000),
+                "screenId": screen_id,
+                "error": _extract_exception_message(exc)[:300],
+            },
+        )
+        raise
     saved = store.save_screen(
         screen=outcome["screen"],
         requested_by=str(request.requestedBy or "portal"),
+    )
+    context = saved.get("aiConversationContext")
+    telemetry.record_generation(
+        {
+            "kind": "patch",
+            "success": True,
+            "degraded": bool(
+                isinstance(context, dict) and context.get("degraded"),
+            ),
+            "durationMs": int((time.monotonic() - started) * 1000),
+            "screenId": screen_id,
+            "instructionChars": len(str(request.instruction or "")),
+        },
     )
     return {
         "screen": saved,

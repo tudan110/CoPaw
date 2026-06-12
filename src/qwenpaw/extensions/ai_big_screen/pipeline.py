@@ -12,9 +12,11 @@ with an honest ``failed`` badge instead.
 from __future__ import annotations
 
 import asyncio
+import time
 import uuid
 from typing import Any, Callable
 
+from qwenpaw.extensions.ai_big_screen import telemetry
 from qwenpaw.extensions.ai_big_screen.capabilities import (
     CapabilityCache,
     execute_capability,
@@ -61,8 +63,17 @@ async def run_draft_pipeline(
     if not normalized_prompt:
         raise ValueError("prompt 不能为空")
 
+    started = time.monotonic()
+    stage_ms: dict[str, int] = {}
+
+    def _lap(stage: str, since: float) -> float:
+        now = time.monotonic()
+        stage_ms[stage] = int((now - since) * 1000)
+        return now
+
     # L1 — intent
     _notify(on_stage, DRAFT_STAGES[0], "正在理解需求并规划数据能力")
+    lap = started
     plan = await build_screen_plan(
         normalized_prompt,
         title,
@@ -70,6 +81,7 @@ async def run_draft_pipeline(
         max_repair=max_repair,
         timeout=llm_timeout,
     )
+    lap = _lap(DRAFT_STAGES[0], lap)
 
     # L2 — fetch-once data hydration
     _notify(
@@ -98,6 +110,7 @@ async def run_draft_pipeline(
         ),
     )
     results: dict[str, CapabilityResult] = dict(fetched)
+    lap = _lap(DRAFT_STAGES[1], lap)
 
     # L3 — visual orchestration + asset assembly
     _notify(on_stage, DRAFT_STAGES[2], "正在编排大屏视觉与组件")
@@ -120,8 +133,30 @@ async def run_draft_pipeline(
         intent_mode=intent_mode,
         intent_source=intent_source,
     )
+    _lap(DRAFT_STAGES[2], lap)
 
     _notify(on_stage, DRAFT_STAGES[3], "正在固化大屏资产")
+    telemetry.record_generation(
+        {
+            "kind": "draft",
+            "success": True,
+            "degraded": bool(plan.degraded),
+            "durationMs": int((time.monotonic() - started) * 1000),
+            "screenId": str(screen.get("id") or ""),
+            "promptChars": len(normalized_prompt),
+            "intentMode": intent_mode,
+            "stages": stage_ms,
+            "capabilityStatuses": {
+                component.capability_id: result.source_status
+                for component in plan.components
+                for result in [results.get(component.id)]
+                if result is not None
+            },
+            "componentTypes": [
+                component.type for component in plan.components
+            ],
+        },
+    )
     return screen
 
 

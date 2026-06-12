@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 from __future__ import annotations
 
 from typing import Any
@@ -61,6 +62,17 @@ class AiBigScreenPatchResponse(BaseModel):
     screen: dict[str, Any]
     version: dict[str, Any]
     summary: str
+
+
+class AiBigScreenMetricsResponse(BaseModel):
+    """Aggregated quality signals over the recent generation window."""
+
+    total: int = 0
+    successRate: float = 0.0
+    degradedRate: float = 0.0
+    avgDurationMs: float = 0.0
+    capabilityFailureRates: dict[str, float] = Field(default_factory=dict)
+    kinds: dict[str, int] = Field(default_factory=dict)
 
 
 class AiBigScreenPublishResponse(BaseModel):

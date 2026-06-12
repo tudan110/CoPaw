@@ -24,6 +24,7 @@ from qwenpaw.extensions.api.ai_big_screen_api import (
     generate_ai_big_screen_draft,
     get_ai_big_screen,
     get_ai_big_screen_draft_task,
+    get_ai_big_screen_metrics,
     list_ai_big_screen_plugins,
     list_ai_big_screens,
     patch_ai_big_screen,
@@ -222,6 +223,36 @@ class TestRefreshEndpoint:
         with pytest.raises(HTTPException) as excinfo:
             await refresh_ai_big_screen("screen-missing")
         assert excinfo.value.status_code == 404
+
+
+class TestMetricsEndpoint:
+    def test_metrics_aggregates_recent_window(self) -> None:
+        from qwenpaw.extensions.ai_big_screen import telemetry
+
+        telemetry.record_generation(
+            {"kind": "draft", "success": True, "durationMs": 1000},
+        )
+        telemetry.record_generation(
+            {
+                "kind": "patch",
+                "success": False,
+                "durationMs": 200,
+                "capabilityStatuses": {"real-alarms": "failed"},
+            },
+        )
+        response = get_ai_big_screen_metrics(limit=100)
+        assert response.total == 2
+        assert response.successRate == pytest.approx(0.5)
+        assert response.kinds == {"draft": 1, "patch": 1}
+        assert response.capabilityFailureRates["real-alarms"] == 1.0
+
+    async def test_draft_and_refresh_record_events(self) -> None:
+        saved = await _draft_and_save()
+        await refresh_ai_big_screen(saved["id"])
+        response = get_ai_big_screen_metrics(limit=100)
+        assert response.kinds.get("draft", 0) >= 1
+        assert response.kinds.get("refresh", 0) == 1
+        assert response.successRate == 1.0
 
 
 class TestPatchEndpoint:
