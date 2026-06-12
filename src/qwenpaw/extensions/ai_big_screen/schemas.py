@@ -214,6 +214,19 @@ class PatchPlan(_CamelModel):
     degraded: bool = False
 
 
+class CritiquePlan(_CamelModel):
+    """Spec-level visual critique (M2): a score plus bounded revisions.
+
+    ``operations`` reuses the patch whitelist grammar; the critique
+    runner additionally restricts it to visual-only ops, so a critic
+    can never touch query params or data semantics.
+    """
+
+    score: int = Field(default=0, ge=0, le=100)
+    issues: list[str] = Field(default_factory=list)
+    operations: list[PatchOperation] = Field(default_factory=list)
+
+
 def extract_json_object(text: str) -> str:
     """Extract a JSON object string from raw LLM text.
 
@@ -254,3 +267,13 @@ def parse_patch_plan(text: str) -> PatchPlan:
     except json.JSONDecodeError as exc:
         raise ValueError(f"LLM 响应 JSON 解析失败: {exc}") from exc
     return PatchPlan.model_validate(payload)
+
+
+def parse_critique_plan(text: str) -> CritiquePlan:
+    """Parse + schema-validate an LLM response into a ``CritiquePlan``."""
+    candidate = extract_json_object(text)
+    try:
+        payload = json.loads(candidate)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"LLM 响应 JSON 解析失败: {exc}") from exc
+    return CritiquePlan.model_validate(payload)

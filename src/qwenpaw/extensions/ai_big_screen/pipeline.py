@@ -21,6 +21,7 @@ from qwenpaw.extensions.ai_big_screen.capabilities import (
     CapabilityCache,
     execute_capability,
 )
+from qwenpaw.extensions.ai_big_screen.critique import run_critique
 from qwenpaw.extensions.ai_big_screen.intent import (
     build_screen_plan,
     prompt_is_simple_data_query,
@@ -133,6 +134,16 @@ async def run_draft_pipeline(
         intent_mode=intent_mode,
         intent_source=intent_source,
     )
+
+    # M2 quality loop: one spec-level critique + bounded visual
+    # revision. LLM path only (the fast path is deterministic by
+    # design), and skipped for degraded plans — the model is already
+    # failing, a second call would just burn the timeout again.
+    # run_critique swallows every failure itself.
+    critique_info = None
+    if intent_mode == "ai-plan" and not plan.degraded:
+        _notify(on_stage, DRAFT_STAGES[2], "正在进行视觉评审与修订")
+        critique_info = await run_critique(screen, model=model)
     _lap(DRAFT_STAGES[2], lap)
 
     _notify(on_stage, DRAFT_STAGES[3], "正在固化大屏资产")
@@ -155,6 +166,11 @@ async def run_draft_pipeline(
             "componentTypes": [
                 component.type for component in plan.components
             ],
+            **(
+                {"critique": critique_info}
+                if critique_info is not None
+                else {}
+            ),
         },
     )
     return screen
