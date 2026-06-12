@@ -57,6 +57,105 @@ DEGRADED_PATCH_SUMMARY = "AI 降级：未生成可执行的大屏配置变更，
 
 _DATA_AFFECTING_OPS = {"setComponentQueryParams", "setComponentFields"}
 
+#: component fields surfaced in the preview diff; data rows are
+#: deliberately excluded — the preview screen itself carries the
+#: refreshed data, the diff describes configuration changes only
+_DIFF_COMPONENT_FIELDS = (
+    "title",
+    "type",
+    "layoutPosition",
+    "visualConfig",
+    "queryParams",
+)
+
+
+def _component_brief(component: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        "type": component.get("type"),
+        "title": component.get("title"),
+        "capabilityId": (
+            component.get("capabilityId") or component.get("pluginId")
+        ),
+    }
+
+
+def build_screen_diff(
+    before: Mapping[str, Any],
+    after: Mapping[str, Any],
+) -> list[dict[str, Any]]:
+    """Field-level structured diff between two screen dicts.
+
+    Entries are ``{componentId, field, before, after}``; screen-level
+    changes use an empty ``componentId`` and a dotted field name.
+    """
+    diffs: list[dict[str, Any]] = []
+    before_theme = before.get("theme")
+    after_theme = after.get("theme")
+    before_palette = (
+        before_theme.get("palette")
+        if isinstance(before_theme, Mapping)
+        else None
+    )
+    after_palette = (
+        after_theme.get("palette")
+        if isinstance(after_theme, Mapping)
+        else None
+    )
+    if before_palette != after_palette:
+        diffs.append(
+            {
+                "componentId": "",
+                "field": "theme.palette",
+                "before": before_palette,
+                "after": after_palette,
+            },
+        )
+
+    def _by_id(screen: Mapping[str, Any]) -> dict[str, Mapping[str, Any]]:
+        return {
+            str(component.get("id") or ""): component
+            for component in (screen.get("components") or [])
+            if isinstance(component, Mapping)
+        }
+
+    before_by_id = _by_id(before)
+    after_by_id = _by_id(after)
+    for component_id, after_component in after_by_id.items():
+        before_component = before_by_id.get(component_id)
+        if before_component is None:
+            diffs.append(
+                {
+                    "componentId": component_id,
+                    "field": "component",
+                    "before": None,
+                    "after": _component_brief(after_component),
+                },
+            )
+            continue
+        for field in _DIFF_COMPONENT_FIELDS:
+            if before_component.get(field) != after_component.get(field):
+                diffs.append(
+                    {
+                        "componentId": component_id,
+                        "field": field,
+                        "before": copy.deepcopy(
+                            before_component.get(field),
+                        ),
+                        "after": copy.deepcopy(after_component.get(field)),
+                    },
+                )
+    for component_id, before_component in before_by_id.items():
+        if component_id not in after_by_id:
+            diffs.append(
+                {
+                    "componentId": component_id,
+                    "field": "component",
+                    "before": _component_brief(before_component),
+                    "after": None,
+                },
+            )
+    return diffs
+
 
 def _component_index(components: list[Any], component_id: str) -> int:
     for index, item in enumerate(components):
@@ -394,10 +493,15 @@ async def apply_patch(
     model: ModelCallable | None = None,
     max_repair: int = 2,
     timeout: float = 120.0,
+    dry_run: bool = False,
 ) -> dict[str, Any]:
     """Patch a screen in place; returns ``{screen, version, summary}``.
 
     Persistence is the caller's concern — this operates on the dict.
+    With ``dry_run=True`` all changes (including data refetches for
+    query-param edits) happen on a deep copy: the original screen is
+    untouched, no version is appended, and the result additionally
+    carries ``preview=True`` plus a structured ``diff``.
     """
     normalized_instruction = str(instruction or "").strip()
     if not normalized_instruction:
@@ -413,6 +517,10 @@ async def apply_patch(
     for component_id in selection:
         if _component_index(components, component_id) < 0:
             raise ValueError(f"未找到组件：{component_id}")
+
+    original = screen
+    if dry_run:
+        screen = copy.deepcopy(screen)
 
     active_model = model if model is not None else create_pipeline_model()
     result = await structured_call(
@@ -489,6 +597,15 @@ async def apply_patch(
         )
     elif not summary:
         summary = f"已应用 {len(applied)} 项大屏变更。"
+
+    if dry_run:
+        return {
+            "screen": screen,
+            "version": None,
+            "summary": summary,
+            "preview": True,
+            "diff": build_screen_diff(original, screen),
+        }
 
     version_id = f"v{len(screen.get('versions') or []) + 1}"
     version = build_version(

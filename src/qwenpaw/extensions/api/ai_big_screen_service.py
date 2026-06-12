@@ -221,6 +221,7 @@ async def patch_screen_asset(
     request: AiBigScreenPatchRequest,
 ) -> dict[str, Any]:
     started = time.monotonic()
+    preview = bool(request.preview)
     screen = store.get_screen(screen_id=screen_id)
     try:
         outcome = await apply_patch(
@@ -231,6 +232,7 @@ async def patch_screen_asset(
             selected_region=request.selectedRegion or {},
             selection_context=request.selectionContext or {},
             requested_by=str(request.requestedBy or "portal"),
+            dry_run=preview,
         )
     except Exception as exc:
         telemetry.record_generation(
@@ -238,17 +240,22 @@ async def patch_screen_asset(
                 "kind": "patch",
                 "success": False,
                 "degraded": False,
+                "preview": preview,
                 "durationMs": int((time.monotonic() - started) * 1000),
                 "screenId": screen_id,
                 "error": _extract_exception_message(exc)[:300],
             },
         )
         raise
-    saved = store.save_screen(
-        screen=outcome["screen"],
-        requested_by=str(request.requestedBy or "portal"),
-    )
-    context = saved.get("aiConversationContext")
+
+    if preview:
+        result_screen = outcome["screen"]
+    else:
+        result_screen = store.save_screen(
+            screen=outcome["screen"],
+            requested_by=str(request.requestedBy or "portal"),
+        )
+    context = result_screen.get("aiConversationContext")
     telemetry.record_generation(
         {
             "kind": "patch",
@@ -256,15 +263,18 @@ async def patch_screen_asset(
             "degraded": bool(
                 isinstance(context, dict) and context.get("degraded"),
             ),
+            "preview": preview,
             "durationMs": int((time.monotonic() - started) * 1000),
             "screenId": screen_id,
             "instructionChars": len(str(request.instruction or "")),
         },
     )
     return {
-        "screen": saved,
+        "screen": result_screen,
         "version": outcome["version"],
         "summary": outcome["summary"],
+        "preview": preview,
+        "diff": list(outcome.get("diff") or []),
     }
 
 

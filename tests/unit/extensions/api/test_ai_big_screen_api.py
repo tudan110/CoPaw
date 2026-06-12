@@ -313,3 +313,64 @@ class TestPatchEndpoint:
                 AiBigScreenPatchRequest(instruction="  "),
             )
         assert excinfo.value.status_code == 400
+
+    async def test_patch_preview_returns_diff_without_persisting(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        saved = await _draft_and_save()
+        component_id = saved["components"][0]["id"]
+        original_title = saved["components"][0]["title"]
+        from qwenpaw.extensions.ai_big_screen import patch as patch_module
+
+        monkeypatch.setattr(
+            patch_module,
+            "create_pipeline_model",
+            lambda: FakeModel(
+                [
+                    json.dumps(
+                        {
+                            "summary": "预览标题变更",
+                            "operations": [
+                                {
+                                    "op": "setComponentTitle",
+                                    "componentId": component_id,
+                                    "value": "预览后的标题",
+                                },
+                            ],
+                        },
+                        ensure_ascii=False,
+                    ),
+                ],
+            ),
+        )
+        response = await patch_ai_big_screen(
+            saved["id"],
+            AiBigScreenPatchRequest(
+                instruction="把标题改成预览后的标题",
+                selectedComponentId=component_id,
+                requestedBy="tester",
+                preview=True,
+            ),
+        )
+        assert response.preview is True
+        assert response.version is None
+        assert response.diff == [
+            {
+                "componentId": component_id,
+                "field": "title",
+                "before": original_title,
+                "after": "预览后的标题",
+            },
+        ]
+        preview_component = next(
+            c for c in response.screen["components"] if c["id"] == component_id
+        )
+        assert preview_component["title"] == "预览后的标题"
+        # nothing persisted: same title, same single version
+        persisted = get_ai_big_screen(saved["id"]).screen
+        component = next(
+            c for c in persisted["components"] if c["id"] == component_id
+        )
+        assert component["title"] == original_title
+        assert [v["versionId"] for v in persisted["versions"]] == ["v1"]
