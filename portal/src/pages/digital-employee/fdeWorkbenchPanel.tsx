@@ -207,6 +207,24 @@ export function FdeWorkbenchPanel() {
         result.files.find((f) => f.path === "SKILL.md") ||
         result.files.find((f) => typeof f.content === "string");
       setActiveFile(firstReadable ? firstReadable.path : null);
+      // 加载只呈现文件（秒回）。体检（安全扫描+语法，不含域审查 LLM）
+      // 在这里自动后台补跑，用户无需手动点「重新自检」就能解锁「审查通过」。
+      // 名字守卫：用户切到别的技能时，旧体检结果不会错套到新技能上。
+      if (result.selfcheck?.scan?.status === "skipped") {
+        setBusy("selfcheck");
+        try {
+          const sc = await fdeApi.selfcheckStaged(name);
+          setDetail((prev) =>
+            prev && prev.skill_name === name
+              ? { ...prev, selfcheck: sc }
+              : prev,
+          );
+        } catch {
+          // 后台体检失败不打扰；状态条仍可让用户手动点「重新自检」重试
+        } finally {
+          setBusy((b) => (b === "selfcheck" ? null : b));
+        }
+      }
     } catch (error) {
       setNotice({
         type: "error",
@@ -397,6 +415,8 @@ export function FdeWorkbenchPanel() {
   const aiOk = Boolean(detail?.selfcheck?.ready_for_review);
   // 加载详情时安全扫描被跳过（秒回）；区分"待体检"与"未通过"。
   const scanPending = detail?.selfcheck?.scan?.status === "skipped";
+  // 体检（自动后台跑或手动「重新自检」）进行中——徽章/按钮显示"体检中"。
+  const checking = busy === "selfcheck";
 
   // 只在「换了一个技能」时重置 Tab / 未保存编辑 / 引导字段草稿。
   // detail 在自检、保存等操作后也会整体替换 —— 那些场景不能清掉用户
@@ -1195,15 +1215,30 @@ export function FdeWorkbenchPanel() {
                 <span className="fde-strip-gap" />
                 <span
                   className={`fde-gate ${
-                    aiOk ? "is-ok" : scanPending ? "is-wait" : "is-bad"
+                    checking
+                      ? "is-wait"
+                      : aiOk
+                      ? "is-ok"
+                      : scanPending
+                      ? "is-wait"
+                      : "is-bad"
                   }`}
                   title={
-                    scanPending
-                      ? "加载只呈现文件（秒回）；点「重新自检」跑安全扫描+语法。域审查在确认安装时校验。"
+                    checking
+                      ? "正在体检（安全扫描 + 语法）…域审查在确认安装时校验"
+                      : scanPending
+                      ? "点「重新自检」跑安全扫描+语法；域审查在确认安装时校验"
                       : "AI 自检（安全扫描 + 语法）；域审查在确认安装时校验"
                   }
                 >
-                  AI自检 {aiOk ? "✓ 通过" : scanPending ? "○ 待体检" : "✗ 未过"}
+                  AI自检{" "}
+                  {checking
+                    ? "体检中…"
+                    : aiOk
+                    ? "✓ 通过"
+                    : scanPending
+                    ? "○ 待体检"
+                    : "✗ 未过"}
                 </span>
                 <span
                   className={`fde-gate ${
@@ -1246,7 +1281,10 @@ export function FdeWorkbenchPanel() {
 
               {tab === "overview" ? (
                 <div className="fde-tabpane">
-                  <SelfcheckReport result={detail.selfcheck} />
+                  <SelfcheckReport
+                    result={detail.selfcheck}
+                    checking={checking}
+                  />
                   <div className="fde-guide">
                     <div className="fde-guide-head">
                       引导字段
@@ -1434,8 +1472,16 @@ export function FdeWorkbenchPanel() {
                     type="button"
                     className="fde-btn fde-btn--warn"
                     onClick={() => void handleReview("approve")}
-                    disabled={busy === "review-approve" || !aiOk}
-                    title={aiOk ? undefined : "AI 自检未通过，先修正"}
+                    disabled={busy === "review-approve" || checking || !aiOk}
+                    title={
+                      checking
+                        ? "体检中，请稍候…"
+                        : aiOk
+                        ? undefined
+                        : scanPending
+                        ? "体检还没跑完，请稍候或点「重新自检」"
+                        : "AI 自检未通过，先修正"
+                    }
                   >
                     {busy === "review-approve" ? "标记中…" : "审查通过 ▸"}
                   </button>
@@ -1451,8 +1497,12 @@ export function FdeWorkbenchPanel() {
                     !reviewOk
                   }
                   title={
-                    !aiOk
-                      ? "AI 自检未通过"
+                    checking
+                      ? "体检中，请稍候…"
+                      : !aiOk
+                      ? scanPending
+                        ? "体检还没跑完，请稍候或点「重新自检」"
+                        : "AI 自检未通过"
                       : !reviewOk
                       ? "人工审查未通过"
                       : undefined

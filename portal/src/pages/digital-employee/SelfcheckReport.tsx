@@ -43,8 +43,11 @@ function Finding({ f }: { f: FdeScanFinding }) {
 
 export function SelfcheckReport({
   result,
+  checking,
 }: {
   result: FdeSelfcheckResult | undefined;
+  // 体检（自动后台跑或手动「重新自检」）进行中：扫描/域审查显示"体检中…"。
+  checking?: boolean;
 }) {
   if (!result) return null;
   if (result.error) {
@@ -74,7 +77,9 @@ export function SelfcheckReport({
       {/* 安全扫描 */}
       <div className="fde-report-row">
         <span className="fde-report-key">安全扫描</span>
-        {scanSkipped ? (
+        {checking ? (
+          <span className="fde-report-note">体检中…</span>
+        ) : scanSkipped ? (
           <span className="fde-report-note">
             未运行 · 点「重新自检」开始体检
           </span>
