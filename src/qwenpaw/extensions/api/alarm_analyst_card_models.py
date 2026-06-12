@@ -67,6 +67,27 @@ class AlarmAnalystCardSummary(BaseModel):
     status: Literal["identified", "suspected", "unknown"] | None = None
 
 
+class AlarmAnalystCardRootCauseCandidate(BaseModel):
+    """One row of the report's "候选根因" Top-N table.
+
+    ``confidence`` keeps the raw report text (e.g. ``"86%"``) instead of
+    the high/medium/low enum used by the summary, so candidates can carry
+    the percentage the RCA methodology asks for.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    rank: int = 0
+    reason: str = ""
+    resource_name: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("resource_name", "resourceName"),
+        serialization_alias="resourceName",
+    )
+    confidence: str = ""
+    evidence: str | None = None
+
+
 class AlarmAnalystCardRootCause(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -86,6 +107,11 @@ class AlarmAnalystCardRootCause(BaseModel):
         serialization_alias="ciId",
     )
     reason: str = ""
+    # Ranked Top-N candidate root causes parsed from the report's
+    # "候选根因" table; empty when the model reported a single root cause.
+    candidates: list[AlarmAnalystCardRootCauseCandidate] = Field(
+        default_factory=list,
+    )
 
 
 class AlarmAnalystCardImpactEntity(BaseModel):

@@ -94,9 +94,13 @@ qwenpaw:
     QWENPAW_PORTAL_REAL_ALARM_AUTO_TAKEOVER_INTERVAL: "300"
     QWENPAW_PORTAL_REAL_ALARM_AUTO_TAKEOVER_LIMIT: "100"
     QWENPAW_PORTAL_REAL_ALARM_MAX_ACTIVE_ANALYSES: "1"
-    QWENPAW_PORTAL_REAL_ALARM_LOOKBACK_HOURS: "24"
+    # 实时分析回溯（小时）：0=仅分析开启实时分析后新产生的告警；
+    # N=起点前推 N 小时。页面「设置-诊断」配置优先。
+    QWENPAW_PORTAL_REAL_ALARM_LOOKBACK_HOURS: "0"
     # 告警平台接口时区偏移（小时），默认东八区
     QWENPAW_PORTAL_REAL_ALARM_TIMEZONE_OFFSET: "8"
+    # 前台告警列表与角标计数的最大条数（1-200），页面「设置-诊断」配置优先
+    QWENPAW_PORTAL_REAL_ALARM_LIST_LIMIT: "20"
 
 
     # 启明大模型 OpenAI 风格适配层（测试时请使用本地覆盖文件或 Secret 注入真实密钥）

@@ -22,7 +22,7 @@ import {
 type DiagnosisNumberField = {
   key: string;
   label: string;
-  group: "polling" | "inoe" | "query_window";
+  group: "polling" | "inoe" | "query_window" | "recovery";
   min?: number;
   max?: number;
   step?: number;
@@ -55,6 +55,17 @@ const DIAGNOSIS_NUMBER_FIELDS: DiagnosisNumberField[] = [
     hint: "同时进行的告警分析数量，直接决定并发调用大模型的规模。",
   },
   {
+    key: "analysis_lookback_hours",
+    label: "分析回溯（小时）",
+    group: "polling",
+    min: 0,
+    max: 720,
+    step: 1,
+    hint:
+      "开启实时分析后，查询起点 = 开启时刻往前回溯 N 小时；" +
+      "0 = 仅分析开启后新产生的告警。重新开关会重新锚定起点。",
+  },
+  {
     key: "inoe_api_timeout_seconds",
     label: "INOE 接口超时（秒）",
     group: "inoe",
@@ -79,6 +90,55 @@ const DIAGNOSIS_NUMBER_FIELDS: DiagnosisNumberField[] = [
     step: 5,
     hint: "前台告警列表缓存的有效期。",
   },
+  {
+    key: "alarm_list_limit",
+    label: "告警列表条数",
+    group: "query_window",
+    min: 1,
+    max: 200,
+    step: 1,
+    hint: "前台告警列表与告警角标计数最多展示多少条，上限 200。",
+  },
+  {
+    key: "recovery_verify_delay_seconds",
+    label: "首次验证延迟（秒）",
+    group: "recovery",
+    min: 0,
+    step: 30,
+    hint: "收到清除通知后等待多久做首次恢复验证，给指标留回落时间。",
+  },
+  {
+    key: "recovery_verify_retry_count",
+    label: "验证重试次数",
+    group: "recovery",
+    min: 0,
+    step: 1,
+    hint: "验证未通过时的最大重试次数，超过后判定为未恢复/未知。",
+  },
+  {
+    key: "recovery_verify_retry_interval_seconds",
+    label: "重试间隔（秒）",
+    group: "recovery",
+    min: 10,
+    step: 30,
+    hint: "两次验证之间的间隔。",
+  },
+  {
+    key: "recovery_observation_minutes",
+    label: "复发观察期（分钟）",
+    group: "recovery",
+    min: 0,
+    step: 5,
+    hint: "验证通过后继续观察是否复发的时长，0 表示关闭观察。",
+  },
+  {
+    key: "recovery_verify_batch_limit",
+    label: "每轮验证上限",
+    group: "recovery",
+    min: 1,
+    step: 1,
+    hint: "验证循环每个周期最多处理的清除事件数，防止指标查询被打满。",
+  },
 ];
 
 const DIAGNOSIS_TEXT_FIELDS: {
@@ -98,7 +158,7 @@ const DIAGNOSIS_TEXT_FIELDS: {
 ];
 
 const DIAGNOSIS_GROUP_META: {
-  id: "polling" | "inoe" | "query_window";
+  id: "polling" | "inoe" | "query_window" | "recovery";
   title: string;
   description: string;
 }[] = [
@@ -116,6 +176,12 @@ const DIAGNOSIS_GROUP_META: {
     id: "query_window",
     title: "告警查询窗口",
     description: "时区与缓存等查询相关参数。",
+  },
+  {
+    id: "recovery",
+    title: "恢复验证",
+    description:
+      "INOE 推送告警清除通知后，自动复核活动列表并验证关键指标是否真正恢复。",
   },
 ];
 
@@ -400,6 +466,21 @@ export function SettingsPanel() {
   const diagnosisEnabled = Boolean(
     diagnosisPayload?.effective.auto_takeover_enabled,
   );
+  const recoveryVerificationEnabled = Boolean(
+    diagnosisPayload?.effective.recovery_verification_enabled,
+  );
+  // When real-time analysis was last switched on, formatted local time.
+  const diagnosisAnchorLabel = useMemo(() => {
+    const raw = diagnosisPayload?.state?.analysis_started_at || "";
+    if (!raw) {
+      return "";
+    }
+    const parsed = new Date(raw);
+    if (Number.isNaN(parsed.getTime())) {
+      return "";
+    }
+    return parsed.toLocaleString("zh-CN", { hour12: false });
+  }, [diagnosisPayload]);
 
   const handleDiagnosisToggle = async (enabled: boolean) => {
     if (diagnosisTogglePending || enabled === diagnosisEnabled) {
@@ -426,9 +507,66 @@ export function SettingsPanel() {
     }
   };
 
+  const handleRecoveryVerificationToggle = async (enabled: boolean) => {
+    if (diagnosisTogglePending || enabled === recoveryVerificationEnabled) {
+      return;
+    }
+    setDiagnosisTogglePending(true);
+    setDiagnosisNotice(null);
+    try {
+      const payload = await diagnosisSettingsApi.update({
+        recovery_verification_enabled: enabled,
+      });
+      applyDiagnosisPayload(payload);
+      setDiagnosisNotice({
+        type: "success",
+        text: enabled ? "已开启告警恢复验证" : "已暂停告警恢复验证",
+      });
+    } catch (error) {
+      setDiagnosisNotice({
+        type: "error",
+        text: error instanceof Error ? error.message : "切换失败",
+      });
+    } finally {
+      setDiagnosisTogglePending(false);
+    }
+  };
+
   const handleDiagnosisFieldChange = (key: string, value: string) => {
     setDiagnosisDraft((current) => ({ ...current, [key]: value }));
   };
+
+  // Mirrors the diff logic in handleSaveDiagnosisSettings: the save
+  // button stays disabled until something actually changed. Invalid
+  // (non-numeric) input counts as dirty so clicking surfaces the error.
+  const diagnosisDirty = useMemo(() => {
+    if (!diagnosisPayload) {
+      return false;
+    }
+    if (diagnosisTokenDraft.trim() !== "") {
+      return true;
+    }
+    for (const field of DIAGNOSIS_NUMBER_FIELDS) {
+      const raw = (diagnosisDraft[field.key] ?? "").trim();
+      if (raw === "") {
+        continue;
+      }
+      const num = Number(raw);
+      if (Number.isNaN(num)) {
+        return true;
+      }
+      if (String(diagnosisPayload.effective[field.key]) !== String(num)) {
+        return true;
+      }
+    }
+    for (const field of DIAGNOSIS_TEXT_FIELDS) {
+      const raw = (diagnosisDraft[field.key] ?? "").trim();
+      if (raw !== String(diagnosisPayload.effective[field.key] ?? "")) {
+        return true;
+      }
+    }
+    return false;
+  }, [diagnosisPayload, diagnosisDraft, diagnosisTokenDraft]);
 
   const handleSaveDiagnosisSettings = async () => {
     if (!diagnosisPayload || diagnosisSaving) {
@@ -854,7 +992,10 @@ export function SettingsPanel() {
                             diagnosisPayload?.overrides.auto_takeover_enabled
                               ? "页面已设置"
                               : "来自环境变量默认"
-                          }）`}
+                          }）` +
+                          (diagnosisEnabled && diagnosisAnchorLabel
+                            ? `，实时分析自 ${diagnosisAnchorLabel} 起`
+                            : "")}
                     </div>
                   </section>
 
@@ -873,6 +1014,37 @@ export function SettingsPanel() {
                             <p>{group.description}</p>
                           </div>
                         </div>
+
+                        {group.id === "recovery" ? (
+                          <div className="settings-choice-grid">
+                            <button
+                              type="button"
+                              className={
+                                recoveryVerificationEnabled
+                                  ? "portal-managed-config-toggle active"
+                                  : "portal-managed-config-toggle"
+                              }
+                              disabled={diagnosisLoading || diagnosisTogglePending}
+                              onClick={() => handleRecoveryVerificationToggle(true)}
+                            >
+                              <i className="fas fa-shield-halved" />
+                              开启恢复验证
+                            </button>
+                            <button
+                              type="button"
+                              className={
+                                !recoveryVerificationEnabled
+                                  ? "portal-managed-config-toggle active"
+                                  : "portal-managed-config-toggle"
+                              }
+                              disabled={diagnosisLoading || diagnosisTogglePending}
+                              onClick={() => handleRecoveryVerificationToggle(false)}
+                            >
+                              <i className="fas fa-pause" />
+                              暂停恢复验证
+                            </button>
+                          </div>
+                        ) : null}
 
                         <div className="settings-form-grid">
                           {textFields.map((field) => {
@@ -1039,11 +1211,13 @@ export function SettingsPanel() {
                     <button
                       type="button"
                       className="portal-model-btn compact"
-                      disabled={diagnosisLoading || diagnosisSaving}
+                      disabled={
+                        diagnosisLoading || diagnosisSaving || !diagnosisDirty
+                      }
                       onClick={handleSaveDiagnosisSettings}
                     >
                       <i className="fas fa-floppy-disk" />
-                      {diagnosisSaving ? "保存中…" : "保存诊断配置"}
+                      {diagnosisSaving ? "保存中…" : "保存"}
                     </button>
                   </div>
                 </div>

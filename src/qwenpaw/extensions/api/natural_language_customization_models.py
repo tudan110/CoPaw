@@ -1,8 +1,20 @@
+# -*- coding: utf-8 -*-
 from __future__ import annotations
 
 from typing import Any
 
 from pydantic import BaseModel, Field
+
+
+class NlCustomizationClassifyRequest(BaseModel):
+    prompt: str = ""
+
+
+class NlCustomizationClassifyResponse(BaseModel):
+    recommendedKind: str  # "page" | "task"
+    scenarioType: str
+    triggerType: str
+    confidence: float
 
 
 class NlCustomizationPreviewRequest(BaseModel):

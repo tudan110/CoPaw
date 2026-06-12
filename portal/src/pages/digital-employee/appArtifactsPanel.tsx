@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { setAppArtifactListing } from "../../api/lightApps";
 import "./app-artifacts.css";
 
 interface AppArtifact {
@@ -11,6 +12,7 @@ interface AppArtifact {
   url: string;
   tags: string[];
   version: number;
+  listed_at: string;
   created_at: string;
   updated_at: string;
 }
@@ -139,6 +141,19 @@ export function AppArtifactsPanel({ onOpenWorkbench, onEditApp, onOpenDashboardA
     window.open(`/portal-api/app-artifacts/${artifact.id}/preview`, "_blank");
   };
 
+  const handleToggleListing = async (artifact: AppArtifact) => {
+    const next = !artifact.listed_at;
+    if (!next && !confirm(`确定将「${artifact.title}」从应用中心下架吗？`)) {
+      return;
+    }
+    try {
+      await setAppArtifactListing(artifact.id, next);
+      void loadData();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "上架操作失败");
+    }
+  };
+
   const openVersions = async (artifact: AppArtifact) => {
     setVersionsFor(artifact);
     setVersions([]);
@@ -259,6 +274,9 @@ export function AppArtifactsPanel({ onOpenWorkbench, onEditApp, onOpenDashboardA
                     <span className="app-artifacts-card-type">
                       {TYPE_LABELS[item.type] || item.type}
                     </span>
+                    {item.listed_at ? (
+                      <span className="app-artifacts-card-listed">已上架</span>
+                    ) : null}
                   </div>
                 </div>
                 {item.description && (
@@ -296,6 +314,21 @@ export function AppArtifactsPanel({ onOpenWorkbench, onEditApp, onOpenDashboardA
                         <i className="fas fa-pen" />
                       </button>
                     )}
+                    <button
+                      className={
+                        item.listed_at
+                          ? "app-artifacts-btn-listing listed"
+                          : "app-artifacts-btn-listing"
+                      }
+                      onClick={() => void handleToggleListing(item)}
+                      title={item.listed_at ? "从应用中心下架" : "上架到应用中心"}
+                    >
+                      <i
+                        className={
+                          item.listed_at ? "fas fa-store-slash" : "fas fa-store"
+                        }
+                      />
+                    </button>
                     <button
                       className="app-artifacts-btn-history"
                       onClick={() => openVersions(item)}

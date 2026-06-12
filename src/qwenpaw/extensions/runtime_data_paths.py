@@ -33,6 +33,11 @@ PORTAL_ALARM_ANALYST_CARDS_DB_PATH = (
     PORTAL_REAL_ALARM_DATA_DIR / PORTAL_ALARM_ANALYST_CARDS_DB_FILE
 )
 
+# Agent-generated report files (inspection reports, exported sheets, ...)
+# land here, one subdirectory per agent id; written by the report-export
+# skill and served back to the portal by extensions.api.agent_reports.
+REPORTS_DATA_DIR = EXTENSIONS_DATA_DIR / "reports"
+
 NL_CUSTOMIZATION_DATA_DIR = EXTENSIONS_DATA_DIR / "nl_customization"
 NL_CUSTOMIZATION_REGISTRY_FILE = "registry.json"
 NL_CUSTOMIZATION_BUNDLE_DIRNAME = "bundles"

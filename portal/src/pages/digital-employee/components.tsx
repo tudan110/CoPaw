@@ -1,4 +1,4 @@
-import { memo, Suspense, useEffect, useRef, useState } from "react";
+import { memo, Suspense, useEffect, useRef, useState, type ComponentProps } from "react";
 import { employeeStepDescriptions } from "../../data/portalData";
 import { DeferredEChartsBlock } from "../../components/DeferredVisualizationBlocks";
 import { PortalVisualizationBlock } from "../../components/PortalVisualizationBlock";
@@ -1514,6 +1514,59 @@ function ToolTracePayload({ content }: { content: string }) {
   );
 }
 
+// 报告下载链接：report-export 技能让智能体在回复里输出
+// `[下载报告：xxx](/api/portal/agents/{agentId}/reports/{file})`，
+// 这里把它渲染成下载按钮（其余链接保持默认的新标签页行为）。
+const REPORT_DOWNLOAD_HREF_RE =
+  /^\/(?:api\/portal|portal-api)\/agents\/[A-Za-z0-9._-]+\/reports\/[^/?#]+$/;
+
+function MarkdownChatAnchor({
+  href,
+  children,
+  ...rest
+}: {
+  href?: string;
+  children?: React.ReactNode;
+  [key: string]: unknown;
+}) {
+  delete (rest as Record<string, unknown>).node;
+  const url = String(href || "");
+  if (REPORT_DOWNLOAD_HREF_RE.test(url)) {
+    const resolved = url.startsWith("/portal-api/")
+      ? url
+      : resolveActionDownloadUrl(url);
+    let fileName = url.split("/").pop() || "";
+    try {
+      fileName = decodeURIComponent(fileName);
+    } catch {
+      /* keep raw name */
+    }
+    return (
+      <a
+        {...rest}
+        className="portal-report-download-link"
+        href={resolved}
+        download={fileName}
+        title={fileName}
+      >
+        <i className="fas fa-download" aria-hidden="true" />
+        <span>{children}</span>
+      </a>
+    );
+  }
+  return (
+    <a {...rest} href={url} target="_blank" rel="noopener noreferrer">
+      {children}
+    </a>
+  );
+}
+
+const chatMarkdownComponents: ComponentProps<
+  typeof PortalQwenPawMarkdown
+>["components"] = {
+  a: MarkdownChatAnchor,
+};
+
 export const MessageMarkdown = memo(function MessageMarkdown({
   content,
   isStreaming = false,
@@ -1542,6 +1595,7 @@ export const MessageMarkdown = memo(function MessageMarkdown({
         className={`portal-x-markdown ${markdownThemeClass}`}
         content={streamingContent}
         isStreaming={isStreaming}
+        components={chatMarkdownComponents}
       />
     );
   }
@@ -1555,6 +1609,7 @@ export const MessageMarkdown = memo(function MessageMarkdown({
         className={`portal-x-markdown ${markdownThemeClass}`}
         content={normalizedContent}
         isStreaming={false}
+        components={chatMarkdownComponents}
       />
     );
   }
@@ -1582,6 +1637,7 @@ export const MessageMarkdown = memo(function MessageMarkdown({
               className={`portal-x-markdown ${markdownThemeClass}`}
               content={segmentContent}
               isStreaming={false}
+              components={chatMarkdownComponents}
             />
           );
         }

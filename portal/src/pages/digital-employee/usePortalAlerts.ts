@@ -61,7 +61,9 @@ export function usePortalAlerts({
 
   const loadOpsAlerts = useCallback(async () => {
     try {
-      const response = await listPortalRealAlarms({ limit: 20 });
+      // No explicit limit: the backend applies the configurable list
+      // size from 设置-诊断 (alarm_list_limit, default 20).
+      const response = await listPortalRealAlarms();
       setOpsAlerts(normalizePortalBellAlerts(response));
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);

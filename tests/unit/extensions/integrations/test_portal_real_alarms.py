@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from qwenpaw.extensions.integrations import portal_real_alarms
 from qwenpaw.extensions.integrations.portal_real_alarms import query_portal_real_alarms
@@ -392,3 +392,53 @@ def test_query_portal_real_alarms_posts_bearer_header_from_config(monkeypatch) -
     assert payload == {"total": 0, "items": [], "source": "live"}
     assert captured["url"] == "http://example.test/resource/realalarm/list"
     assert captured["authorization"] == "Bearer demo-token"
+
+
+def test_parse_alarm_event_time_uses_alarm_timezone(monkeypatch) -> None:
+    monkeypatch.setattr(
+        portal_real_alarms,
+        "_get_alarm_timezone",
+        lambda: timezone(timedelta(hours=8)),
+    )
+
+    parsed = portal_real_alarms.parse_alarm_event_time("2026-06-11 10:00:00")
+
+    assert parsed is not None
+    assert parsed.astimezone(timezone.utc) == datetime(
+        2026, 6, 11, 2, 0, 0, tzinfo=timezone.utc
+    )
+    assert portal_real_alarms.parse_alarm_event_time("not-a-time") is None
+    assert portal_real_alarms.parse_alarm_event_time("") is None
+
+
+def test_filter_alarms_started_after_keeps_new_and_unparsable(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        portal_real_alarms,
+        "_get_alarm_timezone",
+        lambda: timezone(timedelta(hours=8)),
+    )
+    # Cutoff = 2026-06-11 10:00 in the alarm platform's +08 timezone.
+    cutoff = datetime(2026, 6, 11, 2, 0, 0, tzinfo=timezone.utc)
+    payload = {
+        "total": 3,
+        "items": [
+            {"alarmId": "old", "eventTime": "2026-06-11 09:59:59"},
+            {"alarmId": "new", "eventTime": "2026-06-11 10:00:00"},
+            {"alarmId": "weird", "eventTime": "no-time"},
+        ],
+        "source": "live",
+    }
+
+    filtered = portal_real_alarms.filter_alarms_started_after(
+        payload, cutoff
+    )
+
+    # Older alarms drop; on-or-after stays; unparsable times fail open.
+    assert [item["alarmId"] for item in filtered["items"]] == [
+        "new",
+        "weird",
+    ]
+    assert filtered["total"] == 2
+    assert filtered["source"] == "live"

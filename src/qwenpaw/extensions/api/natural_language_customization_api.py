@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, Query
@@ -7,6 +8,8 @@ from qwenpaw.extensions.api.natural_language_customization_models import (
     NlCustomizationAppListResponse,
     NlCustomizationApplyRequest,
     NlCustomizationApplyResponse,
+    NlCustomizationClassifyRequest,
+    NlCustomizationClassifyResponse,
     NlCustomizationDeleteResponse,
     NlCustomizationListingRequest,
     NlCustomizationListingResponse,
@@ -20,6 +23,7 @@ from qwenpaw.extensions.api.natural_language_customization_models import (
 from qwenpaw.extensions.api.natural_language_customization_service import (
     apply_nl_customization_version,
     build_nl_customization_preview,
+    classify_nl_customization_prompt,
     delete_nl_customization_version,
     get_nl_customization_version,
     get_active_nl_customization,
@@ -30,6 +34,17 @@ from qwenpaw.extensions.api.natural_language_customization_service import (
 )
 
 router = APIRouter(prefix="/nl-customization", tags=["portal"])
+
+
+@router.post("/classify", response_model=NlCustomizationClassifyResponse)
+def classify_nl_customization_route(
+    payload: NlCustomizationClassifyRequest,
+) -> NlCustomizationClassifyResponse:
+    try:
+        result = classify_nl_customization_prompt(payload.prompt)
+        return NlCustomizationClassifyResponse(**result)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.post("/preview", response_model=NlCustomizationPreviewResponse)
@@ -102,7 +117,10 @@ def list_nl_customization_versions_route(
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
-@router.get("/versions/{version_id}", response_model=NlCustomizationVersionDetailResponse)
+@router.get(
+    "/versions/{version_id}",
+    response_model=NlCustomizationVersionDetailResponse,
+)
 def get_nl_customization_version_route(
     version_id: str,
 ) -> NlCustomizationVersionDetailResponse:
@@ -116,7 +134,10 @@ def get_nl_customization_version_route(
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
-@router.delete("/versions/{version_id}", response_model=NlCustomizationDeleteResponse)
+@router.delete(
+    "/versions/{version_id}",
+    response_model=NlCustomizationDeleteResponse,
+)
 def delete_nl_customization_version_route(
     version_id: str,
 ) -> NlCustomizationDeleteResponse:
