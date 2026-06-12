@@ -58,14 +58,19 @@ function ValueAtom({
   element: ValueElement;
   data: CapabilityResult;
 }) {
-  const raw = resolveScalar(data, element.bind["value"]);
+  // unresolved bind (LLM-invented field name) falls back to the
+  // capability's primary scalar — real data beats an empty "--"
+  const bound = resolveScalar(data, element.bind["value"]);
+  const raw = bound ?? (data as unknown as Record<string, unknown>)["value"];
   const display =
     raw === undefined || raw === null ? "--" : String(raw).slice(0, 16);
   const unit = element.bind["unit"] ?? "";
   const prefix = element.bind["prefix"] ?? "";
   const label =
     element.bind["label"] !== undefined
-      ? String(resolveScalar(data, element.bind["label"]) ?? element.bind["label"])
+      ? String(
+          resolveScalar(data, element.bind["label"]) ?? element.bind["label"],
+        )
       : "";
   const sizeCls = element.size ? ` bs-bp-value--${element.size}` : "";
   const styleCls = element.style ? ` bs-bp-value--${element.style}` : "";
@@ -204,9 +209,7 @@ function ListAtom({
             <li key={i} className="bs-stream-item">
               <span className={`bs-dot ${dotCls}`} />
               {row[timeKey] !== undefined && (
-                <span className="bs-timeline-time">
-                  {String(row[timeKey])}
-                </span>
+                <span className="bs-timeline-time">{String(row[timeKey])}</span>
               )}
               <span className="bs-stream-msg">
                 {String(row[titleKey] ?? row["message"] ?? "")}

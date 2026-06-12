@@ -143,6 +143,17 @@ _CLI_TRACE_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Technical connection-chain noise (requests/urllib3 reprs such as
+# "ConnectTimeout: HTTPConnectionPool(...) Max retries exceeded") is
+# as meaningless to a screen viewer as CLI flags. Short honest
+# exception texts ("backend exploded") still pass through.
+_EXCEPTION_NOISE_RE = re.compile(
+    r"HTTPS?ConnectionPool|Max retries exceeded|NewConnectionError"
+    r"|getaddrinfo|\bConnect(?:ion)?Timeout\b|\bReadTimeout\b"
+    r"|[Cc]onnection (?:refused|aborted|reset)",
+)
+_TIMEOUT_HINT_RE = re.compile(r"timed? ?out|timeout|超时", re.IGNORECASE)
+
 
 def friendly_failure_message(raw: str, *, source: str) -> str:
     """Collapse CLI/stack-trace failure text into an operator-friendly
@@ -151,12 +162,14 @@ def friendly_failure_message(raw: str, *, source: str) -> str:
     message = str(raw or "").strip()
     if not message:
         return f"数据源暂不可用（{source or '未知来源'}）"
-    if _CLI_TRACE_RE.search(message):
+    if _CLI_TRACE_RE.search(message) or _EXCEPTION_NOISE_RE.search(message):
         _LOGGER.warning(
             "big-screen capability failure (source=%s): %s",
             source or "unknown",
             message,
         )
+        if _TIMEOUT_HINT_RE.search(message):
+            return f"数据源连接超时（{source or '未知来源'}），请稍后刷新重试。"
         return f"数据源暂不可用（{source or '未知来源'}），" "请检查该数据源的配置或服务状态。"
     return message
 

@@ -138,6 +138,9 @@ def _fetch_weather(query: str) -> dict[str, Any]:
     ) or (location or "本地")
     desc = _weather_desc(current)
     temp = int(float(current.get("temp_C") or 0))
+    feels = int(float(current.get("FeelsLikeC") or 0))
+    humidity = int(float(current.get("humidity") or 0))
+    wind_kmh = int(float(current.get("windspeedKmph") or 0))
 
     day_rows: list[dict[str, Any]] = []
     hourly_series: list[dict[str, Any]] = []
@@ -171,15 +174,23 @@ def _fetch_weather(query: str) -> dict[str, Any]:
         "sourceStatus": "live",
         "value": temp,
         "unit": "°C",
-        "trend": f"{area_name} 当前 {desc}，体感 "
-        f"{int(float(current.get('FeelsLikeC') or 0))}°C",
+        "trend": f"{area_name} 当前 {desc}，体感 {feels}°C",
         "metrics": {
             "气温": f"{temp}°C",
             "天气": desc,
-            "体感": f"{int(float(current.get('FeelsLikeC') or 0))}°C",
-            "湿度": f"{int(float(current.get('humidity') or 0))}%",
-            "风速": f"{int(float(current.get('windspeedKmph') or 0))} km/h",
+            "体感": f"{feels}°C",
+            "湿度": f"{humidity}%",
+            "风速": f"{wind_kmh} km/h",
             "地点": area_name,
+            # English aliases: LLM blueprints habitually bind
+            # temperature/condition/...; resolve them to the same
+            # real values (bare numbers so atoms can add units)
+            "temperature": temp,
+            "condition": desc,
+            "feelsLike": feels,
+            "humidity": humidity,
+            "wind": f"{wind_kmh} km/h",
+            "location": area_name,
         },
         "columns": [
             {"key": "date", "label": "日期"},
@@ -252,7 +263,11 @@ def _fetch_fx(query: str) -> dict[str, Any]:
         "unit": f"{base}/{quote_code}",
         "trend": "汇率更新于 "
         + _clean_text(payload.get("time_last_update_utc"), max_length=40),
-        "metrics": {f"{base}/{quote_code}": round(float(rate), 4)},
+        "metrics": {
+            f"{base}/{quote_code}": round(float(rate), 4),
+            # English alias for LLM blueprint binds
+            "rate": round(float(rate), 4),
+        },
         "columns": [
             {"key": "pair", "label": "货币对"},
             {"key": "rate", "label": "汇率"},
