@@ -12,6 +12,10 @@
 
 ## 0. 离线一键部署（推荐）
 
+> ⚠️ 本目录脚本只适用于 **docker run 直跑**。生产环境用 k3s/k8s + Helm
+> 部署时，请改用 `deploy-all/helm/deploy-offline.sh`（k3s 的 containerd
+> 无法通过 `docker load` 导入镜像）。
+
 把 `deploy-offline.sh`（本目录）与两个镜像 tar 放在离线服务器的同一目录，执行：
 
 ```bash

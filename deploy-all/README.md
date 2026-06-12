@@ -64,6 +64,33 @@ helm upgrade cnos-inoe-agent ./deploy-all/helm/cnos-inoe-agent
 helm uninstall cnos-inoe-agent
 ```
 
+## 离线一键部署 / 升级（k3s / k8s）
+
+把以下文件放在离线服务器同一目录后执行 `deploy-offline.sh`
+（位于 `deploy-all/helm/`）：
+
+- `qwenpaw-amd64.tar`、`digital-workforce-portal-amd64.tar`（`docker save` 产物）
+- chart 包 `cnos-inoe-agent-<版本>.tgz`（`helm package` 产物）
+- `deploy-offline.sh`
+
+```bash
+chmod +x deploy-offline.sh
+NAMESPACE=cnos-iomp ./deploy-offline.sh            # 导入镜像 + helm upgrade + 滚动重启
+NAMESPACE=cnos-iomp EXTRA_VALUES=my-values.yaml ./deploy-offline.sh
+./deploy-offline.sh --skip-import                  # 镜像已导入，只升级/重启
+```
+
+脚本要点（也是手工操作时的三个坑）：
+
+1. **k3s 用 containerd，不是 docker**：导入镜像必须用
+   `k3s ctr images import <tar>`（脚本自动探测 k3s ctr / ctr / docker）。
+   对 k3s 执行 `docker load` 看似成功，实际集群根本看不到该镜像。
+2. **镜像 tag 不变时（如 `qwenpaw:latest`），重新导入不会让 Pod 换镜像**：
+   必须 `kubectl rollout restart deployment/qwenpaw deployment/digital-workforce-portal`。
+3. **PVC 里的旧技能代码不会被新镜像覆盖**（entrypoint 仅在 working 目录为空时
+   从镜像初始化）：升级涉及技能代码时，按 `SYNC_GUIDE.md` 同步 PVC 内文件。
+4. 多节点集群：镜像须在每个可调度节点导入，或使用内网镜像仓库。
+
 ## 自定义配置
 
 ```bash
