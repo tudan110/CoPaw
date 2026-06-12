@@ -5,7 +5,6 @@ from pathlib import Path
 
 import pytest
 
-
 KNOWLEDGE_BASE_SKILL_ROOT = (
     Path(__file__).resolve().parents[4]
     / "deploy-all"
@@ -41,7 +40,8 @@ def _minimal_pptx(slides: list[list[str]]) -> bytes:
         )
         for index, paragraphs in enumerate(slides, start=1):
             body = "".join(
-                f"<a:p><a:r><a:t>{text}</a:t></a:r></a:p>" for text in paragraphs
+                f"<a:p><a:r><a:t>{text}</a:t></a:r></a:p>"
+                for text in paragraphs
             )
             archive.writestr(
                 f"ppt/slides/slide{index}.xml",
@@ -85,7 +85,7 @@ def test_legacy_doc_piece_table_extracts_word_text_not_binary_payload():
     text_bytes = text.encode("utf-16le")
     text_offset = 0x200
     word_document = bytearray(text_offset + len(text_bytes))
-    word_document[text_offset:text_offset + len(text_bytes)] = text_bytes
+    word_document[text_offset : text_offset + len(text_bytes)] = text_bytes
 
     cp_end = len(text)
     pcdt = (
@@ -97,7 +97,9 @@ def test_legacy_doc_piece_table_extracts_word_text_not_binary_payload():
     )
     clx = b"\x02" + len(pcdt).to_bytes(4, "little") + pcdt
 
-    extracted = ingestion._extract_doc_text_from_streams(bytes(word_document), clx)
+    extracted = ingestion._extract_doc_text_from_streams(
+        bytes(word_document), clx
+    )
 
     assert "知识库DOC解析" in extracted
     assert "避免二进制乱码" in extracted
@@ -135,3 +137,93 @@ def test_doc_upload_is_classified_as_doc_source_type():
     )
 
     assert source_type == "doc"
+
+
+# ---------- spreadsheets (xlsx / xls / csv) ----------
+
+
+def _minimal_xlsx(
+    rows: list[list[str]],
+    sheet_name: str = "告警清单",
+) -> bytes:
+    openpyxl = pytest.importorskip("openpyxl")
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = sheet_name
+    for row in rows:
+        ws.append(row)
+    buffer = io.BytesIO()
+    wb.save(buffer)
+    return buffer.getvalue()
+
+
+def test_xlsx_upload_extracts_rows_not_zip_payload():
+    payload = _minimal_xlsx(
+        [
+            ["网元名称", "告警级别", "处理人"],
+            ["NE-京1", "重要", "张三"],
+        ],
+    )
+
+    extracted = ingestion.extract("巡检告警.xlsx", payload)
+
+    assert extracted.source_format == "markdown"
+    assert "工作表：告警清单" in extracted.content
+    assert "网元名称 | 告警级别 | 处理人" in extracted.content
+    assert "NE-京1 | 重要 | 张三" in extracted.content
+    assert "PK" not in extracted.content
+
+
+def test_xls_upload_extracts_rows():
+    xlwt = pytest.importorskip("xlwt")
+    pytest.importorskip("xlrd")
+    book = xlwt.Workbook()
+    sheet = book.add_sheet("资源表")
+    sheet.write(0, 0, "机房")
+    sheet.write(0, 1, "机柜数")
+    sheet.write(1, 0, "上海2号")
+    sheet.write(1, 1, 42)
+    buffer = io.BytesIO()
+    book.save(buffer)
+
+    extracted = ingestion.extract("资源.xls", buffer.getvalue())
+
+    assert "机房 | 机柜数" in extracted.content
+    assert "上海2号 | 42" in extracted.content
+
+
+def test_xls_without_xlrd_raises_clear_error(monkeypatch):
+    monkeypatch.setitem(sys.modules, "xlrd", None)
+
+    with pytest.raises(ingestion.IngestionError, match="xlrd"):
+        ingestion.extract("资源.xls", b"\xd0\xcf\x11\xe0fake")
+
+
+def test_csv_gbk_encoded_chinese_is_not_garbled():
+    raw = "设备,状态\n核心交换机-北京,在线\n".encode("gbk")
+
+    extracted = ingestion.extract("设备清单.csv", raw)
+
+    assert "设备 | 状态" in extracted.content
+    assert "核心交换机-北京 | 在线" in extracted.content
+    assert "�" not in extracted.content
+
+
+def test_unknown_extension_binary_is_rejected_not_garbled():
+    fake_zip = b"PK\x03\x04" + b"\x00" * 64
+
+    with pytest.raises(ingestion.IngestionError, match="扩展名"):
+        ingestion.extract("misnamed.dat", fake_zip)
+
+
+def test_unknown_extension_gbk_text_still_decodes():
+    raw = "纯文本知识条目：网络割接步骤".encode("gbk")
+
+    extracted = ingestion.extract("notes.log", raw)
+
+    assert "网络割接步骤" in extracted.content
+
+
+def test_spreadsheets_classified_as_spreadsheet_source_type():
+    for name in ("a.xlsx", "b.xls", "c.csv", "d.tsv", "e.xlsm"):
+        assert knowledge_base._detect_source_type(name, None) == "spreadsheet"

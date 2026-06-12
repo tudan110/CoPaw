@@ -341,6 +341,17 @@ export function unarchiveKnowledgeSources(sourceRecordIds: number[]) {
   );
 }
 
+export function deleteKnowledgeSources(sourceRecordIds: number[], reason = "portal delete") {
+  return requestPortalApi<Record<string, unknown>>(
+    "/knowledge-base/sources/delete",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ source_record_ids: sourceRecordIds, reason }),
+    },
+  );
+}
+
 export function toggleKnowledgeEmbedding(enabled: boolean) {
   return requestPortalApi<KnowledgeBaseHealth["embedding"] & { changed?: boolean; reject_reason?: string | null }>(
     "/knowledge-base/embedding/toggle",

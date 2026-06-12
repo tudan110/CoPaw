@@ -62,6 +62,9 @@ dependencies = [
     "python-docx>=1.1.2",
     "pytesseract>=0.3.13",
     "openpyxl>=3.1.2",
+    # Legacy .xls parsing (knowledge base / resource import). xlrd 2.x is
+    # .xls-only by design; .xlsx goes through openpyxl above.
+    "xlrd>=2.0.1",
 ]
 
 [tool.setuptools.dynamic]

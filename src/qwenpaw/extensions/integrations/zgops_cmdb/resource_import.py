@@ -71,7 +71,11 @@ DEFAULT_MODEL_TEMPLATES = [
     {"name": "PostgreSQL", "alias": "PostgreSQL", "unique_key": "db_instance"},
     {"name": "redis", "alias": "Redis", "unique_key": "middleware_name"},
     {"name": "Kafka", "alias": "Kafka", "unique_key": "middleware_name"},
-    {"name": "elasticsearch", "alias": "elasticsearch", "unique_key": "middleware_name"},
+    {
+        "name": "elasticsearch",
+        "alias": "elasticsearch",
+        "unique_key": "middleware_name",
+    },
     {"name": "nginx", "alias": "Nginx", "unique_key": "middleware_name"},
     {"name": "apache", "alias": "Apache", "unique_key": "middleware_name"},
     {"name": "docker", "alias": "docker", "unique_key": "name"},
@@ -87,17 +91,86 @@ DEFAULT_ATTRIBUTE_FIELDS = {
     "Department": ["name"],
     "product": ["name"],
     "project": ["name"],
-    "PhysicalMachine": ["name", "asset_code", "private_ip", "status", "vendor", "model", "os_version"],
+    "PhysicalMachine": [
+        "name",
+        "asset_code",
+        "private_ip",
+        "status",
+        "vendor",
+        "model",
+        "os_version",
+    ],
     "vserver": ["name", "asset_code", "private_ip", "status", "os_version"],
-    "networkdevice": ["name", "asset_code", "private_ip", "status", "vendor", "model", "upstream_resource"],
-    "database": ["db_instance", "db_ip", "db_port", "db_version", "alarm_status", "platform"],
-    "mysql": ["db_instance", "manage_ip", "db_port", "db_version", "AssociatedPhyMachine", "alarm_status", "platform"],
-    "PostgreSQL": ["db_instance", "manage_ip", "db_port", "db_version", "deploy_target", "alarm_status", "platform"],
-    "redis": ["middleware_name", "middleware_ip", "middleware_port", "alarm_status", "platform"],
-    "Kafka": ["middleware_name", "middleware_ip", "middleware_port", "alarm_status", "platform"],
-    "elasticsearch": ["middleware_name", "middleware_ip", "middleware_port", "alarm_status", "platform"],
-    "nginx": ["middleware_name", "middleware_ip", "middleware_port", "alarm_status", "platform"],
-    "apache": ["middleware_name", "middleware_ip", "middleware_port", "alarm_status", "platform"],
+    "networkdevice": [
+        "name",
+        "asset_code",
+        "private_ip",
+        "status",
+        "vendor",
+        "model",
+        "upstream_resource",
+    ],
+    "database": [
+        "db_instance",
+        "db_ip",
+        "db_port",
+        "db_version",
+        "alarm_status",
+        "platform",
+    ],
+    "mysql": [
+        "db_instance",
+        "manage_ip",
+        "db_port",
+        "db_version",
+        "AssociatedPhyMachine",
+        "alarm_status",
+        "platform",
+    ],
+    "PostgreSQL": [
+        "db_instance",
+        "manage_ip",
+        "db_port",
+        "db_version",
+        "deploy_target",
+        "alarm_status",
+        "platform",
+    ],
+    "redis": [
+        "middleware_name",
+        "middleware_ip",
+        "middleware_port",
+        "alarm_status",
+        "platform",
+    ],
+    "Kafka": [
+        "middleware_name",
+        "middleware_ip",
+        "middleware_port",
+        "alarm_status",
+        "platform",
+    ],
+    "elasticsearch": [
+        "middleware_name",
+        "middleware_ip",
+        "middleware_port",
+        "alarm_status",
+        "platform",
+    ],
+    "nginx": [
+        "middleware_name",
+        "middleware_ip",
+        "middleware_port",
+        "alarm_status",
+        "platform",
+    ],
+    "apache": [
+        "middleware_name",
+        "middleware_ip",
+        "middleware_port",
+        "alarm_status",
+        "platform",
+    ],
     "docker": ["name", "private_ip", "status", "version", "deploy_target"],
     "kubernetes": ["name", "private_ip", "status", "version", "deploy_target"],
     "dcim_idc": ["name"],
@@ -170,7 +243,19 @@ FIELD_ALIASES = {
         "host name",
         "server name",
     ],
-    "ci_type": ["ci_type", "type", "资源类型", "资源分类", "设备类型", "实例类型", "设备大类", "组件类别", "模型", "类型", "_type"],
+    "ci_type": [
+        "ci_type",
+        "type",
+        "资源类型",
+        "资源分类",
+        "设备类型",
+        "实例类型",
+        "设备大类",
+        "组件类别",
+        "模型",
+        "类型",
+        "_type",
+    ],
     "private_ip": [
         "private_ip",
         "ip",
@@ -186,15 +271,39 @@ FIELD_ALIASES = {
         "middleware_ip",
     ],
     "public_ip": ["public_ip", "公网ip", "外网ip"],
-    "status": ["status", "状态", "运行状态", "设备状态", "上线情况", "当前可用性", "状态描述"],
+    "status": [
+        "status",
+        "状态",
+        "运行状态",
+        "设备状态",
+        "上线情况",
+        "当前可用性",
+        "状态描述",
+    ],
     "department": ["department", "部门", "bu", "业务单元"],
     "product": ["product", "产品", "产品线"],
-    "project": ["project", "应用", "项目", "系统", "业务系统", "业务归属", "所属应用"],
+    "project": [
+        "project",
+        "应用",
+        "项目",
+        "系统",
+        "业务系统",
+        "业务归属",
+        "所属应用",
+    ],
     "idc": ["idc", "机房", "数据中心", "idc机房"],
     "server_room": ["server_room", "机房分区", "机房区域", "server room"],
     "rack": ["rack", "机柜", "机柜位置"],
     "subnet": ["subnet", "网段", "子网", "cidr"],
-    "host_name": ["host_name", "宿主机", "部署主机", "主机", "所属主机", "宿主机/集群", "承载物理机"],
+    "host_name": [
+        "host_name",
+        "宿主机",
+        "部署主机",
+        "主机",
+        "所属主机",
+        "宿主机/集群",
+        "承载物理机",
+    ],
     "deploy_target": [
         "deploy_target",
         "部署目标",
@@ -206,19 +315,42 @@ FIELD_ALIASES = {
         "AssociatedVM",
         "AssociatedPhyMachine",
     ],
-    "upstream_resource": ["upstream_resource", "上联核心", "上级设备", "上联设备"],
+    "upstream_resource": [
+        "upstream_resource",
+        "上联核心",
+        "上级设备",
+        "上联设备",
+    ],
     "os_version": ["os_version", "操作系统", "操作系统版本", "os", "系统版本"],
     "vendor": ["vendor", "厂商", "品牌", "厂商品牌"],
     "model": ["model", "型号", "机型", "规格型号", "服务器型号", "设备型号"],
     "version": ["version", "版本", "版本号", "数据库版本", "设备软件版本"],
-    "service_port": ["service_port", "端口", "服务端口", "db_port", "middleware_port"],
+    "service_port": [
+        "service_port",
+        "端口",
+        "服务端口",
+        "db_port",
+        "middleware_port",
+    ],
     "monitor_status": ["monitor_status", "监控接入", "监控状态"],
     "owner": ["owner", "负责人", "维护团队", "owner", "运维负责人"],
     "environment": ["environment", "环境", "env", "运行环境"],
     "description": ["description", "描述", "备注", "说明"],
-    "dev_no": ["dev_no", "设备编码", "设备编号", "网络设备编码", "网络设备编号"],
+    "dev_no": [
+        "dev_no",
+        "设备编码",
+        "设备编号",
+        "网络设备编码",
+        "网络设备编号",
+    ],
     "dev_name": ["dev_name", "设备名称", "网络设备名称", "节点名称"],
-    "manage_ip": ["manage_ip", "管理ip", "管理地址", "管理ip地址", "设备管理ip"],
+    "manage_ip": [
+        "manage_ip",
+        "管理ip",
+        "管理地址",
+        "管理ip地址",
+        "设备管理ip",
+    ],
     "dev_model": ["dev_model", "设备型号", "设备规格", "网络设备型号"],
     "dev_class": ["dev_class", "设备大类", "网络设备类型", "设备分类"],
     "alarm_status": [
@@ -228,9 +360,21 @@ FIELD_ALIASES = {
         "高级状态元数据",
         "状态编码",
     ],
-    "dev_software_version": ["dev_software_version", "设备软件版本", "软件版本", "软件版本号"],
+    "dev_software_version": [
+        "dev_software_version",
+        "设备软件版本",
+        "软件版本",
+        "软件版本号",
+    ],
     "dev_sn": ["dev_sn", "设备序列号", "序列号", "序列号sn", "设备sn"],
-    "property_no": ["property_no", "资产编号", "资产标识", "资产编码", "固定资产编号", "固定资产编码"],
+    "property_no": [
+        "property_no",
+        "资产编号",
+        "资产标识",
+        "资产编码",
+        "固定资产编号",
+        "固定资产编码",
+    ],
     "city": ["city", "地市", "城市"],
     "county": ["county", "区县", "区"],
     "data_center": ["data_center", "所属数据中心"],
@@ -403,7 +547,15 @@ RELATION_FIELD_ALIASES = {
         "target",
         "downstream_value",
     ],
-    "relation_type": ["relation_type", "关系", "关系类型", "关联类型", "连接类型", "link_type", "relation"],
+    "relation_type": [
+        "relation_type",
+        "关系",
+        "关系类型",
+        "关联类型",
+        "连接类型",
+        "link_type",
+        "relation",
+    ],
 }
 
 RELATION_TYPE_ALIASES = {
@@ -416,19 +568,82 @@ RELATION_TYPE_ALIASES = {
 CI_TYPE_ALIASES = {
     "Department": ["department", "部门", "bu", "业务单元"],
     "product": ["product", "产品", "产品线"],
-    "project": ["project", "应用", "项目", "业务系统", "应用系统", "系统应用", "业务应用", "application", "app", "system"],
-    "PhysicalMachine": ["physicalmachine", "物理机", "服务器", "server", "裸机"],
-    "vserver": ["vserver", "虚拟机", "vm", "虚机", "云主机", "云服务器", "ecs"],
-    "networkdevice": ["networkdevice", "交换机", "路由器", "防火墙", "网络设备", "switch", "router", "firewall"],
-    "database": ["database", "数据库", "数据库服务", "通用数据库", "通用数据库资源", "时序数据库", "victoriametrics"],
+    "project": [
+        "project",
+        "应用",
+        "项目",
+        "业务系统",
+        "应用系统",
+        "系统应用",
+        "业务应用",
+        "application",
+        "app",
+        "system",
+    ],
+    "PhysicalMachine": [
+        "physicalmachine",
+        "物理机",
+        "服务器",
+        "server",
+        "裸机",
+    ],
+    "vserver": [
+        "vserver",
+        "虚拟机",
+        "vm",
+        "虚机",
+        "云主机",
+        "云服务器",
+        "ecs",
+    ],
+    "networkdevice": [
+        "networkdevice",
+        "交换机",
+        "路由器",
+        "防火墙",
+        "网络设备",
+        "switch",
+        "router",
+        "firewall",
+    ],
+    "database": [
+        "database",
+        "数据库",
+        "数据库服务",
+        "通用数据库",
+        "通用数据库资源",
+        "时序数据库",
+        "victoriametrics",
+    ],
     "mysql": ["mysql", "my sql", "mysql实例", "mysql资源"],
-    "PostgreSQL": ["postgresql", "postgres", "pgsql", "pg", "pg实例", "pg资源", "postgresql实例"],
+    "PostgreSQL": [
+        "postgresql",
+        "postgres",
+        "pgsql",
+        "pg",
+        "pg实例",
+        "pg资源",
+        "postgresql实例",
+    ],
     "redis": ["redis", "缓存", "缓存服务", "缓存组件", "redis服务"],
     "Kafka": ["kafka", "消息队列", "消息队列组件", "mq", "broker"],
-    "elasticsearch": ["elasticsearch", "es", "搜索引擎", "搜索组件", "检索引擎"],
+    "elasticsearch": [
+        "elasticsearch",
+        "es",
+        "搜索引擎",
+        "搜索组件",
+        "检索引擎",
+    ],
     "nginx": ["nginx"],
     "apache": ["apache"],
-    "docker": ["docker", "容器", "容器实例", "容器实例清单", "container", "containerinstance"],
+    "docker": [
+        "docker",
+        "容器",
+        "容器实例",
+        "容器实例清单",
+        "container",
+        "containerinstance",
+    ],
     "kubernetes": ["kubernetes", "k8s"],
     "dcim_idc": ["dcim_idc", "数据中心", "idc", "机房"],
     "dcim_server_room": ["dcim_server_room", "机房分区", "机房区域"],
@@ -491,14 +706,39 @@ SOFTWARE_RESOURCE_TYPES = {
 SEMANTIC_MODEL_RULES = [
     {
         "name": "PhysicalMachine",
-        "keywords": ["physical", "baremetal", "物理机", "裸机", "实体机", "服务器", "宿主机"],
-        "field_keywords": ["rack", "cabinet", "u_count", "u_start", "vendor", "model", "property_no"],
+        "keywords": [
+            "physical",
+            "baremetal",
+            "物理机",
+            "裸机",
+            "实体机",
+            "服务器",
+            "宿主机",
+        ],
+        "field_keywords": [
+            "rack",
+            "cabinet",
+            "u_count",
+            "u_start",
+            "vendor",
+            "model",
+            "property_no",
+        ],
         "preferred_models": ["PhysicalMachine"],
         "specific": False,
     },
     {
         "name": "vserver",
-        "keywords": ["virtual", "vm", "vserver", "虚拟机", "虚机", "云主机", "云服务器", "ecs"],
+        "keywords": [
+            "virtual",
+            "vm",
+            "vserver",
+            "虚拟机",
+            "虚机",
+            "云主机",
+            "云服务器",
+            "ecs",
+        ],
         "field_keywords": ["host_ip", "host_name", "ssh_port"],
         "preferred_models": ["vserver"],
         "specific": False,
@@ -546,7 +786,13 @@ SEMANTIC_MODEL_RULES = [
             "victoriametrics",
             "tsdb",
         ],
-        "field_keywords": ["db_instance", "db_port", "db_ip", "db_name", "db_type"],
+        "field_keywords": [
+            "db_instance",
+            "db_port",
+            "db_ip",
+            "db_name",
+            "db_type",
+        ],
         "preferred_models": ["database"],
         "specific": False,
     },
@@ -559,39 +805,100 @@ SEMANTIC_MODEL_RULES = [
     },
     {
         "name": "PostgreSQL",
-        "keywords": ["postgres", "postgresql", "pgsql", "pg实例", "pg数据库", "postgres实例", "postgres库", "pg"],
+        "keywords": [
+            "postgres",
+            "postgresql",
+            "pgsql",
+            "pg实例",
+            "pg数据库",
+            "postgres实例",
+            "postgres库",
+            "pg",
+        ],
         "port_values": ["5432"],
         "preferred_models": ["PostgreSQL"],
         "specific": True,
     },
     {
         "name": "redis",
-        "keywords": ["redis", "cache", "缓存", "缓存服务", "keyvalue", "key-value", "kv"],
-        "field_keywords": ["middleware_name", "middleware_port", "cache_port", "redis_port"],
+        "keywords": [
+            "redis",
+            "cache",
+            "缓存",
+            "缓存服务",
+            "keyvalue",
+            "key-value",
+            "kv",
+        ],
+        "field_keywords": [
+            "middleware_name",
+            "middleware_port",
+            "cache_port",
+            "redis_port",
+        ],
         "port_values": ["6379"],
         "preferred_models": ["redis"],
         "specific": True,
     },
     {
         "name": "Kafka",
-        "keywords": ["kafka", "mq", "messagequeue", "消息", "消息队列", "topic", "stream", "broker"],
-        "field_keywords": ["middleware_name", "middleware_port", "topic", "broker"],
+        "keywords": [
+            "kafka",
+            "mq",
+            "messagequeue",
+            "消息",
+            "消息队列",
+            "topic",
+            "stream",
+            "broker",
+        ],
+        "field_keywords": [
+            "middleware_name",
+            "middleware_port",
+            "topic",
+            "broker",
+        ],
         "port_values": ["9092"],
         "preferred_models": ["Kafka"],
         "specific": True,
     },
     {
         "name": "elasticsearch",
-        "keywords": ["elasticsearch", "opensearch", "solr", "search", "搜索", "检索", "搜索引擎", "索引"],
-        "field_keywords": ["middleware_name", "middleware_port", "index", "search_cluster"],
+        "keywords": [
+            "elasticsearch",
+            "opensearch",
+            "solr",
+            "search",
+            "搜索",
+            "检索",
+            "搜索引擎",
+            "索引",
+        ],
+        "field_keywords": [
+            "middleware_name",
+            "middleware_port",
+            "index",
+            "search_cluster",
+        ],
         "port_values": ["9200", "9300"],
         "preferred_models": ["elasticsearch"],
         "specific": True,
     },
     {
         "name": "nginx",
-        "keywords": ["nginx", "gateway", "proxy", "ingress", "网关", "反向代理"],
-        "field_keywords": ["middleware_name", "middleware_port", "upstream_resource"],
+        "keywords": [
+            "nginx",
+            "gateway",
+            "proxy",
+            "ingress",
+            "网关",
+            "反向代理",
+        ],
+        "field_keywords": [
+            "middleware_name",
+            "middleware_port",
+            "upstream_resource",
+        ],
         "port_values": ["80", "443"],
         "preferred_models": ["nginx"],
         "specific": True,
@@ -606,15 +913,42 @@ SEMANTIC_MODEL_RULES = [
     },
     {
         "name": "docker",
-        "keywords": ["docker", "container", "容器", "容器实例", "containerinstance", "镜像", "image"],
-        "field_keywords": ["container_id", "image", "container_name", "container_image"],
+        "keywords": [
+            "docker",
+            "container",
+            "容器",
+            "容器实例",
+            "containerinstance",
+            "镜像",
+            "image",
+        ],
+        "field_keywords": [
+            "container_id",
+            "image",
+            "container_name",
+            "container_image",
+        ],
         "preferred_models": ["docker"],
         "specific": True,
     },
     {
         "name": "kubernetes",
-        "keywords": ["kubernetes", "k8s", "cluster", "namespace", "pod", "集群", "容器平台"],
-        "field_keywords": ["namespace", "pod", "cluster", "node", "service_name"],
+        "keywords": [
+            "kubernetes",
+            "k8s",
+            "cluster",
+            "namespace",
+            "pod",
+            "集群",
+            "容器平台",
+        ],
+        "field_keywords": [
+            "namespace",
+            "pod",
+            "cluster",
+            "node",
+            "service_name",
+        ],
         "preferred_models": ["kubernetes"],
         "specific": True,
     },
@@ -663,7 +997,15 @@ EXCLUDED_SHEET_KEYWORDS = (
     "field_dictionary",
     "field dictionary",
 )
-RELATION_SHEET_KEYWORDS = ("relation", "relations", "关系", "拓扑", "链路", "依赖", "mapping")
+RELATION_SHEET_KEYWORDS = (
+    "relation",
+    "relations",
+    "关系",
+    "拓扑",
+    "链路",
+    "依赖",
+    "mapping",
+)
 RESOURCE_IMPORT_LLM_STEP_TIMEOUT_SECONDS = float(
     os.environ.get("RESOURCE_IMPORT_LLM_STEP_TIMEOUT", "45"),
 )
@@ -689,7 +1031,11 @@ RESOURCE_IMPORT_LLM_SHEET_PARALLELISM = max(
 )
 RESOURCE_IMPORT_LLM_BLOCKING_RECOVERY_RETRY_COUNT = max(
     1,
-    int(os.environ.get("RESOURCE_IMPORT_LLM_BLOCKING_RECOVERY_RETRY_COUNT", "3")),
+    int(
+        os.environ.get(
+            "RESOURCE_IMPORT_LLM_BLOCKING_RECOVERY_RETRY_COUNT", "3"
+        )
+    ),
 )
 RESOURCE_IMPORT_PRECHECK_LIMIT = int(
     os.environ.get("RESOURCE_IMPORT_PRECHECK_LIMIT", "12"),
@@ -782,14 +1128,28 @@ def _llm_retry_sleep_seconds(attempt_index: int) -> float:
     return min(base_delay * (2 ** (attempt_index - 1)), 12.0)
 
 
-def _llm_retry_sleep_seconds_for_error(exc: Exception | None, attempt_index: int) -> float:
+def _llm_retry_sleep_seconds_for_error(
+    exc: Exception | None, attempt_index: int
+) -> float:
     if attempt_index <= 0:
         return 0.0
     text = _clean_text(exc).lower()
-    if any(token in text for token in ("too_many_requests", "rate limit", "429", "700010", "并发已达上限")):
+    if any(
+        token in text
+        for token in (
+            "too_many_requests",
+            "rate limit",
+            "429",
+            "700010",
+            "并发已达上限",
+        )
+    ):
         base_delay = max(RESOURCE_IMPORT_LLM_RETRY_BACKOFF_SECONDS, 3.0)
         return min(base_delay * (2 ** (attempt_index - 1)), 24.0)
-    if any(token in text for token in ("timeout", "timed out", "gateway timeout", "504")):
+    if any(
+        token in text
+        for token in ("timeout", "timed out", "gateway timeout", "504")
+    ):
         base_delay = max(RESOURCE_IMPORT_LLM_RETRY_BACKOFF_SECONDS, 2.0)
         return min(base_delay * (2 ** (attempt_index - 1)), 18.0)
     return _llm_retry_sleep_seconds(attempt_index)
@@ -847,14 +1207,15 @@ def _mapping_mode_to_analysis_issue(
     return None
 
 
-def _is_retryable_blocking_mapping_mode(mapping_mode: str, sheet_kind: str) -> bool:
+def _is_retryable_blocking_mapping_mode(
+    mapping_mode: str, sheet_kind: str
+) -> bool:
     if _clean_text(sheet_kind) != "asset":
         return False
     normalized_mode = _clean_text(mapping_mode)
-    return (
-        normalized_mode.startswith("规则映射（LLM不可用")
-        or normalized_mode.startswith("规则映射（LLM超时")
-    )
+    return normalized_mode.startswith(
+        "规则映射（LLM不可用"
+    ) or normalized_mode.startswith("规则映射（LLM超时")
 
 
 def _validate_preview_analysis_for_import(preview: dict[str, Any]) -> None:
@@ -865,7 +1226,9 @@ def _validate_preview_analysis_for_import(preview: dict[str, Any]) -> None:
     blocking_messages = [
         _clean_text(item.get("message"))
         for item in analysis_issues
-        if isinstance(item, dict) and _clean_text(item.get("severity")) == "blocking" and _clean_text(item.get("message"))
+        if isinstance(item, dict)
+        and _clean_text(item.get("severity")) == "blocking"
+        and _clean_text(item.get("message"))
     ]
     detail = "；".join(blocking_messages[:3])
     if not detail:
@@ -881,7 +1244,9 @@ def _validate_preview_analysis_for_preview(preview: dict[str, Any]) -> None:
     blocking_messages = [
         _clean_text(item.get("message"))
         for item in analysis_issues
-        if isinstance(item, dict) and _clean_text(item.get("severity")) == "blocking" and _clean_text(item.get("message"))
+        if isinstance(item, dict)
+        and _clean_text(item.get("severity")) == "blocking"
+        and _clean_text(item.get("message"))
     ]
     detail = "；".join(blocking_messages[:3])
     if not detail:
@@ -930,7 +1295,9 @@ def _semantic_field_candidates(header: str) -> list[dict[str, str]]:
     normalized = _normalize_header(header)
     candidates: dict[str, dict[str, str]] = {}
 
-    def register(target: str, confidence: str, *, source: str = "semantic_rule") -> None:
+    def register(
+        target: str, confidence: str, *, source: str = "semantic_rule"
+    ) -> None:
         if not target or target == "unknown":
             return
         current = candidates.get(target)
@@ -939,48 +1306,141 @@ def _semantic_field_candidates(header: str) -> list[dict[str, str]]:
             "confidence": confidence,
             "source": source,
         }
-        if current is None or _confidence_rank(confidence) > _confidence_rank(str(current.get("confidence", ""))):
+        if current is None or _confidence_rank(confidence) > _confidence_rank(
+            str(current.get("confidence", ""))
+        ):
             candidates[target] = payload
 
-    if any(token in raw for token in ("资源主键", "业务主键", "实例主键", "设备主键", "主键", "唯一标识", "唯一键", "资源编码", "资源编号")):
+    if any(
+        token in raw
+        for token in (
+            "资源主键",
+            "业务主键",
+            "实例主键",
+            "设备主键",
+            "主键",
+            "唯一标识",
+            "唯一键",
+            "资源编码",
+            "资源编号",
+        )
+    ):
         register("asset_code", "high")
-    elif any(token in raw for token in ("资产标识", "资产编号", "资产编码", "固定资产编号", "固定资产编码")):
+    elif any(
+        token in raw
+        for token in (
+            "资产标识",
+            "资产编号",
+            "资产编码",
+            "固定资产编号",
+            "固定资产编码",
+        )
+    ):
         register("property_no", "high")
 
-    if any(token in raw for token in ("组件实例名", "数据库实例名", "服务实例名", "应用实例名", "实例名称", "实例名", "应用名称", "设备名称", "主机名称", "主机名", "节点名称", "节点名")):
+    if any(
+        token in raw
+        for token in (
+            "组件实例名",
+            "数据库实例名",
+            "服务实例名",
+            "应用实例名",
+            "实例名称",
+            "实例名",
+            "应用名称",
+            "设备名称",
+            "主机名称",
+            "主机名",
+            "节点名称",
+            "节点名",
+        )
+    ):
         register("name", "high")
-    elif (
-        any(token in raw for token in ("名称", "名字"))
-        and any(token in raw for token in ("组件", "数据库", "服务", "应用", "设备", "实例", "主机", "节点"))
+    elif any(token in raw for token in ("名称", "名字")) and any(
+        token in raw
+        for token in (
+            "组件",
+            "数据库",
+            "服务",
+            "应用",
+            "设备",
+            "实例",
+            "主机",
+            "节点",
+        )
     ):
         register("name", "high")
     elif normalized.endswith("name"):
         register("name", "medium")
 
-    if any(token in raw for token in ("管理地址", "管理IP", "管理ip", "设备管理IP", "设备管理ip", "管理地址IP", "管理地址ip")):
+    if any(
+        token in raw
+        for token in (
+            "管理地址",
+            "管理IP",
+            "管理ip",
+            "设备管理IP",
+            "设备管理ip",
+            "管理地址IP",
+            "管理地址ip",
+        )
+    ):
         register("manage_ip", "high")
 
-    if any(token in raw for token in ("内网地址", "内网IP", "内网ip", "组件地址", "数据库地址", "实例地址", "服务地址")):
+    if any(
+        token in raw
+        for token in (
+            "内网地址",
+            "内网IP",
+            "内网ip",
+            "组件地址",
+            "数据库地址",
+            "实例地址",
+            "服务地址",
+        )
+    ):
         register("private_ip", "high")
-    elif (
-        ("地址" in raw or "ip" in lowered)
-        and any(token in raw for token in ("组件", "数据库", "实例", "服务", "内网"))
+    elif ("地址" in raw or "ip" in lowered) and any(
+        token in raw for token in ("组件", "数据库", "实例", "服务", "内网")
     ):
         register("private_ip", "medium")
 
-    if any(token in raw for token in ("服务端口", "组件端口", "数据库端口", "实例端口", "访问端口")):
+    if any(
+        token in raw
+        for token in (
+            "服务端口",
+            "组件端口",
+            "数据库端口",
+            "实例端口",
+            "访问端口",
+        )
+    ):
         register("service_port", "high")
-    elif "端口" in raw and any(token in raw for token in ("监听", "接入", "暴露", "服务", "组件", "数据库", "实例")):
+    elif "端口" in raw and any(
+        token in raw for token in ("监听", "接入", "暴露", "服务", "组件", "数据库", "实例")
+    ):
         register("service_port", "high")
     elif "端口" in raw or normalized.endswith("port"):
         register("service_port", "medium")
 
-    if any(token in raw for token in ("版本信息", "版本号", "软件版本", "数据库版本", "系统版本")):
+    if any(
+        token in raw
+        for token in (
+            "版本信息",
+            "版本号",
+            "软件版本",
+            "数据库版本",
+            "系统版本",
+        )
+    ):
         register("version", "high")
 
     return sorted(
         candidates.values(),
-        key=lambda item: (-_confidence_rank(str(item.get("confidence", ""))), str(item.get("targetField", ""))),
+        key=lambda item: (
+            -_confidence_rank(str(item.get("confidence", ""))),
+            str(item.get("targetField", "")),
+        ),
     )
 
 
@@ -1003,9 +1463,8 @@ def _candidate_env_files() -> list[Path]:
     if explicit:
         candidates.append(Path(explicit).expanduser())
 
-    working_dir = (
-        os.environ.get("QWENPAW_WORKING_DIR")
-        or os.environ.get("COPAW_WORKING_DIR")
+    working_dir = os.environ.get("QWENPAW_WORKING_DIR") or os.environ.get(
+        "COPAW_WORKING_DIR"
     )
     if working_dir:
         candidates.append(
@@ -1079,7 +1538,9 @@ def _parse_json_loose(text: str) -> Any:
     if not cleaned:
         raise RuntimeError("LLM 返回为空")
 
-    fenced_match = re.match(r"^```(?:json)?\s*([\s\S]*?)\s*```$", cleaned, flags=re.IGNORECASE)
+    fenced_match = re.match(
+        r"^```(?:json)?\s*([\s\S]*?)\s*```$", cleaned, flags=re.IGNORECASE
+    )
     if fenced_match:
         cleaned = fenced_match.group(1).strip()
 
@@ -1091,7 +1552,7 @@ def _parse_json_loose(text: str) -> Any:
     first_object = cleaned.find("{")
     last_object = cleaned.rfind("}")
     if first_object != -1 and last_object > first_object:
-        candidate = cleaned[first_object:last_object + 1]
+        candidate = cleaned[first_object : last_object + 1]
         try:
             return json.loads(candidate)
         except json.JSONDecodeError:
@@ -1100,7 +1561,7 @@ def _parse_json_loose(text: str) -> Any:
     first_array = cleaned.find("[")
     last_array = cleaned.rfind("]")
     if first_array != -1 and last_array > first_array:
-        candidate = cleaned[first_array:last_array + 1]
+        candidate = cleaned[first_array : last_array + 1]
         try:
             return json.loads(candidate)
         except json.JSONDecodeError:
@@ -1110,7 +1571,13 @@ def _parse_json_loose(text: str) -> Any:
 
 
 class VeopsCmdbClient:
-    def __init__(self, base_url: str, username: str, password: str, timeout: float = 30.0):
+    def __init__(
+        self,
+        base_url: str,
+        username: str,
+        password: str,
+        timeout: float = 30.0,
+    ):
         self.base_url = base_url.rstrip("/")
         self.username = username
         self.password = password
@@ -1156,18 +1623,24 @@ class VeopsCmdbClient:
         json_payload: Any = None,
     ) -> Any:
         url = path if path.startswith("http") else f"{self.base_url}{path}"
-        response = self.client.request(method, url, params=params, json=json_payload)
+        response = self.client.request(
+            method, url, params=params, json=json_payload
+        )
         payload = _safe_json(response)
         if response.status_code >= 400:
             raise RuntimeError(f"{method.upper()} {path} 失败: {payload}")
         return payload
 
     def get_ci_types(self) -> list[dict[str, Any]]:
-        payload = self.request("GET", "/api/v0.1/ci_types", params={"per_page": 200})
+        payload = self.request(
+            "GET", "/api/v0.1/ci_types", params={"per_page": 200}
+        )
         return payload.get("ci_types", []) if isinstance(payload, dict) else []
 
     def get_ci_type_groups(self) -> list[dict[str, Any]]:
-        payload = self.request("GET", "/api/v0.1/ci_types/groups", params={"need_other": True})
+        payload = self.request(
+            "GET", "/api/v0.1/ci_types/groups", params={"need_other": True}
+        )
         if isinstance(payload, list):
             return payload
         return payload.get("groups", payload.get("result", [])) or []
@@ -1179,7 +1652,9 @@ class VeopsCmdbClient:
             json_payload={"name": name},
         )
 
-    def update_ci_type_group(self, group_id: int | str, *, name: str, type_ids: list[int]) -> Any:
+    def update_ci_type_group(
+        self, group_id: int | str, *, name: str, type_ids: list[int]
+    ) -> Any:
         return self.request(
             "PUT",
             f"/api/v0.1/ci_types/groups/{group_id}",
@@ -1216,10 +1691,14 @@ class VeopsCmdbClient:
         if isinstance(response, dict):
             type_id = response.get("type_id") or response.get("id")
             if type_id is None and isinstance(response.get("result"), dict):
-                type_id = response["result"].get("type_id") or response["result"].get("id")
+                type_id = response["result"].get("type_id") or response[
+                    "result"
+                ].get("id")
         return type_id, response
 
-    def create_ci_type_inheritance(self, parent_ids: list[int], child_id: int | str) -> Any:
+    def create_ci_type_inheritance(
+        self, parent_ids: list[int], child_id: int | str
+    ) -> Any:
         return self.request(
             "POST",
             "/api/v0.1/ci_types/inheritance",
@@ -1231,7 +1710,11 @@ class VeopsCmdbClient:
 
     def get_relation_types(self) -> list[dict[str, Any]]:
         payload = self.request("GET", "/api/v0.1/relation_types")
-        relation_types = payload if isinstance(payload, list) else payload.get("result", payload)
+        relation_types = (
+            payload
+            if isinstance(payload, list)
+            else payload.get("result", payload)
+        )
         results = relation_types if isinstance(relation_types, list) else []
         self.relation_type_map = {
             str(item.get("name")): int(item.get("id"))
@@ -1240,19 +1723,29 @@ class VeopsCmdbClient:
         }
         return results
 
-    def get_ci_type_attributes(self, type_id: int | str) -> list[dict[str, Any]]:
-        payload = self.request("GET", f"/api/v0.1/ci_types/{type_id}/attributes")
+    def get_ci_type_attributes(
+        self, type_id: int | str
+    ) -> list[dict[str, Any]]:
+        payload = self.request(
+            "GET", f"/api/v0.1/ci_types/{type_id}/attributes"
+        )
         if isinstance(payload, list):
             return payload
         return payload.get("attributes", payload.get("result", [])) or []
 
-    def get_ci_type_preference_attributes(self, type_id: int | str) -> list[dict[str, Any]]:
-        payload = self.request("GET", f"/api/v0.1/preference/ci_types/{type_id}/attributes")
+    def get_ci_type_preference_attributes(
+        self, type_id: int | str
+    ) -> list[dict[str, Any]]:
+        payload = self.request(
+            "GET", f"/api/v0.1/preference/ci_types/{type_id}/attributes"
+        )
         if isinstance(payload, list):
             return payload
         return payload.get("attributes", payload.get("result", [])) or []
 
-    def get_attribute_library(self, *, page_size: int = 500, page: int = 1) -> list[dict[str, Any]]:
+    def get_attribute_library(
+        self, *, page_size: int = 500, page: int = 1
+    ) -> list[dict[str, Any]]:
         payload = self.request(
             "GET",
             "/api/v0.1/attributes/s",
@@ -1262,14 +1755,24 @@ class VeopsCmdbClient:
             return payload
         return payload.get("attributes", payload.get("result", [])) or []
 
-    def get_ci_type_parent_relations(self, type_id: int | str) -> list[dict[str, Any]]:
-        payload = self.request("GET", f"/api/v0.1/ci_type_relations/{type_id}/parents")
+    def get_ci_type_parent_relations(
+        self, type_id: int | str
+    ) -> list[dict[str, Any]]:
+        payload = self.request(
+            "GET", f"/api/v0.1/ci_type_relations/{type_id}/parents"
+        )
         if isinstance(payload, list):
             return payload
         return payload.get("parents", payload.get("result", [])) or []
 
-    def get_ci_type_relations(self, type_id: int | str) -> list[dict[str, Any]]:
-        payload = self.request("GET", "/api/v0.1/ci_type_relations", params={"ci_type_id": type_id})
+    def get_ci_type_relations(
+        self, type_id: int | str
+    ) -> list[dict[str, Any]]:
+        payload = self.request(
+            "GET",
+            "/api/v0.1/ci_type_relations",
+            params={"ci_type_id": type_id},
+        )
         if isinstance(payload, list):
             return payload
         return payload.get("relations", payload.get("result", [])) or []
@@ -1301,12 +1804,18 @@ class VeopsCmdbClient:
         relation_id = None
         if isinstance(response, dict):
             relation_id = response.get("ctr_id") or response.get("id")
-            if relation_id is None and isinstance(response.get("result"), dict):
-                relation_id = response["result"].get("ctr_id") or response["result"].get("id")
+            if relation_id is None and isinstance(
+                response.get("result"), dict
+            ):
+                relation_id = response["result"].get("ctr_id") or response[
+                    "result"
+                ].get("id")
         return relation_id, response
 
     def query_ci(self, query: str, *, count: int = 5) -> list[dict[str, Any]]:
-        payload = self.request("GET", "/api/v0.1/ci/s", params={"q": query, "count": count})
+        payload = self.request(
+            "GET", "/api/v0.1/ci/s", params={"q": query, "count": count}
+        )
         if isinstance(payload, list):
             return payload
         for key in ("result", "items", "cis", "rows"):
@@ -1333,16 +1842,22 @@ class VeopsCmdbClient:
         response = self.request("POST", "/api/v0.1/ci", json_payload=payload)
         ci_id = _extract_ci_id(response)
         if ci_id is None:
-            ci_id = self.lookup_ci_id(ci_type, attributes, unique_key=unique_key)
+            ci_id = self.lookup_ci_id(
+                ci_type, attributes, unique_key=unique_key
+            )
         return ci_id, response
 
-    def update_ci(self, ci_id: Any, ci_type: str, attributes: dict[str, Any]) -> tuple[Any, Any]:
+    def update_ci(
+        self, ci_id: Any, ci_type: str, attributes: dict[str, Any]
+    ) -> tuple[Any, Any]:
         payload = {
             "ci_type": ci_type,
             "no_attribute_policy": "ignore",
             **attributes,
         }
-        response = self.request("PUT", f"/api/v0.1/ci/{ci_id}", json_payload=payload)
+        response = self.request(
+            "PUT", f"/api/v0.1/ci/{ci_id}", json_payload=payload
+        )
         updated_ci_id = _extract_ci_id(response) or ci_id
         return updated_ci_id, response
 
@@ -1355,7 +1870,9 @@ class VeopsCmdbClient:
             return items[0]
         return None
 
-    def lookup_ci_id(self, ci_type: str, attributes: dict[str, Any], *, unique_key: str = "") -> Any:
+    def lookup_ci_id(
+        self, ci_type: str, attributes: dict[str, Any], *, unique_key: str = ""
+    ) -> Any:
         filters = [f"_type:{ci_type}"]
         for key in [unique_key, "asset_code", "private_ip", "name"]:
             key = _clean_text(key)
@@ -1370,8 +1887,12 @@ class VeopsCmdbClient:
             return _extract_ci_id(items[0])
         return None
 
-    def create_relation(self, src_ci_id: Any, dst_ci_id: Any, relation_type: str) -> tuple[Any, Any]:
-        response = self.request("POST", f"/api/v0.1/ci_relations/{src_ci_id}/{dst_ci_id}")
+    def create_relation(
+        self, src_ci_id: Any, dst_ci_id: Any, relation_type: str
+    ) -> tuple[Any, Any]:
+        response = self.request(
+            "POST", f"/api/v0.1/ci_relations/{src_ci_id}/{dst_ci_id}"
+        )
         return _extract_ci_relation_id(response), response
 
     def delete_relation(self, relation_id: Any) -> Any:
@@ -1410,7 +1931,9 @@ class ResourceImportLLMClient:
         base_url = str(env.get("RESOURCE_IMPORT_LLM_BASE_URL") or "").strip()
         api_key = str(env.get("RESOURCE_IMPORT_LLM_API_KEY") or "").strip()
         model = str(env.get("RESOURCE_IMPORT_LLM_MODEL") or "").strip()
-        vision_model = str(env.get("RESOURCE_IMPORT_LLM_VISION_MODEL") or "").strip()
+        vision_model = str(
+            env.get("RESOURCE_IMPORT_LLM_VISION_MODEL") or ""
+        ).strip()
         timeout = float(env.get("RESOURCE_IMPORT_LLM_TIMEOUT") or 300.0)
         if not base_url or not api_key or not model:
             return None
@@ -1448,7 +1971,9 @@ class ResourceImportLLMClient:
                     return "\n".join(fragments).strip()
         return str(payload)
 
-    async def _request_json(self, *, model: str, messages: list[dict[str, Any]]) -> Any:
+    async def _request_json(
+        self, *, model: str, messages: list[dict[str, Any]]
+    ) -> Any:
         response = await self.client.post(
             f"{self.base_url}/chat/completions",
             json={
@@ -1478,7 +2003,9 @@ class ResourceImportLLMClient:
             "sheet_name": sheet_name,
             "headers": headers,
             "sample_rows": sample_rows,
-            "available_fields": sorted({*FIELD_ALIASES.keys(), *RELATION_FIELD_ALIASES.keys()}),
+            "available_fields": sorted(
+                {*FIELD_ALIASES.keys(), *RELATION_FIELD_ALIASES.keys()}
+            ),
             "available_ci_types": ci_types,
             "field_candidates": field_candidates or {},
             "ci_type_catalog": ci_type_catalog or [],
@@ -1495,7 +2022,13 @@ class ResourceImportLLMClient:
                 "sheet_kind": "asset|relation|note|unknown",
                 "default_ci_type": "string",
                 "reason": "string",
-                "mappings": [{"source": "string", "target": "string", "confidence": "high|medium|low"}],
+                "mappings": [
+                    {
+                        "source": "string",
+                        "target": "string",
+                        "confidence": "high|medium|low",
+                    }
+                ],
             },
         }
         result = await self._request_json(
@@ -1548,7 +2081,9 @@ class ResourceImportLLMClient:
             ],
         )
 
-    async def extract_rows_from_image(self, *, filename: str, content: bytes) -> list[dict[str, Any]]:
+    async def extract_rows_from_image(
+        self, *, filename: str, content: bytes
+    ) -> list[dict[str, Any]]:
         encoded = base64.b64encode(content).decode("ascii")
         suffix = Path(filename).suffix.lower().lstrip(".") or "png"
         prompt = {
@@ -1572,10 +2107,15 @@ class ResourceImportLLMClient:
                 {
                     "role": "user",
                     "content": [
-                        {"type": "text", "text": json.dumps(prompt, ensure_ascii=False)},
+                        {
+                            "type": "text",
+                            "text": json.dumps(prompt, ensure_ascii=False),
+                        },
                         {
                             "type": "image_url",
-                            "image_url": {"url": f"data:image/{suffix};base64,{encoded}"},
+                            "image_url": {
+                                "url": f"data:image/{suffix};base64,{encoded}"
+                            },
                         },
                     ],
                 },
@@ -1604,7 +2144,9 @@ def _extract_response_text(payload: Any) -> str:
                     fragments.append(str(item.get("text")))
             elif hasattr(item, "text") and getattr(item, "text"):
                 fragments.append(str(getattr(item, "text")))
-        return "\n".join(fragment.strip() for fragment in fragments if fragment).strip()
+        return "\n".join(
+            fragment.strip() for fragment in fragments if fragment
+        ).strip()
 
     if isinstance(payload, str):
         return payload.strip()
@@ -1651,7 +2193,9 @@ class AnthropicResourceImportLLMClient:
     async def aclose(self) -> None:
         return None
 
-    async def _request_json(self, *, model: str, content: list[dict[str, Any]]) -> Any:
+    async def _request_json(
+        self, *, model: str, content: list[dict[str, Any]]
+    ) -> Any:
         response = await self.client.messages.create(
             model=model,
             max_tokens=1800,
@@ -1674,7 +2218,9 @@ class AnthropicResourceImportLLMClient:
             "sheet_name": sheet_name,
             "headers": headers,
             "sample_rows": sample_rows,
-            "available_fields": sorted({*FIELD_ALIASES.keys(), *RELATION_FIELD_ALIASES.keys()}),
+            "available_fields": sorted(
+                {*FIELD_ALIASES.keys(), *RELATION_FIELD_ALIASES.keys()}
+            ),
             "available_ci_types": ci_types,
             "field_candidates": field_candidates or {},
             "ci_type_catalog": ci_type_catalog or [],
@@ -1692,7 +2238,13 @@ class AnthropicResourceImportLLMClient:
                 "sheet_kind": "asset|relation|note|unknown",
                 "default_ci_type": "string",
                 "reason": "string",
-                "mappings": [{"source": "string", "target": "string", "confidence": "high|medium|low"}],
+                "mappings": [
+                    {
+                        "source": "string",
+                        "target": "string",
+                        "confidence": "high|medium|low",
+                    }
+                ],
             },
         }
         result = await self._request_json(
@@ -1706,7 +2258,10 @@ class AnthropicResourceImportLLMClient:
                         "请直接输出 JSON。"
                     ),
                 },
-                {"type": "text", "text": json.dumps(prompt, ensure_ascii=False)},
+                {
+                    "type": "text",
+                    "text": json.dumps(prompt, ensure_ascii=False),
+                },
             ],
         )
         mappings: dict[str, tuple[str, str]] = {}
@@ -1739,11 +2294,16 @@ class AnthropicResourceImportLLMClient:
                         "请直接输出 JSON。"
                     ),
                 },
-                {"type": "text", "text": json.dumps(prompt, ensure_ascii=False)},
+                {
+                    "type": "text",
+                    "text": json.dumps(prompt, ensure_ascii=False),
+                },
             ],
         )
 
-    async def extract_rows_from_image(self, *, filename: str, content: bytes) -> list[dict[str, Any]]:
+    async def extract_rows_from_image(
+        self, *, filename: str, content: bytes
+    ) -> list[dict[str, Any]]:
         encoded = base64.b64encode(content).decode("ascii")
         suffix = Path(filename).suffix.lower()
         media_type = {
@@ -1772,7 +2332,10 @@ class AnthropicResourceImportLLMClient:
                         "data": encoded,
                     },
                 },
-                {"type": "text", "text": json.dumps(prompt, ensure_ascii=False)},
+                {
+                    "type": "text",
+                    "text": json.dumps(prompt, ensure_ascii=False),
+                },
             ],
         )
         rows = result.get("rows")
@@ -1831,7 +2394,9 @@ class GeminiResourceImportLLMClient:
             "sheet_name": sheet_name,
             "headers": headers,
             "sample_rows": sample_rows,
-            "available_fields": sorted({*FIELD_ALIASES.keys(), *RELATION_FIELD_ALIASES.keys()}),
+            "available_fields": sorted(
+                {*FIELD_ALIASES.keys(), *RELATION_FIELD_ALIASES.keys()}
+            ),
             "available_ci_types": ci_types,
             "field_candidates": field_candidates or {},
             "ci_type_catalog": ci_type_catalog or [],
@@ -1849,7 +2414,13 @@ class GeminiResourceImportLLMClient:
                 "sheet_kind": "asset|relation|note|unknown",
                 "default_ci_type": "string",
                 "reason": "string",
-                "mappings": [{"source": "string", "target": "string", "confidence": "high|medium|low"}],
+                "mappings": [
+                    {
+                        "source": "string",
+                        "target": "string",
+                        "confidence": "high|medium|low",
+                    }
+                ],
             },
         }
         result = await self._request_json(
@@ -1862,7 +2433,9 @@ class GeminiResourceImportLLMClient:
                         "请直接输出 JSON。"
                     ),
                 ),
-                self._genai_types.Part(text=json.dumps(prompt, ensure_ascii=False)),
+                self._genai_types.Part(
+                    text=json.dumps(prompt, ensure_ascii=False)
+                ),
             ],
         )
         mappings: dict[str, tuple[str, str]] = {}
@@ -1894,11 +2467,15 @@ class GeminiResourceImportLLMClient:
                         "请直接输出 JSON。"
                     ),
                 ),
-                self._genai_types.Part(text=json.dumps(prompt, ensure_ascii=False)),
+                self._genai_types.Part(
+                    text=json.dumps(prompt, ensure_ascii=False)
+                ),
             ],
         )
 
-    async def extract_rows_from_image(self, *, filename: str, content: bytes) -> list[dict[str, Any]]:
+    async def extract_rows_from_image(
+        self, *, filename: str, content: bytes
+    ) -> list[dict[str, Any]]:
         suffix = Path(filename).suffix.lower()
         mime_type = {
             ".png": "image/png",
@@ -1924,7 +2501,9 @@ class GeminiResourceImportLLMClient:
                         data=content,
                     ),
                 ),
-                self._genai_types.Part(text=json.dumps(prompt, ensure_ascii=False)),
+                self._genai_types.Part(
+                    text=json.dumps(prompt, ensure_ascii=False)
+                ),
             ],
         )
         rows = result.get("rows")
@@ -1939,8 +2518,15 @@ def _build_runtime_client_from_agent(agent_id: str) -> Any | None:
         from qwenpaw.providers.provider_manager import ProviderManager
 
         manager = ProviderManager.get_instance()
-        model_slot = load_agent_config(agent_id).active_model or manager.get_active_model()
-        if not model_slot or not model_slot.provider_id or not model_slot.model:
+        model_slot = (
+            load_agent_config(agent_id).active_model
+            or manager.get_active_model()
+        )
+        if (
+            not model_slot
+            or not model_slot.provider_id
+            or not model_slot.model
+        ):
             return None
 
         provider = manager.get_provider(model_slot.provider_id)
@@ -1967,7 +2553,9 @@ def _build_runtime_client_from_agent(agent_id: str) -> Any | None:
         return None
 
 
-async def resolve_resource_import_runtime(agent_id: str | None = None) -> ResourceImportRuntime:
+async def resolve_resource_import_runtime(
+    agent_id: str | None = None,
+) -> ResourceImportRuntime:
     if agent_id:
         agent_client = _build_runtime_client_from_agent(agent_id)
         if agent_client:
@@ -1978,7 +2566,9 @@ async def resolve_resource_import_runtime(agent_id: str | None = None) -> Resour
     return ResourceImportRuntime(client=None, source="规则映射")
 
 
-async def resolve_resource_import_llm_client(agent_id: str | None = None) -> Any | None:
+async def resolve_resource_import_llm_client(
+    agent_id: str | None = None,
+) -> Any | None:
     runtime = await resolve_resource_import_runtime(agent_id)
     return runtime.client
 
@@ -2049,11 +2639,17 @@ def _match_field(header: str) -> tuple[str, str]:
     semantic_candidates = _semantic_field_candidates(header)
     if semantic_candidates:
         first = semantic_candidates[0]
-        return str(first.get("targetField") or "unknown"), str(first.get("confidence") or "low")
+        return str(first.get("targetField") or "unknown"), str(
+            first.get("confidence") or "low"
+        )
     for target, aliases in FIELD_ALIASES.items():
         for alias in aliases:
             alias_token = _normalize_header(alias)
-            if alias_token and len(alias_token) >= 5 and (alias_token in normalized or normalized in alias_token):
+            if (
+                alias_token
+                and len(alias_token) >= 5
+                and (alias_token in normalized or normalized in alias_token)
+            ):
                 return target, "medium"
     return "unknown", "low"
 
@@ -2067,7 +2663,11 @@ def _match_relation_field(header: str) -> tuple[str, str]:
     for target, aliases in RELATION_FIELD_ALIASES.items():
         for alias in aliases:
             alias_token = _normalize_header(alias)
-            if alias_token and len(alias_token) >= 3 and (alias_token in normalized or normalized in alias_token):
+            if (
+                alias_token
+                and len(alias_token) >= 3
+                and (alias_token in normalized or normalized in alias_token)
+            ):
                 return target, "medium"
     return "unknown", "low"
 
@@ -2080,7 +2680,9 @@ def _confidence_rank(value: str) -> int:
     }.get(_clean_text(value).lower(), 0)
 
 
-def _dedupe_non_empty(values: list[Any], *, limit: int | None = None) -> list[str]:
+def _dedupe_non_empty(
+    values: list[Any], *, limit: int | None = None
+) -> list[str]:
     result: list[str] = []
     seen: set[str] = set()
     for value in values:
@@ -2106,7 +2708,9 @@ def _semantic_terms(value: str) -> list[str]:
     ]
 
 
-def _semantic_text_similarity(header: str, candidate_text: str) -> tuple[int, str]:
+def _semantic_text_similarity(
+    header: str, candidate_text: str
+) -> tuple[int, str]:
     header_raw = _clean_text(header)
     candidate_raw = _clean_text(candidate_text)
     if not header_raw or not candidate_raw:
@@ -2119,11 +2723,14 @@ def _semantic_text_similarity(header: str, candidate_text: str) -> tuple[int, st
     if normalized_header == normalized_candidate:
         return 100, f"与 {candidate_raw} 完全一致"
     if len(normalized_candidate) >= 4 and (
-        normalized_candidate in normalized_header or normalized_header in normalized_candidate
+        normalized_candidate in normalized_header
+        or normalized_header in normalized_candidate
     ):
         return 88, f"与 {candidate_raw} 文本非常接近"
 
-    ratio = SequenceMatcher(None, normalized_header, normalized_candidate).ratio()
+    ratio = SequenceMatcher(
+        None, normalized_header, normalized_candidate
+    ).ratio()
     if ratio >= 0.92:
         return 82, f"与 {candidate_raw} 高度相似"
     if ratio >= 0.80:
@@ -2137,7 +2744,10 @@ def _semantic_text_similarity(header: str, candidate_text: str) -> tuple[int, st
         overlap = header_terms & candidate_terms
         if overlap:
             score = 52 + min(12, len(overlap) * 6)
-            return score, f"与 {candidate_raw} 共享关键词 {', '.join(sorted(overlap)[:3])}"
+            return (
+                score,
+                f"与 {candidate_raw} 共享关键词 {', '.join(sorted(overlap)[:3])}",
+            )
     return 0, ""
 
 
@@ -2157,11 +2767,19 @@ def _infer_canonical_field_from_metadata_attribute(
     ranked: list[dict[str, Any]] = []
     for raw_value in [attribute_name, attribute_alias]:
         direct_target, direct_confidence = _match_field(raw_value)
-        ranked.append({"target": direct_target, "confidence": direct_confidence, "score": 100})
+        ranked.append(
+            {
+                "target": direct_target,
+                "confidence": direct_confidence,
+                "score": 100,
+            }
+        )
         for target_field, aliases in FIELD_ALIASES.items():
             best_score = 0
             for candidate_text in [target_field, *aliases]:
-                score, _reason = _semantic_text_similarity(raw_value, candidate_text)
+                score, _reason = _semantic_text_similarity(
+                    raw_value, candidate_text
+                )
                 best_score = max(best_score, score)
             if best_score >= 64:
                 ranked.append(
@@ -2186,15 +2804,17 @@ def _infer_canonical_field_from_metadata_attribute(
     return "unknown", "low"
 
 
-def _build_metadata_field_catalog(metadata: dict[str, Any]) -> dict[str, dict[str, Any]]:
+def _build_metadata_field_catalog(
+    metadata: dict[str, Any],
+) -> dict[str, dict[str, Any]]:
     groups_by_model: dict[str, list[str]] = defaultdict(list)
-    for group in (metadata.get("ciTypeGroups") or []):
+    for group in metadata.get("ciTypeGroups") or []:
         if not isinstance(group, dict):
             continue
         group_name = _clean_text(group.get("name"))
         if not group_name:
             continue
-        for item in (group.get("ciTypes") or []):
+        for item in group.get("ciTypes") or []:
             if not isinstance(item, dict):
                 continue
             model_name = _clean_text(item.get("name"))
@@ -2224,7 +2844,7 @@ def _build_metadata_field_catalog(metadata: dict[str, Any]) -> dict[str, dict[st
             limit=24,
         )
 
-    for ci_type in (metadata.get("ciTypes") or []):
+    for ci_type in metadata.get("ciTypes") or []:
         if not isinstance(ci_type, dict):
             continue
         model_name = _clean_text(ci_type.get("name"))
@@ -2232,15 +2852,20 @@ def _build_metadata_field_catalog(metadata: dict[str, Any]) -> dict[str, dict[st
         if not model_name:
             continue
         group_names = groups_by_model.get(model_name) or _dedupe_non_empty(
-            [*(ci_type.get("groupNames") or []), DEFAULT_GROUP_HINTS.get(model_name, "")],
+            [
+                *(ci_type.get("groupNames") or []),
+                DEFAULT_GROUP_HINTS.get(model_name, ""),
+            ],
             limit=6,
         )
 
-        for definition in (ci_type.get("attributeDefinitions") or []):
+        for definition in ci_type.get("attributeDefinitions") or []:
             if not isinstance(definition, dict):
                 continue
             attribute_name = _clean_text(definition.get("name"))
-            attribute_alias = _clean_text(definition.get("alias")) or attribute_name
+            attribute_alias = (
+                _clean_text(definition.get("alias")) or attribute_name
+            )
             if attribute_name:
                 # Always expose the model attribute as its own direct mapping
                 # target so distinct attributes never collapse into a single
@@ -2271,11 +2896,17 @@ def _build_metadata_field_catalog(metadata: dict[str, Any]) -> dict[str, dict[st
                     [*direct_entry.get("groups", []), *group_names],
                     limit=12,
                 )
-            canonical_field, confidence = _infer_canonical_field_from_metadata_attribute(
+            (
+                canonical_field,
+                confidence,
+            ) = _infer_canonical_field_from_metadata_attribute(
                 attribute_name=attribute_name,
                 attribute_alias=attribute_alias,
             )
-            if canonical_field == "unknown" or _confidence_rank(confidence) <= 0:
+            if (
+                canonical_field == "unknown"
+                or _confidence_rank(confidence) <= 0
+            ):
                 continue
             if canonical_field == attribute_name:
                 continue
@@ -2348,7 +2979,9 @@ def _collect_metadata_field_candidates(
                 "reason": best_reason,
                 "matchedText": best_match_text,
                 "models": models,
-                "groups": _dedupe_non_empty(entry.get("groups") or [], limit=3),
+                "groups": _dedupe_non_empty(
+                    entry.get("groups") or [], limit=3
+                ),
                 "direct": is_direct,
             }
         )
@@ -2366,11 +2999,15 @@ def _collect_metadata_field_candidates(
     return candidates[:8]
 
 
-def _collect_field_candidates(header: str, metadata: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+def _collect_field_candidates(
+    header: str, metadata: dict[str, Any] | None = None
+) -> list[dict[str, Any]]:
     normalized = _normalize_header(header)
     candidates: dict[str, dict[str, Any]] = {}
 
-    def register(target: str, confidence: str, source: str, **extra: Any) -> None:
+    def register(
+        target: str, confidence: str, source: str, **extra: Any
+    ) -> None:
         if not target or target == "unknown":
             return
         current = candidates.get(target)
@@ -2419,7 +3056,13 @@ def _collect_field_candidates(header: str, metadata: dict[str, Any] | None = Non
         for target, aliases in FIELD_ALIASES.items():
             for alias in aliases:
                 alias_token = _normalize_header(alias)
-                if alias_token and len(alias_token) >= 5 and (alias_token in normalized or normalized in alias_token):
+                if (
+                    alias_token
+                    and len(alias_token) >= 5
+                    and (
+                        alias_token in normalized or normalized in alias_token
+                    )
+                ):
                     register(target, "medium", "rule", score=60)
 
     return sorted(
@@ -2440,7 +3083,10 @@ def _match_field_with_metadata(
     candidates = _collect_field_candidates(header, metadata)
     if candidates:
         first = candidates[0]
-        return _clean_text(first.get("targetField")) or "unknown", _clean_text(first.get("confidence")) or "low"
+        return (
+            _clean_text(first.get("targetField")) or "unknown",
+            _clean_text(first.get("confidence")) or "low",
+        )
     return _match_field(header)
 
 
@@ -2474,7 +3120,7 @@ def _collect_value_choice_candidates(
         if not attr_name:
             continue
         allowed: set[str] = set()
-        for item in (definition.get("choices") or []):
+        for item in definition.get("choices") or []:
             if not isinstance(item, dict):
                 continue
             for key in ("value", "label"):
@@ -2536,8 +3182,17 @@ def _merge_sheet_header_mapping(
         return heuristic_mapping
     if heuristic_target != "unknown" and heuristic_target == llm_target:
         confidence_rank = {"low": 0, "medium": 1, "high": 2}
-        return heuristic_mapping if confidence_rank.get(heuristic_confidence, 0) >= confidence_rank.get(llm_confidence, 0) else llm_mapping
-    if heuristic_target != "unknown" and heuristic_confidence == "medium" and llm_confidence == "low":
+        return (
+            heuristic_mapping
+            if confidence_rank.get(heuristic_confidence, 0)
+            >= confidence_rank.get(llm_confidence, 0)
+            else llm_mapping
+        )
+    if (
+        heuristic_target != "unknown"
+        and heuristic_confidence == "medium"
+        and llm_confidence == "low"
+    ):
         return heuristic_mapping
     return llm_mapping
 
@@ -2581,7 +3236,10 @@ def _exact_model_attribute_mapping(
         for candidate in (attr_name, attr_alias):
             if not candidate:
                 continue
-            if cleaned_header == candidate or normalized_header == _normalize_token(candidate):
+            if (
+                cleaned_header == candidate
+                or normalized_header == _normalize_token(candidate)
+            ):
                 if attr_name not in matches:
                     matches.append(attr_name)
 
@@ -2597,7 +3255,10 @@ def _exact_model_attribute_mapping(
     required_matches = [
         item
         for item in matches
-        if bool(definitions_by_name.get(item, {}).get("required") or definitions_by_name.get(item, {}).get("is_required"))
+        if bool(
+            definitions_by_name.get(item, {}).get("required")
+            or definitions_by_name.get(item, {}).get("is_required")
+        )
     ]
     if len(required_matches) == 1:
         return required_matches[0]
@@ -2640,9 +3301,18 @@ def _build_sheet_mapping_detail(
 
     heuristic_target, heuristic_confidence = heuristic_mapping
     llm_target, llm_confidence = llm_mapping
-    if heuristic_target not in {"", "unknown"} and heuristic_confidence == "high":
-        effective = _mapping_effective_target_field(heuristic_target, type_template)
-        if not type_template or not effective or _find_attribute_definition(type_template, effective):
+    if (
+        heuristic_target not in {"", "unknown"}
+        and heuristic_confidence == "high"
+    ):
+        effective = _mapping_effective_target_field(
+            heuristic_target, type_template
+        )
+        if (
+            not type_template
+            or not effective
+            or _find_attribute_definition(type_template, effective)
+        ):
             return {
                 "sourceField": header,
                 "targetField": heuristic_target,
@@ -2719,9 +3389,7 @@ def _build_sheet_mapping_detail(
                 str(current.get("confidence", ""))
             ):
                 current["confidence"] = llm_confidence_value
-            current["source"] = (
-                f"{current.get('source', 'metadata')}+llm"
-            )
+            current["source"] = f"{current.get('source', 'metadata')}+llm"
     # An ambiguous value match (column values fit several choice attributes) is
     # surfaced as a candidate so the operator can disambiguate instead of the
     # value being silently dropped.
@@ -2746,7 +3414,10 @@ def _build_sheet_mapping_detail(
 
     ordered_candidates = sorted(
         candidate_map.values(),
-        key=lambda item: (-_confidence_rank(str(item.get("confidence", ""))), str(item.get("targetField", ""))),
+        key=lambda item: (
+            -_confidence_rank(str(item.get("confidence", ""))),
+            str(item.get("targetField", "")),
+        ),
     )
     for item in ordered_candidates:
         item["effectiveTargetField"] = _mapping_effective_target_field(
@@ -2756,7 +3427,8 @@ def _build_sheet_mapping_detail(
     strong_rule_targets = {
         str(item.get("targetField", ""))
         for item in ordered_candidates
-        if item.get("source") == "rule" and _confidence_rank(str(item.get("confidence", ""))) >= 1
+        if item.get("source") == "rule"
+        and _confidence_rank(str(item.get("confidence", ""))) >= 1
     }
     strong_effective_targets = {
         _clean_text(item.get("effectiveTargetField"))
@@ -2785,13 +3457,18 @@ def _build_sheet_mapping_detail(
     else:
         competing_targets = strong_effective_targets
     dominant_direct = (
-        strong_direct[0]
-        if len(strong_direct_targets) == 1
-        else None
+        strong_direct[0] if len(strong_direct_targets) == 1 else None
     )
-    llm_is_strong = llm_target not in {"", "unknown"} and _confidence_rank(llm_confidence) >= 1
-    heuristic_effective_target = _mapping_effective_target_field(heuristic_target, type_template)
-    llm_effective_target = _mapping_effective_target_field(llm_target, type_template)
+    llm_is_strong = (
+        llm_target not in {"", "unknown"}
+        and _confidence_rank(llm_confidence) >= 1
+    )
+    heuristic_effective_target = _mapping_effective_target_field(
+        heuristic_target, type_template
+    )
+    llm_effective_target = _mapping_effective_target_field(
+        llm_target, type_template
+    )
     needs_confirmation = False
     if len(competing_targets) >= 2:
         needs_confirmation = True
@@ -2822,13 +3499,19 @@ def _build_sheet_mapping_detail(
         and merged_target not in {"", "unknown"}
         and _confidence_rank(merged_confidence) <= 0
     )
-    applied_target = "" if (needs_confirmation or low_confidence_unmapped) else merged_target
+    applied_target = (
+        ""
+        if (needs_confirmation or low_confidence_unmapped)
+        else merged_target
+    )
     status = (
         "needs_confirmation"
         if needs_confirmation
-        else "unmapped"
-        if low_confidence_unmapped or applied_target in {"", "unknown"}
-        else "mapped"
+        else (
+            "unmapped"
+            if low_confidence_unmapped or applied_target in {"", "unknown"}
+            else "mapped"
+        )
     )
     message = ""
     if needs_confirmation:
@@ -2840,7 +3523,11 @@ def _build_sheet_mapping_detail(
         message = f"字段 {header} 同时匹配多个语义候选：{candidate_text}，需人工确认后再决定是否写入"
     elif low_confidence_unmapped:
         message = f"字段 {header} 当前只有低置信候选 {merged_target}，不会自动写入，请人工确认"
-    elif applied_target not in {"", "unknown"} and llm_target == applied_target and heuristic_target in {"", "unknown"}:
+    elif (
+        applied_target not in {"", "unknown"}
+        and llm_target == applied_target
+        and heuristic_target in {"", "unknown"}
+    ):
         message = f"字段 {header} 当前由 LLM 提供候选语义 {applied_target}"
     elif status == "unmapped":
         # No candidate at all: make the silent drop explicit so the operator
@@ -2853,7 +3540,16 @@ def _build_sheet_mapping_detail(
         "suggestedTargetField": merged_target or "unknown",
         "confidence": merged_confidence or "low",
         "status": status,
-        "resolvedBy": "rule" if (applied_target == heuristic_target and heuristic_target not in {"", "unknown"}) else "llm" if applied_target not in {"", "unknown"} else "",
+        "resolvedBy": (
+            "rule"
+            if (
+                applied_target == heuristic_target
+                and heuristic_target not in {"", "unknown"}
+            )
+            else "llm"
+            if applied_target not in {"", "unknown"}
+            else ""
+        ),
         "candidates": ordered_candidates,
         "needsConfirmation": needs_confirmation,
         "message": message,
@@ -2865,7 +3561,9 @@ def _sheet_name_hint(sheet_name: str, alias_index: dict[str, str]) -> str:
     return "" if normalized == sheet_name else normalized
 
 
-def _sample_sheet_rows(rows: list[dict[str, Any]], limit: int = 5) -> list[dict[str, Any]]:
+def _sample_sheet_rows(
+    rows: list[dict[str, Any]], limit: int = 5
+) -> list[dict[str, Any]]:
     sampled: list[dict[str, Any]] = []
     if len(rows) <= limit:
         candidate_rows = rows
@@ -2879,7 +3577,9 @@ def _sample_sheet_rows(rows: list[dict[str, Any]], limit: int = 5) -> list[dict[
         ]
     seen_rows: set[str] = set()
     for row in candidate_rows:
-        fingerprint = json.dumps(row, ensure_ascii=False, sort_keys=True, default=str)
+        fingerprint = json.dumps(
+            row, ensure_ascii=False, sort_keys=True, default=str
+        )
         if fingerprint in seen_rows:
             continue
         seen_rows.add(fingerprint)
@@ -2916,7 +3616,11 @@ def _should_skip_llm_for_sheet(
         status = _clean_text(detail.get("status"))
         if status == "mapped" and target_field not in {"", "unknown"}:
             mapped_count += 1
-        if confidence == "high" and status == "mapped" and target_field not in {"", "unknown"}:
+        if (
+            confidence == "high"
+            and status == "mapped"
+            and target_field not in {"", "unknown"}
+        ):
             high_count += 1
         if target_field in RESOURCE_VALUE_FIELDS:
             value_field_hits += 1
@@ -2930,12 +3634,19 @@ def _should_skip_llm_for_sheet(
     return True
 
 
-def _semantic_keyword_in_text(keyword: str, raw_text: str, normalized_text: str) -> bool:
+def _semantic_keyword_in_text(
+    keyword: str, raw_text: str, normalized_text: str
+) -> bool:
     normalized_keyword = _normalize_token(keyword)
     if not normalized_keyword:
         return False
     if normalized_keyword.isascii() and len(normalized_keyword) <= 2:
-        return bool(re.search(rf"(?<![a-z0-9]){re.escape(normalized_keyword)}(?![a-z0-9])", raw_text.lower()))
+        return bool(
+            re.search(
+                rf"(?<![a-z0-9]){re.escape(normalized_keyword)}(?![a-z0-9])",
+                raw_text.lower(),
+            )
+        )
     return normalized_keyword in normalized_text
 
 
@@ -2958,7 +3669,9 @@ COMMON_MODEL_ATTRIBUTE_HINTS = {
 }
 
 
-def _sample_structure_records(records: list[dict[str, Any]], limit: int = 3) -> list[dict[str, Any]]:
+def _sample_structure_records(
+    records: list[dict[str, Any]], limit: int = 3
+) -> list[dict[str, Any]]:
     if not records:
         return []
     if len(records) <= limit:
@@ -2985,7 +3698,9 @@ def _sample_structure_records(records: list[dict[str, Any]], limit: int = 3) -> 
             for key, value in analysis_attributes.items()
             if key and not str(key).startswith("_") and _clean_text(value)
         ]
-        cleaned_items.sort(key=lambda item: (preferred_order.get(item[0], 50), item[0]))
+        cleaned_items.sort(
+            key=lambda item: (preferred_order.get(item[0], 50), item[0])
+        )
         payload = dict(cleaned_items[:12])
         fingerprint = json.dumps(payload, ensure_ascii=False, sort_keys=True)
         if not payload or fingerprint in seen_rows:
@@ -3002,7 +3717,9 @@ def _build_ci_type_catalog(metadata: dict[str, Any]) -> list[dict[str, Any]]:
         if isinstance(item, dict)
     ]
     if not ci_type_groups:
-        ci_type_groups = _build_default_ci_type_groups(metadata.get("ciTypes") or DEFAULT_MODEL_TEMPLATES)
+        ci_type_groups = _build_default_ci_type_groups(
+            metadata.get("ciTypes") or DEFAULT_MODEL_TEMPLATES
+        )
 
     groups_by_model: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for group in ci_type_groups:
@@ -3013,7 +3730,7 @@ def _build_ci_type_catalog(metadata: dict[str, Any]) -> list[dict[str, Any]]:
             groups_by_model[name].append(group)
 
     catalog: list[dict[str, Any]] = []
-    for item in (metadata.get("ciTypes") or DEFAULT_MODEL_TEMPLATES):
+    for item in metadata.get("ciTypes") or DEFAULT_MODEL_TEMPLATES:
         if not isinstance(item, dict):
             continue
         name = _clean_text(item.get("name"))
@@ -3030,7 +3747,8 @@ def _build_ci_type_catalog(metadata: dict[str, Any]) -> list[dict[str, Any]]:
         parent_types = [
             {
                 "name": _clean_text(parent.get("name")),
-                "alias": _clean_text(parent.get("alias")) or _clean_text(parent.get("name")),
+                "alias": _clean_text(parent.get("alias"))
+                or _clean_text(parent.get("name")),
             }
             for parent in (item.get("parentTypes") or [])
             if isinstance(parent, dict) and _clean_text(parent.get("name"))
@@ -3038,15 +3756,20 @@ def _build_ci_type_catalog(metadata: dict[str, Any]) -> list[dict[str, Any]]:
         attribute_definitions = [
             definition
             for definition in (item.get("attributeDefinitions") or [])
-            if isinstance(definition, dict) and _clean_text(definition.get("name"))
+            if isinstance(definition, dict)
+            and _clean_text(definition.get("name"))
         ]
         attribute_names = _dedupe_non_empty(
-            [_clean_text(definition.get("name")) for definition in attribute_definitions],
+            [
+                _clean_text(definition.get("name"))
+                for definition in attribute_definitions
+            ],
             limit=24,
         )
         attribute_aliases = _dedupe_non_empty(
             [
-                _clean_text(definition.get("alias")) or _clean_text(definition.get("name"))
+                _clean_text(definition.get("alias"))
+                or _clean_text(definition.get("name"))
                 for definition in attribute_definitions
             ],
             limit=24,
@@ -3058,10 +3781,16 @@ def _build_ci_type_catalog(metadata: dict[str, Any]) -> list[dict[str, Any]]:
                 "alias": _clean_text(item.get("alias")) or name,
                 "groupNames": group_names,
                 "groupName": group_names[0] if group_names else "",
-                "attributes": [str(attr) for attr in (item.get("attributes") or []) if _clean_text(attr)],
+                "attributes": [
+                    str(attr)
+                    for attr in (item.get("attributes") or [])
+                    if _clean_text(attr)
+                ],
                 "attributeNames": attribute_names,
                 "attributeAliases": attribute_aliases,
-                "attributeTexts": _dedupe_non_empty([*attribute_names, *attribute_aliases], limit=24),
+                "attributeTexts": _dedupe_non_empty(
+                    [*attribute_names, *attribute_aliases], limit=24
+                ),
                 "parentTypes": parent_types,
             }
         )
@@ -3082,13 +3811,25 @@ def _collect_structure_context(group: dict[str, Any]) -> dict[str, Any]:
         for key, value in analysis_attributes.items():
             cleaned_key = _clean_text(key)
             cleaned_value = _clean_text(value)
-            if cleaned_key and not cleaned_key.startswith("_") and cleaned_key not in field_names:
+            if (
+                cleaned_key
+                and not cleaned_key.startswith("_")
+                and cleaned_key not in field_names
+            ):
                 field_names.append(cleaned_key)
-            if cleaned_value and len(sample_values) < 20 and cleaned_value not in sample_values:
+            if (
+                cleaned_value
+                and len(sample_values) < 20
+                and cleaned_value not in sample_values
+            ):
                 sample_values.append(cleaned_value)
-            if cleaned_key == "service_port" and cleaned_value and cleaned_value not in ports:
+            if (
+                cleaned_key == "service_port"
+                and cleaned_value
+                and cleaned_value not in ports
+            ):
                 ports.append(cleaned_value)
-        for item in (record.get("mapping") or []):
+        for item in record.get("mapping") or []:
             source_field = _clean_text(item.get("sourceField"))
             if source_field and source_field not in source_fields:
                 source_fields.append(source_field)
@@ -3118,19 +3859,38 @@ def _candidate_rule_names(candidate: dict[str, Any]) -> set[str]:
     texts = [
         candidate_name,
         candidate_alias,
-        *[str(item) for item in (candidate.get("groupNames") or []) if _clean_text(item)],
-        *[str(item) for item in (candidate.get("attributes") or []) if _clean_text(item)],
-        *[str(item) for item in (candidate.get("attributeTexts") or []) if _clean_text(item)],
+        *[
+            str(item)
+            for item in (candidate.get("groupNames") or [])
+            if _clean_text(item)
+        ],
+        *[
+            str(item)
+            for item in (candidate.get("attributes") or [])
+            if _clean_text(item)
+        ],
+        *[
+            str(item)
+            for item in (candidate.get("attributeTexts") or [])
+            if _clean_text(item)
+        ],
         *[
             _clean_text(parent.get("name")) or _clean_text(parent.get("alias"))
             for parent in (candidate.get("parentTypes") or [])
             if isinstance(parent, dict)
         ],
     ]
-    normalized_texts = [(_clean_text(text).lower(), _normalize_token(text)) for text in texts if _clean_text(text)]
+    normalized_texts = [
+        (_clean_text(text).lower(), _normalize_token(text))
+        for text in texts
+        if _clean_text(text)
+    ]
     field_names = {
         _normalize_header(str(item))
-        for item in [*(candidate.get("attributes") or []), *(candidate.get("attributeTexts") or [])]
+        for item in [
+            *(candidate.get("attributes") or []),
+            *(candidate.get("attributeTexts") or []),
+        ]
         if _clean_text(item)
     }
     matched: set[str] = set()
@@ -3152,7 +3912,9 @@ def _candidate_rule_names(candidate: dict[str, Any]) -> set[str]:
     return matched
 
 
-def _match_semantic_rule(rule: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
+def _match_semantic_rule(
+    rule: dict[str, Any], context: dict[str, Any]
+) -> dict[str, Any]:
     primary_text_hits: list[str] = []
     sample_value_hits: list[str] = []
     field_hits: list[str] = []
@@ -3169,10 +3931,13 @@ def _match_semantic_rule(rule: dict[str, Any], context: dict[str, Any]) -> dict[
     ]
     normalized_fields = {
         _normalize_header(str(field))
-        for field in [*context.get("fieldNames", []), *context.get("sourceFields", [])]
+        for field in [
+            *context.get("fieldNames", []),
+            *context.get("sourceFields", []),
+        ]
         if _clean_text(field)
     }
-    for keyword in (rule.get("keywords") or []):
+    for keyword in rule.get("keywords") or []:
         if any(
             _semantic_keyword_in_text(keyword, raw_text, normalized_text)
             for raw_text, normalized_text in normalized_primary_texts
@@ -3184,11 +3949,13 @@ def _match_semantic_rule(rule: dict[str, Any], context: dict[str, Any]) -> dict[
             for raw_text, normalized_text in normalized_sample_value_texts
         ):
             sample_value_hits.append(str(keyword))
-    for keyword in (rule.get("field_keywords") or []):
+    for keyword in rule.get("field_keywords") or []:
         if _normalize_header(keyword) in normalized_fields:
             field_hits.append(str(keyword))
-    for port in (rule.get("port_values") or []):
-        if str(port) in {str(item) for item in context.get("ports", []) if _clean_text(item)}:
+    for port in rule.get("port_values") or []:
+        if str(port) in {
+            str(item) for item in context.get("ports", []) if _clean_text(item)
+        }:
             port_hits.append(str(port))
 
     score = 0
@@ -3205,9 +3972,13 @@ def _match_semantic_rule(rule: dict[str, Any], context: dict[str, Any]) -> dict[
 
     reasons: list[str] = []
     if primary_text_hits:
-        reasons.append(f"原文类型命中 {', '.join(sorted(set(primary_text_hits))[:3])}")
+        reasons.append(
+            f"原文类型命中 {', '.join(sorted(set(primary_text_hits))[:3])}"
+        )
     if sample_value_hits:
-        reasons.append(f"样例值命中 {', '.join(sorted(set(sample_value_hits))[:3])}")
+        reasons.append(
+            f"样例值命中 {', '.join(sorted(set(sample_value_hits))[:3])}"
+        )
     if field_hits:
         reasons.append(f"字段特征命中 {', '.join(sorted(set(field_hits))[:3])}")
     if port_hits:
@@ -3218,7 +3989,9 @@ def _match_semantic_rule(rule: dict[str, Any], context: dict[str, Any]) -> dict[
     }
 
 
-def _semantic_lexical_score(candidate: dict[str, Any], texts: list[str]) -> tuple[int, str]:
+def _semantic_lexical_score(
+    candidate: dict[str, Any], texts: list[str]
+) -> tuple[int, str]:
     candidate_texts: list[tuple[str, str]] = []
     for value in [
         _clean_text(candidate.get("name")),
@@ -3233,12 +4006,18 @@ def _semantic_lexical_score(candidate: dict[str, Any], texts: list[str]) -> tupl
     for item in candidate.get("parentTypes") or []:
         if not isinstance(item, dict):
             continue
-        for value in [_clean_text(item.get("name")), _clean_text(item.get("alias"))]:
+        for value in [
+            _clean_text(item.get("name")),
+            _clean_text(item.get("alias")),
+        ]:
             if value:
                 candidate_texts.append((value, "parent"))
     for value in candidate.get("attributeTexts") or []:
         cleaned = _clean_text(value)
-        if not cleaned or _normalize_token(cleaned) in COMMON_MODEL_ATTRIBUTE_HINTS:
+        if (
+            not cleaned
+            or _normalize_token(cleaned) in COMMON_MODEL_ATTRIBUTE_HINTS
+        ):
             continue
         candidate_texts.append((cleaned, "attribute"))
 
@@ -3249,7 +4028,9 @@ def _semantic_lexical_score(candidate: dict[str, Any], texts: list[str]) -> tupl
         if not cleaned_text:
             continue
         for candidate_text, text_kind in candidate_texts:
-            raw_score, reason = _semantic_text_similarity(cleaned_text, candidate_text)
+            raw_score, reason = _semantic_text_similarity(
+                cleaned_text, candidate_text
+            )
             if raw_score <= 0:
                 continue
             if text_kind == "identity":
@@ -3272,7 +4053,9 @@ def _semantic_lexical_score(candidate: dict[str, Any], texts: list[str]) -> tupl
 
 
 def _semantic_confidence(best_score: int, second_score: int) -> str:
-    if best_score >= 88 or (best_score >= 72 and best_score - second_score >= 12):
+    if best_score >= 88 or (
+        best_score >= 72 and best_score - second_score >= 12
+    ):
         return "high"
     if best_score >= 50:
         return "medium"
@@ -3284,7 +4067,9 @@ def _has_clear_low_confidence_leader(plan: SemanticModelPlan) -> bool:
     if not candidates:
         return False
     best_score = int(candidates[0].get("score") or 0)
-    second_score = int(candidates[1].get("score") or 0) if len(candidates) > 1 else 0
+    second_score = (
+        int(candidates[1].get("score") or 0) if len(candidates) > 1 else 0
+    )
     if best_score >= 36 and best_score - second_score >= 8:
         return True
     if best_score >= 42:
@@ -3306,20 +4091,38 @@ def _heuristic_semantic_model_candidates(
     generic_server_hint = _is_generic_server_hint(raw_type_hints)
     middleware_or_data_family_score = max(
         int((rule_results.get(rule_name) or {}).get("score") or 0)
-        for rule_name in ("database", "mysql", "PostgreSQL", "redis", "Kafka", "elasticsearch", "nginx", "apache")
+        for rule_name in (
+            "database",
+            "mysql",
+            "PostgreSQL",
+            "redis",
+            "Kafka",
+            "elasticsearch",
+            "nginx",
+            "apache",
+        )
     )
     ranked_candidates: list[dict[str, Any]] = []
 
     for candidate in catalog:
         candidate_name = _clean_text(candidate.get("name"))
-        lexical_score, lexical_reason = _semantic_lexical_score(candidate, context.get("texts", []))
+        lexical_score, lexical_reason = _semantic_lexical_score(
+            candidate, context.get("texts", [])
+        )
         score = lexical_score
         reasons = [lexical_reason] if lexical_reason else []
         matched_rules = _candidate_rule_names(candidate)
         matched_specific_rules = {
             rule_name
             for rule_name in matched_rules
-            if next((rule for rule in SEMANTIC_MODEL_RULES if rule["name"] == rule_name and rule.get("specific")), None)
+            if next(
+                (
+                    rule
+                    for rule in SEMANTIC_MODEL_RULES
+                    if rule["name"] == rule_name and rule.get("specific")
+                ),
+                None,
+            )
         }
         for rule_name in matched_rules:
             result = rule_results.get(rule_name) or {}
@@ -3335,18 +4138,38 @@ def _heuristic_semantic_model_candidates(
             for rule_name in ("mysql", "PostgreSQL")
         ):
             score -= 10
-        if candidate_name in {"mysql", "PostgreSQL"} and not any(
-            int((rule_results.get(rule_name) or {}).get("score") or 0) >= 30 for rule_name in matched_specific_rules
-        ) and int((rule_results.get("database") or {}).get("score") or 0) >= 30:
+        if (
+            candidate_name in {"mysql", "PostgreSQL"}
+            and not any(
+                int((rule_results.get(rule_name) or {}).get("score") or 0)
+                >= 30
+                for rule_name in matched_specific_rules
+            )
+            and int((rule_results.get("database") or {}).get("score") or 0)
+            >= 30
+        ):
             score -= 8
-        if candidate_name == "kubernetes" and int((rule_results.get("docker") or {}).get("score") or 0) >= 28:
+        if (
+            candidate_name == "kubernetes"
+            and int((rule_results.get("docker") or {}).get("score") or 0) >= 28
+        ):
             score -= 10
-        if candidate_name == "docker" and int((rule_results.get("kubernetes") or {}).get("score") or 0) >= 28:
+        if (
+            candidate_name == "docker"
+            and int((rule_results.get("kubernetes") or {}).get("score") or 0)
+            >= 28
+        ):
             score -= 10
-        if candidate_name in {"docker", "kubernetes"} and middleware_or_data_family_score >= 28:
+        if (
+            candidate_name in {"docker", "kubernetes"}
+            and middleware_or_data_family_score >= 28
+        ):
             score -= 22
             reasons.append("同时存在更强的中间件/数据库语义")
-        if generic_server_hint and candidate_name in {"PhysicalMachine", "vserver"}:
+        if generic_server_hint and candidate_name in {
+            "PhysicalMachine",
+            "vserver",
+        }:
             score += 18
             reasons.append("原始类型只表达通用服务器语义")
 
@@ -3362,7 +4185,9 @@ def _heuristic_semantic_model_candidates(
                 "groupNames": candidate.get("groupNames") or [],
                 "existing": True,
                 "score": score,
-                "reason": "；".join(dict.fromkeys([item for item in reasons if item])),
+                "reason": "；".join(
+                    dict.fromkeys([item for item in reasons if item])
+                ),
             }
         )
 
@@ -3377,10 +4202,16 @@ def _heuristic_semantic_model_candidates(
         return []
 
     best_score = int(ranked_candidates[0].get("score") or 0)
-    second_score = int(ranked_candidates[1].get("score") or 0) if len(ranked_candidates) > 1 else 0
+    second_score = (
+        int(ranked_candidates[1].get("score") or 0)
+        if len(ranked_candidates) > 1
+        else 0
+    )
     for index, item in enumerate(ranked_candidates):
         current_score = int(item.get("score") or 0)
-        base_confidence = _semantic_confidence(current_score, second_score if index == 0 else best_score)
+        base_confidence = _semantic_confidence(
+            current_score, second_score if index == 0 else best_score
+        )
         if index > 0 and current_score + 8 < best_score:
             base_confidence = "low"
         item["confidence"] = base_confidence
@@ -3439,9 +4270,14 @@ def _build_semantic_model_prompt(
                     if _clean_text(item)
                 ][:12],
                 "parent_types": [
-                    _clean_text(item.get("alias")) or _clean_text(item.get("name"))
+                    _clean_text(item.get("alias"))
+                    or _clean_text(item.get("name"))
                     for item in (model_meta.get("parentTypes") or [])
-                    if isinstance(item, dict) and (_clean_text(item.get("alias")) or _clean_text(item.get("name")))
+                    if isinstance(item, dict)
+                    and (
+                        _clean_text(item.get("alias"))
+                        or _clean_text(item.get("name"))
+                    )
                 ],
                 "heuristic_score": int(candidate.get("score") or 0),
                 "heuristic_reason": _clean_text(candidate.get("reason")),
@@ -3451,7 +4287,14 @@ def _build_semantic_model_prompt(
         "resource_label": context.get("resourceLabel"),
         "normalized_ci_type": context.get("resourceCiType"),
         "raw_type_hints": context.get("rawTypeHints"),
-        "observed_fields": list(dict.fromkeys([*context.get("fieldNames", []), *context.get("sourceFields", [])]))[:20],
+        "observed_fields": list(
+            dict.fromkeys(
+                [
+                    *context.get("fieldNames", []),
+                    *context.get("sourceFields", []),
+                ]
+            )
+        )[:20],
         "sample_records": context.get("sampleRecords"),
         "candidate_models": candidate_models,
         "rules": [
@@ -3492,23 +4335,38 @@ def _parse_semantic_model_plan(
         if not model_name or model_name not in candidate_index:
             continue
         base_candidate = dict(candidate_index[model_name])
-        base_candidate["confidence"] = _clean_text(raw_candidate.get("confidence")) or _clean_text(base_candidate.get("confidence")) or "low"
+        base_candidate["confidence"] = (
+            _clean_text(raw_candidate.get("confidence"))
+            or _clean_text(base_candidate.get("confidence"))
+            or "low"
+        )
         if _clean_text(raw_candidate.get("reason")):
             base_candidate["reason"] = _clean_text(raw_candidate.get("reason"))
         ranked_candidates.append(base_candidate)
     for candidate in heuristic_candidates:
         candidate_name = _clean_text(candidate.get("name"))
-        if candidate_name and all(_clean_text(item.get("name")) != candidate_name for item in ranked_candidates):
+        if candidate_name and all(
+            _clean_text(item.get("name")) != candidate_name
+            for item in ranked_candidates
+        ):
             ranked_candidates.append(dict(candidate))
 
     best_model = _clean_text(result.get("best_model"))
     if best_model not in candidate_index:
-        best_model = _clean_text(ranked_candidates[0].get("name")) if ranked_candidates else ""
+        best_model = (
+            _clean_text(ranked_candidates[0].get("name"))
+            if ranked_candidates
+            else ""
+        )
     confidence = _clean_text(result.get("confidence")) or (
-        _clean_text(candidate_index.get(best_model, {}).get("confidence")) if best_model else "low"
+        _clean_text(candidate_index.get(best_model, {}).get("confidence"))
+        if best_model
+        else "low"
     )
     reason = _clean_text(result.get("reason")) or (
-        _clean_text(candidate_index.get(best_model, {}).get("reason")) if best_model else "LLM 未返回明确原因"
+        _clean_text(candidate_index.get(best_model, {}).get("reason"))
+        if best_model
+        else "LLM 未返回明确原因"
     )
     return SemanticModelPlan(
         best_model=best_model,
@@ -3519,7 +4377,11 @@ def _parse_semantic_model_plan(
     )
 
 
-def _should_run_semantic_inference(resource_ci_type: str, exact_groups: list[dict[str, Any]], raw_type_hints: list[str]) -> bool:
+def _should_run_semantic_inference(
+    resource_ci_type: str,
+    exact_groups: list[dict[str, Any]],
+    raw_type_hints: list[str],
+) -> bool:
     if resource_ci_type == "unknown":
         return True
     if not exact_groups:
@@ -3537,7 +4399,11 @@ async def _infer_semantic_model_plan(
 ) -> SemanticModelPlan:
     heuristic_plan = _build_heuristic_semantic_plan(group, metadata)
     heuristic_candidates = heuristic_plan.candidates or []
-    if not llm_client or not heuristic_candidates or heuristic_plan.confidence == "high":
+    if (
+        not llm_client
+        or not heuristic_candidates
+        or heuristic_plan.confidence == "high"
+    ):
         return heuristic_plan
 
     prompt = _build_semantic_model_prompt(
@@ -3546,9 +4412,15 @@ async def _infer_semantic_model_plan(
         heuristic_candidates=heuristic_candidates,
     )
     try:
-        record_count = int(group.get("count") or len(group.get("records") or []))
+        record_count = int(
+            group.get("count") or len(group.get("records") or [])
+        )
         timeout_seconds = min(
-            max(45.0, RESOURCE_IMPORT_LLM_STEP_TIMEOUT_SECONDS / 3.0 + record_count * 2.0),
+            max(
+                45.0,
+                RESOURCE_IMPORT_LLM_STEP_TIMEOUT_SECONDS / 3.0
+                + record_count * 2.0,
+            ),
             max(60.0, RESOURCE_IMPORT_LLM_STEP_TIMEOUT_MAX_SECONDS / 2.0),
         )
         last_exception: Exception | None = None
@@ -3562,19 +4434,28 @@ async def _infer_semantic_model_plan(
                 )
                 if isinstance(result, SemanticModelPlan):
                     return result
-                return _parse_semantic_model_plan(result, heuristic_candidates=heuristic_candidates)
+                return _parse_semantic_model_plan(
+                    result, heuristic_candidates=heuristic_candidates
+                )
             except asyncio.TimeoutError as exc:
                 last_exception = exc
                 if attempt >= RESOURCE_IMPORT_LLM_RETRY_COUNT - 1:
                     raise
-                sleep_seconds = _llm_retry_sleep_seconds_for_error(exc, attempt + 1)
+                sleep_seconds = _llm_retry_sleep_seconds_for_error(
+                    exc, attempt + 1
+                )
                 if sleep_seconds > 0:
                     await asyncio.sleep(sleep_seconds)
             except Exception as exc:
                 last_exception = exc
-                if attempt >= RESOURCE_IMPORT_LLM_RETRY_COUNT - 1 or not _should_retry_llm_mapping(exc):
+                if (
+                    attempt >= RESOURCE_IMPORT_LLM_RETRY_COUNT - 1
+                    or not _should_retry_llm_mapping(exc)
+                ):
                     raise
-                sleep_seconds = _llm_retry_sleep_seconds_for_error(exc, attempt + 1)
+                sleep_seconds = _llm_retry_sleep_seconds_for_error(
+                    exc, attempt + 1
+                )
                 if sleep_seconds > 0:
                     await asyncio.sleep(sleep_seconds)
         if last_exception is not None:
@@ -3585,14 +4466,24 @@ async def _infer_semantic_model_plan(
 
 def _sheet_llm_timeout_seconds(*, row_count: int, header_count: int) -> float:
     base_timeout = max(RESOURCE_IMPORT_LLM_STEP_TIMEOUT_SECONDS, 30.0)
-    scaled_timeout = base_timeout + max(0.0, header_count - 12) * 6.0 + max(0.0, row_count - 20) * 0.6
-    return min(max(base_timeout, scaled_timeout), RESOURCE_IMPORT_LLM_STEP_TIMEOUT_MAX_SECONDS)
+    scaled_timeout = (
+        base_timeout
+        + max(0.0, header_count - 12) * 6.0
+        + max(0.0, row_count - 20) * 0.6
+    )
+    return min(
+        max(base_timeout, scaled_timeout),
+        RESOURCE_IMPORT_LLM_STEP_TIMEOUT_MAX_SECONDS,
+    )
 
 
 def _looks_like_note_sheet(sheet_name: str, headers: list[str]) -> bool:
     normalized_sheet_name = _clean_text(sheet_name)
     normalized_sheet_name_lower = normalized_sheet_name.lower()
-    if any(_clean_text(token).lower() in normalized_sheet_name_lower for token in EXCLUDED_SHEET_KEYWORDS):
+    if any(
+        _clean_text(token).lower() in normalized_sheet_name_lower
+        for token in EXCLUDED_SHEET_KEYWORDS
+    ):
         return True
     normalized_headers = {_normalize_header(header) for header in headers}
     note_header_groups = [
@@ -3600,12 +4491,16 @@ def _looks_like_note_sheet(sheet_name: str, headers: list[str]) -> bool:
         {"说明", "备注"},
     ]
     for group in note_header_groups:
-        if all(_normalize_header(item) in normalized_headers for item in group):
+        if all(
+            _normalize_header(item) in normalized_headers for item in group
+        ):
             return True
     return False
 
 
-def _build_note_sheet_plan(reason: str = "系统辅助 sheet，已跳过字段语义映射") -> tuple[SheetMappingPlan, str]:
+def _build_note_sheet_plan(
+    reason: str = "系统辅助 sheet，已跳过字段语义映射",
+) -> tuple[SheetMappingPlan, str]:
     return (
         SheetMappingPlan(
             sheet_kind="note",
@@ -3620,7 +4515,9 @@ def _build_note_sheet_plan(reason: str = "系统辅助 sheet，已跳过字段�
 
 def _looks_like_relation_sheet(sheet_name: str, headers: list[str]) -> bool:
     normalized_sheet_name = _clean_text(sheet_name).lower()
-    if any(token in normalized_sheet_name for token in RELATION_SHEET_KEYWORDS):
+    if any(
+        token in normalized_sheet_name for token in RELATION_SHEET_KEYWORDS
+    ):
         return True
 
     matched_fields = {
@@ -3631,7 +4528,9 @@ def _looks_like_relation_sheet(sheet_name: str, headers: list[str]) -> bool:
     if {"source_value", "target_value"} <= matched_fields:
         return True
     if {"source_model", "target_model"} <= matched_fields and (
-        "relation_type" in matched_fields or "source_value" in matched_fields or "target_value" in matched_fields
+        "relation_type" in matched_fields
+        or "source_value" in matched_fields
+        or "target_value" in matched_fields
     ):
         return True
     return False
@@ -3669,7 +4568,9 @@ async def _resolve_sheet_mapping_plan(
     llm_client: Any | None,
     retry_count_override: int | None = None,
 ) -> tuple[SheetMappingPlan, str]:
-    headers = sorted({key for row in rows for key in row.keys() if key != "_sheet"})
+    headers = sorted(
+        {key for row in rows for key in row.keys() if key != "_sheet"}
+    )
     if _looks_like_note_sheet(sheet_name, headers):
         return _build_note_sheet_plan()
 
@@ -3687,7 +4588,11 @@ async def _resolve_sheet_mapping_plan(
         max(sheet_timeout_seconds + 15.0, sheet_timeout_seconds * 1.25),
     )
     default_ci_type = _sheet_name_hint(sheet_name, alias_index)
-    heuristic_sheet_kind = "relation" if _looks_like_relation_sheet(sheet_name, headers) else "asset"
+    heuristic_sheet_kind = (
+        "relation"
+        if _looks_like_relation_sheet(sheet_name, headers)
+        else "asset"
+    )
     heuristic_mappings = {
         header: (
             _match_relation_field(header)
@@ -3704,7 +4609,9 @@ async def _resolve_sheet_mapping_plan(
     heuristic_mapping_details = {
         header: _build_sheet_mapping_detail(
             header=header,
-            heuristic_mapping=heuristic_mappings.get(header, ("unknown", "low")),
+            heuristic_mapping=heuristic_mappings.get(
+                header, ("unknown", "low")
+            ),
             llm_mapping=("unknown", "low"),
             metadata=metadata,
             type_template=type_template_map.get(default_ci_type),
@@ -3739,7 +4646,9 @@ async def _resolve_sheet_mapping_plan(
     try:
         llm_plan = None
         last_exception: Exception | None = None
-        retry_count = max(1, int(retry_count_override or RESOURCE_IMPORT_LLM_RETRY_COUNT))
+        retry_count = max(
+            1, int(retry_count_override or RESOURCE_IMPORT_LLM_RETRY_COUNT)
+        )
         field_candidate_catalog = {
             header: [
                 {
@@ -3762,7 +4671,8 @@ async def _resolve_sheet_mapping_plan(
                 "groupNames": list(item.get("groupNames") or []),
                 "attributeTexts": list(item.get("attributeTexts") or [])[:10],
                 "parentTypes": [
-                    _clean_text(parent.get("alias")) or _clean_text(parent.get("name"))
+                    _clean_text(parent.get("alias"))
+                    or _clean_text(parent.get("name"))
                     for parent in (item.get("parentTypes") or [])
                     if isinstance(parent, dict)
                 ][:4],
@@ -3772,13 +4682,21 @@ async def _resolve_sheet_mapping_plan(
         ][:80]
         for attempt in range(retry_count):
             try:
-                current_timeout_seconds = sheet_timeout_seconds if attempt == 0 else retry_timeout_seconds
+                current_timeout_seconds = (
+                    sheet_timeout_seconds
+                    if attempt == 0
+                    else retry_timeout_seconds
+                )
                 llm_plan = await asyncio.wait_for(
                     llm_client.map_sheet_headers(
                         sheet_name=sheet_name,
                         headers=headers,
                         sample_rows=_sample_sheet_rows(rows),
-                        ci_types=[str(item.get("name") or "") for item in model_templates if item.get("name")],
+                        ci_types=[
+                            str(item.get("name") or "")
+                            for item in model_templates
+                            if item.get("name")
+                        ],
                         field_candidates=field_candidate_catalog,
                         ci_type_catalog=ci_type_catalog,
                     ),
@@ -3791,23 +4709,34 @@ async def _resolve_sheet_mapping_plan(
                 )
                 if attempt >= retry_count - 1:
                     raise
-                sleep_seconds = _llm_retry_sleep_seconds_for_error(last_exception, attempt + 1)
+                sleep_seconds = _llm_retry_sleep_seconds_for_error(
+                    last_exception, attempt + 1
+                )
                 if sleep_seconds > 0:
                     await asyncio.sleep(sleep_seconds)
                 continue
             except Exception as exc:  # noqa: BLE001
                 last_exception = exc
-                if attempt >= retry_count - 1 or not _should_retry_llm_mapping(exc):
+                if (
+                    attempt >= retry_count - 1
+                    or not _should_retry_llm_mapping(exc)
+                ):
                     raise
-                sleep_seconds = _llm_retry_sleep_seconds_for_error(exc, attempt + 1)
+                sleep_seconds = _llm_retry_sleep_seconds_for_error(
+                    exc, attempt + 1
+                )
                 if sleep_seconds > 0:
                     await asyncio.sleep(sleep_seconds)
         if llm_plan is None and last_exception is not None:
             raise last_exception
         merged_mappings: dict[str, tuple[str, str]] = {}
         mapping_details: dict[str, dict[str, Any]] = {}
-        resolved_default_ci_type = llm_plan.default_ci_type or heuristic_plan.default_ci_type
-        resolved_type_template = type_template_map.get(_clean_text(resolved_default_ci_type))
+        resolved_default_ci_type = (
+            llm_plan.default_ci_type or heuristic_plan.default_ci_type
+        )
+        resolved_type_template = type_template_map.get(
+            _clean_text(resolved_default_ci_type)
+        )
         resolved_value_mappings = _sheet_value_choice_mappings(
             headers=headers,
             rows=rows,
@@ -3816,31 +4745,40 @@ async def _resolve_sheet_mapping_plan(
         for header in headers:
             detail = _build_sheet_mapping_detail(
                 header=header,
-                heuristic_mapping=heuristic_mappings.get(header, ("unknown", "low")),
+                heuristic_mapping=heuristic_mappings.get(
+                    header, ("unknown", "low")
+                ),
                 llm_mapping=llm_plan.mappings.get(header, ("unknown", "low")),
                 metadata=metadata,
                 type_template=resolved_type_template,
                 value_mapping=resolved_value_mappings.get(header),
             )
             mapping_details[header] = detail
-            merged_mappings[header] = (str(detail.get("targetField") or "unknown"), str(detail.get("confidence") or "low"))
-        return SheetMappingPlan(
-            sheet_kind=llm_plan.sheet_kind or heuristic_plan.sheet_kind,
-            default_ci_type=resolved_default_ci_type,
-            mappings=merged_mappings,
-            reason=llm_plan.reason or "LLM 映射",
-            mapping_details=mapping_details,
-        ), "LLM辅助映射"
+            merged_mappings[header] = (
+                str(detail.get("targetField") or "unknown"),
+                str(detail.get("confidence") or "low"),
+            )
+        return (
+            SheetMappingPlan(
+                sheet_kind=llm_plan.sheet_kind or heuristic_plan.sheet_kind,
+                default_ci_type=resolved_default_ci_type,
+                mappings=merged_mappings,
+                reason=llm_plan.reason or "LLM 映射",
+                mapping_details=mapping_details,
+            ),
+            "LLM辅助映射",
+        )
     except asyncio.TimeoutError:
         return heuristic_plan, (
-            "规则映射"
-            f"（LLM超时: 单个sheet映射超过 {sheet_timeout_seconds:.0f}s）"
+            "规则映射" f"（LLM超时: 单个sheet映射超过 {sheet_timeout_seconds:.0f}s）"
         )
     except Exception as exc:  # noqa: BLE001
         return heuristic_plan, f"规则映射（LLM不可用: {exc}）"
 
 
-def _build_type_alias_index(model_templates: list[dict[str, Any]]) -> dict[str, str]:
+def _build_type_alias_index(
+    model_templates: list[dict[str, Any]],
+) -> dict[str, str]:
     alias_map: dict[str, str] = {}
     for template in model_templates:
         name = str(template.get("name") or "").strip()
@@ -3874,11 +4812,31 @@ def _normalize_ci_type(value: str, alias_index: dict[str, str]) -> str:
         return "PostgreSQL"
     if "kafka" in lowered:
         return "Kafka"
-    if any(token in lowered for token in ("消息队列", "messagequeue", "mq", "broker", "topic", "stream")):
+    if any(
+        token in lowered
+        for token in (
+            "消息队列",
+            "messagequeue",
+            "mq",
+            "broker",
+            "topic",
+            "stream",
+        )
+    ):
         return "Kafka"
     if lowered in {"es", "elasticsearch"}:
         return "elasticsearch"
-    if any(token in lowered for token in ("搜索引擎", "搜索组件", "检索", "search", "opensearch", "solr")):
+    if any(
+        token in lowered
+        for token in (
+            "搜索引擎",
+            "搜索组件",
+            "检索",
+            "search",
+            "opensearch",
+            "solr",
+        )
+    ):
         return "elasticsearch"
     if "nginx" in lowered:
         return "nginx"
@@ -3888,15 +4846,41 @@ def _normalize_ci_type(value: str, alias_index: dict[str, str]) -> str:
         return "docker"
     if "k8s" in lowered or "kubernetes" in lowered:
         return "kubernetes"
-    if any(token in lowered for token in ("缓存服务", "缓存组件", "缓存", "cache", "key-value", "keyvalue")):
+    if any(
+        token in lowered
+        for token in (
+            "缓存服务",
+            "缓存组件",
+            "缓存",
+            "cache",
+            "key-value",
+            "keyvalue",
+        )
+    ):
         return "redis"
     if any(token in lowered for token in ("victoriametrics", "时序数据库")):
         return "database"
-    if any(token in lowered for token in ("switch", "router", "network", "交换机", "交换", "路由", "防火墙", "负载均衡", "loadbalance", "lb")):
+    if any(
+        token in lowered
+        for token in (
+            "switch",
+            "router",
+            "network",
+            "交换机",
+            "交换",
+            "路由",
+            "防火墙",
+            "负载均衡",
+            "loadbalance",
+            "lb",
+        )
+    ):
         return "networkdevice"
     if any(token in lowered for token in ("vm", "vserver", "虚拟")):
         return "vserver"
-    if any(token in lowered for token in ("server", "服务器", "物理机", "baremetal")):
+    if any(
+        token in lowered for token in ("server", "服务器", "物理机", "baremetal")
+    ):
         return "PhysicalMachine"
     return raw
 
@@ -3964,17 +4948,37 @@ def _normalize_service_port(value: str) -> tuple[str, bool, bool]:
     return text, False, True
 
 
+def _decode_text_content(content: bytes) -> str:
+    """Decode with a CJK-friendly cascade instead of utf-8 errors=ignore,
+    which silently shreds GBK/GB18030 Chinese into mojibake."""
+    for encoding in ("utf-8-sig", "utf-8", "gb18030", "gbk"):
+        try:
+            return content.decode(encoding)
+        except UnicodeDecodeError:
+            continue
+    return content.decode("latin-1")
+
+
 def _read_csv_rows(filename: str, content: bytes) -> list[dict[str, Any]]:
-    text = content.decode("utf-8-sig", errors="ignore")
+    text = _decode_text_content(content)
     sample = text[:2048]
-    dialect = csv.Sniffer().sniff(sample, delimiters=",\t;|") if sample.strip() else csv.excel
-    frame = pd.read_csv(io.StringIO(text), dtype=str, keep_default_na=False, sep=dialect.delimiter)
+    dialect = (
+        csv.Sniffer().sniff(sample, delimiters=",\t;|")
+        if sample.strip()
+        else csv.excel
+    )
+    frame = pd.read_csv(
+        io.StringIO(text),
+        dtype=str,
+        keep_default_na=False,
+        sep=dialect.delimiter,
+    )
     return frame.fillna("").to_dict(orient="records")
 
 
 def _read_excel_rows(filename: str, content: bytes) -> list[dict[str, Any]]:
+    suffix = Path(filename).suffix.lower()
     try:
-        suffix = Path(filename).suffix.lower()
         engine = "openpyxl" if suffix in {".xlsx", ".xlsm"} else None
         workbook = pd.read_excel(
             io.BytesIO(content),
@@ -3983,9 +4987,10 @@ def _read_excel_rows(filename: str, content: bytes) -> list[dict[str, Any]]:
             engine=engine,
         )
     except ImportError as exc:
+        missing = "xlrd" if suffix == ".xls" else "openpyxl"
         raise RuntimeError(
-            "当前服务运行环境缺少 Excel 解析依赖 openpyxl，"
-            "请在启动 QwenPaw 的 Python 环境中安装 `openpyxl` 后重试。"
+            f"当前服务运行环境缺少 Excel 解析依赖 {missing}，"
+            f"请在启动 QwenPaw 的 Python 环境中安装 `{missing}` 后重试。"
         ) from exc
 
     rows: list[dict[str, Any]] = []
@@ -4029,7 +5034,9 @@ def _parse_text_blocks(text: str) -> list[dict[str, Any]]:
 
 def _read_docx_rows(content: bytes) -> list[dict[str, Any]]:
     with zipfile.ZipFile(io.BytesIO(content)) as archive:
-        xml = archive.read("word/document.xml").decode("utf-8", errors="ignore")
+        xml = archive.read("word/document.xml").decode(
+            "utf-8", errors="ignore"
+        )
     text = re.sub(r"</w:p>", "\n", xml)
     text = re.sub(r"<[^>]+>", "", text)
     text = html.unescape(text)
@@ -4044,7 +5051,9 @@ async def _read_image_rows(
     if not llm_client:
         return [], ["当前页面所选模型未提供可用的多模态解析能力，图片文件暂时无法自动抽取。"]
     try:
-        rows = await llm_client.extract_rows_from_image(filename=filename, content=content)
+        rows = await llm_client.extract_rows_from_image(
+            filename=filename, content=content
+        )
         return rows, []
     except Exception as exc:  # noqa: BLE001
         return [], [f"{filename} 图片解析失败：{exc}"]
@@ -4076,12 +5085,14 @@ async def parse_uploaded_file(
     elif suffix in {".txt", ".md"}:
         rows = await asyncio.to_thread(
             _parse_text_blocks,
-            content.decode("utf-8", errors="ignore"),
+            _decode_text_content(content),
         )
     elif suffix == ".docx":
         rows = await asyncio.to_thread(_read_docx_rows, content)
     elif suffix in IMAGE_SUFFIXES:
-        rows, image_warnings = await _read_image_rows(filename, content, llm_client=llm_client)
+        rows, image_warnings = await _read_image_rows(
+            filename, content, llm_client=llm_client
+        )
         warnings.extend(image_warnings)
     else:
         warnings.append(f"{filename} 暂不支持自动解析，将保留为待扩展格式。")
@@ -4132,7 +5143,10 @@ def _ensure_node(
         "selected": True,
     }
     if existing:
-        existing["sourceRows"] = [*existing.get("sourceRows", []), *(payload["sourceRows"] or [])]
+        existing["sourceRows"] = [
+            *existing.get("sourceRows", []),
+            *(payload["sourceRows"] or []),
+        ]
         return key
     nodes[key] = payload
     return key
@@ -4162,13 +5176,19 @@ def _append_relation(
     }
 
 
-def _build_preview_key(parsed_file: ParsedFile | str, sheet_name: str, row_index: int) -> str:
-    filename = parsed_file if isinstance(parsed_file, str) else parsed_file.filename
+def _build_preview_key(
+    parsed_file: ParsedFile | str, sheet_name: str, row_index: int
+) -> str:
+    filename = (
+        parsed_file if isinstance(parsed_file, str) else parsed_file.filename
+    )
     return f"row::{filename}::{sheet_name or 'Sheet1'}::{row_index}"
 
 
 def _row_has_resource_signal(fields: dict[str, Any]) -> bool:
-    value_fields = [key for key in RESOURCE_VALUE_FIELDS if _clean_text(fields.get(key))]
+    value_fields = [
+        key for key in RESOURCE_VALUE_FIELDS if _clean_text(fields.get(key))
+    ]
     if not value_fields:
         return False
     if any(key in PRIMARY_RESOURCE_FIELDS for key in value_fields):
@@ -4211,15 +5231,23 @@ def _collect_confirmation_issues(
 
     if not has_value_for("name"):
         issues.append("名称")
-    if ci_type in {"PhysicalMachine", "vserver", "networkdevice"} and not has_value_for("private_ip"):
+    if ci_type in {
+        "PhysicalMachine",
+        "vserver",
+        "networkdevice",
+    } and not has_value_for("private_ip"):
         issues.append("IP")
     if ci_type == "networkdevice" and not has_value_for("model"):
         issues.append("型号")
     if ci_type in SOFTWARE_RESOURCE_TYPES and not has_value_for("version"):
         issues.append("版本")
-    if ci_type in SOFTWARE_RESOURCE_TYPES and not has_value_for("service_port"):
+    if ci_type in SOFTWARE_RESOURCE_TYPES and not has_value_for(
+        "service_port"
+    ):
         issues.append("端口")
-    if ci_type in SOFTWARE_RESOURCE_TYPES and not has_value_for("deploy_target"):
+    if ci_type in SOFTWARE_RESOURCE_TYPES and not has_value_for(
+        "deploy_target"
+    ):
         issues.append("部署节点")
     return issues
 
@@ -4241,7 +5269,9 @@ def _find_existing_ci(
         if not field:
             continue
         value = _clean_text(attributes.get(field))
-        if value and all(existing_field != field for existing_field, _ in candidates):
+        if value and all(
+            existing_field != field for existing_field, _ in candidates
+        ):
             candidates.append((field, value))
     if fallback_name and all(name != "name" for name, _ in candidates):
         candidates.append(("name", fallback_name))
@@ -4306,7 +5336,9 @@ def _resolve_attribute_id_from_metadata(
         definitions: list[dict[str, Any]],
         names: list[str],
     ) -> int | None:
-        exact_names = [_clean_text(item) for item in names if _clean_text(item)]
+        exact_names = [
+            _clean_text(item) for item in names if _clean_text(item)
+        ]
         if not exact_names:
             return None
 
@@ -4320,11 +5352,15 @@ def _resolve_attribute_id_from_metadata(
                     continue
                 definition_name = _clean_text(definition.get("name"))
                 definition_alias = _clean_text(definition.get("alias"))
-                if definition_name == candidate_name or definition_alias == candidate_name:
+                if (
+                    definition_name == candidate_name
+                    or definition_alias == candidate_name
+                ):
                     return attribute_id
                 if normalized_candidate and (
                     _normalize_token(definition_name) == normalized_candidate
-                    or _normalize_token(definition_alias) == normalized_candidate
+                    or _normalize_token(definition_alias)
+                    == normalized_candidate
                 ):
                     return attribute_id
         return None
@@ -4335,10 +5371,16 @@ def _resolve_attribute_id_from_metadata(
         if isinstance(item, dict)
     ]
     preferred_type = next(
-        (item for item in ci_types if _clean_text(item.get("name")) == _clean_text(preferred_ci_type)),
+        (
+            item
+            for item in ci_types
+            if _clean_text(item.get("name")) == _clean_text(preferred_ci_type)
+        ),
         None,
     )
-    preferred_definitions = list((preferred_type or {}).get("attributeDefinitions") or [])
+    preferred_definitions = list(
+        (preferred_type or {}).get("attributeDefinitions") or []
+    )
     all_definitions = [
         definition
         for ci_type in ci_types
@@ -4346,7 +5388,9 @@ def _resolve_attribute_id_from_metadata(
         if isinstance(definition, dict)
     ]
 
-    direct_match = _find_definition_id(preferred_definitions, [target_name]) or _find_definition_id(
+    direct_match = _find_definition_id(
+        preferred_definitions, [target_name]
+    ) or _find_definition_id(
         all_definitions,
         [target_name],
     )
@@ -4358,14 +5402,20 @@ def _resolve_attribute_id_from_metadata(
     if canonical_field != "unknown":
         canonical_names.append(canonical_field)
         canonical_names.extend(FIELD_ALIASES.get(canonical_field, []))
-        canonical_names.extend(SPECIAL_ATTRIBUTE_NAME_CANDIDATES.get(canonical_field, []))
+        canonical_names.extend(
+            SPECIAL_ATTRIBUTE_NAME_CANDIDATES.get(canonical_field, [])
+        )
 
     if preferred_type and canonical_field != "unknown":
-        resolved_name = _resolve_cmdb_attribute_name(preferred_type, canonical_field)
+        resolved_name = _resolve_cmdb_attribute_name(
+            preferred_type, canonical_field
+        )
         if resolved_name:
             canonical_names.insert(0, resolved_name)
 
-    mapped_match = _find_definition_id(preferred_definitions, canonical_names) or _find_definition_id(
+    mapped_match = _find_definition_id(
+        preferred_definitions, canonical_names
+    ) or _find_definition_id(
         all_definitions,
         canonical_names,
     )
@@ -4408,7 +5458,9 @@ def _build_ci_type_state(
 def _refresh_ci_type_state(
     client: VeopsCmdbClient,
 ) -> tuple[dict[str, dict[str, Any]], dict[str, dict[str, Any]]]:
-    return _build_ci_type_state(client.get_ci_types(), client.get_ci_type_groups())
+    return _build_ci_type_state(
+        client.get_ci_types(), client.get_ci_type_groups()
+    )
 
 
 def _attach_model_to_group(
@@ -4434,7 +5486,9 @@ def _attach_model_to_group(
     if model_id in type_ids:
         return False
     type_ids.add(model_id)
-    client.update_ci_type_group(group_id, name=group_name, type_ids=sorted(type_ids))
+    client.update_ci_type_group(
+        group_id, name=group_name, type_ids=sorted(type_ids)
+    )
     return True
 
 
@@ -4455,13 +5509,24 @@ def _prepare_import_structure(
     for raw_item in items:
         if not isinstance(raw_item, dict):
             continue
-        resource_label = _clean_text(raw_item.get("resourceLabel")) or _clean_text(raw_item.get("resourceCiType")) or "待确认资源"
-        group_name = _clean_text(raw_item.get("selectedGroupName")) or _clean_text(raw_item.get("suggestedGroupName"))
-        raw_model_name = _clean_text(raw_item.get("selectedModelName")) or _clean_text(raw_item.get("resourceCiType"))
-        model_name = _resolve_payload_ci_type(
-            raw_model_name,
-            type_templates=type_map,
-        ) or raw_model_name
+        resource_label = (
+            _clean_text(raw_item.get("resourceLabel"))
+            or _clean_text(raw_item.get("resourceCiType"))
+            or "待确认资源"
+        )
+        group_name = _clean_text(
+            raw_item.get("selectedGroupName")
+        ) or _clean_text(raw_item.get("suggestedGroupName"))
+        raw_model_name = _clean_text(
+            raw_item.get("selectedModelName")
+        ) or _clean_text(raw_item.get("resourceCiType"))
+        model_name = (
+            _resolve_payload_ci_type(
+                raw_model_name,
+                type_templates=type_map,
+            )
+            or raw_model_name
+        )
         model_draft = raw_item.get("modelDraft") or {}
         model_alias = _clean_text(model_draft.get("alias")) or model_name
         unique_key_name = _clean_text(model_draft.get("uniqueKey"))
@@ -4515,7 +5580,9 @@ def _prepare_import_structure(
                 parent = type_map.get(inherit_from)
                 parent_id = _extract_type_id((parent or {}).get("id"))
                 if parent_id is None:
-                    raise RuntimeError(f"模型 {model_name} 继承失败：未找到父模型 {inherit_from}")
+                    raise RuntimeError(
+                        f"模型 {model_name} 继承失败：未找到父模型 {inherit_from}"
+                    )
                 parent_ids = [parent_id]
             model_id, _response = client.create_ci_type(
                 name=model_name,
@@ -4527,7 +5594,9 @@ def _prepare_import_structure(
             type_map.update(_type_map)
             group = group_map.get(group_name) if group_name else group
             model = type_map.get(model_name)
-            resolved_model_id = _extract_type_id(model_id) or _extract_type_id((model or {}).get("id"))
+            resolved_model_id = _extract_type_id(model_id) or _extract_type_id(
+                (model or {}).get("id")
+            )
             if model is None or resolved_model_id is None:
                 raise RuntimeError(f"模型 {model_name} 创建后未能在 CMDB 中查询到")
             results.append(
@@ -4545,7 +5614,9 @@ def _prepare_import_structure(
             if model_id is None:
                 raise RuntimeError(f"模型 {model_name} 缺少 id，无法继续导入")
             if group is None:
-                raise RuntimeError(f"目标分组 {group_name} 不存在，无法挂接模型 {model_name}")
+                raise RuntimeError(
+                    f"目标分组 {group_name} 不存在，无法挂接模型 {model_name}"
+                )
             attached = _attach_model_to_group(
                 client,
                 group=group,
@@ -4568,9 +5639,15 @@ def _prepare_import_structure(
     return results
 
 
-def _attribute_definitions(type_template: dict[str, Any] | None) -> list[dict[str, Any]]:
+def _attribute_definitions(
+    type_template: dict[str, Any] | None,
+) -> list[dict[str, Any]]:
     definitions = (type_template or {}).get("attributeDefinitions") or []
-    return [item for item in definitions if isinstance(item, dict) and item.get("name")]
+    return [
+        item
+        for item in definitions
+        if isinstance(item, dict) and item.get("name")
+    ]
 
 
 def _allowed_attribute_names(type_template: dict[str, Any] | None) -> set[str]:
@@ -4588,7 +5665,9 @@ def _allowed_attribute_names(type_template: dict[str, Any] | None) -> set[str]:
     }
 
 
-def _find_attribute_definition(type_template: dict[str, Any] | None, attribute_name: str) -> dict[str, Any] | None:
+def _find_attribute_definition(
+    type_template: dict[str, Any] | None, attribute_name: str
+) -> dict[str, Any] | None:
     target = _clean_text(attribute_name)
     for item in _attribute_definitions(type_template):
         if _clean_text(item.get("name")) == target:
@@ -4596,21 +5675,27 @@ def _find_attribute_definition(type_template: dict[str, Any] | None, attribute_n
     return None
 
 
-def _resolve_attribute_label(type_template: dict[str, Any] | None, attribute_name: str) -> str:
+def _resolve_attribute_label(
+    type_template: dict[str, Any] | None, attribute_name: str
+) -> str:
     for item in _attribute_definitions(type_template):
         if _clean_text(item.get("name")) == _clean_text(attribute_name):
             return str(item.get("alias") or item.get("name") or attribute_name)
     return attribute_name
 
 
-def _format_choice_options(attribute_definition: dict[str, Any] | None, *, limit: int = 8) -> str:
+def _format_choice_options(
+    attribute_definition: dict[str, Any] | None, *, limit: int = 8
+) -> str:
     if not attribute_definition:
         return ""
     labels: list[str] = []
-    for item in (attribute_definition.get("choices") or []):
+    for item in attribute_definition.get("choices") or []:
         if not isinstance(item, dict):
             continue
-        label = _clean_text(item.get("label")) or _clean_text(item.get("value"))
+        label = _clean_text(item.get("label")) or _clean_text(
+            item.get("value")
+        )
         if label and label not in labels:
             labels.append(label)
     if not labels:
@@ -4643,7 +5728,19 @@ def _is_name_like_unique_key(unique_key: str) -> bool:
         or "servername" in tokens
         or "devname" in tokens
         or "vservername" in tokens
-        or any(token in raw for token in ("名称", "名字", "主机名", "设备名", "实例名", "实例名称", "组件实例名", "数据库实例名"))
+        or any(
+            token in raw
+            for token in (
+                "名称",
+                "名字",
+                "主机名",
+                "设备名",
+                "实例名",
+                "实例名称",
+                "组件实例名",
+                "数据库实例名",
+            )
+        )
     )
 
 
@@ -4652,7 +5749,16 @@ def _is_ip_like_unique_key(unique_key: str) -> bool:
     raw = _clean_text(unique_key).lower()
     return "ip" in normalized or any(
         token in raw
-        for token in ("管理地址", "管理ip", "内网地址", "内网ip", "ip地址", "主机地址", "数据库地址", "组件地址")
+        for token in (
+            "管理地址",
+            "管理ip",
+            "内网地址",
+            "内网ip",
+            "ip地址",
+            "主机地址",
+            "数据库地址",
+            "组件地址",
+        )
     )
 
 
@@ -4660,11 +5766,26 @@ def _is_code_like_unique_key(unique_key: str) -> bool:
     raw = _clean_text(unique_key).lower()
     normalized = _normalize_token(unique_key)
     tokens = set(_semantic_tokens(unique_key))
-    if any(token in raw for token in ("主键", "唯一", "唯一标识", "资源主键", "资产标识", "编号", "编码", "标识")):
+    if any(
+        token in raw
+        for token in (
+            "主键",
+            "唯一",
+            "唯一标识",
+            "资源主键",
+            "资产标识",
+            "编号",
+            "编码",
+            "标识",
+        )
+    ):
         return True
     if normalized in {"rowid", "ciid", "pid"}:
         return True
-    return any(token in tokens for token in ("code", "no", "id", "key", "pk", "unique", "identifier"))
+    return any(
+        token in tokens
+        for token in ("code", "no", "id", "key", "pk", "unique", "identifier")
+    )
 
 
 def _clean_source_attributes(row: dict[str, Any]) -> dict[str, str]:
@@ -4687,29 +5808,37 @@ def _semantic_source_candidates(
     unique_key_label: str = "",
 ) -> list[tuple[int, str, str]]:
     candidates: list[tuple[int, str, str]] = []
-    target_text = " ".join(item for item in (unique_key, unique_key_label) if _clean_text(item)).strip()
+    target_text = " ".join(
+        item for item in (unique_key, unique_key_label) if _clean_text(item)
+    ).strip()
     for field_name, field_value in source_attributes.items():
         if not _clean_text(field_value):
             continue
         matched = (
-            semantic_kind == "name"
-            and _is_name_like_unique_key(field_name)
-        ) or (
-            semantic_kind == "ip"
-            and _is_ip_like_unique_key(field_name)
-        ) or (
-            semantic_kind == "code"
-            and _is_code_like_unique_key(field_name)
+            (semantic_kind == "name" and _is_name_like_unique_key(field_name))
+            or (semantic_kind == "ip" and _is_ip_like_unique_key(field_name))
+            or (
+                semantic_kind == "code"
+                and _is_code_like_unique_key(field_name)
+            )
         )
         if not matched:
             continue
-        similarity_score = _semantic_text_similarity(field_name, target_text or semantic_kind)[0] if (target_text or semantic_kind) else 0
+        similarity_score = (
+            _semantic_text_similarity(
+                field_name, target_text or semantic_kind
+            )[0]
+            if (target_text or semantic_kind)
+            else 0
+        )
         candidates.append((100 + similarity_score, field_name, field_value))
     candidates.sort(key=lambda item: (-item[0], item[1]))
     return candidates
 
 
-def _is_system_generated_unique_key(type_template: dict[str, Any] | None) -> bool:
+def _is_system_generated_unique_key(
+    type_template: dict[str, Any] | None,
+) -> bool:
     unique_key = _clean_text((type_template or {}).get("unique_key"))
     if not unique_key:
         return False
@@ -4722,12 +5851,18 @@ def _is_system_generated_unique_key(type_template: dict[str, Any] | None) -> boo
     alias = _clean_text((definition or {}).get("alias")).lower()
     value_type = _clean_text((definition or {}).get("value_type")).lower()
     numeric_types = {"int", "integer", "bigint", "smallint", "long", "number"}
-    if normalized in {"id", "_id"} and alias in {"主键", "系统主键"} and value_type in numeric_types:
+    if (
+        normalized in {"id", "_id"}
+        and alias in {"主键", "系统主键"}
+        and value_type in numeric_types
+    ):
         return True
     return False
 
 
-def _get_import_required_unique_key(type_template: dict[str, Any] | None) -> str:
+def _get_import_required_unique_key(
+    type_template: dict[str, Any] | None,
+) -> str:
     if _is_system_generated_unique_key(type_template):
         return ""
     return _clean_text((type_template or {}).get("unique_key"))
@@ -4735,14 +5870,36 @@ def _get_import_required_unique_key(type_template: dict[str, Any] | None) -> str
 
 SPECIAL_ATTRIBUTE_NAME_CANDIDATES = {
     "asset_code": ["asset_code", "property_no", "dev_no", "p_id"],
-    "name": ["name", "serverName", "dev_name", "db_instance", "middleware_name", "project_name", "product_name", "vserver_name"],
-    "private_ip": ["private_ip", "privateIp", "manage_ip", "host_ip", "ip", "db_ip", "middleware_ip"],
+    "name": [
+        "name",
+        "serverName",
+        "dev_name",
+        "db_instance",
+        "middleware_name",
+        "project_name",
+        "product_name",
+        "vserver_name",
+    ],
+    "private_ip": [
+        "private_ip",
+        "privateIp",
+        "manage_ip",
+        "host_ip",
+        "ip",
+        "db_ip",
+        "middleware_ip",
+    ],
     "status": ["status"],
     "platform": ["platform", "project", "project_name", "app_name"],
     "project": ["project", "platform", "project_name", "app_name"],
     "model": ["model", "device_spec", "dev_model"],
     "version": ["version", "db_version", "dev_software_version"],
-    "service_port": ["service_port", "db_port", "middleware_port", "snmp_port"],
+    "service_port": [
+        "service_port",
+        "db_port",
+        "middleware_port",
+        "snmp_port",
+    ],
     "owner": ["owner", "op_duty"],
     "deploy_target": ["deploy_target", "AssociatedPhyMachine"],
     "host_name": ["host_name"],
@@ -4766,18 +5923,40 @@ SPECIAL_ATTRIBUTE_NAME_CANDIDATES = {
 }
 
 
-def _resolve_cmdb_attribute_name(type_template: dict[str, Any] | None, canonical_field: str) -> str:
+def _resolve_cmdb_attribute_name(
+    type_template: dict[str, Any] | None, canonical_field: str
+) -> str:
     definitions = _attribute_definitions(type_template)
-    system_generated_unique_key = _clean_text((type_template or {}).get("unique_key")) if _is_system_generated_unique_key(type_template) else ""
+    system_generated_unique_key = (
+        _clean_text((type_template or {}).get("unique_key"))
+        if _is_system_generated_unique_key(type_template)
+        else ""
+    )
     ordered_candidates: list[str] = [canonical_field]
-    ordered_candidates.extend(item for item in FIELD_ALIASES.get(canonical_field, []) if _clean_text(item))
-    ordered_candidates.extend(item for item in SPECIAL_ATTRIBUTE_NAME_CANDIDATES.get(canonical_field, []) if _clean_text(item))
+    ordered_candidates.extend(
+        item
+        for item in FIELD_ALIASES.get(canonical_field, [])
+        if _clean_text(item)
+    )
+    ordered_candidates.extend(
+        item
+        for item in SPECIAL_ATTRIBUTE_NAME_CANDIDATES.get(canonical_field, [])
+        if _clean_text(item)
+    )
     candidate_tokens = {_normalize_token(canonical_field)}
-    candidate_tokens.update(_normalize_token(item) for item in FIELD_ALIASES.get(canonical_field, []))
-    candidate_tokens.update(_normalize_token(item) for item in SPECIAL_ATTRIBUTE_NAME_CANDIDATES.get(canonical_field, []))
+    candidate_tokens.update(
+        _normalize_token(item)
+        for item in FIELD_ALIASES.get(canonical_field, [])
+    )
+    candidate_tokens.update(
+        _normalize_token(item)
+        for item in SPECIAL_ATTRIBUTE_NAME_CANDIDATES.get(canonical_field, [])
+    )
 
     if definitions:
-        attribute_names = {_clean_text(item.get("name")) for item in definitions}
+        attribute_names = {
+            _clean_text(item.get("name")) for item in definitions
+        }
     else:
         attribute_names = {
             _clean_text(item)
@@ -4787,23 +5966,42 @@ def _resolve_cmdb_attribute_name(type_template: dict[str, Any] | None, canonical
 
     unique_key = _get_import_required_unique_key(type_template)
     if unique_key:
-        if canonical_field == "name" and _is_name_like_unique_key(unique_key) and unique_key in attribute_names:
+        if (
+            canonical_field == "name"
+            and _is_name_like_unique_key(unique_key)
+            and unique_key in attribute_names
+        ):
             return unique_key
-        if canonical_field == "private_ip" and _is_ip_like_unique_key(unique_key) and unique_key in attribute_names:
+        if (
+            canonical_field == "private_ip"
+            and _is_ip_like_unique_key(unique_key)
+            and unique_key in attribute_names
+        ):
             return unique_key
-        if canonical_field == "asset_code" and _is_code_like_unique_key(unique_key) and unique_key in attribute_names:
+        if (
+            canonical_field == "asset_code"
+            and _is_code_like_unique_key(unique_key)
+            and unique_key in attribute_names
+        ):
             return unique_key
         if canonical_field == "name" and _is_name_like_unique_key(unique_key):
             candidate_tokens.add(_normalize_token(unique_key))
-        if canonical_field == "private_ip" and _is_ip_like_unique_key(unique_key):
+        if canonical_field == "private_ip" and _is_ip_like_unique_key(
+            unique_key
+        ):
             candidate_tokens.add(_normalize_token(unique_key))
-        if canonical_field == "asset_code" and _is_code_like_unique_key(unique_key):
+        if canonical_field == "asset_code" and _is_code_like_unique_key(
+            unique_key
+        ):
             candidate_tokens.add(_normalize_token(unique_key))
 
     if not definitions:
         for candidate_name in ordered_candidates:
             normalized_candidate = _clean_text(candidate_name)
-            if normalized_candidate and normalized_candidate in attribute_names:
+            if (
+                normalized_candidate
+                and normalized_candidate in attribute_names
+            ):
                 return normalized_candidate
         for attr_name in attribute_names:
             if _normalize_token(attr_name) in candidate_tokens:
@@ -4817,7 +6015,10 @@ def _resolve_cmdb_attribute_name(type_template: dict[str, Any] | None, canonical
             attr_alias = str(item.get("alias") or "")
             if not normalized_candidate:
                 continue
-            if system_generated_unique_key and _clean_text(attr_name) == system_generated_unique_key:
+            if (
+                system_generated_unique_key
+                and _clean_text(attr_name) == system_generated_unique_key
+            ):
                 continue
             if (
                 _normalize_token(attr_name) == normalized_candidate
@@ -4828,9 +6029,15 @@ def _resolve_cmdb_attribute_name(type_template: dict[str, Any] | None, canonical
     for item in definitions:
         attr_name = str(item.get("name") or "")
         attr_alias = str(item.get("alias") or "")
-        if system_generated_unique_key and _clean_text(attr_name) == system_generated_unique_key:
+        if (
+            system_generated_unique_key
+            and _clean_text(attr_name) == system_generated_unique_key
+        ):
             continue
-        if _normalize_token(attr_name) in candidate_tokens or _normalize_token(attr_alias) in candidate_tokens:
+        if (
+            _normalize_token(attr_name) in candidate_tokens
+            or _normalize_token(attr_alias) in candidate_tokens
+        ):
             return attr_name
     return canonical_field
 
@@ -4847,7 +6054,9 @@ def _resolve_import_target_key(
     if type_name == "project":
         return target_key
     platform_key = _resolve_cmdb_attribute_name(type_template, "platform")
-    if platform_key and _find_attribute_definition(type_template, platform_key):
+    if platform_key and _find_attribute_definition(
+        type_template, platform_key
+    ):
         return platform_key
     return target_key
 
@@ -4939,7 +6148,12 @@ def _autofill_deterministic_cmdb_attributes(
     if unique_key and not _clean_text(next_attributes.get(unique_key)):
         if _is_code_like_unique_key(unique_key):
             unique_value = _first_non_empty_value(
-                next_attributes.get(_resolve_import_target_key(type_template=type_template, canonical_field="asset_code")),
+                next_attributes.get(
+                    _resolve_import_target_key(
+                        type_template=type_template,
+                        canonical_field="asset_code",
+                    )
+                ),
                 canonical_attributes.get("asset_code"),
                 canonical_attributes.get("property_no"),
                 canonical_attributes.get("dev_no"),
@@ -4955,7 +6169,11 @@ def _autofill_deterministic_cmdb_attributes(
             )
         else:
             unique_value = _first_non_empty_value(
-                next_attributes.get(_resolve_import_target_key(type_template=type_template, canonical_field="name")),
+                next_attributes.get(
+                    _resolve_import_target_key(
+                        type_template=type_template, canonical_field="name"
+                    )
+                ),
                 canonical_attributes.get("name"),
                 canonical_attributes.get("dev_name"),
                 canonical_attributes.get("serverName"),
@@ -4973,12 +6191,17 @@ def _autofill_deterministic_cmdb_attributes(
         attr_name = _clean_text(definition.get("name"))
         if not attr_name or _clean_text(next_attributes.get(attr_name)):
             continue
-        if not bool(definition.get("required") or definition.get("is_required")):
+        if not bool(
+            definition.get("required") or definition.get("is_required")
+        ):
             continue
         default_value = _extract_attribute_default_value(definition)
         if not default_value:
             continue
-        normalized_value, unresolved_choice = _normalize_choice_attribute_value(
+        (
+            normalized_value,
+            unresolved_choice,
+        ) = _normalize_choice_attribute_value(
             attribute_definition=definition,
             value=default_value,
         )
@@ -5010,7 +6233,9 @@ def _autofill_deterministic_cmdb_attributes(
             attr_name = _clean_text(definition.get("name"))
             if not attr_name or attr_name == "name":
                 continue
-            if not bool(definition.get("required") or definition.get("is_required")):
+            if not bool(
+                definition.get("required") or definition.get("is_required")
+            ):
                 continue
             if _clean_text(next_attributes.get(attr_name)):
                 continue
@@ -5039,7 +6264,9 @@ def _is_server_default_macro(value: Any) -> bool:
     return _clean_text(value).startswith("$")
 
 
-def _extract_attribute_default_value(attribute_definition: dict[str, Any] | None) -> str:
+def _extract_attribute_default_value(
+    attribute_definition: dict[str, Any] | None,
+) -> str:
     if not attribute_definition:
         return ""
     raw_default = attribute_definition.get("default")
@@ -5061,17 +6288,19 @@ def _extract_attribute_default_value(attribute_definition: dict[str, Any] | None
     attr_name = _clean_text(attribute_definition.get("name")).lower()
     attr_alias = _clean_text(attribute_definition.get("alias"))
     if attr_name == "status" or attr_alias == "资产状态":
-        for item in (attribute_definition.get("choices") or []):
+        for item in attribute_definition.get("choices") or []:
             if not isinstance(item, dict):
                 continue
             label = _clean_text(item.get("label"))
             value = _clean_text(item.get("value"))
             if label == "在线" or value == "在线":
                 return value or label
-        for item in (attribute_definition.get("choices") or []):
+        for item in attribute_definition.get("choices") or []:
             if not isinstance(item, dict):
                 continue
-            value = _clean_text(item.get("value")) or _clean_text(item.get("label"))
+            value = _clean_text(item.get("value")) or _clean_text(
+                item.get("label")
+            )
             if value:
                 return value
     return ""
@@ -5095,7 +6324,9 @@ def _collect_deterministic_autofill_hints(
         and not _clean_text(canonical_attributes.get("manage_ip"))
         and _clean_text(canonical_attributes.get("private_ip"))
     ):
-        hints.append(f"{_resolve_attribute_label(type_template, manage_ip_key)}已补全")
+        hints.append(
+            f"{_resolve_attribute_label(type_template, manage_ip_key)}已补全"
+        )
 
     unique_key = _get_import_required_unique_key(type_template)
     if unique_key and _clean_text(cmdb_attributes.get(unique_key)):
@@ -5108,7 +6339,9 @@ def _collect_deterministic_autofill_hints(
                 canonical_attributes.get("p_id"),
             )
         ):
-            hints.append(f"{_resolve_attribute_label(type_template, unique_key)}已补全")
+            hints.append(
+                f"{_resolve_attribute_label(type_template, unique_key)}已补全"
+            )
         elif _is_ip_like_unique_key(unique_key) and (
             not _clean_text(canonical_attributes.get(unique_key))
             and _first_non_empty_value(
@@ -5117,12 +6350,16 @@ def _collect_deterministic_autofill_hints(
                 canonical_attributes.get("host_ip"),
             )
         ):
-            hints.append(f"{_resolve_attribute_label(type_template, unique_key)}已补全")
+            hints.append(
+                f"{_resolve_attribute_label(type_template, unique_key)}已补全"
+            )
         elif _is_name_like_unique_key(unique_key) and (
             not _clean_text(canonical_attributes.get(unique_key))
             and _clean_text(canonical_attributes.get("name"))
         ):
-            hints.append(f"{_resolve_attribute_label(type_template, unique_key)}已补全")
+            hints.append(
+                f"{_resolve_attribute_label(type_template, unique_key)}已补全"
+            )
 
     return list(dict.fromkeys(hints))
 
@@ -5149,15 +6386,23 @@ def _normalize_choice_attribute_value(
     for item in choice_values:
         choice_value = _clean_text(item.get("value"))
         choice_label = _clean_text(item.get("label"))
-        if cleaned_value == choice_value or normalized_input == _normalize_token(choice_value):
+        if (
+            cleaned_value == choice_value
+            or normalized_input == _normalize_token(choice_value)
+        ):
             return choice_value, False
-        if choice_label and (cleaned_value == choice_label or normalized_input == _normalize_token(choice_label)):
+        if choice_label and (
+            cleaned_value == choice_label
+            or normalized_input == _normalize_token(choice_label)
+        ):
             return choice_value or choice_label, False
 
     return "", True
 
 
-def _attribute_name_by_id(type_template: dict[str, Any] | None, attr_id: Any) -> str:
+def _attribute_name_by_id(
+    type_template: dict[str, Any] | None, attr_id: Any
+) -> str:
     if not type_template or attr_id in (None, ""):
         return ""
     try:
@@ -5215,22 +6460,38 @@ def _collect_pending_choice_values(
                 if not ref_type_name:
                     continue
                 ref_template = type_templates.get(ref_type_name)
-                ref_attr_name = _attribute_name_by_id(ref_template, ref_attr_id)
+                ref_attr_name = _attribute_name_by_id(
+                    ref_template, ref_attr_id
+                )
                 if not ref_attr_name:
                     continue
                 for record in records_by_type.get(ref_type_name, []):
                     record_attributes = record.get("attributes") or {}
                     value = _clean_text(record_attributes.get(ref_attr_name))
                     if not value:
-                        resolved_name_key = _resolve_import_target_key(type_template=ref_template, canonical_field="name")
-                        resolved_platform_key = _resolve_import_target_key(type_template=ref_template, canonical_field="platform")
-                        resolved_project_key = _resolve_import_target_key(type_template=ref_template, canonical_field="project")
+                        resolved_name_key = _resolve_import_target_key(
+                            type_template=ref_template, canonical_field="name"
+                        )
+                        resolved_platform_key = _resolve_import_target_key(
+                            type_template=ref_template,
+                            canonical_field="platform",
+                        )
+                        resolved_project_key = _resolve_import_target_key(
+                            type_template=ref_template,
+                            canonical_field="project",
+                        )
                         if ref_attr_name == resolved_name_key:
-                            value = _clean_text(record_attributes.get("name")) or _clean_text(record.get("name"))
+                            value = _clean_text(
+                                record_attributes.get("name")
+                            ) or _clean_text(record.get("name"))
                         elif ref_attr_name == resolved_platform_key:
-                            value = _clean_text(record_attributes.get("platform")) or _clean_text(record_attributes.get("project"))
+                            value = _clean_text(
+                                record_attributes.get("platform")
+                            ) or _clean_text(record_attributes.get("project"))
                         elif ref_attr_name == resolved_project_key:
-                            value = _clean_text(record_attributes.get("project")) or _clean_text(record_attributes.get("platform"))
+                            value = _clean_text(
+                                record_attributes.get("project")
+                            ) or _clean_text(record_attributes.get("platform"))
                     if not value:
                         continue
                     if value in seen_values:
@@ -5254,7 +6515,11 @@ def _merge_pending_choice_value(
         return
     key = (ci_type, attr_name)
     values = pending.setdefault(key, [])
-    if any(_clean_text(item.get("value")) == cleaned_value for item in values if isinstance(item, dict)):
+    if any(
+        _clean_text(item.get("value")) == cleaned_value
+        for item in values
+        if isinstance(item, dict)
+    ):
         return
     values.append({"value": cleaned_value, "label": cleaned_value})
 
@@ -5295,7 +6560,8 @@ def _collect_existing_reference_choice_values(
             existing_values = {
                 _clean_text(choice.get("value"))
                 for choice in (item.get("choices") or [])
-                if isinstance(choice, dict) and _clean_text(choice.get("value"))
+                if isinstance(choice, dict)
+                and _clean_text(choice.get("value"))
             }
             if reference_value in existing_values:
                 continue
@@ -5305,7 +6571,9 @@ def _collect_existing_reference_choice_values(
                 except Exception:
                     ref_type_name = None
                 ref_template = type_templates.get(ref_type_name or "")
-                ref_attr_name = _attribute_name_by_id(ref_template, ref_attr_id)
+                ref_attr_name = _attribute_name_by_id(
+                    ref_template, ref_attr_id
+                )
                 if not ref_type_name or not ref_attr_name:
                     continue
                 cache_key = (ref_type_name, ref_attr_name, reference_value)
@@ -5343,7 +6611,8 @@ def _merge_pending_choice_values(
                     merged,
                     ci_type=ci_type,
                     attr_name=attr_name,
-                    value=_clean_text(item.get("value")) or _clean_text(item.get("label")),
+                    value=_clean_text(item.get("value"))
+                    or _clean_text(item.get("label")),
                 )
     return merged
 
@@ -5402,19 +6671,26 @@ def _normalize_cmdb_attribute_values(
     type_template: dict[str, Any] | None,
     source_attributes: dict[str, Any],
     cmdb_attributes: dict[str, Any],
-    pending_choice_values: dict[tuple[str, str], list[dict[str, str]]] | None = None,
+    pending_choice_values: (
+        dict[tuple[str, str], list[dict[str, str]]] | None
+    ) = None,
 ) -> dict[str, Any]:
     normalized: dict[str, Any] = {}
     for key, value in cmdb_attributes.items():
         attr_name = _clean_text(key)
         if not attr_name or value in (None, "", []):
             continue
-        attribute_definition = _find_attribute_definition(type_template, attr_name)
+        attribute_definition = _find_attribute_definition(
+            type_template, attr_name
+        )
         if isinstance(value, list):
             normalized_items: list[str] = []
             unresolved_choice = False
             for item in value:
-                normalized_value, unresolved_choice = _normalize_choice_attribute_value(
+                (
+                    normalized_value,
+                    unresolved_choice,
+                ) = _normalize_choice_attribute_value(
                     attribute_definition=attribute_definition,
                     value=_clean_text(item),
                     extra_choices=_runtime_choice_extras_for_attribute(
@@ -5433,7 +6709,10 @@ def _normalize_cmdb_attribute_values(
                 normalized[attr_name] = normalized_items
             continue
 
-        normalized_value, unresolved_choice = _normalize_choice_attribute_value(
+        (
+            normalized_value,
+            unresolved_choice,
+        ) = _normalize_choice_attribute_value(
             attribute_definition=attribute_definition,
             value=_clean_text(value),
             extra_choices=_runtime_choice_extras_for_attribute(
@@ -5469,20 +6748,33 @@ def _split_deferred_self_referential_choice_attributes(
         attr_name = _clean_text(item.get("name"))
         ref_attr_id = item.get("choice_reference_attr_id")
         ref_type_ids = item.get("choice_reference_type_ids") or []
-        if not attr_name or attr_name not in immediate or not ref_attr_id or current_type_id not in ref_type_ids:
+        if (
+            not attr_name
+            or attr_name not in immediate
+            or not ref_attr_id
+            or current_type_id not in ref_type_ids
+        ):
             continue
         ref_attr_name = _attribute_name_by_id(type_template, ref_attr_id)
         if not ref_attr_name:
             continue
         ref_value = _clean_text(source_attributes.get(ref_attr_name))
-        if not ref_value and ref_attr_name == _resolve_cmdb_attribute_name(type_template, "name"):
-            ref_value = _clean_text(source_attributes.get(ref_attr_name)) or _clean_text(source_attributes.get("name"))
+        if not ref_value and ref_attr_name == _resolve_cmdb_attribute_name(
+            type_template, "name"
+        ):
+            ref_value = _clean_text(
+                source_attributes.get(ref_attr_name)
+            ) or _clean_text(source_attributes.get("name"))
         if not ref_value:
             continue
 
         current_value = immediate.get(attr_name)
         if isinstance(current_value, list):
-            matches_self = ref_value in {_clean_text(entry) for entry in current_value if _clean_text(entry)}
+            matches_self = ref_value in {
+                _clean_text(entry)
+                for entry in current_value
+                if _clean_text(entry)
+            }
         else:
             matches_self = _clean_text(current_value) == ref_value
         if not matches_self:
@@ -5496,15 +6788,28 @@ def _build_cmdb_attributes(
     ci_type: str,
     canonical_attributes: dict[str, Any],
     type_template: dict[str, Any] | None,
-    pending_choice_values: dict[tuple[str, str], list[dict[str, str]]] | None = None,
+    pending_choice_values: (
+        dict[tuple[str, str], list[dict[str, str]]] | None
+    ) = None,
 ) -> dict[str, Any]:
     normalized_canonical_attributes = dict(canonical_attributes)
     type_name = _clean_text((type_template or {}).get("name"))
     project_value = _clean_text(normalized_canonical_attributes.get("project"))
-    platform_value = _clean_text(normalized_canonical_attributes.get("platform"))
-    if type_name != "project" and project_value and platform_value and project_value != platform_value:
+    platform_value = _clean_text(
+        normalized_canonical_attributes.get("platform")
+    )
+    if (
+        type_name != "project"
+        and project_value
+        and platform_value
+        and project_value != platform_value
+    ):
         normalized_canonical_attributes.pop("platform", None)
-    elif type_name != "project" and platform_value and _looks_like_os_or_runtime_value(platform_value):
+    elif (
+        type_name != "project"
+        and platform_value
+        and _looks_like_os_or_runtime_value(platform_value)
+    ):
         LOGGER.warning(
             "resource-import dropping suspicious platform value before CMDB write: ci_type=%s platform=%s project=%s attrs=%s",
             ci_type,
@@ -5523,12 +6828,18 @@ def _build_cmdb_attributes(
         cleaned_value = _clean_text(value)
         if not cleaned_value or key == "ci_type" or str(key).startswith("_"):
             continue
-        target_key = _resolve_import_target_key(type_template=type_template, canonical_field=key)
+        target_key = _resolve_import_target_key(
+            type_template=type_template, canonical_field=key
+        )
         if not target_key or target_key == "ci_type":
             continue
-        attribute_definition = _find_attribute_definition(type_template, target_key)
+        attribute_definition = _find_attribute_definition(
+            type_template, target_key
+        )
         if attribute_definition and attribute_definition.get("is_list"):
-            raw_items = _split_reference_values(cleaned_value) or [cleaned_value]
+            raw_items = _split_reference_values(cleaned_value) or [
+                cleaned_value
+            ]
             normalized_items: list[str] = []
             unresolved_choice = False
             extra_choices = _choice_extras_for_attribute(
@@ -5544,7 +6855,10 @@ def _build_cmdb_attributes(
                 pending_choice_values=pending_choice_values,
             )
             for item in raw_items:
-                normalized_value, unresolved_choice = _normalize_choice_attribute_value(
+                (
+                    normalized_value,
+                    unresolved_choice,
+                ) = _normalize_choice_attribute_value(
                     attribute_definition=attribute_definition,
                     value=item,
                     extra_choices=extra_choices,
@@ -5559,7 +6873,10 @@ def _build_cmdb_attributes(
                 attributes[target_key] = normalized_items
             continue
 
-        normalized_value, unresolved_choice = _normalize_choice_attribute_value(
+        (
+            normalized_value,
+            unresolved_choice,
+        ) = _normalize_choice_attribute_value(
             attribute_definition=attribute_definition,
             value=cleaned_value,
             extra_choices=_runtime_choice_extras_for_attribute(
@@ -5574,8 +6891,12 @@ def _build_cmdb_attributes(
             continue
         attributes[target_key] = normalized_value
 
-    platform_key = _resolve_import_target_key(type_template=type_template, canonical_field="platform")
-    platform_definition = _find_attribute_definition(type_template, platform_key)
+    platform_key = _resolve_import_target_key(
+        type_template=type_template, canonical_field="platform"
+    )
+    platform_definition = _find_attribute_definition(
+        type_template, platform_key
+    )
     if (
         type_name != "project"
         and platform_key
@@ -5588,7 +6909,10 @@ def _build_cmdb_attributes(
             pending_choice_values=pending_choice_values,
         )
         if single_platform_value:
-            normalized_value, unresolved_choice = _normalize_choice_attribute_value(
+            (
+                normalized_value,
+                unresolved_choice,
+            ) = _normalize_choice_attribute_value(
                 attribute_definition=platform_definition,
                 value=single_platform_value,
                 extra_choices=_runtime_choice_extras_for_attribute(
@@ -5611,7 +6935,11 @@ def _build_cmdb_attributes(
             fallback_field = "private_ip"
         elif _is_code_like_unique_key(unique_key):
             fallback_field = "asset_code"
-        fallback_value = _clean_text(normalized_canonical_attributes.get(fallback_field)) if fallback_field else ""
+        fallback_value = (
+            _clean_text(normalized_canonical_attributes.get(fallback_field))
+            if fallback_field
+            else ""
+        )
         if fallback_value:
             attributes[unique_key] = fallback_value
 
@@ -5696,7 +7024,9 @@ def _build_preview_attributes(
         cleaned_value = _clean_text(value)
         if not cleaned_value or key == "ci_type" or str(key).startswith("_"):
             continue
-        target_key = _resolve_import_target_key(type_template=type_template, canonical_field=key)
+        target_key = _resolve_import_target_key(
+            type_template=type_template, canonical_field=key
+        )
         attr_definition = _find_attribute_definition(type_template, target_key)
         if attr_definition:
             preview_attributes.setdefault(target_key, cleaned_value)
@@ -5732,11 +7062,16 @@ def _build_record_issues(
     mapping_preview: list[dict[str, Any]],
     existing_ci: dict[str, Any] | None,
     type_template: dict[str, Any] | None = None,
-    pending_choice_values: dict[tuple[str, str], list[dict[str, str]]] | None = None,
+    pending_choice_values: (
+        dict[tuple[str, str], list[dict[str, str]]] | None
+    ) = None,
 ) -> list[dict[str, str]]:
     issues: list[dict[str, str]] = []
+
     def to_target_field(field_name: str) -> str:
-        resolved = _resolve_import_target_key(type_template=type_template, canonical_field=field_name)
+        resolved = _resolve_import_target_key(
+            type_template=type_template, canonical_field=field_name
+        )
         return resolved or field_name
 
     confirmation_labels = _collect_confirmation_issues(
@@ -5802,7 +7137,11 @@ def _build_record_issues(
                 }
             )
             continue
-        if target_field in {"", "unknown"} or confidence in {"", "high"} or target_field in seen_mapping_fields:
+        if (
+            target_field in {"", "unknown"}
+            or confidence in {"", "high"}
+            or target_field in seen_mapping_fields
+        ):
             continue
         seen_mapping_fields.add(target_field)
         issues.append(
@@ -5819,9 +7158,14 @@ def _build_record_issues(
         cleaned_value = _clean_text(raw_value)
         if not cleaned_value:
             continue
-        target_key = _resolve_import_target_key(type_template=type_template, canonical_field=canonical_field)
+        target_key = _resolve_import_target_key(
+            type_template=type_template, canonical_field=canonical_field
+        )
         attr_definition = _find_attribute_definition(type_template, target_key)
-        normalized_value, unresolved_choice = _normalize_choice_attribute_value(
+        (
+            normalized_value,
+            unresolved_choice,
+        ) = _normalize_choice_attribute_value(
             attribute_definition=attr_definition,
             value=cleaned_value,
             extra_choices=_runtime_choice_extras_for_attribute(
@@ -5864,7 +7208,9 @@ def _validate_required_cmdb_attributes(
     type_template: dict[str, Any] | None,
     source_attributes: dict[str, Any],
     cmdb_attributes: dict[str, Any],
-    pending_choice_values: dict[tuple[str, str], list[dict[str, str]]] | None = None,
+    pending_choice_values: (
+        dict[tuple[str, str], list[dict[str, str]]] | None
+    ) = None,
 ) -> list[str]:
     issues: list[str] = []
     ci_type = _clean_text((type_template or {}).get("name"))
@@ -5872,7 +7218,11 @@ def _validate_required_cmdb_attributes(
         attr_name = _clean_text(item.get("name"))
         if not attr_name or not item.get("required"):
             continue
-        if _is_system_generated_unique_key(type_template) and attr_name == _clean_text((type_template or {}).get("unique_key")):
+        if _is_system_generated_unique_key(
+            type_template
+        ) and attr_name == _clean_text(
+            (type_template or {}).get("unique_key")
+        ):
             continue
 
         value = cmdb_attributes.get(attr_name)
@@ -5888,7 +7238,9 @@ def _validate_required_cmdb_attributes(
             raw_value = source_attributes.get("project")
         raw_values: list[str] = []
         if isinstance(raw_value, list):
-            raw_values = [_clean_text(entry) for entry in raw_value if _clean_text(entry)]
+            raw_values = [
+                _clean_text(entry) for entry in raw_value if _clean_text(entry)
+            ]
         else:
             cleaned_raw_value = _clean_text(raw_value)
             if cleaned_raw_value:
@@ -5941,7 +7293,12 @@ def _snapshot_ci_attributes(
         field_name = _clean_text(key)
         if not field_name or field_name.startswith("_"):
             continue
-        if field_name in {"ci_type", "ci_type_alias", "unique", "unique_alias"}:
+        if field_name in {
+            "ci_type",
+            "ci_type_alias",
+            "unique",
+            "unique_alias",
+        }:
             continue
         if allowed_fields and field_name not in allowed_fields:
             continue
@@ -5949,11 +7306,15 @@ def _snapshot_ci_attributes(
     return snapshot
 
 
-def _selected_record_map(resource_groups: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+def _selected_record_map(
+    resource_groups: list[dict[str, Any]],
+) -> dict[str, dict[str, Any]]:
     selected: dict[str, dict[str, Any]] = {}
     for group in resource_groups:
-        for record in (group.get("records") or []):
-            if not isinstance(record, dict) or not record.get("selected", True):
+        for record in group.get("records") or []:
+            if not isinstance(record, dict) or not record.get(
+                "selected", True
+            ):
                 continue
             preview_key = str(record.get("previewKey") or "").strip()
             if preview_key:
@@ -5972,8 +7333,12 @@ def _choice_reference_value_for_record(
     if direct_value:
         return direct_value
 
-    platform_key = _resolve_import_target_key(type_template=type_template, canonical_field="platform")
-    project_key = _resolve_import_target_key(type_template=type_template, canonical_field="project")
+    platform_key = _resolve_import_target_key(
+        type_template=type_template, canonical_field="platform"
+    )
+    project_key = _resolve_import_target_key(
+        type_template=type_template, canonical_field="project"
+    )
     if attr_name == platform_key:
         return _first_non_empty_value(
             attributes.get("platform"),
@@ -6002,15 +7367,27 @@ def _reference_value_for_target_record(
     if value:
         return value
 
-    resolved_name_key = _resolve_import_target_key(type_template=ref_template, canonical_field="name")
-    resolved_platform_key = _resolve_import_target_key(type_template=ref_template, canonical_field="platform")
-    resolved_project_key = _resolve_import_target_key(type_template=ref_template, canonical_field="project")
+    resolved_name_key = _resolve_import_target_key(
+        type_template=ref_template, canonical_field="name"
+    )
+    resolved_platform_key = _resolve_import_target_key(
+        type_template=ref_template, canonical_field="platform"
+    )
+    resolved_project_key = _resolve_import_target_key(
+        type_template=ref_template, canonical_field="project"
+    )
     if ref_attr_name == resolved_name_key:
-        return _first_non_empty_value(attributes.get("name"), record.get("name"))
+        return _first_non_empty_value(
+            attributes.get("name"), record.get("name")
+        )
     if ref_attr_name == resolved_platform_key:
-        return _first_non_empty_value(attributes.get("platform"), attributes.get("project"))
+        return _first_non_empty_value(
+            attributes.get("platform"), attributes.get("project")
+        )
     if ref_attr_name == resolved_project_key:
-        return _first_non_empty_value(attributes.get("project"), attributes.get("platform"))
+        return _first_non_empty_value(
+            attributes.get("project"), attributes.get("platform")
+        )
     return ""
 
 
@@ -6063,7 +7440,9 @@ def _add_choice_reference_dependencies(
                 if not ref_type_name:
                     continue
                 ref_template = type_templates.get(ref_type_name)
-                ref_attr_name = _attribute_name_by_id(ref_template, ref_attr_id)
+                ref_attr_name = _attribute_name_by_id(
+                    ref_template, ref_attr_id
+                )
                 if not ref_attr_name:
                     continue
                 candidates = records_by_type.get(ref_type_name, [])
@@ -6071,7 +7450,9 @@ def _add_choice_reference_dependencies(
                     continue
                 if reference_value:
                     for candidate in candidates:
-                        candidate_key = str(candidate.get("previewKey") or "").strip()
+                        candidate_key = str(
+                            candidate.get("previewKey") or ""
+                        ).strip()
                         if not candidate_key or candidate_key == preview_key:
                             continue
                         target_value = _reference_value_for_target_record(
@@ -6079,10 +7460,14 @@ def _add_choice_reference_dependencies(
                             ref_attr_name=ref_attr_name,
                             ref_template=ref_template,
                         )
-                        if target_value and _normalize_token(target_value) == _normalize_token(reference_value):
+                        if target_value and _normalize_token(
+                            target_value
+                        ) == _normalize_token(reference_value):
                             matched_targets.append(candidate_key)
                 elif len(candidates) == 1:
-                    candidate_key = str(candidates[0].get("previewKey") or "").strip()
+                    candidate_key = str(
+                        candidates[0].get("previewKey") or ""
+                    ).strip()
                     if candidate_key and candidate_key != preview_key:
                         matched_targets.append(candidate_key)
 
@@ -6108,19 +7493,29 @@ def _ordered_selected_records(
 
     original_order: dict[str, int] = {}
     for group in resource_groups:
-        for record in (group.get("records") or []):
+        for record in group.get("records") or []:
             preview_key = str(record.get("previewKey") or "").strip()
-            if preview_key and preview_key in selected and preview_key not in original_order:
+            if (
+                preview_key
+                and preview_key in selected
+                and preview_key not in original_order
+            ):
                 original_order[preview_key] = len(original_order)
 
     adjacency: dict[str, set[str]] = {key: set() for key in selected}
     indegree: dict[str, int] = {key: 0 for key in selected}
     for relation in relations or []:
-        if not isinstance(relation, dict) or not relation.get("selected", True):
+        if not isinstance(relation, dict) or not relation.get(
+            "selected", True
+        ):
             continue
         source_key = str(relation.get("sourceKey") or "").strip()
         target_key = str(relation.get("targetKey") or "").strip()
-        if source_key not in selected or target_key not in selected or source_key == target_key:
+        if (
+            source_key not in selected
+            or target_key not in selected
+            or source_key == target_key
+        ):
             continue
         targets = adjacency.setdefault(source_key, set())
         if target_key in targets:
@@ -6136,12 +7531,18 @@ def _ordered_selected_records(
         indegree=indegree,
     )
 
-    ready = sorted((key for key, degree in indegree.items() if degree == 0), key=lambda item: original_order.get(item, 10**9))
+    ready = sorted(
+        (key for key, degree in indegree.items() if degree == 0),
+        key=lambda item: original_order.get(item, 10**9),
+    )
     ordered_keys: list[str] = []
     while ready:
         current = ready.pop(0)
         ordered_keys.append(current)
-        for target in sorted(adjacency.get(current, set()), key=lambda item: original_order.get(item, 10**9)):
+        for target in sorted(
+            adjacency.get(current, set()),
+            key=lambda item: original_order.get(item, 10**9),
+        ):
             indegree[target] -= 1
             if indegree[target] == 0:
                 ready.append(target)
@@ -6155,7 +7556,9 @@ def _ordered_selected_records(
     return [selected[key] for key in ordered_keys]
 
 
-def _build_structure_selected_model_map(preview: dict[str, Any] | None) -> dict[str, str]:
+def _build_structure_selected_model_map(
+    preview: dict[str, Any] | None,
+) -> dict[str, str]:
     structure_analysis = (preview or {}).get("structureAnalysis") or {}
     items = structure_analysis.get("items") or []
     if not isinstance(items, list):
@@ -6165,7 +7568,9 @@ def _build_structure_selected_model_map(preview: dict[str, Any] | None) -> dict[
     for item in items:
         if not isinstance(item, dict):
             continue
-        selected_model_name = _clean_text(item.get("selectedModelName")) or _clean_text(item.get("suggestedModelName"))
+        selected_model_name = _clean_text(
+            item.get("selectedModelName")
+        ) or _clean_text(item.get("suggestedModelName"))
         if not selected_model_name:
             continue
         for raw_key in (
@@ -6191,7 +7596,9 @@ def _pick_existing_structure_model_name(
     existing_names = [
         _clean_text(item.get("name"))
         for item in model_options
-        if isinstance(item, dict) and item.get("existing", True) and _clean_text(item.get("name"))
+        if isinstance(item, dict)
+        and item.get("existing", True)
+        and _clean_text(item.get("name"))
     ]
     if not existing_names:
         return current_model_name
@@ -6231,7 +7638,9 @@ def _resolve_payload_ci_type(
         return ""
     if ci_type in type_templates:
         return ci_type
-    mapped_ci_type = _clean_text((structure_selected_model_map or {}).get(ci_type))
+    mapped_ci_type = _clean_text(
+        (structure_selected_model_map or {}).get(ci_type)
+    )
     if mapped_ci_type in type_templates:
         return mapped_ci_type
     alias_index = _build_type_alias_index(list(type_templates.values()))
@@ -6250,7 +7659,7 @@ def _resolve_payload_ci_type(
         if not preferred_models:
             continue
         matched_score = 0
-        for keyword in (rule.get("keywords") or []):
+        for keyword in rule.get("keywords") or []:
             normalized_keyword = _normalize_token(str(keyword))
             if normalized_keyword and normalized_keyword in normalized_text:
                 matched_score = max(matched_score, len(normalized_keyword))
@@ -6305,12 +7714,18 @@ def _parallel_prefetch_existing_cis(
             for key, value in _merged_resource_attributes(record).items()
             if _clean_text(value)
         }
-        display_name = _clean_text(record.get("name")) or _resolve_record_display_name(
+        display_name = _clean_text(
+            record.get("name")
+        ) or _resolve_record_display_name(attributes, type_template)
+        if display_name and not _resolve_record_display_name(
             attributes, type_template
-        )
-        if display_name and not _resolve_record_display_name(attributes, type_template):
-            fallback_field = _resolve_cmdb_attribute_name(type_template, "name")
-            if fallback_field and _find_attribute_definition(type_template, fallback_field):
+        ):
+            fallback_field = _resolve_cmdb_attribute_name(
+                type_template, "name"
+            )
+            if fallback_field and _find_attribute_definition(
+                type_template, fallback_field
+            ):
                 attributes[fallback_field] = display_name
         cmdb_attributes = _build_cmdb_attributes(
             ci_type=ci_type,
@@ -6319,7 +7734,9 @@ def _parallel_prefetch_existing_cis(
             pending_choice_values=pending_choice_values,
         )
         unique_key = _get_import_required_unique_key(type_template)
-        tasks.append((preview_key, ci_type, cmdb_attributes, display_name, unique_key))
+        tasks.append(
+            (preview_key, ci_type, cmdb_attributes, display_name, unique_key)
+        )
 
     if not tasks:
         return {}
@@ -6327,13 +7744,17 @@ def _parallel_prefetch_existing_cis(
     def _fetch(args: tuple[str, str, dict[str, Any], str, str]):
         preview_key, ci_type, cmdb_attrs, display_name, unique_key = args
         try:
-            return preview_key, _find_existing_ci(
-                client,
-                ci_type,
-                cmdb_attrs,
-                fallback_name=display_name,
-                unique_key=unique_key,
-            ) or {}
+            return (
+                preview_key,
+                _find_existing_ci(
+                    client,
+                    ci_type,
+                    cmdb_attrs,
+                    fallback_name=display_name,
+                    unique_key=unique_key,
+                )
+                or {},
+            )
         except Exception:
             return preview_key, {}
 
@@ -6390,7 +7811,13 @@ def _preflight_import_resources(
                     default=str,
                 ),
             )
-            results.append({"previewKey": preview_key, "status": "failed", "message": "资源类型未确认，无法导入"})
+            results.append(
+                {
+                    "previewKey": preview_key,
+                    "status": "failed",
+                    "message": "资源类型未确认，无法导入",
+                }
+            )
             continue
 
         type_template = type_templates.get(ci_type, {})
@@ -6408,7 +7835,13 @@ def _preflight_import_resources(
                     default=str,
                 ),
             )
-            results.append({"previewKey": preview_key, "status": "failed", "message": f"目标模型 {ci_type} 不存在或尚未创建完成，当前不能导入"})
+            results.append(
+                {
+                    "previewKey": preview_key,
+                    "status": "failed",
+                    "message": f"目标模型 {ci_type} 不存在或尚未创建完成，当前不能导入",
+                }
+            )
             continue
 
         attributes = {
@@ -6416,10 +7849,18 @@ def _preflight_import_resources(
             for key, value in _merged_resource_attributes(record).items()
             if _clean_text(value)
         }
-        display_name = _clean_text(record.get("name")) or _resolve_record_display_name(attributes, type_template)
-        if display_name and not _resolve_record_display_name(attributes, type_template):
-            fallback_field = _resolve_cmdb_attribute_name(type_template, "name")
-            if fallback_field and _find_attribute_definition(type_template, fallback_field):
+        display_name = _clean_text(
+            record.get("name")
+        ) or _resolve_record_display_name(attributes, type_template)
+        if display_name and not _resolve_record_display_name(
+            attributes, type_template
+        ):
+            fallback_field = _resolve_cmdb_attribute_name(
+                type_template, "name"
+            )
+            if fallback_field and _find_attribute_definition(
+                type_template, fallback_field
+            ):
                 attributes[fallback_field] = display_name
 
         cmdb_attributes = _build_cmdb_attributes(
@@ -6430,15 +7871,23 @@ def _preflight_import_resources(
         )
         unique_key = _get_import_required_unique_key(type_template)
         blocking_attribute_issues: list[str] = []
-        if not display_name and not _clean_text(cmdb_attributes.get(unique_key)):
+        if not display_name and not _clean_text(
+            cmdb_attributes.get(unique_key)
+        ):
             blocking_attribute_issues.append("缺少资源名称或模型唯一标识，无法导入")
-        unique_key_definition = _find_attribute_definition(type_template, unique_key) if unique_key else None
+        unique_key_definition = (
+            _find_attribute_definition(type_template, unique_key)
+            if unique_key
+            else None
+        )
         if (
             unique_key
             and not _clean_text(cmdb_attributes.get(unique_key))
             and not bool((unique_key_definition or {}).get("required"))
         ):
-            blocking_attribute_issues.append(f"缺少模型唯一标识字段：{_resolve_attribute_label(type_template, unique_key)}")
+            blocking_attribute_issues.append(
+                f"缺少模型唯一标识字段：{_resolve_attribute_label(type_template, unique_key)}"
+            )
 
         required_attribute_issues = _validate_required_cmdb_attributes(
             type_template=type_template,
@@ -6469,7 +7918,13 @@ def _preflight_import_resources(
                     default=str,
                 ),
             )
-            results.append({"previewKey": preview_key, "status": "failed", "message": "；".join(blocking_attribute_issues)})
+            results.append(
+                {
+                    "previewKey": preview_key,
+                    "status": "failed",
+                    "message": "；".join(blocking_attribute_issues),
+                }
+            )
             continue
 
         preview_key_str = str(record.get("previewKey") or "")
@@ -6526,7 +7981,13 @@ def _preflight_import_resources(
                     default=str,
                 ),
             )
-            results.append({"previewKey": preview_key, "status": "failed", "message": "CMDB 中未找到待更新资源，请改为新建或重新预览"})
+            results.append(
+                {
+                    "previewKey": preview_key,
+                    "status": "failed",
+                    "message": "CMDB 中未找到待更新资源，请改为新建或重新预览",
+                }
+            )
             continue
     return results
 
@@ -6536,7 +7997,9 @@ def _split_reference_values(value: str) -> list[str]:
     if not raw:
         return []
     parts = re.split(r"[;,；、/\n]+", raw)
-    return [item.strip() for item in parts if item.strip() and item.strip() != "-"]
+    return [
+        item.strip() for item in parts if item.strip() and item.strip() != "-"
+    ]
 
 
 def _merged_resource_attributes(resource: dict[str, Any]) -> dict[str, Any]:
@@ -6567,20 +8030,32 @@ def _build_confirmed_cmdb_attributes(
     filtered: dict[str, Any] = {}
     for key, value in confirmed.items():
         field_name = _clean_text(key)
-        if not field_name or field_name.startswith("_") or field_name == "ci_type":
+        if (
+            not field_name
+            or field_name.startswith("_")
+            or field_name == "ci_type"
+        ):
             continue
-        if allowed_attribute_names and field_name not in allowed_attribute_names:
+        if (
+            allowed_attribute_names
+            and field_name not in allowed_attribute_names
+        ):
             continue
         if value in (None, "", []):
             continue
         filtered[field_name] = value
 
-    resolved_name_key = _resolve_import_target_key(type_template=type_template, canonical_field="name")
+    resolved_name_key = _resolve_import_target_key(
+        type_template=type_template, canonical_field="name"
+    )
     display_name = _clean_text(record.get("name"))
     if (
         display_name
         and resolved_name_key
-        and (not allowed_attribute_names or resolved_name_key in allowed_attribute_names)
+        and (
+            not allowed_attribute_names
+            or resolved_name_key in allowed_attribute_names
+        )
         and not _clean_text(filtered.get(resolved_name_key))
     ):
         filtered[resolved_name_key] = display_name
@@ -6588,7 +8063,9 @@ def _build_confirmed_cmdb_attributes(
     return filtered
 
 
-def _build_reference_indexes(resources: list[dict[str, Any]]) -> tuple[dict[str, list[str]], dict[str, list[str]]]:
+def _build_reference_indexes(
+    resources: list[dict[str, Any]],
+) -> tuple[dict[str, list[str]], dict[str, list[str]]]:
     name_index: dict[str, list[str]] = defaultdict(list)
     ip_index: dict[str, list[str]] = defaultdict(list)
     for item in resources:
@@ -6596,7 +8073,10 @@ def _build_reference_indexes(resources: list[dict[str, Any]]) -> tuple[dict[str,
         if name:
             name_index[name].append(item["previewKey"])
         analysis_attributes = _merged_resource_attributes(item)
-        private_ip = _clean_text(analysis_attributes.get("private_ip") or analysis_attributes.get("manage_ip"))
+        private_ip = _clean_text(
+            analysis_attributes.get("private_ip")
+            or analysis_attributes.get("manage_ip")
+        )
         if private_ip:
             ip_index[private_ip].append(item["previewKey"])
     return name_index, ip_index
@@ -6622,7 +8102,9 @@ def _find_reference_keys(
 
 def _relation_lookup_tokens(value: Any) -> list[str]:
     tokens: list[str] = []
-    for raw_token in _split_reference_values(_clean_text(value)) or [_clean_text(value)]:
+    for raw_token in _split_reference_values(_clean_text(value)) or [
+        _clean_text(value)
+    ]:
         cleaned = _clean_text(raw_token)
         if not cleaned:
             continue
@@ -6658,7 +8140,19 @@ def _is_relation_lookup_field(field_name: str) -> bool:
         "hostname",
     }:
         return True
-    return any(token in normalized for token in ("name", "ip", "code", "instance", "host", "device", "resource", "id"))
+    return any(
+        token in normalized
+        for token in (
+            "name",
+            "ip",
+            "code",
+            "instance",
+            "host",
+            "device",
+            "resource",
+            "id",
+        )
+    )
 
 
 def _build_resource_relation_lookup(
@@ -6666,10 +8160,16 @@ def _build_resource_relation_lookup(
     type_templates: dict[str, dict[str, Any]],
 ) -> dict[str, Any]:
     global_index: dict[str, list[str]] = defaultdict(list)
-    type_index: dict[str, dict[str, list[str]]] = defaultdict(lambda: defaultdict(list))
-    field_index: dict[str, dict[str, dict[str, list[str]]]] = defaultdict(lambda: defaultdict(lambda: defaultdict(list)))
+    type_index: dict[str, dict[str, list[str]]] = defaultdict(
+        lambda: defaultdict(list)
+    )
+    field_index: dict[str, dict[str, dict[str, list[str]]]] = defaultdict(
+        lambda: defaultdict(lambda: defaultdict(list))
+    )
 
-    def add_index(container: dict[str, list[str]], token: str, preview_key: str) -> None:
+    def add_index(
+        container: dict[str, list[str]], token: str, preview_key: str
+    ) -> None:
         if not token:
             return
         if preview_key not in container[token]:
@@ -6687,11 +8187,16 @@ def _build_resource_relation_lookup(
         if _clean_text(item.get("name")):
             candidate_fields["name"] = item.get("name")
 
-        for source in (item.get("attributes") or {}, item.get("analysisAttributes") or {}):
+        for source in (
+            item.get("attributes") or {},
+            item.get("analysisAttributes") or {},
+        ):
             for field_name, field_value in source.items():
                 if not _clean_text(field_name):
                     continue
-                if field_name == unique_key or _is_relation_lookup_field(field_name):
+                if field_name == unique_key or _is_relation_lookup_field(
+                    field_name
+                ):
                     candidate_fields.setdefault(field_name, field_value)
 
         for field_name, field_value in candidate_fields.items():
@@ -6721,7 +8226,11 @@ def _resolve_relation_reference_keys(
         return []
 
     if isinstance(preferred_field, str):
-        preferred_fields = [_clean_text(preferred_field)] if _clean_text(preferred_field) else []
+        preferred_fields = (
+            [_clean_text(preferred_field)]
+            if _clean_text(preferred_field)
+            else []
+        )
     else:
         preferred_fields = []
         for item in preferred_field:
@@ -6731,7 +8240,11 @@ def _resolve_relation_reference_keys(
 
     if preferred_type and preferred_fields:
         for field_name in preferred_fields:
-            field_values = lookup["by_type_field"].get(preferred_type, {}).get(field_name, {})
+            field_values = (
+                lookup["by_type_field"]
+                .get(preferred_type, {})
+                .get(field_name, {})
+            )
             for token in tokens:
                 matches.extend(field_values.get(token, []))
             if matches:
@@ -6758,14 +8271,20 @@ def _infer_relation_type_for_models(
     type_templates: dict[str, dict[str, Any]],
 ) -> str:
     target_template = type_templates.get(target_type) or {}
-    for parent in (target_template.get("parentTypes") or []):
+    for parent in target_template.get("parentTypes") or []:
         if _clean_text(parent.get("name")) == source_type:
-            return _normalize_relation_type(parent.get("relationType")) or "contain"
+            return (
+                _normalize_relation_type(parent.get("relationType"))
+                or "contain"
+            )
     if source_type == "project" and target_type in RESOURCE_DEPLOY_TYPES:
         return "deploy"
     if source_type in {"project", "product", "Department"}:
         return "contain"
-    if target_type in SOFTWARE_RESOURCE_TYPES and source_type in RESOURCE_DEPLOY_TYPES:
+    if (
+        target_type in SOFTWARE_RESOURCE_TYPES
+        and source_type in RESOURCE_DEPLOY_TYPES
+    ):
         return "deploy"
     return "connect"
 
@@ -6795,9 +8314,16 @@ def _candidate_parent_values(
 
     normalized_show_key = _normalize_token(show_key)
     if "ip" in normalized_show_key:
-        candidate_fields.extend(["deploy_target", "private_ip", "manage_ip", "host_ip"])
-    elif any(token in normalized_show_key for token in ("id", "code", "instance", "name")):
-        candidate_fields.extend(["deploy_target", "asset_code", "name", "host_name"])
+        candidate_fields.extend(
+            ["deploy_target", "private_ip", "manage_ip", "host_ip"]
+        )
+    elif any(
+        token in normalized_show_key
+        for token in ("id", "code", "instance", "name")
+    ):
+        candidate_fields.extend(
+            ["deploy_target", "asset_code", "name", "host_name"]
+        )
 
     for field_name in candidate_fields:
         raw_value = attributes.get(field_name)
@@ -6834,11 +8360,13 @@ def _infer_parent_field_relations(
         if not ci_type or not preview_key:
             continue
         type_template = type_templates.get(ci_type) or {}
-        for parent_type in (type_template.get("parentTypes") or []):
+        for parent_type in type_template.get("parentTypes") or []:
             parent_name = _clean_text(parent_type.get("name"))
             if not parent_name:
                 continue
-            relation_type = _normalize_relation_type(parent_type.get("relationType")) or _infer_relation_type_for_models(
+            relation_type = _normalize_relation_type(
+                parent_type.get("relationType")
+            ) or _infer_relation_type_for_models(
                 parent_name,
                 ci_type,
                 type_templates,
@@ -6873,25 +8401,39 @@ def _infer_explicit_relation_rows(
     warnings: list[str] = []
 
     for row in relation_rows:
-        source_model = _normalize_ci_type(_clean_text(row.get("source_model")), alias_index)
+        source_model = _normalize_ci_type(
+            _clean_text(row.get("source_model")), alias_index
+        )
         source_field = _clean_text(row.get("source_field"))
         source_value = _clean_text(row.get("source_value"))
-        target_model = _normalize_ci_type(_clean_text(row.get("target_model")), alias_index)
+        target_model = _normalize_ci_type(
+            _clean_text(row.get("target_model")), alias_index
+        )
         target_field = _clean_text(row.get("target_field"))
         target_value = _clean_text(row.get("target_value"))
         if source_model and source_field:
             source_canonical_field, _ = _match_field(source_field)
             source_field = _resolve_cmdb_attribute_name(
                 type_templates.get(source_model),
-                source_canonical_field if source_canonical_field != "unknown" else source_field,
+                (
+                    source_canonical_field
+                    if source_canonical_field != "unknown"
+                    else source_field
+                ),
             )
         if target_model and target_field:
             target_canonical_field, _ = _match_field(target_field)
             target_field = _resolve_cmdb_attribute_name(
                 type_templates.get(target_model),
-                target_canonical_field if target_canonical_field != "unknown" else target_field,
+                (
+                    target_canonical_field
+                    if target_canonical_field != "unknown"
+                    else target_field
+                ),
             )
-        relation_type = _normalize_relation_type(row.get("relation_type")) or _infer_relation_type_for_models(
+        relation_type = _normalize_relation_type(
+            row.get("relation_type")
+        ) or _infer_relation_type_for_models(
             source_model,
             target_model,
             type_templates,
@@ -6925,17 +8467,33 @@ def _infer_explicit_relation_rows(
             )
             continue
         resolved_source_type = source_model or _clean_text(
-            next((item.get("ciType") for item in resources if item.get("previewKey") == source_matches[0]), "")
+            next(
+                (
+                    item.get("ciType")
+                    for item in resources
+                    if item.get("previewKey") == source_matches[0]
+                ),
+                "",
+            )
         )
         resolved_target_type = target_model or _clean_text(
-            next((item.get("ciType") for item in resources if item.get("previewKey") == target_matches[0]), "")
+            next(
+                (
+                    item.get("ciType")
+                    for item in resources
+                    if item.get("previewKey") == target_matches[0]
+                ),
+                "",
+            )
         )
         configured_relation_type = _infer_relation_type_for_models(
             resolved_source_type,
             resolved_target_type,
             type_templates,
         )
-        final_relation_type = configured_relation_type or relation_type or "contain"
+        final_relation_type = (
+            configured_relation_type or relation_type or "contain"
+        )
         _append_relation(
             relations,
             source_key=source_matches[0],
@@ -6968,22 +8526,29 @@ def _infer_existing_resource_relations(
         attributes = _merged_resource_attributes(item)
 
         for target_key in _find_reference_keys(
-            attributes.get("deploy_target") or attributes.get("host_name") or "",
+            attributes.get("deploy_target")
+            or attributes.get("host_name")
+            or "",
             name_index=name_index,
             ip_index=ip_index,
         ):
             source_type = resource_type_map.get(target_key, "")
-            relation_type = _infer_relation_type_for_models(
-                source_type,
-                ci_type,
-                type_templates,
-            ) or "deploy"
+            relation_type = (
+                _infer_relation_type_for_models(
+                    source_type,
+                    ci_type,
+                    type_templates,
+                )
+                or "deploy"
+            )
             _append_relation(
                 relations,
                 source_key=target_key,
                 target_key=preview_key,
                 relation_type=relation_type,
-                confidence="high" if ci_type in SOFTWARE_RESOURCE_TYPES else "medium",
+                confidence=(
+                    "high" if ci_type in SOFTWARE_RESOURCE_TYPES else "medium"
+                ),
                 reason="基于宿主机/部署节点字段建立部署关系",
             )
 
@@ -7009,7 +8574,9 @@ def _infer_existing_resource_relations(
             continue
         if ci_type == "networkdevice":
             subnet_network_devices[subnet].append(preview_key)
-        elif ci_type in {"PhysicalMachine", "vserver"} | SOFTWARE_RESOURCE_TYPES:
+        elif (
+            ci_type in {"PhysicalMachine", "vserver"} | SOFTWARE_RESOURCE_TYPES
+        ):
             subnet_compute_resources[subnet].append(preview_key)
 
     for subnet, target_keys in subnet_compute_resources.items():
@@ -7060,14 +8627,18 @@ def _build_allowed_relation_rules(
     with ThreadPoolExecutor(max_workers=worker_count) as executor:
         for relations in executor.map(_fetch, type_ids):
             for item in relations:
-                parent_name = _clean_text((item.get("parent") or {}).get("name"))
+                parent_name = _clean_text(
+                    (item.get("parent") or {}).get("name")
+                )
                 child_name = _clean_text((item.get("child") or {}).get("name"))
                 relation_name = _clean_text(
                     ((item.get("relation_type") or {}).get("name"))
                     or item.get("relation_type_name")
                 )
                 if parent_name and child_name and relation_name:
-                    relation_rules.add((parent_name, relation_name, child_name))
+                    relation_rules.add(
+                        (parent_name, relation_name, child_name)
+                    )
     return relation_rules
 
 
@@ -7169,8 +8740,12 @@ def _ensure_selected_model_relations(
     for relation in payload.get("relations") or []:
         if not relation.get("selected", True):
             continue
-        source_type = resource_type_map.get(str(relation.get("sourceKey") or ""), "")
-        target_type = resource_type_map.get(str(relation.get("targetKey") or ""), "")
+        source_type = resource_type_map.get(
+            str(relation.get("sourceKey") or ""), ""
+        )
+        target_type = resource_type_map.get(
+            str(relation.get("targetKey") or ""), ""
+        )
         relation_type = _clean_text(relation.get("relationType")) or "contain"
         if not source_type or not target_type:
             continue
@@ -7186,7 +8761,9 @@ def _ensure_selected_model_relations(
             },
         )
 
-    for source_type, relation_type, target_type in sorted(pending_rules.keys()):
+    for source_type, relation_type, target_type in sorted(
+        pending_rules.keys()
+    ):
         source_template = type_templates.get(source_type) or {}
         target_template = type_templates.get(target_type) or {}
         source_type_id = _extract_type_id(source_template.get("id"))
@@ -7237,7 +8814,8 @@ def _ensure_selected_model_relations(
                     "sourceType": source_type,
                     "targetType": target_type,
                     "relationType": relation_type,
-                    "ctrId": relation_config_id or _extract_ci_type_relation_id(response),
+                    "ctrId": relation_config_id
+                    or _extract_ci_type_relation_id(response),
                     "message": f"已创建模型关系 {source_type} -> {relation_type} -> {target_type}",
                 }
             )
@@ -7313,10 +8891,12 @@ async def preview_resource_import(
     remaining_existing_prechecks = max(0, RESOURCE_IMPORT_PRECHECK_LIMIT)
     precheck_limit_hit = False
     total_sheet_count = sum(
-        len({
-            _clean_text(row.get("_sheet")) or "Sheet1"
-            for row in parsed_file.rows
-        })
+        len(
+            {
+                _clean_text(row.get("_sheet")) or "Sheet1"
+                for row in parsed_file.rows
+            }
+        )
         for parsed_file in parsed_files
     )
     processed_sheet_count = 0
@@ -7360,9 +8940,13 @@ async def preview_resource_import(
             warnings.extend(parsed_file.warnings)
             logs.extend(parsed_file.logs)
 
-            rows_by_sheet: dict[str, list[tuple[int, dict[str, Any]]]] = defaultdict(list)
+            rows_by_sheet: dict[
+                str, list[tuple[int, dict[str, Any]]]
+            ] = defaultdict(list)
             for row_index, row in enumerate(parsed_file.rows, start=1):
-                rows_by_sheet[_clean_text(row.get("_sheet")) or "Sheet1"].append((row_index, row))
+                rows_by_sheet[
+                    _clean_text(row.get("_sheet")) or "Sheet1"
+                ].append((row_index, row))
 
             for sheet_name, sheet_rows in rows_by_sheet.items():
                 sheet_work_items.append(
@@ -7373,7 +8957,9 @@ async def preview_resource_import(
                     }
                 )
 
-        async def _resolve_sheet_work_item(index: int, item: dict[str, Any], semaphore: asyncio.Semaphore) -> dict[str, Any]:
+        async def _resolve_sheet_work_item(
+            index: int, item: dict[str, Any], semaphore: asyncio.Semaphore
+        ) -> dict[str, Any]:
             filename = str(item.get("filename") or "")
             sheet_name = str(item.get("sheetName") or "")
             sheet_rows = item.get("sheetRows") or []
@@ -7431,7 +9017,9 @@ async def preview_resource_import(
             }
 
         if sheet_work_items:
-            mapping_semaphore = asyncio.Semaphore(RESOURCE_IMPORT_LLM_SHEET_PARALLELISM)
+            mapping_semaphore = asyncio.Semaphore(
+                RESOURCE_IMPORT_LLM_SHEET_PARALLELISM
+            )
             resolved_sheet_results = await asyncio.gather(
                 *[
                     _resolve_sheet_work_item(index, item, mapping_semaphore)
@@ -7447,11 +9035,18 @@ async def preview_resource_import(
                 for item in resolved_sheet_results
                 if _is_retryable_blocking_mapping_mode(
                     str(item.get("mappingMode") or ""),
-                    _clean_text((item.get("plan") or {}).sheet_kind if item.get("plan") else ""),
+                    _clean_text(
+                        (item.get("plan") or {}).sheet_kind
+                        if item.get("plan")
+                        else ""
+                    ),
                 )
             ]
             for retry_index, failed_sheet in enumerate(
-                sorted(retryable_failed_sheets, key=lambda item: int(item.get("index") or 0)),
+                sorted(
+                    retryable_failed_sheets,
+                    key=lambda item: int(item.get("index") or 0),
+                ),
                 start=1,
             ):
                 parsed_filename = str(failed_sheet.get("filename") or "")
@@ -7466,19 +9061,26 @@ async def preview_resource_import(
                     ),
                     percent=56,
                 )
-                retry_plan, retry_mapping_mode = await _resolve_sheet_mapping_plan(
+                (
+                    retry_plan,
+                    retry_mapping_mode,
+                ) = await _resolve_sheet_mapping_plan(
                     sheet_name=sheet_name,
                     rows=[row for _, row in sheet_rows],
                     alias_index=alias_index,
                     model_templates=model_templates,
                     metadata=metadata,
                     llm_client=managed_llm_client,
-                    retry_count_override=RESOURCE_IMPORT_LLM_RETRY_COUNT + RESOURCE_IMPORT_LLM_BLOCKING_RECOVERY_RETRY_COUNT,
+                    retry_count_override=RESOURCE_IMPORT_LLM_RETRY_COUNT
+                    + RESOURCE_IMPORT_LLM_BLOCKING_RECOVERY_RETRY_COUNT,
                 )
                 failed_sheet["plan"] = retry_plan
                 failed_sheet["mappingMode"] = retry_mapping_mode
 
-        for resolved_sheet in sorted(resolved_sheet_results, key=lambda item: int(item.get("index") or 0)):
+        for resolved_sheet in sorted(
+            resolved_sheet_results,
+            key=lambda item: int(item.get("index") or 0),
+        ):
             parsed_filename = str(resolved_sheet.get("filename") or "")
             sheet_name = str(resolved_sheet.get("sheetName") or "")
             sheet_rows = resolved_sheet.get("sheetRows") or []
@@ -7497,8 +9099,11 @@ async def preview_resource_import(
                 warnings.append(str(analysis_issue.get("message") or ""))
             for detail in (plan.mapping_details or {}).values():
                 non_empty_count = sum(
-                    1 for _, row in sheet_rows
-                    if _clean_text(row.get(_clean_text(detail.get("sourceField"))))
+                    1
+                    for _, row in sheet_rows
+                    if _clean_text(
+                        row.get(_clean_text(detail.get("sourceField")))
+                    )
                 )
                 mapping_summary_entries.append(
                     {
@@ -7506,19 +9111,27 @@ async def preview_resource_import(
                         "sheetName": sheet_name,
                         "sourceField": _clean_text(detail.get("sourceField")),
                         "targetField": _clean_text(detail.get("targetField")),
-                        "suggestedTargetField": _clean_text(detail.get("suggestedTargetField")),
+                        "suggestedTargetField": _clean_text(
+                            detail.get("suggestedTargetField")
+                        ),
                         "count": non_empty_count or len(sheet_rows),
-                        "confidence": _clean_text(detail.get("confidence")) or "low",
-                        "status": _clean_text(detail.get("status")) or "unmapped",
+                        "confidence": _clean_text(detail.get("confidence"))
+                        or "low",
+                        "status": _clean_text(detail.get("status"))
+                        or "unmapped",
                         "resolvedBy": _clean_text(detail.get("resolvedBy")),
                         "candidates": detail.get("candidates") or [],
                         "message": _clean_text(detail.get("message")),
-                        "needsConfirmation": bool(detail.get("needsConfirmation")),
+                        "needsConfirmation": bool(
+                            detail.get("needsConfirmation")
+                        ),
                     }
                 )
                 if not detail.get("needsConfirmation"):
                     continue
-                message = _clean_text(detail.get("message")) or "字段语义存在歧义，需人工确认"
+                message = (
+                    _clean_text(detail.get("message")) or "字段语义存在歧义，需人工确认"
+                )
                 analysis_issues.append(
                     _build_analysis_issue(
                         kind="ambiguous_mapping",
@@ -7533,12 +9146,15 @@ async def preview_resource_import(
                 progress_callback,
                 stage="sheet_mapping",
                 message=f"{parsed_filename} / {sheet_name}: {mapping_mode}",
-                percent=12 + int(processed_sheet_count / max(total_sheet_count, 1) * 60),
+                percent=12
+                + int(processed_sheet_count / max(total_sheet_count, 1) * 60),
             )
 
             if plan.sheet_kind == "note":
                 skipped_rows += len(sheet_rows)
-                logs.append(f"{parsed_filename} / {sheet_name}: 识别为说明页，已跳过 {len(sheet_rows)} 行")
+                logs.append(
+                    f"{parsed_filename} / {sheet_name}: 识别为说明页，已跳过 {len(sheet_rows)} 行"
+                )
                 continue
 
             if plan.sheet_kind == "relation":
@@ -7548,9 +9164,17 @@ async def preview_resource_import(
                     for raw_key, raw_value in row.items():
                         if raw_key == "_sheet":
                             continue
-                        mapped_field, _confidence = plan.mappings.get(raw_key, _match_relation_field(raw_key))
-                        if mapped_field != "unknown" and mapped_field in RELATION_FIELD_ALIASES and not standardized_relation.get(mapped_field):
-                            standardized_relation[mapped_field] = _clean_text(raw_value)
+                        mapped_field, _confidence = plan.mappings.get(
+                            raw_key, _match_relation_field(raw_key)
+                        )
+                        if (
+                            mapped_field != "unknown"
+                            and mapped_field in RELATION_FIELD_ALIASES
+                            and not standardized_relation.get(mapped_field)
+                        ):
+                            standardized_relation[mapped_field] = _clean_text(
+                                raw_value
+                            )
 
                     if not _row_has_relation_signal(standardized_relation):
                         skipped_rows += 1
@@ -7559,14 +9183,18 @@ async def preview_resource_import(
                     explicit_relation_rows.append(
                         {
                             **standardized_relation,
-                            "relation_type": _normalize_relation_type(standardized_relation.get("relation_type")),
+                            "relation_type": _normalize_relation_type(
+                                standardized_relation.get("relation_type")
+                            ),
                             "filename": parsed_filename,
                             "sheet": sheet_name,
                             "rowIndex": row_index,
                         }
                     )
                     relation_row_count += 1
-                logs.append(f"{parsed_filename} / {sheet_name}: 识别为关系表，提取 {relation_row_count} 条关系候选")
+                logs.append(
+                    f"{parsed_filename} / {sheet_name}: 识别为关系表，提取 {relation_row_count} 条关系候选"
+                )
                 continue
 
             for row_index, row in sheet_rows:
@@ -7577,54 +9205,107 @@ async def preview_resource_import(
                     if raw_key == "_sheet":
                         continue
                     detail = (plan.mapping_details or {}).get(raw_key) or {}
-                    mapped_field, confidence = plan.mappings.get(raw_key, _match_field(raw_key))
-                    target_field_for_stats = _clean_text(detail.get("suggestedTargetField")) or mapped_field
+                    mapped_field, confidence = plan.mappings.get(
+                        raw_key, _match_field(raw_key)
+                    )
+                    target_field_for_stats = (
+                        _clean_text(detail.get("suggestedTargetField"))
+                        or mapped_field
+                    )
                     if target_field_for_stats != "unknown":
-                        field_stats[(f"{parsed_filename} / {sheet_name} / {raw_key}", target_field_for_stats)] += 1
+                        field_stats[
+                            (
+                                f"{parsed_filename} / {sheet_name} / {raw_key}",
+                                target_field_for_stats,
+                            )
+                        ] += 1
                     mapping_preview.append(
                         {
                             "sourceField": raw_key,
-                            "targetField": _clean_text(detail.get("suggestedTargetField")) or mapped_field,
+                            "targetField": _clean_text(
+                                detail.get("suggestedTargetField")
+                            )
+                            or mapped_field,
                             "confidence": confidence,
-                            "status": _clean_text(detail.get("status")) or "mapped",
-                            "resolvedBy": _clean_text(detail.get("resolvedBy")),
+                            "status": _clean_text(detail.get("status"))
+                            or "mapped",
+                            "resolvedBy": _clean_text(
+                                detail.get("resolvedBy")
+                            ),
                             "candidates": detail.get("candidates") or [],
                             "message": _clean_text(detail.get("message")),
-                            "needsConfirmation": bool(detail.get("needsConfirmation")),
+                            "needsConfirmation": bool(
+                                detail.get("needsConfirmation")
+                            ),
                         }
                     )
-                    effective_target_field = "" if detail.get("needsConfirmation") else mapped_field
-                    if effective_target_field != "unknown" and effective_target_field and not standardized.get(effective_target_field):
-                        standardized[effective_target_field] = _clean_text(raw_value)
-                    elif detail.get("needsConfirmation") and _clean_text(raw_value):
+                    effective_target_field = (
+                        "" if detail.get("needsConfirmation") else mapped_field
+                    )
+                    if (
+                        effective_target_field != "unknown"
+                        and effective_target_field
+                        and not standardized.get(effective_target_field)
+                    ):
+                        standardized[effective_target_field] = _clean_text(
+                            raw_value
+                        )
+                    elif detail.get("needsConfirmation") and _clean_text(
+                        raw_value
+                    ):
                         standardized.setdefault("_ambiguous_fields", "")
                         ambiguous_field_name = _clean_text(raw_key)
                         current_ambiguous = [
-                            item for item in standardized["_ambiguous_fields"].split(" / ")
+                            item
+                            for item in standardized[
+                                "_ambiguous_fields"
+                            ].split(" / ")
                             if _clean_text(item)
                         ]
-                        if ambiguous_field_name and ambiguous_field_name not in current_ambiguous:
+                        if (
+                            ambiguous_field_name
+                            and ambiguous_field_name not in current_ambiguous
+                        ):
                             current_ambiguous.append(ambiguous_field_name)
-                        standardized["_ambiguous_fields"] = " / ".join(current_ambiguous)
-                    if effective_target_field == "ci_type" and not standardized.get("_raw_ci_type_value"):
-                        standardized["_raw_ci_type_value"] = _clean_text(raw_value)
+                        standardized["_ambiguous_fields"] = " / ".join(
+                            current_ambiguous
+                        )
+                    if (
+                        effective_target_field == "ci_type"
+                        and not standardized.get("_raw_ci_type_value")
+                    ):
+                        standardized["_raw_ci_type_value"] = _clean_text(
+                            raw_value
+                        )
 
                 if not _row_has_resource_signal(standardized):
                     skipped_rows += 1
                     continue
 
-                normalized_ip, ip_changed = _normalize_ip(standardized.get("private_ip", ""))
+                normalized_ip, ip_changed = _normalize_ip(
+                    standardized.get("private_ip", "")
+                )
                 if ip_changed:
                     cleaning_changes["IP地址标准化"] += 1
                 if normalized_ip:
                     standardized["private_ip"] = normalized_ip
 
-                normalized_status = _normalize_status(standardized.get("status", ""))
-                if normalized_status and normalized_status != _clean_text(standardized.get("status", "")):
+                normalized_status = _normalize_status(
+                    standardized.get("status", "")
+                )
+                if normalized_status and normalized_status != _clean_text(
+                    standardized.get("status", "")
+                ):
                     cleaning_changes["状态标准化"] += 1
                 standardized["status"] = normalized_status
 
-                normalized_port, port_changed, port_ambiguous = _normalize_service_port(standardized.get("service_port", ""))
+                (
+                    normalized_port,
+                    port_changed,
+                    port_ambiguous,
+                ) = _normalize_service_port(
+                    standardized.get("service_port", "")
+                )
                 if port_changed:
                     cleaning_changes["端口标准化"] += 1
                 if normalized_port:
@@ -7642,17 +9323,32 @@ async def preview_resource_import(
                 if not normalized_type and plan.default_ci_type:
                     normalized_type = plan.default_ci_type
                 standardized["ci_type"] = normalized_type
-                if normalized_type == "networkdevice" and not _clean_text(standardized.get("dev_class")):
-                    raw_ci_type_value = _clean_text(standardized.get("_raw_ci_type_value"))
-                    if raw_ci_type_value and raw_ci_type_value.lower() != "networkdevice":
+                if normalized_type == "networkdevice" and not _clean_text(
+                    standardized.get("dev_class")
+                ):
+                    raw_ci_type_value = _clean_text(
+                        standardized.get("_raw_ci_type_value")
+                    )
+                    if (
+                        raw_ci_type_value
+                        and raw_ci_type_value.lower() != "networkdevice"
+                    ):
                         standardized["dev_class"] = raw_ci_type_value
 
                 if not standardized["ci_type"]:
-                    warnings.append(f"{parsed_filename} / {sheet_name} 第 {row_index} 行未识别到资源类型，请在确认步骤手动选择。")
+                    warnings.append(
+                        f"{parsed_filename} / {sheet_name} 第 {row_index} 行未识别到资源类型，请在确认步骤手动选择。"
+                    )
 
-                type_template = type_template_map.get(standardized["ci_type"] or "")
-                preview_attributes = _build_preview_attributes(standardized, type_template)
-                display_name = _resolve_record_display_name(preview_attributes, type_template)
+                type_template = type_template_map.get(
+                    standardized["ci_type"] or ""
+                )
+                preview_attributes = _build_preview_attributes(
+                    standardized, type_template
+                )
+                display_name = _resolve_record_display_name(
+                    preview_attributes, type_template
+                )
                 if not display_name:
                     name_candidates = _semantic_source_candidates(
                         source_attributes,
@@ -7668,7 +9364,9 @@ async def preview_resource_import(
                     if ip_candidates:
                         display_name = ip_candidates[0][2]
                 if not display_name:
-                    warnings.append(f"{parsed_filename} / {sheet_name} 第 {row_index} 行缺少资源名称/唯一标识，请在确认步骤手动补齐。")
+                    warnings.append(
+                        f"{parsed_filename} / {sheet_name} 第 {row_index} 行缺少资源名称/唯一标识，请在确认步骤手动补齐。"
+                    )
 
                 cmdb_attributes = _build_cmdb_attributes(
                     ci_type=standardized["ci_type"] or "unknown",
@@ -7676,13 +9374,32 @@ async def preview_resource_import(
                     type_template=type_template,
                 )
                 unique_key = _get_import_required_unique_key(type_template)
-                unique_key_label = _resolve_attribute_label(type_template, unique_key) if unique_key else ""
-                if unique_key and not _clean_text(cmdb_attributes.get(unique_key)):
+                unique_key_label = (
+                    _resolve_attribute_label(type_template, unique_key)
+                    if unique_key
+                    else ""
+                )
+                if unique_key and not _clean_text(
+                    cmdb_attributes.get(unique_key)
+                ):
                     semantic_kind = (
-                        "code" if _is_code_like_unique_key(unique_key_label or unique_key)
-                        else "ip" if _is_ip_like_unique_key(unique_key_label or unique_key)
-                        else "name" if _is_name_like_unique_key(unique_key_label or unique_key)
-                        else ""
+                        "code"
+                        if _is_code_like_unique_key(
+                            unique_key_label or unique_key
+                        )
+                        else (
+                            "ip"
+                            if _is_ip_like_unique_key(
+                                unique_key_label or unique_key
+                            )
+                            else (
+                                "name"
+                                if _is_name_like_unique_key(
+                                    unique_key_label or unique_key
+                                )
+                                else ""
+                            )
+                        )
                     )
                     if semantic_kind:
                         source_candidates = _semantic_source_candidates(
@@ -7692,9 +9409,13 @@ async def preview_resource_import(
                             unique_key_label=unique_key_label,
                         )
                         if source_candidates and (
-                            len(source_candidates) == 1 or source_candidates[0][0] > source_candidates[1][0]
+                            len(source_candidates) == 1
+                            or source_candidates[0][0]
+                            > source_candidates[1][0]
                         ):
-                            cmdb_attributes[unique_key] = source_candidates[0][2]
+                            cmdb_attributes[unique_key] = source_candidates[0][
+                                2
+                            ]
                 autofill_hints = _collect_deterministic_autofill_hints(
                     canonical_attributes=preview_attributes,
                     type_template=type_template,
@@ -7707,14 +9428,14 @@ async def preview_resource_import(
                         standardized["ci_type"] or "unknown",
                         cmdb_attributes,
                         fallback_name=display_name,
-                        unique_key=_get_import_required_unique_key(type_template),
+                        unique_key=_get_import_required_unique_key(
+                            type_template
+                        ),
                     )
                     remaining_existing_prechecks -= 1
                 elif existing_client and not precheck_limit_hit:
                     precheck_limit_hit = True
-                    logs.append(
-                        "预览资源较多，已跳过剩余存量校验；提交导入时会再次精确检查是否已存在。"
-                    )
+                    logs.append("预览资源较多，已跳过剩余存量校验；提交导入时会再次精确检查是否已存在。")
                     _emit_progress(
                         progress_callback,
                         stage="cmdb_precheck",
@@ -7732,7 +9453,9 @@ async def preview_resource_import(
                     type_template=type_template,
                 )
 
-                preview_key = _build_preview_key(parsed_filename, sheet_name, row_index)
+                preview_key = _build_preview_key(
+                    parsed_filename, sheet_name, row_index
+                )
                 attributes = {
                     key: _clean_text(value)
                     for key, value in preview_attributes.items()
@@ -7788,7 +9511,9 @@ async def preview_resource_import(
             message="正在推断资源关系与拓扑连接",
             percent=82,
         )
-        _infer_parent_field_relations(raw_resources, relations, type_template_map)
+        _infer_parent_field_relations(
+            raw_resources, relations, type_template_map
+        )
         warnings.extend(
             _infer_explicit_relation_rows(
                 explicit_relation_rows,
@@ -7797,21 +9522,31 @@ async def preview_resource_import(
                 type_template_map,
             )
         )
-        _infer_existing_resource_relations(raw_resources, relations, type_template_map)
+        _infer_existing_resource_relations(
+            raw_resources, relations, type_template_map
+        )
         allowed_relation_rules = _build_allowed_relation_rules(
             existing_client,
             type_template_map,
-            {str(item.get("ciType") or "") for item in raw_resources if item.get("ciType")},
+            {
+                str(item.get("ciType") or "")
+                for item in raw_resources
+                if item.get("ciType")
+            },
         )
         relations = _prune_redundant_root_relations(relations, raw_resources)
-        relations, skipped_relation_messages = _filter_supported_relations(relations, raw_resources, allowed_relation_rules)
+        relations, skipped_relation_messages = _filter_supported_relations(
+            relations, raw_resources, allowed_relation_rules
+        )
         logs.extend(skipped_relation_messages)
         preview_pending_choice_values = _collect_pending_choice_values(
             type_templates=type_template_map,
             ordered_records=raw_resources,
         )
         for item in raw_resources:
-            type_template = type_template_map.get(_clean_text(item.get("ciType")))
+            type_template = type_template_map.get(
+                _clean_text(item.get("ciType"))
+            )
             record_issues = _build_record_issues(
                 ci_type=_clean_text(item.get("ciType")) or "unknown",
                 attributes=item.get("analysisAttributes") or {},
@@ -7852,9 +9587,19 @@ async def preview_resource_import(
                 "ciType": ci_type,
                 "label": _resolve_type_label(ci_type, model_templates),
                 "count": len(items),
-                "records": sorted(items, key=lambda item: (item["name"] == "", item["name"], item["previewKey"])),
+                "records": sorted(
+                    items,
+                    key=lambda item: (
+                        item["name"] == "",
+                        item["name"],
+                        item["previewKey"],
+                    ),
+                ),
             }
-            for ci_type, items in sorted(grouped_resources.items(), key=lambda item: (-len(item[1]), item[0]))
+            for ci_type, items in sorted(
+                grouped_resources.items(),
+                key=lambda item: (-len(item[1]), item[0]),
+            )
         ]
         structure_analysis = await _build_structure_analysis(
             resource_groups,
@@ -7862,14 +9607,18 @@ async def preview_resource_import(
             llm_client=managed_llm_client,
         )
 
-        unknown_count = sum(1 for item in raw_resources if item["ciType"] == "unknown")
+        unknown_count = sum(
+            1 for item in raw_resources if item["ciType"] == "unknown"
+        )
         attention_record_count = sum(
             1 for item in raw_resources if (item.get("issues") or [])
         )
         quality_penalty = unknown_count * 7 + len(warnings) * 2
         quality_score = max(48, min(100, 96 - quality_penalty))
         blocking_analysis_count = sum(
-            1 for item in analysis_issues if _clean_text(item.get("severity")) == "blocking"
+            1
+            for item in analysis_issues
+            if _clean_text(item.get("severity")) == "blocking"
         )
         analysis_status = "blocking" if blocking_analysis_count else "ok"
         mapping_summary = mapping_summary_entries or [
@@ -7879,24 +9628,40 @@ async def preview_resource_import(
                 "suggestedTargetField": target_field,
                 "count": count,
                 "confidence": "high" if target_field != "unknown" else "low",
-                "status": "mapped" if target_field != "unknown" else "unmapped",
+                "status": (
+                    "mapped" if target_field != "unknown" else "unmapped"
+                ),
                 "resolvedBy": "rule",
                 "candidates": [],
                 "message": "",
                 "needsConfirmation": False,
             }
-            for (source_field, target_field), count in sorted(field_stats.items(), key=lambda item: (-item[1], item[0][0]))
+            for (source_field, target_field), count in sorted(
+                field_stats.items(), key=lambda item: (-item[1], item[0][0])
+            )
         ]
         cleaning_summary = [
             {"label": label, "count": count}
             for label, count in cleaning_changes.items()
         ]
         if skipped_rows:
-            cleaning_summary.append({"label": "已过滤非资产行", "count": skipped_rows})
+            cleaning_summary.append(
+                {"label": "已过滤非资产行", "count": skipped_rows}
+            )
         if existing_detected_count:
-            cleaning_summary.append({"label": "检测到 CMDB 已存在资源", "count": existing_detected_count})
+            cleaning_summary.append(
+                {
+                    "label": "检测到 CMDB 已存在资源",
+                    "count": existing_detected_count,
+                }
+            )
         if explicit_relation_rows:
-            cleaning_summary.append({"label": "识别到显式关系行", "count": len(explicit_relation_rows)})
+            cleaning_summary.append(
+                {
+                    "label": "识别到显式关系行",
+                    "count": len(explicit_relation_rows),
+                }
+            )
 
         _emit_progress(
             progress_callback,
@@ -7912,7 +9677,8 @@ async def preview_resource_import(
                 "relationCount": len(relations),
                 "qualityScore": quality_score,
                 "autoCleaned": sum(cleaning_changes.values()),
-                "needsConfirmation": max(attention_record_count, unknown_count) + len(warnings),
+                "needsConfirmation": max(attention_record_count, unknown_count)
+                + len(warnings),
                 "analysisIssueCount": len(analysis_issues),
                 "blockingIssueCount": blocking_analysis_count,
             },
@@ -7922,10 +9688,18 @@ async def preview_resource_import(
             "relations": [
                 {
                     **relation,
-                    "sourceType": resource_type_map.get(str(relation.get("sourceKey") or ""), ""),
-                    "targetType": resource_type_map.get(str(relation.get("targetKey") or ""), ""),
-                    "sourceName": resource_name_map.get(str(relation.get("sourceKey") or ""), ""),
-                    "targetName": resource_name_map.get(str(relation.get("targetKey") or ""), ""),
+                    "sourceType": resource_type_map.get(
+                        str(relation.get("sourceKey") or ""), ""
+                    ),
+                    "targetType": resource_type_map.get(
+                        str(relation.get("targetKey") or ""), ""
+                    ),
+                    "sourceName": resource_name_map.get(
+                        str(relation.get("sourceKey") or ""), ""
+                    ),
+                    "targetName": resource_name_map.get(
+                        str(relation.get("targetKey") or ""), ""
+                    ),
                 }
                 for relation in relations.values()
             ],
@@ -7957,7 +9731,9 @@ async def preview_resource_import(
             await managed_llm_client.aclose()
 
 
-def _resolve_type_label(ci_type: str, model_templates: list[dict[str, Any]]) -> str:
+def _resolve_type_label(
+    ci_type: str, model_templates: list[dict[str, Any]]
+) -> str:
     for template in model_templates:
         if template.get("name") == ci_type:
             return str(template.get("alias") or ci_type)
@@ -7966,7 +9742,7 @@ def _resolve_type_label(ci_type: str, model_templates: list[dict[str, Any]]) -> 
 
 def _normalize_group_snapshot(group: dict[str, Any]) -> dict[str, Any]:
     ci_types: list[dict[str, Any]] = []
-    for item in (group.get("ci_types") or group.get("ciTypes") or []):
+    for item in group.get("ci_types") or group.get("ciTypes") or []:
         if not isinstance(item, dict):
             continue
         name = _clean_text(item.get("name"))
@@ -7986,7 +9762,9 @@ def _normalize_group_snapshot(group: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _build_default_ci_type_groups(model_templates: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def _build_default_ci_type_groups(
+    model_templates: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
     grouped: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for item in model_templates:
         name = _clean_text(item.get("name"))
@@ -8001,12 +9779,20 @@ def _build_default_ci_type_groups(model_templates: list[dict[str, Any]]) -> list
             }
         )
     return [
-        {"id": None, "name": group_name, "ciTypes": sorted(ci_types, key=lambda ci: ci["name"])}
-        for group_name, ci_types in sorted(grouped.items(), key=lambda item: item[0])
+        {
+            "id": None,
+            "name": group_name,
+            "ciTypes": sorted(ci_types, key=lambda ci: ci["name"]),
+        }
+        for group_name, ci_types in sorted(
+            grouped.items(), key=lambda item: item[0]
+        )
     ]
 
 
-def _find_groups_for_model(ci_type_groups: list[dict[str, Any]], ci_type: str) -> list[dict[str, Any]]:
+def _find_groups_for_model(
+    ci_type_groups: list[dict[str, Any]], ci_type: str
+) -> list[dict[str, Any]]:
     target = _clean_text(ci_type)
     if not target:
         return []
@@ -8034,7 +9820,10 @@ def _is_generic_server_hint(raw_hints: list[str]) -> bool:
         lowered = _clean_text(hint).lower()
         if any(token in lowered for token in ("vserver", "虚拟机", "虚机", "vm")):
             continue
-        if any(token in lowered for token in ("physicalmachine", "物理机", "裸机", "baremetal")):
+        if any(
+            token in lowered
+            for token in ("physicalmachine", "物理机", "裸机", "baremetal")
+        ):
             continue
         if any(token in lowered for token in ("server", "服务器", "主机")):
             return True
@@ -8053,7 +9842,9 @@ async def _build_structure_analysis(
         if isinstance(item, dict)
     ]
     if not ci_type_groups:
-        ci_type_groups = _build_default_ci_type_groups(metadata.get("ciTypes") or DEFAULT_MODEL_TEMPLATES)
+        ci_type_groups = _build_default_ci_type_groups(
+            metadata.get("ciTypes") or DEFAULT_MODEL_TEMPLATES
+        )
 
     ci_type_meta = {
         _clean_text(item.get("name")): item
@@ -8076,7 +9867,9 @@ async def _build_structure_analysis(
     )
     group_contexts: list[dict[str, Any]] = []
     semantic_plan_by_index: dict[int, SemanticModelPlan] = {}
-    semantic_semaphore = asyncio.Semaphore(RESOURCE_IMPORT_LLM_SHEET_PARALLELISM)
+    semantic_semaphore = asyncio.Semaphore(
+        RESOURCE_IMPORT_LLM_SHEET_PARALLELISM
+    )
 
     async def _resolve_group_semantic_plan(
         index: int,
@@ -8104,7 +9897,9 @@ async def _build_structure_analysis(
                 "exact_groups": exact_groups,
             }
         )
-        if _should_run_semantic_inference(resource_ci_type or "unknown", exact_groups, raw_type_hints):
+        if _should_run_semantic_inference(
+            resource_ci_type or "unknown", exact_groups, raw_type_hints
+        ):
             semantic_tasks.append(_resolve_group_semantic_plan(index, group))
 
     if semantic_tasks:
@@ -8143,15 +9938,21 @@ async def _build_structure_analysis(
                 return
             catalog_item = catalog_by_name.get(normalized_name)
             if catalog_item:
-                resolved_group_name = group_name or _clean_text(catalog_item.get("groupName"))
+                resolved_group_name = group_name or _clean_text(
+                    catalog_item.get("groupName")
+                )
                 model_option_map[normalized_name] = {
                     "id": catalog_item.get("id"),
                     "name": normalized_name,
-                    "alias": _clean_text(catalog_item.get("alias")) or normalized_name,
+                    "alias": _clean_text(catalog_item.get("alias"))
+                    or normalized_name,
                     "groupName": resolved_group_name,
                     "existing": True,
                 }
-                if resolved_group_name and resolved_group_name not in group_option_map:
+                if (
+                    resolved_group_name
+                    and resolved_group_name not in group_option_map
+                ):
                     group_option_map[resolved_group_name] = {
                         "id": None,
                         "name": resolved_group_name,
@@ -8159,21 +9960,28 @@ async def _build_structure_analysis(
                     }
                 return
             model_meta = ci_type_meta.get(normalized_name) or {}
-            resolved_group_name = group_name or DEFAULT_GROUP_HINTS.get(normalized_name, "")
+            resolved_group_name = group_name or DEFAULT_GROUP_HINTS.get(
+                normalized_name, ""
+            )
             model_option_map[normalized_name] = {
                 "id": model_meta.get("id"),
                 "name": normalized_name,
-                "alias": _clean_text(model_meta.get("alias")) or normalized_name,
+                "alias": _clean_text(model_meta.get("alias"))
+                or normalized_name,
                 "groupName": resolved_group_name,
                 "existing": True,
             }
 
         for exact_group in exact_groups:
             exact_group_name = _clean_text(exact_group.get("name"))
-            for model in (exact_group.get("ciTypes") or []):
-                add_model_option(_clean_text(model.get("name")), group_name=exact_group_name)
+            for model in exact_group.get("ciTypes") or []:
+                add_model_option(
+                    _clean_text(model.get("name")), group_name=exact_group_name
+                )
 
-        semantic_plan = semantic_plan_by_index.get(index, default_semantic_plan)
+        semantic_plan = semantic_plan_by_index.get(
+            index, default_semantic_plan
+        )
         for candidate in semantic_plan.candidates or []:
             add_model_option(
                 _clean_text(candidate.get("name")),
@@ -8182,10 +9990,16 @@ async def _build_structure_analysis(
 
         generic_server_ambiguous = (
             _is_generic_server_hint(raw_type_hints)
-            and any(_clean_text(group_item.get("name")) for group_item in exact_groups)
+            and any(
+                _clean_text(group_item.get("name"))
+                for group_item in exact_groups
+            )
             and any(
                 {"PhysicalMachine", "vserver"}.issubset(
-                    {_clean_text(item.get("name")) for item in (group_item.get("ciTypes") or [])}
+                    {
+                        _clean_text(item.get("name"))
+                        for item in (group_item.get("ciTypes") or [])
+                    }
                 )
                 for group_item in exact_groups
             )
@@ -8196,10 +10010,18 @@ async def _build_structure_analysis(
         if generic_server_ambiguous:
             status = "ambiguous_model"
             needs_confirmation = True
-            selected_group_name = _clean_text(exact_groups[0].get("name")) if exact_groups else _clean_text(
-                (semantic_best_catalog or {}).get("groupName")
+            selected_group_name = (
+                _clean_text(exact_groups[0].get("name"))
+                if exact_groups
+                else _clean_text(
+                    (semantic_best_catalog or {}).get("groupName")
+                )
             )
-            selected_model_name = semantic_best_model or (resource_ci_type if resource_ci_type in {"PhysicalMachine", "vserver"} else "")
+            selected_model_name = semantic_best_model or (
+                resource_ci_type
+                if resource_ci_type in {"PhysicalMachine", "vserver"}
+                else ""
+            )
             model_option_map = {}
             add_model_option("PhysicalMachine", group_name=selected_group_name)
             add_model_option("vserver", group_name=selected_group_name)
@@ -8208,9 +10030,14 @@ async def _build_structure_analysis(
                 "当前系统同时存在 PhysicalMachine 和 vserver，需要人工确认最终模型。"
             )
         elif semantic_best_catalog:
-            selected_group_name = _clean_text(semantic_best_catalog.get("groupName"))
+            selected_group_name = _clean_text(
+                semantic_best_catalog.get("groupName")
+            )
             selected_model_name = semantic_best_model
-            reason = semantic_plan.reason or f"根据语义线索建议使用现有模型 {selected_model_name}。"
+            reason = (
+                semantic_plan.reason
+                or f"根据语义线索建议使用现有模型 {selected_model_name}。"
+            )
             if semantic_plan.confidence == "high":
                 status = "matched"
                 needs_confirmation = False
@@ -8225,9 +10052,15 @@ async def _build_structure_analysis(
                     "请人工确认后再继续。"
                 )
             else:
-                status = "missing_model" if selected_group_name else "missing_group"
+                status = (
+                    "missing_model" if selected_group_name else "missing_group"
+                )
                 needs_confirmation = True
-                selected_model_name = resource_ci_type or _clean_text(group.get("label")) or selected_model_name
+                selected_model_name = (
+                    resource_ci_type
+                    or _clean_text(group.get("label"))
+                    or selected_model_name
+                )
                 reason = (
                     f"现有模型 {semantic_best_model} 仅为低置信候选，系统不会直接套用。"
                     f"{'建议先确认是否新建模型，或手动改选现有模型。' if selected_group_name else '当前也未锁定合适分组，请先确认是否新建分组。'}"
@@ -8243,7 +10076,8 @@ async def _build_structure_analysis(
         else:
             hinted_group = next(
                 (
-                    item for item in ci_type_groups
+                    item
+                    for item in ci_type_groups
                     if _clean_text(item.get("name")) == suggested_group_name
                 ),
                 None,
@@ -8260,7 +10094,9 @@ async def _build_structure_analysis(
                 }
             else:
                 status = "missing_group"
-                selected_group_name = suggested_group_name or _clean_text(group.get("label"))
+                selected_group_name = suggested_group_name or _clean_text(
+                    group.get("label")
+                )
                 needs_confirmation = True
                 reason = (
                     f"建议为当前资源创建分组 {selected_group_name}。"
@@ -8269,20 +10105,34 @@ async def _build_structure_analysis(
                 )
 
         if not selected_model_name:
-            selected_model_name = resource_ci_type or _clean_text(group.get("label"))
+            selected_model_name = resource_ci_type or _clean_text(
+                group.get("label")
+            )
         if status == "missing_model":
             model_meta = ci_type_meta.get(resource_ci_type) or {}
-            selected_model_name = resource_ci_type or _clean_text(model_meta.get("alias")) or _clean_text(group.get("label"))
+            selected_model_name = (
+                resource_ci_type
+                or _clean_text(model_meta.get("alias"))
+                or _clean_text(group.get("label"))
+            )
         if status == "missing_group":
             create_group_approved = False
         if status == "missing_model":
             create_model_approved = False
 
-        group_options = sorted(group_option_map.values(), key=lambda item: item["name"])
-        model_options = sorted(model_option_map.values(), key=lambda item: item["name"])
+        group_options = sorted(
+            group_option_map.values(), key=lambda item: item["name"]
+        )
+        model_options = sorted(
+            model_option_map.values(), key=lambda item: item["name"]
+        )
         if not model_options and selected_model_name:
-            add_model_option(selected_model_name, group_name=selected_group_name)
-            model_options = sorted(model_option_map.values(), key=lambda item: item["name"])
+            add_model_option(
+                selected_model_name, group_name=selected_group_name
+            )
+            model_options = sorted(
+                model_option_map.values(), key=lambda item: item["name"]
+            )
 
         resolved_existing_model_name = _pick_existing_structure_model_name(
             current_model_name=selected_model_name,
@@ -8292,7 +10142,10 @@ async def _build_structure_analysis(
             model_options=model_options,
             type_templates=ci_type_meta,
         )
-        if resolved_existing_model_name and resolved_existing_model_name != selected_model_name:
+        if (
+            resolved_existing_model_name
+            and resolved_existing_model_name != selected_model_name
+        ):
             selected_model_name = resolved_existing_model_name
             if status == "missing_model":
                 status = "ambiguous_model"
@@ -8304,20 +10157,30 @@ async def _build_structure_analysis(
 
         items.append(
             {
-                "key": resource_ci_type or _clean_text(group.get("label")) or f"group-{len(items) + 1}",
+                "key": resource_ci_type
+                or _clean_text(group.get("label"))
+                or f"group-{len(items) + 1}",
                 "resourceCiType": resource_ci_type,
-                "resourceLabel": _clean_text(group.get("label")) or resource_ci_type or "待确认模型",
+                "resourceLabel": _clean_text(group.get("label"))
+                or resource_ci_type
+                or "待确认模型",
                 "recordCount": int(group.get("count") or len(records)),
                 "status": status,
                 "reason": reason,
-                "originalTypeText": raw_type_hints[0] if raw_type_hints else resource_ci_type or _clean_text(group.get("label")),
+                "originalTypeText": (
+                    raw_type_hints[0]
+                    if raw_type_hints
+                    else resource_ci_type or _clean_text(group.get("label"))
+                ),
                 "rawTypeHints": raw_type_hints,
                 "semanticConfidence": (
                     semantic_plan.confidence
                     if semantic_plan.best_model
-                    else "high"
-                    if status == "matched" and exact_groups
-                    else "low"
+                    else (
+                        "high"
+                        if status == "matched" and exact_groups
+                        else "low"
+                    )
                 ),
                 "suggestedGroupName": selected_group_name,
                 "suggestedModelName": selected_model_name,
@@ -8334,20 +10197,28 @@ async def _build_structure_analysis(
     return {"items": items}
 
 
-def _extract_choice_definitions(attribute: dict[str, Any]) -> list[dict[str, str]]:
+def _extract_choice_definitions(
+    attribute: dict[str, Any],
+) -> list[dict[str, str]]:
     choices: list[dict[str, str]] = []
-    for choice in (attribute.get("choice_value") or []):
+    for choice in attribute.get("choice_value") or []:
         if not isinstance(choice, (list, tuple)) or not choice:
             continue
         raw_value = _clean_text(choice[0])
-        raw_meta = choice[1] if len(choice) > 1 and isinstance(choice[1], dict) else {}
+        raw_meta = (
+            choice[1]
+            if len(choice) > 1 and isinstance(choice[1], dict)
+            else {}
+        )
         raw_label = _clean_text(raw_meta.get("label")) or raw_value
         if raw_value:
             choices.append({"value": raw_value, "label": raw_label})
     return choices
 
 
-def _extract_choice_reference_definition(attribute: dict[str, Any]) -> tuple[Any, list[Any]]:
+def _extract_choice_reference_definition(
+    attribute: dict[str, Any],
+) -> tuple[Any, list[Any]]:
     choice_other = attribute.get("choice_other")
     if not isinstance(choice_other, dict):
         return None, []
@@ -8362,7 +10233,9 @@ def _extract_choice_reference_definition(attribute: dict[str, Any]) -> tuple[Any
 
     normalized_type_ids: list[Any] = []
     if isinstance(raw_type_ids, list):
-        normalized_type_ids = [item for item in raw_type_ids if item not in (None, "")]
+        normalized_type_ids = [
+            item for item in raw_type_ids if item not in (None, "")
+        ]
     elif raw_type_ids not in (None, ""):
         normalized_type_ids = [raw_type_ids]
 
@@ -8406,7 +10279,10 @@ def _merge_attribute_definitions(
         name = _clean_text(attr.get("name"))
         if not name:
             continue
-        choice_reference_attr_id, choice_reference_type_ids = _extract_choice_reference_definition(attr)
+        (
+            choice_reference_attr_id,
+            choice_reference_type_ids,
+        ) = _extract_choice_reference_definition(attr)
         definitions[name] = {
             "id": attr.get("id"),
             "name": name,
@@ -8415,9 +10291,12 @@ def _merge_attribute_definitions(
             "is_choice": bool(attr.get("is_choice")),
             "is_list": bool(attr.get("is_list")),
             "default": attr.get("default"),
-            "default_show": bool(attr.get("default_show")) or name in preferred_order,
+            "default_show": bool(attr.get("default_show"))
+            or name in preferred_order,
             "value_type": _clean_text(attr.get("value_type")),
-            "order": preferred_order.get(name, int(attr.get("order") or index)),
+            "order": preferred_order.get(
+                name, int(attr.get("order") or index)
+            ),
             "choices": _extract_choice_definitions(attr),
             "choice_reference_attr_id": choice_reference_attr_id,
             "choice_reference_type_ids": choice_reference_type_ids,
@@ -8427,7 +10306,10 @@ def _merge_attribute_definitions(
         name = _clean_text(attr.get("name"))
         if not name:
             continue
-        choice_reference_attr_id, choice_reference_type_ids = _extract_choice_reference_definition(attr)
+        (
+            choice_reference_attr_id,
+            choice_reference_type_ids,
+        ) = _extract_choice_reference_definition(attr)
         definitions.setdefault(
             name,
             {
@@ -8447,23 +10329,41 @@ def _merge_attribute_definitions(
             },
         )
         definitions[name]["default_show"] = True
-        definitions[name]["order"] = preferred_order.get(name, definitions[name].get("order", index))
+        definitions[name]["order"] = preferred_order.get(
+            name, definitions[name].get("order", index)
+        )
         if not definitions[name].get("choices"):
             definitions[name]["choices"] = _extract_choice_definitions(attr)
-        if definitions[name].get("default") in (None, "", [], {}) and attr.get("default") not in (None, "", [], {}):
+        if definitions[name].get("default") in (None, "", [], {}) and attr.get(
+            "default"
+        ) not in (None, "", [], {}):
             definitions[name]["default"] = attr.get("default")
-        if not definitions[name].get("choice_reference_attr_id") and choice_reference_attr_id not in (None, ""):
-            definitions[name]["choice_reference_attr_id"] = choice_reference_attr_id
-        if not definitions[name].get("choice_reference_type_ids") and choice_reference_type_ids:
-            definitions[name]["choice_reference_type_ids"] = choice_reference_type_ids
+        if not definitions[name].get(
+            "choice_reference_attr_id"
+        ) and choice_reference_attr_id not in (None, ""):
+            definitions[name][
+                "choice_reference_attr_id"
+            ] = choice_reference_attr_id
+        if (
+            not definitions[name].get("choice_reference_type_ids")
+            and choice_reference_type_ids
+        ):
+            definitions[name][
+                "choice_reference_type_ids"
+            ] = choice_reference_type_ids
 
     return sorted(
         definitions.values(),
-        key=lambda item: (int(item.get("order", 0)), str(item.get("alias") or item.get("name") or "")),
+        key=lambda item: (
+            int(item.get("order", 0)),
+            str(item.get("alias") or item.get("name") or ""),
+        ),
     )
 
 
-def _enrich_resource_import_metadata(metadata: dict[str, Any]) -> dict[str, Any]:
+def _enrich_resource_import_metadata(
+    metadata: dict[str, Any],
+) -> dict[str, Any]:
     enriched = dict(metadata)
     enriched["semanticModelCatalog"] = _build_ci_type_catalog(enriched)
     enriched["semanticFieldCatalog"] = _build_metadata_field_catalog(enriched)
@@ -8492,7 +10392,11 @@ def _resource_import_metadata_cache_path() -> Path:
         or os.environ.get("COPAW_WORKING_DIR")
         or "~/.qwenpaw"
     )
-    return Path(working_dir).expanduser() / ".cache" / "resource_import_metadata.json"
+    return (
+        Path(working_dir).expanduser()
+        / ".cache"
+        / "resource_import_metadata.json"
+    )
 
 
 def _resource_import_metadata_env_signature() -> str:
@@ -8500,10 +10404,14 @@ def _resource_import_metadata_env_signature() -> str:
         env = _parse_env()
     except Exception:
         return ""
-    return f"{env.get('VEOPS_BASE_URL') or ''}|{env.get('VEOPS_USERNAME') or ''}"
+    return (
+        f"{env.get('VEOPS_BASE_URL') or ''}|{env.get('VEOPS_USERNAME') or ''}"
+    )
 
 
-def _read_resource_import_metadata_cache(env_signature: str) -> dict[str, Any] | None:
+def _read_resource_import_metadata_cache(
+    env_signature: str,
+) -> dict[str, Any] | None:
     if not env_signature or _METADATA_CACHE_TTL_SECONDS <= 0:
         return None
     path = _resource_import_metadata_cache_path()
@@ -8525,7 +10433,9 @@ def _read_resource_import_metadata_cache(env_signature: str) -> dict[str, Any] |
     return cached if isinstance(cached, dict) else None
 
 
-def _write_resource_import_metadata_cache(env_signature: str, metadata: dict[str, Any]) -> None:
+def _write_resource_import_metadata_cache(
+    env_signature: str, metadata: dict[str, Any]
+) -> None:
     if not env_signature or _METADATA_CACHE_TTL_SECONDS <= 0:
         return
     path = _resource_import_metadata_cache_path()
@@ -8553,7 +10463,9 @@ def invalidate_resource_import_metadata_cache() -> None:
             pass
 
 
-def _load_resource_import_metadata_from_client(client: VeopsCmdbClient) -> dict[str, Any]:
+def _load_resource_import_metadata_from_client(
+    client: VeopsCmdbClient,
+) -> dict[str, Any]:
     ci_types = client.get_ci_types()
     ci_type_groups = client.get_ci_type_groups()
     relation_types = client.get_relation_types()
@@ -8565,7 +10477,9 @@ def _load_resource_import_metadata_from_client(client: VeopsCmdbClient) -> dict[
     worker_count = min(_METADATA_FETCH_CONCURRENCY, max(1, len(ci_types)))
     with ThreadPoolExecutor(max_workers=worker_count) as executor:
         results = list(
-            executor.map(lambda item: _fetch_ci_type_details(client, item), ci_types)
+            executor.map(
+                lambda item: _fetch_ci_type_details(client, item), ci_types
+            )
         )
 
     for result in results:
@@ -8584,13 +10498,21 @@ def _load_resource_import_metadata_from_client(client: VeopsCmdbClient) -> dict[
                 "name": item.get("name"),
                 "alias": item.get("alias"),
                 "unique_key": item.get("unique_key"),
-                "attributes": attributes_map.get(str(item.get("name") or ""), ["name"]),
-                "attributeDefinitions": attribute_definitions_map.get(str(item.get("name") or ""), []),
-                "parentTypes": parent_type_map.get(str(item.get("name") or ""), []),
+                "attributes": attributes_map.get(
+                    str(item.get("name") or ""), ["name"]
+                ),
+                "attributeDefinitions": attribute_definitions_map.get(
+                    str(item.get("name") or ""), []
+                ),
+                "parentTypes": parent_type_map.get(
+                    str(item.get("name") or ""), []
+                ),
                 "system_generated_unique_key": _is_system_generated_unique_key(
                     {
                         "unique_key": item.get("unique_key"),
-                        "attributeDefinitions": attribute_definitions_map.get(str(item.get("name") or ""), []),
+                        "attributeDefinitions": attribute_definitions_map.get(
+                            str(item.get("name") or ""), []
+                        ),
                     }
                 ),
             }
@@ -8600,12 +10522,14 @@ def _load_resource_import_metadata_from_client(client: VeopsCmdbClient) -> dict[
             _normalize_group_snapshot(item)
             for item in ci_type_groups
             if isinstance(item, dict) and _clean_text(item.get("name"))
-        ] or _build_default_ci_type_groups(ci_types),
+        ]
+        or _build_default_ci_type_groups(ci_types),
         "attributeLibrary": [
             {
                 "id": item.get("id"),
                 "name": _clean_text(item.get("name")),
-                "alias": _clean_text(item.get("alias")) or _clean_text(item.get("name")),
+                "alias": _clean_text(item.get("alias"))
+                or _clean_text(item.get("name")),
                 "value_type": _clean_text(item.get("value_type")),
                 "is_choice": bool(item.get("is_choice")),
                 "is_list": bool(item.get("is_list")),
@@ -8613,7 +10537,10 @@ def _load_resource_import_metadata_from_client(client: VeopsCmdbClient) -> dict[
             for item in attribute_library
             if _clean_text(item.get("name"))
         ],
-        "relationTypes": [item.get("name") for item in relation_types if item.get("name")] or DEFAULT_RELATION_TYPES,
+        "relationTypes": [
+            item.get("name") for item in relation_types if item.get("name")
+        ]
+        or DEFAULT_RELATION_TYPES,
         "connected": True,
         "message": "已连接 CMDB，模板来自实时模型元数据",
     }
@@ -8635,8 +10562,12 @@ def _fetch_ci_type_details(
         return None
     try:
         attributes = client.get_ci_type_attributes(type_id)
-        preference_attributes = client.get_ci_type_preference_attributes(type_id)
-        merged = _merge_attribute_definitions(attributes, preference_attributes)
+        preference_attributes = client.get_ci_type_preference_attributes(
+            type_id
+        )
+        merged = _merge_attribute_definitions(
+            attributes, preference_attributes
+        )
         attribute_names = [
             str(attr.get("name")) for attr in merged if attr.get("name")
         ]
@@ -8680,7 +10611,10 @@ def load_resource_import_metadata() -> dict[str, Any]:
         # Cache stores the enriched payload (semanticModelCatalog +
         # semanticFieldCatalog already materialized) so warm reads skip
         # the ~4s _build_metadata_field_catalog pass entirely.
-        if "semanticModelCatalog" in cached and "semanticFieldCatalog" in cached:
+        if (
+            "semanticModelCatalog" in cached
+            and "semanticFieldCatalog" in cached
+        ):
             return cached
         return _enrich_resource_import_metadata(cached)
 
@@ -8713,13 +10647,17 @@ def load_resource_import_metadata() -> dict[str, Any]:
     return enriched
 
 
-def _enrich_cached_resource_import_metadata(cached: dict[str, Any]) -> dict[str, Any]:
+def _enrich_cached_resource_import_metadata(
+    cached: dict[str, Any],
+) -> dict[str, Any]:
     if "semanticModelCatalog" in cached and "semanticFieldCatalog" in cached:
         return cached
     return _enrich_resource_import_metadata(cached)
 
 
-def _structure_results_require_live_metadata(structure_results: list[dict[str, Any]]) -> bool:
+def _structure_results_require_live_metadata(
+    structure_results: list[dict[str, Any]],
+) -> bool:
     return any(
         isinstance(item, dict)
         and item.get("kind") == "model"
@@ -8754,7 +10692,9 @@ def _load_import_preflight_metadata(
     return metadata, "live"
 
 
-def _ci_types_from_preview_snapshot(preview: dict[str, Any] | None) -> list[dict[str, Any]]:
+def _ci_types_from_preview_snapshot(
+    preview: dict[str, Any] | None,
+) -> list[dict[str, Any]]:
     if not isinstance(preview, dict):
         return []
     ci_type_metadata = preview.get("ciTypeMetadata") or {}
@@ -8789,20 +10729,28 @@ def _ci_types_from_preview_snapshot(preview: dict[str, Any] | None) -> list[dict
                     for item in (raw_meta.get("parentTypes") or [])
                     if isinstance(item, dict) and _clean_text(item.get("name"))
                 ],
-                "system_generated_unique_key": bool(raw_meta.get("system_generated_unique_key")),
+                "system_generated_unique_key": bool(
+                    raw_meta.get("system_generated_unique_key")
+                ),
             }
         )
     return items
 
 
-def _offline_preflight_import_resources(payload: dict[str, Any]) -> list[dict[str, Any]]:
+def _offline_preflight_import_resources(
+    payload: dict[str, Any],
+) -> list[dict[str, Any]]:
     """Validate selected records using the preview's CMDB model snapshot.
 
     This runs before opening a live CMDB session so obvious data-shape
     failures are returned even when the target CMDB is currently down.
     """
 
-    preview = payload.get("preview") if isinstance(payload.get("preview"), dict) else {}
+    preview = (
+        payload.get("preview")
+        if isinstance(payload.get("preview"), dict)
+        else {}
+    )
     resource_groups = payload.get("resourceGroups") or []
     if not isinstance(resource_groups, list):
         return []
@@ -8820,10 +10768,7 @@ def _offline_preflight_import_resources(payload: dict[str, Any]) -> list[dict[st
         return []
 
     if preview.get("metadataConnected") is False:
-        message = (
-            "当前预览未连接实时 CMDB 模型，无法按目标环境校验必填字段。"
-            "请恢复 CMDB 连接后重新解析文件。"
-        )
+        message = "当前预览未连接实时 CMDB 模型，无法按目标环境校验必填字段。" "请恢复 CMDB 连接后重新解析文件。"
         return [
             {
                 "previewKey": record.get("previewKey"),
@@ -8838,9 +10783,7 @@ def _offline_preflight_import_resources(payload: dict[str, Any]) -> list[dict[st
         return []
 
     type_templates = {
-        item["name"]: item
-        for item in preview_ci_types
-        if item.get("name")
+        item["name"]: item for item in preview_ci_types if item.get("name")
     }
     structure_selected_model_map = _build_structure_selected_model_map(preview)
     ordered_records = _ordered_selected_records(
@@ -8861,12 +10804,24 @@ def _offline_preflight_import_resources(payload: dict[str, Any]) -> list[dict[st
         )
         preview_key = record.get("previewKey")
         if not ci_type or ci_type == "unknown":
-            results.append({"previewKey": preview_key, "status": "failed", "message": "资源类型未确认，无法导入"})
+            results.append(
+                {
+                    "previewKey": preview_key,
+                    "status": "failed",
+                    "message": "资源类型未确认，无法导入",
+                }
+            )
             continue
 
         type_template = type_templates.get(ci_type, {})
         if not type_template:
-            results.append({"previewKey": preview_key, "status": "failed", "message": f"目标模型 {ci_type} 不存在或尚未创建完成，当前不能导入"})
+            results.append(
+                {
+                    "previewKey": preview_key,
+                    "status": "failed",
+                    "message": f"目标模型 {ci_type} 不存在或尚未创建完成，当前不能导入",
+                }
+            )
             continue
 
         attributes = {
@@ -8878,11 +10833,21 @@ def _offline_preflight_import_resources(payload: dict[str, Any]) -> list[dict[st
             record=record,
             type_template=type_template,
         )
-        display_name = _clean_text(record.get("name")) or _resolve_record_display_name(attributes, type_template)
-        if display_name and not _resolve_record_display_name(confirmed_cmdb_attributes, type_template):
-            fallback_field = _resolve_cmdb_attribute_name(type_template, "name")
-            if fallback_field and _find_attribute_definition(type_template, fallback_field):
-                confirmed_cmdb_attributes.setdefault(fallback_field, display_name)
+        display_name = _clean_text(
+            record.get("name")
+        ) or _resolve_record_display_name(attributes, type_template)
+        if display_name and not _resolve_record_display_name(
+            confirmed_cmdb_attributes, type_template
+        ):
+            fallback_field = _resolve_cmdb_attribute_name(
+                type_template, "name"
+            )
+            if fallback_field and _find_attribute_definition(
+                type_template, fallback_field
+            ):
+                confirmed_cmdb_attributes.setdefault(
+                    fallback_field, display_name
+                )
 
         supplemental_cmdb_attributes = _build_cmdb_attributes(
             ci_type=ci_type,
@@ -8903,15 +10868,23 @@ def _offline_preflight_import_resources(payload: dict[str, Any]) -> list[dict[st
         )
         unique_key = _get_import_required_unique_key(type_template)
         blocking_attribute_issues: list[str] = []
-        if not display_name and not _clean_text(cmdb_attributes.get(unique_key)):
+        if not display_name and not _clean_text(
+            cmdb_attributes.get(unique_key)
+        ):
             blocking_attribute_issues.append("缺少资源名称或模型唯一标识，无法导入")
-        unique_key_definition = _find_attribute_definition(type_template, unique_key) if unique_key else None
+        unique_key_definition = (
+            _find_attribute_definition(type_template, unique_key)
+            if unique_key
+            else None
+        )
         if (
             unique_key
             and not _clean_text(cmdb_attributes.get(unique_key))
             and not bool((unique_key_definition or {}).get("required"))
         ):
-            blocking_attribute_issues.append(f"缺少模型唯一标识字段：{_resolve_attribute_label(type_template, unique_key)}")
+            blocking_attribute_issues.append(
+                f"缺少模型唯一标识字段：{_resolve_attribute_label(type_template, unique_key)}"
+            )
 
         required_attribute_issues = _validate_required_cmdb_attributes(
             type_template=type_template,
@@ -8923,7 +10896,13 @@ def _offline_preflight_import_resources(payload: dict[str, Any]) -> list[dict[st
             if issue not in blocking_attribute_issues:
                 blocking_attribute_issues.append(issue)
         if blocking_attribute_issues:
-            results.append({"previewKey": preview_key, "status": "failed", "message": "；".join(blocking_attribute_issues)})
+            results.append(
+                {
+                    "previewKey": preview_key,
+                    "status": "failed",
+                    "message": "；".join(blocking_attribute_issues),
+                }
+            )
 
     return results
 
@@ -8947,7 +10926,9 @@ def import_preview_to_cmdb(payload: dict[str, Any]) -> dict[str, Any]:
     created_relation_ids: list[Any] = []
     try:
         _validate_preview_analysis_for_import(payload.get("preview") or {})
-        offline_preflight_results = _offline_preflight_import_resources(payload)
+        offline_preflight_results = _offline_preflight_import_resources(
+            payload
+        )
         if offline_preflight_results:
             report["failed"] += len(offline_preflight_results)
             report["resourceResults"].extend(offline_preflight_results)
@@ -8959,7 +10940,10 @@ def import_preview_to_cmdb(payload: dict[str, Any]) -> dict[str, Any]:
         client.login()
         report["structureResults"] = _prepare_import_structure(client, payload)
         client.get_relation_types()
-        import_metadata, import_metadata_source = _load_import_preflight_metadata(
+        (
+            import_metadata,
+            import_metadata_source,
+        ) = _load_import_preflight_metadata(
             client,
             report["structureResults"],
         )
@@ -8973,7 +10957,9 @@ def import_preview_to_cmdb(payload: dict[str, Any]) -> dict[str, Any]:
             import_metadata_source,
             sorted(type_templates.keys()),
         )
-        structure_selected_model_map = _build_structure_selected_model_map(payload.get("preview") or {})
+        structure_selected_model_map = _build_structure_selected_model_map(
+            payload.get("preview") or {}
+        )
         resource_type_map = {
             str(record.get("previewKey")): _resolve_payload_ci_type(
                 record.get("ciType"),
@@ -8989,7 +10975,9 @@ def import_preview_to_cmdb(payload: dict[str, Any]) -> dict[str, Any]:
         # of get_ci_type_relations, which costs ~10s for a ~10-ci_type import.
         # Falls back to a live fetch when the snapshot is missing, e.g. for
         # legacy preview payloads or direct CLI flows.
-        snapshot_rules = (payload.get("preview") or {}).get("allowedRelationRules")
+        snapshot_rules = (payload.get("preview") or {}).get(
+            "allowedRelationRules"
+        )
         if isinstance(snapshot_rules, list) and snapshot_rules:
             allowed_relation_rules = {
                 tuple(rule)
@@ -9002,7 +10990,10 @@ def import_preview_to_cmdb(payload: dict[str, Any]) -> dict[str, Any]:
                 type_templates,
                 {ci_type for ci_type in resource_type_map.values() if ci_type},
             )
-        allowed_relation_rules, relation_structure_results = _ensure_selected_model_relations(
+        (
+            allowed_relation_rules,
+            relation_structure_results,
+        ) = _ensure_selected_model_relations(
             client,
             payload,
             type_templates=type_templates,
@@ -9075,11 +11066,21 @@ def import_preview_to_cmdb(payload: dict[str, Any]) -> dict[str, Any]:
                 record=record,
                 type_template=type_template,
             )
-            display_name = _clean_text(record.get("name")) or _resolve_record_display_name(merged_attributes, type_template)
-            if display_name and not _resolve_record_display_name(confirmed_cmdb_attributes, type_template):
-                fallback_field = _resolve_cmdb_attribute_name(type_template, "name")
-                if fallback_field and _find_attribute_definition(type_template, fallback_field):
-                    confirmed_cmdb_attributes.setdefault(fallback_field, display_name)
+            display_name = _clean_text(
+                record.get("name")
+            ) or _resolve_record_display_name(merged_attributes, type_template)
+            if display_name and not _resolve_record_display_name(
+                confirmed_cmdb_attributes, type_template
+            ):
+                fallback_field = _resolve_cmdb_attribute_name(
+                    type_template, "name"
+                )
+                if fallback_field and _find_attribute_definition(
+                    type_template, fallback_field
+                ):
+                    confirmed_cmdb_attributes.setdefault(
+                        fallback_field, display_name
+                    )
 
             supplemental_cmdb_attributes = _build_cmdb_attributes(
                 ci_type=ci_type,
@@ -9103,7 +11104,8 @@ def import_preview_to_cmdb(payload: dict[str, Any]) -> dict[str, Any]:
                 cmdb_attributes = {
                     key: value
                     for key, value in cmdb_attributes.items()
-                    if _clean_text(key) in allowed_attribute_names and value not in (None, "", [])
+                    if _clean_text(key) in allowed_attribute_names
+                    and value not in (None, "", [])
                 }
             unique_key = _get_import_required_unique_key(type_template)
             # Reuse the parallel-prefetched map; an entry of {} means the
@@ -9112,18 +11114,25 @@ def import_preview_to_cmdb(payload: dict[str, Any]) -> dict[str, Any]:
             # queried at prefetch time fall back to a live lookup.
             preview_key = str(record.get("previewKey") or "")
             if existing_ci_map is not None and preview_key in existing_ci_map:
-                current_existing_ci = existing_ci_map[preview_key] or existing_ci
+                current_existing_ci = (
+                    existing_ci_map[preview_key] or existing_ci
+                )
             else:
-                current_existing_ci = _find_existing_ci(
-                    client,
-                    ci_type,
-                    cmdb_attributes,
-                    fallback_name=display_name,
-                    unique_key=unique_key,
-                ) or existing_ci
+                current_existing_ci = (
+                    _find_existing_ci(
+                        client,
+                        ci_type,
+                        cmdb_attributes,
+                        fallback_name=display_name,
+                        unique_key=unique_key,
+                    )
+                    or existing_ci
+                )
 
             if current_existing_ci and import_action == "skip":
-                ci_id_map[str(record.get("previewKey"))] = current_existing_ci.get("ciId")
+                ci_id_map[
+                    str(record.get("previewKey"))
+                ] = current_existing_ci.get("ciId")
                 report["skipped"] += 1
                 report["resourceResults"].append(
                     {
@@ -9144,7 +11153,9 @@ def import_preview_to_cmdb(payload: dict[str, Any]) -> dict[str, Any]:
                             {
                                 "ciId": existing_ci_id,
                                 "ciType": ci_type,
-                                "attributes": _snapshot_ci_attributes(snapshot, type_template=type_template),
+                                "attributes": _snapshot_ci_attributes(
+                                    snapshot, type_template=type_template
+                                ),
                             }
                         )
                 debug_context = _build_import_record_debug_context(
@@ -9166,13 +11177,18 @@ def import_preview_to_cmdb(payload: dict[str, Any]) -> dict[str, Any]:
                     LOGGER.error(
                         "resource-import update failed: %s | context=%s",
                         exc,
-                        json.dumps(debug_context, ensure_ascii=False, default=str),
+                        json.dumps(
+                            debug_context, ensure_ascii=False, default=str
+                        ),
                     )
                     raise RuntimeError(
                         f"{exc} | 调试上下文: {json.dumps(debug_context, ensure_ascii=False, default=str)}"
                     ) from exc
             else:
-                immediate_attributes, deferred_attributes = _split_deferred_self_referential_choice_attributes(
+                (
+                    immediate_attributes,
+                    deferred_attributes,
+                ) = _split_deferred_self_referential_choice_attributes(
                     ci_type=ci_type,
                     type_template=type_template,
                     source_attributes=merged_attributes,
@@ -9199,7 +11215,9 @@ def import_preview_to_cmdb(payload: dict[str, Any]) -> dict[str, Any]:
                     LOGGER.error(
                         "resource-import create failed: %s | context=%s",
                         exc,
-                        json.dumps(debug_context, ensure_ascii=False, default=str),
+                        json.dumps(
+                            debug_context, ensure_ascii=False, default=str
+                        ),
                     )
                     raise RuntimeError(
                         f"{exc} | 调试上下文: {json.dumps(debug_context, ensure_ascii=False, default=str)}"
@@ -9208,12 +11226,18 @@ def import_preview_to_cmdb(payload: dict[str, Any]) -> dict[str, Any]:
                     created_ci_ids.append(ci_id)
                     if deferred_attributes:
                         try:
-                            client.update_ci(ci_id, ci_type, deferred_attributes)
+                            client.update_ci(
+                                ci_id, ci_type, deferred_attributes
+                            )
                         except Exception as exc:
                             LOGGER.error(
                                 "resource-import deferred update failed: %s | context=%s",
                                 exc,
-                                json.dumps(debug_context, ensure_ascii=False, default=str),
+                                json.dumps(
+                                    debug_context,
+                                    ensure_ascii=False,
+                                    default=str,
+                                ),
                             )
                             raise RuntimeError(
                                 f"{exc} | 调试上下文: {json.dumps(debug_context, ensure_ascii=False, default=str)}"
@@ -9227,7 +11251,7 @@ def import_preview_to_cmdb(payload: dict[str, Any]) -> dict[str, Any]:
                     "previewKey": record.get("previewKey"),
                     "ciId": ci_id,
                     "status": "success",
-                    "message": "更新成功" if current_existing_ci else "导入成功",
+                    "message": ("更新成功" if current_existing_ci else "导入成功"),
                 }
             )
 
@@ -9235,10 +11259,21 @@ def import_preview_to_cmdb(payload: dict[str, Any]) -> dict[str, Any]:
             if not relation.get("selected", True):
                 report["skipped"] += 1
                 continue
-            source_type = resource_type_map.get(str(relation.get("sourceKey")), "")
-            target_type = resource_type_map.get(str(relation.get("targetKey")), "")
-            relation_type = _clean_text(relation.get("relationType")) or "contain"
-            rule_allowed = (source_type, relation_type, target_type) in allowed_relation_rules if allowed_relation_rules else None
+            source_type = resource_type_map.get(
+                str(relation.get("sourceKey")), ""
+            )
+            target_type = resource_type_map.get(
+                str(relation.get("targetKey")), ""
+            )
+            relation_type = (
+                _clean_text(relation.get("relationType")) or "contain"
+            )
+            rule_allowed = (
+                (source_type, relation_type, target_type)
+                in allowed_relation_rules
+                if allowed_relation_rules
+                else None
+            )
             relation_debug_context = _build_relation_debug_context(
                 relation=relation,
                 source_type=source_type,
@@ -9249,7 +11284,9 @@ def import_preview_to_cmdb(payload: dict[str, Any]) -> dict[str, Any]:
             if allowed_relation_rules and not rule_allowed:
                 LOGGER.warning(
                     "resource-import relation skipped by model rule check: %s",
-                    json.dumps(relation_debug_context, ensure_ascii=False, default=str),
+                    json.dumps(
+                        relation_debug_context, ensure_ascii=False, default=str
+                    ),
                 )
                 report["skipped"] += 1
                 report["relationResults"].append(
@@ -9306,7 +11343,9 @@ def import_preview_to_cmdb(payload: dict[str, Any]) -> dict[str, Any]:
                         default=str,
                     ),
                 )
-                relation_id, _response = client.create_relation(source_ci_id, target_ci_id, relation_type)
+                relation_id, _response = client.create_relation(
+                    source_ci_id, target_ci_id, relation_type
+                )
                 if relation_id is not None:
                     created_relation_ids.append(relation_id)
                 report["relationsCreated"] += 1
@@ -9346,7 +11385,11 @@ def import_preview_to_cmdb(payload: dict[str, Any]) -> dict[str, Any]:
                     }
                 )
         if report["failed"]:
-            report["status"] = "partial" if (report["created"] or report["relationsCreated"]) else "failed"
+            report["status"] = (
+                "partial"
+                if (report["created"] or report["relationsCreated"])
+                else "failed"
+            )
     except Exception as exc:  # noqa: BLE001
         rollback_errors: list[str] = []
         for relation_id in reversed(created_relation_ids):
@@ -9354,28 +11397,51 @@ def import_preview_to_cmdb(payload: dict[str, Any]) -> dict[str, Any]:
                 if client:
                     client.delete_relation(relation_id)
                 report["rollbackResults"].append(
-                    {"kind": "relation", "id": relation_id, "status": "rolled_back", "message": "已回滚本次创建的关系"}
+                    {
+                        "kind": "relation",
+                        "id": relation_id,
+                        "status": "rolled_back",
+                        "message": "已回滚本次创建的关系",
+                    }
                 )
             except Exception as rollback_exc:  # noqa: BLE001
-                rollback_errors.append(f"回滚关系 {relation_id} 失败: {rollback_exc}")
+                rollback_errors.append(
+                    f"回滚关系 {relation_id} 失败: {rollback_exc}"
+                )
         for ci_id in reversed(created_ci_ids):
             try:
                 if client:
                     client.delete_ci(ci_id)
                 report["rollbackResults"].append(
-                    {"kind": "ci", "id": ci_id, "status": "rolled_back", "message": "已回滚本次创建的资源"}
+                    {
+                        "kind": "ci",
+                        "id": ci_id,
+                        "status": "rolled_back",
+                        "message": "已回滚本次创建的资源",
+                    }
                 )
             except Exception as rollback_exc:  # noqa: BLE001
                 rollback_errors.append(f"回滚资源 {ci_id} 失败: {rollback_exc}")
         for snapshot in reversed(updated_ci_snapshots):
             try:
                 if client:
-                    client.update_ci(snapshot.get("ciId"), snapshot.get("ciType") or "", snapshot.get("attributes") or {})
+                    client.update_ci(
+                        snapshot.get("ciId"),
+                        snapshot.get("ciType") or "",
+                        snapshot.get("attributes") or {},
+                    )
                 report["rollbackResults"].append(
-                    {"kind": "ci-update", "id": snapshot.get("ciId"), "status": "rolled_back", "message": "已回滚本次更新的资源"}
+                    {
+                        "kind": "ci-update",
+                        "id": snapshot.get("ciId"),
+                        "status": "rolled_back",
+                        "message": "已回滚本次更新的资源",
+                    }
                 )
             except Exception as rollback_exc:  # noqa: BLE001
-                rollback_errors.append(f"回滚资源更新 {snapshot.get('ciId')} 失败: {rollback_exc}")
+                rollback_errors.append(
+                    f"回滚资源更新 {snapshot.get('ciId')} 失败: {rollback_exc}"
+                )
         report["status"] = "failed"
         report["error"] = str(exc)
         if rollback_errors:

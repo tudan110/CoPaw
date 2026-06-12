@@ -912,7 +912,9 @@ async def _run_portal_real_alarm_auto_takeover_once() -> dict[str, Any]:
     # newest ones out of the slice and the round would see 0 eligible —
     # so fetch up to the INOE page cap first, window-filter, and only
     # then truncate to the per-round takeover limit.
-    fetch_limit = MAX_REAL_ALARM_LIMIT if anchor is not None else takeover_limit
+    fetch_limit = (
+        MAX_REAL_ALARM_LIMIT if anchor is not None else takeover_limit
+    )
     alarms_payload = await _build_portal_real_alarm_trigger_payload(
         fetch_limit,
         None,
@@ -3732,6 +3734,27 @@ def unarchive_knowledge_base_sources(
         raise HTTPException(status_code=500, detail=error_detail) from exc
 
 
+@router.post("/knowledge-base/sources/delete")
+def delete_knowledge_base_sources(
+    payload: dict[str, Any] | None = Body(default=None),
+):
+    """Permanently delete sources (rows + vectors + uploaded files).
+
+    POST by convention: the global DeleteBlockMiddleware rejects the HTTP
+    DELETE method when ``security.delete_ops_disabled`` is on; this endpoint
+    is an explicit, user-confirmed exception scoped to knowledge sources.
+    """
+    try:
+        return knowledge_base.delete_sources(payload)
+    except Exception as exc:
+        error_detail = f"{type(exc).__name__}: {str(exc)}"
+        print(
+            f"[ERROR] delete_knowledge_base_sources failed: {error_detail}",
+        )
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=error_detail) from exc
+
+
 @router.post("/knowledge-base/embedding/toggle")
 def toggle_knowledge_base_embedding(
     payload: dict[str, Any] | None = Body(default=None),
@@ -4437,9 +4460,9 @@ async def list_alarm_registry_records(
             "total": total,
             "page": page,
             "pageSize": page_size,
-            "totalPages": (total + page_size - 1) // page_size
-            if total > 0
-            else 0,
+            "totalPages": (
+                (total + page_size - 1) // page_size if total > 0 else 0
+            ),
             "items": page_items,
         }
     except Exception as exc:

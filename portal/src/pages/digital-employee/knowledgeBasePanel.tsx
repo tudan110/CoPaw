@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   archiveKnowledgeSources,
   createKnowledgeManualEntry,
+  deleteKnowledgeSources,
   getKnowledgeBaseHealth,
   getKnowledgeIngestProgress,
   getKnowledgeSourceDetail,
@@ -509,6 +510,26 @@ export function KnowledgeBasePanel() {
     }
   }
 
+  async function handleDelete(source: KnowledgeSourceRecord) {
+    const title = source.meta?.display_title || source.filename || `#${source.id}`;
+    const confirmed = window.confirm(
+      `确定要彻底删除「${title}」吗？\n将同时删除其分块与向量索引及原始文件，删除后不可恢复（归档才可恢复）。`,
+    );
+    if (!confirmed) return;
+    setLoading(true);
+    setError("");
+    try {
+      await deleteKnowledgeSources([source.id], "portal delete");
+      setNotice("资料已彻底删除");
+      publishKnowledgeBaseChange("source-deleted");
+      await refresh();
+    } catch (err: any) {
+      setError(err?.message || "删除失败");
+    } finally {
+      setLoading(false);
+    }
+  }
+
   async function openSourceDetail(source: KnowledgeSourceRecord) {
     setLoading(true);
     setError("");
@@ -691,6 +712,7 @@ export function KnowledgeBasePanel() {
                 ref={fileInputRef}
                 className="kb-file-input"
                 type="file"
+                accept=".pdf,.doc,.docx,.pptx,.txt,.md,.csv,.tsv,.xls,.xlsx,.xlsm,.eml,.png,.jpg,.jpeg,.bmp,.tiff,.webp"
                 onChange={(event) => void handleUpload(event.target.files?.[0])}
               />
             </div>
@@ -741,6 +763,14 @@ export function KnowledgeBasePanel() {
                       ) : (
                         <button type="button" onClick={() => void handleArchive(source)}>归档</button>
                       )}
+                      <button
+                        type="button"
+                        className="kb-delete-btn"
+                        title="彻底删除：移除分块、向量索引及原始文件，不可恢复"
+                        onClick={() => void handleDelete(source)}
+                      >
+                        删除
+                      </button>
                     </td>
                   </tr>
                 ))}

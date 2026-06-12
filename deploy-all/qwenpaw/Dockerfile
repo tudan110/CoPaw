@@ -108,6 +108,17 @@ RUN set -eux; \
     apt-get clean
 
 
+# LibreOffice (headless, no recommends): best-quality extraction path for
+# legacy .doc files in the knowledge base, and formula recalculation for the
+# bundled office skills (soffice). Adds ~400MB; keep --no-install-recommends.
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends \
+       libreoffice-writer \
+       libreoffice-calc \
+  && rm -rf /var/lib/apt/lists/* \
+  && apt-get clean
+
+
 RUN sed -i 's/^CHROMIUM_FLAGS=""/CHROMIUM_FLAGS="--no-sandbox"/' /usr/bin/chromium
 
 # Playwright: use system Chromium (already installed above).
@@ -139,6 +150,15 @@ RUN qwenpaw init --defaults --accept-security
 COPY deploy-all/qwenpaw/data/qwenpaw/ /app/.working.backup/
 # Copy secret directory data to backup
 COPY deploy-all/qwenpaw/data/qwenpaw.secret/ /app/.working.secret.backup/
+
+# Bake all skill-declared Python deps into the image so OFFLINE deployments
+# can parse every knowledge-base format (doc/docx/pptx/pdf/xls/xlsx/csv/
+# images) out of the box. Never pip-install inside a running container:
+# it fails without internet and is lost on recreate anyway.
+RUN set -eux; \
+    uv pip install --python /app/venv/bin/python --no-cache-dir "xlrd>=2.0.1"; \
+    find /app/.working.backup -name requirements.txt -print0 \
+      | xargs -0 -r -n1 uv pip install --python /app/venv/bin/python --no-cache-dir -r
 
 # Create empty working directories (PVC will mount over these)
 RUN mkdir -p /app/working /app/working.secret

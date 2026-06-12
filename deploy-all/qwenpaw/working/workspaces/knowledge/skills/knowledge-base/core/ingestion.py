@@ -142,21 +142,67 @@ def extract(filename: str, content_bytes: bytes) -> ExtractedDocument:
         return _extract_docx(content_bytes, filename)
     if ext == "pptx":
         return _extract_pptx(content_bytes, filename)
+    if ext in ("xlsx", "xlsm"):
+        return _extract_xlsx(content_bytes, filename)
+    if ext == "xls":
+        return _extract_xls(content_bytes, filename)
+    if ext in ("csv", "tsv"):
+        return _extract_csv(content_bytes, delimiter="\t" if ext == "tsv" else None)
     if ext in ("png", "jpg", "jpeg", "tiff", "tif", "bmp", "webp"):
         return _extract_image(content_bytes)
     if ext == "eml":
         return _extract_email(content_bytes)
+    # Unknown extension: refuse binary payloads instead of ingesting mojibake.
+    _reject_binary_payload(content_bytes, filename)
     return _extract_text(content_bytes, source_format="plain")
 
 
-def _extract_text(data: bytes, *, source_format: str) -> ExtractedDocument:
-    for encoding in ("utf-8", "utf-8-sig", "gb18030", "gbk", "latin-1"):
+# Magic prefixes of binary container formats that must never be decoded as
+# plain text (doing so "succeeds" via gb18030/latin-1 and ingests mojibake).
+_BINARY_MAGICS: tuple[tuple[bytes, str], ...] = (
+    (b"PK\x03\x04", "Office/zip 压缩容器（docx/xlsx/pptx 等）"),
+    (_OLE_MAGIC, "OLE 复合文档（doc/xls/ppt 等老格式）"),
+    (b"%PDF", "PDF 文档"),
+    (b"\x89PNG", "PNG 图片"),
+    (b"\xff\xd8\xff", "JPEG 图片"),
+)
+
+
+def _reject_binary_payload(data: bytes, filename: str) -> None:
+    """Raise a clear error when *data* is binary, instead of decoding it
+    into garbled text. Triggered for unknown/missing file extensions."""
+    if not data:
+        return
+    for magic, label in _BINARY_MAGICS:
+        if data.startswith(magic):
+            raise IngestionError(
+                f"文件 {filename} 是 {label}，但扩展名无法识别；"
+                "请使用正确的文件扩展名"
+                "（支持 pdf/doc/docx/pptx/xls/xlsx/csv/txt/md/图片）后重新上传。"
+            )
+    sample = data[:4096]
+    if b"\x00" in sample:
+        raise IngestionError(
+            f"文件 {filename} 看起来是二进制内容，无法作为文本解析；"
+            "请确认文件格式与扩展名一致后重新上传。"
+        )
+
+
+def _decode_text_bytes(data: bytes) -> str:
+    """Decode bytes with a CJK-friendly encoding cascade."""
+    for encoding in ("utf-8", "utf-8-sig", "gb18030", "gbk"):
         try:
-            text = data.decode(encoding)
-            return ExtractedDocument(content=text, source_format=source_format)
+            return data.decode(encoding)
         except UnicodeDecodeError:
             continue
-    raise IngestionError("could not decode text content with any common encoding")
+    # latin-1 never fails; only acceptable for content already known to be
+    # text (callers run _reject_binary_payload first when unsure).
+    return data.decode("latin-1")
+
+
+def _extract_text(data: bytes, *, source_format: str) -> ExtractedDocument:
+    text = _decode_text_bytes(data)
+    return ExtractedDocument(content=text, source_format=source_format)
 
 
 def _extract_pdf(data: bytes, filename: str) -> ExtractedDocument:
@@ -651,6 +697,131 @@ def _docx_heading_level_from_style(style: str) -> int | None:
         except ValueError:
             return None
     return None
+
+
+# Spreadsheets are rendered as one markdown-ish line per row so the chunker
+# keeps row context together; sheet names become headings for citation paths.
+_MAX_SHEET_ROWS = 5000
+
+
+def _format_cell(value: object) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, float) and value.is_integer():
+        return str(int(value))
+    return str(value).strip()
+
+
+def _rows_to_lines(sheet_name: str, rows: list[list[str]], warnings: list[str]) -> list[str]:
+    lines: list[str] = [f"## 工作表：{sheet_name}"]
+    emitted = 0
+    for row in rows:
+        if emitted >= _MAX_SHEET_ROWS:
+            warnings.append(
+                f"工作表 {sheet_name} 超过 {_MAX_SHEET_ROWS} 行，超出部分已截断"
+            )
+            break
+        cells = [c for c in row if c]
+        if not cells:
+            continue
+        lines.append(" | ".join(cells))
+        emitted += 1
+    return lines
+
+
+def _extract_xlsx(data: bytes, filename: str) -> ExtractedDocument:
+    try:
+        from openpyxl import load_workbook  # type: ignore
+    except ImportError as exc:
+        raise IngestionError(
+            "缺少 Excel(.xlsx) 解析依赖 openpyxl，"
+            "请在运行 QwenPaw 的 Python 环境中安装 openpyxl 后重试。"
+        ) from exc
+
+    import io
+    try:
+        wb = load_workbook(io.BytesIO(data), read_only=True, data_only=True)
+    except Exception as exc:
+        raise IngestionError(f"无法解析 Excel 文件 {filename}: {exc}") from exc
+
+    warnings: list[str] = []
+    parts: list[str] = []
+    try:
+        for ws in wb.worksheets:
+            rows = [
+                [_format_cell(c) for c in row]
+                for row in ws.iter_rows(values_only=True)
+            ]
+            lines = _rows_to_lines(ws.title, rows, warnings)
+            if len(lines) > 1:
+                parts.append("\n".join(lines))
+    finally:
+        wb.close()
+
+    return ExtractedDocument(
+        content="\n\n".join(parts),
+        source_format="markdown",
+        warnings=warnings,
+    )
+
+
+def _extract_xls(data: bytes, filename: str) -> ExtractedDocument:
+    try:
+        import xlrd  # type: ignore
+    except ImportError as exc:
+        raise IngestionError(
+            "缺少老版 Excel(.xls) 解析依赖 xlrd，"
+            "请在运行 QwenPaw 的 Python 环境中安装 xlrd 后重试；"
+            "或将文件另存为 .xlsx 后上传。"
+        ) from exc
+
+    try:
+        book = xlrd.open_workbook(file_contents=data)
+    except Exception as exc:
+        raise IngestionError(f"无法解析 Excel 文件 {filename}: {exc}") from exc
+
+    warnings: list[str] = []
+    parts: list[str] = []
+    for sheet in book.sheets():
+        rows = [
+            [_format_cell(sheet.cell_value(r, c)) for c in range(sheet.ncols)]
+            for r in range(sheet.nrows)
+        ]
+        lines = _rows_to_lines(sheet.name, rows, warnings)
+        if len(lines) > 1:
+            parts.append("\n".join(lines))
+
+    return ExtractedDocument(
+        content="\n\n".join(parts),
+        source_format="markdown",
+        warnings=warnings,
+    )
+
+
+def _extract_csv(data: bytes, *, delimiter: str | None = None) -> ExtractedDocument:
+    import csv
+    import io
+
+    _reject_binary_payload(data, "csv")
+    text = _decode_text_bytes(data)
+    if delimiter is None:
+        try:
+            dialect = csv.Sniffer().sniff(text[:4096], delimiters=",;\t")
+            delimiter = dialect.delimiter
+        except csv.Error:
+            delimiter = ","
+
+    warnings: list[str] = []
+    rows = [
+        [cell.strip() for cell in row]
+        for row in csv.reader(io.StringIO(text), delimiter=delimiter)
+    ]
+    lines = _rows_to_lines("表格", rows, warnings)
+    return ExtractedDocument(
+        content="\n".join(lines[1:]),  # CSV has a single sheet; skip heading
+        source_format="plain",
+        warnings=warnings,
+    )
 
 
 def _extract_image(data: bytes) -> ExtractedDocument:

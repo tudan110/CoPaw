@@ -21,7 +21,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-
 logger = logging.getLogger(__name__)
 
 
@@ -32,6 +31,7 @@ _EMBEDDING_RUNTIME_ENABLED = True
 
 
 # ---------- Path resolution ----------
+
 
 def _repo_root() -> Path:
     return Path(__file__).resolve().parents[4]
@@ -46,20 +46,34 @@ def skill_root() -> Path:
     if working_dir:
         candidate = (
             Path(working_dir).expanduser()
-            / "workspaces" / "knowledge" / "skills" / "knowledge-base"
+            / "workspaces"
+            / "knowledge"
+            / "skills"
+            / "knowledge-base"
         ).resolve()
         if candidate.exists():
             return candidate
 
     runtime_candidate = (
-        Path.home() / ".qwenpaw" / "workspaces" / "knowledge" / "skills" / "knowledge-base"
+        Path.home()
+        / ".qwenpaw"
+        / "workspaces"
+        / "knowledge"
+        / "skills"
+        / "knowledge-base"
     ).resolve()
     if runtime_candidate.exists():
         return runtime_candidate
 
     return (
-        _repo_root() / "deploy-all" / "qwenpaw" / "working"
-        / "workspaces" / "knowledge" / "skills" / "knowledge-base"
+        _repo_root()
+        / "deploy-all"
+        / "qwenpaw"
+        / "working"
+        / "workspaces"
+        / "knowledge"
+        / "skills"
+        / "knowledge-base"
     )
 
 
@@ -75,6 +89,7 @@ def data_dir() -> Path:
 
 
 # ---------- Engine bootstrap ----------
+
 
 def _ensure_engine() -> None:
     """Idempotent: make sure the skill modules are importable and the schema
@@ -97,6 +112,7 @@ def _ensure_engine() -> None:
         # First-time imports load jieba, sqlite-vec, tiktoken — let any
         # ImportError surface clearly so the operator sees what's missing.
         from core import db as _db  # noqa: WPS433
+
         _db.init_db()
 
         if _INGEST_POOL is None:
@@ -112,15 +128,20 @@ def _now_iso() -> str:
 
 
 def _is_embedding_enabled() -> bool:
-    if os.environ.get("KNOWLEDGE_BASE_EMBEDDING_ENABLED", "").lower() == "false":
+    if (
+        os.environ.get("KNOWLEDGE_BASE_EMBEDDING_ENABLED", "").lower()
+        == "false"
+    ):
         return False
     from providers import embedding as _embedding
+
     if not _embedding.is_available():
         return False
     return _EMBEDDING_RUNTIME_ENABLED
 
 
 # ---------- /health ----------
+
 
 def health() -> dict[str, Any]:
     _ensure_engine()
@@ -129,7 +150,8 @@ def health() -> dict[str, Any]:
 
     h = _db.health_check()
     env_forced_off = (
-        os.environ.get("KNOWLEDGE_BASE_EMBEDDING_ENABLED", "").lower() == "false"
+        os.environ.get("KNOWLEDGE_BASE_EMBEDDING_ENABLED", "").lower()
+        == "false"
     )
     return {
         "status": "ok" if _ENGINE_READY else "initializing",
@@ -153,6 +175,7 @@ def health() -> dict[str, Any]:
 
 # ---------- /query ----------
 
+
 def query_knowledge(payload: dict[str, Any] | None) -> dict[str, Any]:
     _ensure_engine()
     body = payload or {}
@@ -168,6 +191,7 @@ def query_knowledge(payload: dict[str, Any] | None) -> dict[str, Any]:
 
 
 # ---------- /rag-synthesize ----------
+
 
 def _extract_model_text(payload: Any) -> str:
     if payload is None:
@@ -208,7 +232,9 @@ async def _consume_model_text(response: Any) -> str:
     return _extract_model_text(response)
 
 
-def _resolve_active_model_metadata(agent_id: str | None = None) -> dict[str, str]:
+def _resolve_active_model_metadata(
+    agent_id: str | None = None,
+) -> dict[str, str]:
     try:
         from qwenpaw.config.config import load_agent_config
         from qwenpaw.providers import ProviderManager
@@ -239,9 +265,13 @@ def _resolve_active_model_metadata(agent_id: str | None = None) -> dict[str, str
         provider_name = provider_id
         model_name = model_id
         try:
-            provider = manager.get_provider(provider_id) if provider_id else None
+            provider = (
+                manager.get_provider(provider_id) if provider_id else None
+            )
             if provider:
-                provider_name = str(getattr(provider, "name", "") or provider_id)
+                provider_name = str(
+                    getattr(provider, "name", "") or provider_id
+                )
                 for item in list(getattr(provider, "models", []) or []) + list(
                     getattr(provider, "extra_models", []) or []
                 ):
@@ -256,7 +286,9 @@ def _resolve_active_model_metadata(agent_id: str | None = None) -> dict[str, str
             "provider_name": provider_name,
             "model": model_id,
             "model_name": model_name,
-            "model_label": " / ".join(p for p in [provider_name, model_name] if p),
+            "model_label": " / ".join(
+                p for p in [provider_name, model_name] if p
+            ),
             "model_source": source,
         }
     except Exception:
@@ -309,9 +341,7 @@ async def synthesize_answer(
         locator = (row["locator"] or "").strip()
         source = f"{row['filename']}{(' · ' + locator) if locator else ''}"
         title = row["title"] or row["filename"]
-        blocks.append(
-            f"[{idx}] {title}\n来源: {source}\n内容:\n{row['context']}"
-        )
+        blocks.append(f"[{idx}] {title}\n来源: {source}\n内容:\n{row['context']}")
 
     system_prompt = (
         "你是知识库问答的最终总结助手。你会先参考命中的知识片段，再结合通用运维知识作答。"
@@ -321,9 +351,7 @@ async def synthesize_answer(
     )
     evidence_text = "\n\n".join(blocks) if blocks else "本次知识库没有返回可直接引用的证据片段。"
     user_prompt = (
-        f"用户问题：{query}\n\n"
-        f"知识库证据：\n{evidence_text}\n\n"
-        "请给出 AI 总结。"
+        f"用户问题：{query}\n\n" f"知识库证据：\n{evidence_text}\n\n" "请给出 AI 总结。"
     )
 
     from qwenpaw.agents.model_factory import create_model_and_formatter
@@ -347,6 +375,7 @@ async def synthesize_answer(
 
 
 # ---------- /sources ----------
+
 
 def list_sources(
     *,
@@ -445,6 +474,7 @@ def source_detail(
 
 # ---------- /manual-entry ----------
 
+
 def manual_entry(payload: dict[str, Any] | None) -> dict[str, Any]:
     _ensure_engine()
     body = payload or {}
@@ -498,6 +528,7 @@ def manual_entry(payload: dict[str, Any] | None) -> dict[str, Any]:
 
 # ---------- /sources/update | archive | unarchive ----------
 
+
 def update_source(payload: dict[str, Any] | None) -> dict[str, Any]:
     _ensure_engine()
     body = payload or {}
@@ -511,12 +542,16 @@ def update_source(payload: dict[str, Any] | None) -> dict[str, Any]:
     ).strip()
     tags = body.get("tags")
     note = str(body.get("note") or "").strip()
-    scope = str(body.get("source_scope") or body.get("sourceScope") or "").strip()
+    scope = str(
+        body.get("source_scope") or body.get("sourceScope") or ""
+    ).strip()
 
     from core import db as _db
+
     with _db.connect() as conn:
         row = conn.execute(
-            "SELECT meta_json, source_scope FROM document WHERE id = ?", (src_id,)
+            "SELECT meta_json, source_scope FROM document WHERE id = ?",
+            (src_id,),
         ).fetchone()
         if row is None:
             raise LookupError(f"document {src_id} not found")
@@ -605,7 +640,90 @@ def _archive_helper(ids, reason, *, archived: bool) -> dict[str, Any]:
     return {"unarchived": len(int_ids), "ids": int_ids}
 
 
+def delete_sources(payload: dict[str, Any] | None) -> dict[str, Any]:
+    """Permanently delete sources — unlike archive, this is irreversible.
+
+    Removes document / parent_chunk / child_chunk rows (FTS and vector
+    entries are cleaned up by the ``child_fts_ad`` / ``child_vec_ad``
+    AFTER DELETE triggers) and best-effort removes the uploaded source
+    file under ``data/uploads/``.
+    """
+    _ensure_engine()
+    body = payload or {}
+    ids = body.get("source_record_ids") or body.get("sourceRecordIds") or []
+    reason = str(body.get("reason") or "portal delete").strip()
+
+    int_ids: list[int] = []
+    for x in ids:
+        try:
+            int_ids.append(int(x))
+        except (TypeError, ValueError):
+            continue
+    if not int_ids:
+        return {"deleted": 0, "ids": [], "removed_files": 0}
+
+    placeholders = ",".join("?" * len(int_ids))
+    from core import db as _db
+
+    with _db.connect() as conn:
+        rows = conn.execute(
+            f"""SELECT id, filename, storage_path FROM document
+               WHERE id IN ({placeholders})""",
+            int_ids,
+        ).fetchall()
+        existing_ids = [int(row["id"]) for row in rows]
+        storage_paths = [
+            str(row["storage_path"]) for row in rows if row["storage_path"]
+        ]
+        if existing_ids:
+            ph = ",".join("?" * len(existing_ids))
+            conn.execute(
+                f"DELETE FROM child_chunk WHERE document_id IN ({ph})",
+                existing_ids,
+            )
+            conn.execute(
+                f"DELETE FROM parent_chunk WHERE document_id IN ({ph})",
+                existing_ids,
+            )
+            conn.execute(
+                f"DELETE FROM document WHERE id IN ({ph})",
+                existing_ids,
+            )
+
+    # Best-effort removal of the uploaded originals. Only files inside the
+    # knowledge data dir are touched, so a corrupted storage_path can never
+    # delete anything outside the knowledge base.
+    removed_files = 0
+    uploads_root = (data_dir()).resolve()
+    for raw_path in storage_paths:
+        try:
+            path = Path(raw_path).resolve()
+            if path.is_file() and path.is_relative_to(uploads_root):
+                path.unlink()
+                removed_files += 1
+        except (OSError, ValueError) as exc:
+            logger.warning(
+                "knowledge_base: failed to remove source file %s: %s",
+                raw_path,
+                exc,
+            )
+
+    logger.info(
+        "knowledge_base: permanently deleted %d source(s) "
+        "(%d file(s) removed, reason=%s)",
+        len(existing_ids),
+        removed_files,
+        reason,
+    )
+    return {
+        "deleted": len(existing_ids),
+        "ids": existing_ids,
+        "removed_files": removed_files,
+    }
+
+
 # ---------- /embedding/toggle | embeddings/reindex ----------
+
 
 def set_embedding_enabled(payload: dict[str, Any] | None) -> dict[str, Any]:
     _ensure_engine()
@@ -615,7 +733,8 @@ def set_embedding_enabled(payload: dict[str, Any] | None) -> dict[str, Any]:
     from providers import embedding as _embedding
 
     env_forced_off = (
-        os.environ.get("KNOWLEDGE_BASE_EMBEDDING_ENABLED", "").lower() == "false"
+        os.environ.get("KNOWLEDGE_BASE_EMBEDDING_ENABLED", "").lower()
+        == "false"
     )
     reject_reason: str | None = None
     if requested and not _embedding.is_available():
@@ -686,6 +805,7 @@ def reindex_embeddings(*, force: bool = False) -> dict[str, Any]:
 
 # ---------- /ingest + /ingestion-jobs ----------
 
+
 def create_ingest_job(
     filename: str, raw: bytes, mime_type: str | None = None
 ) -> dict[str, Any]:
@@ -733,7 +853,8 @@ def create_ingest_job(
     def _runner() -> None:
         try:
             result = _ingestion.ingest_file(
-                safe_filename, raw,
+                safe_filename,
+                raw,
                 source_type=source_type,
                 source_scope="tenant_private",
                 storage_path=str(target),
@@ -747,8 +868,12 @@ def create_ingest_job(
                            document_id=?, finished_at=?, updated_at=?
                        WHERE id=?""",
                     (
-                        result.parent_count, result.child_count,
-                        result.document_id, _now_iso(), _now_iso(), job_id,
+                        result.parent_count,
+                        result.child_count,
+                        result.document_id,
+                        _now_iso(),
+                        _now_iso(),
+                        job_id,
                     ),
                 )
         except Exception as exc:
@@ -805,6 +930,7 @@ def ingestion_progress(job_id: str) -> dict[str, Any]:
 
 
 # ---------- /source-summary | /units ----------
+
 
 def source_summary() -> dict[str, Any]:
     _ensure_engine()
@@ -872,6 +998,7 @@ def units(
 
 # ---------- /builtin-packs (no-op stubs) ----------
 
+
 def builtin_packs() -> dict[str, Any]:
     _ensure_engine()
     return {"items": []}
@@ -879,10 +1006,14 @@ def builtin_packs() -> dict[str, Any]:
 
 def reload_builtin_pack(payload: dict[str, Any] | None) -> dict[str, Any]:
     _ensure_engine()
-    return {"reloaded": 0, "note": "builtin packs not supported in the new pipeline"}
+    return {
+        "reloaded": 0,
+        "note": "builtin packs not supported in the new pipeline",
+    }
 
 
 # ---------- helpers ----------
+
 
 def _detect_source_type(filename: str, mime_type: str | None) -> str:
     lowered = (filename or "").lower()
@@ -902,10 +1033,14 @@ def _detect_source_type(filename: str, mime_type: str | None) -> str:
         return "plain"
     if mime_type and mime_type.startswith("image/"):
         return "image"
-    if lowered.endswith((".png", ".jpg", ".jpeg", ".bmp", ".tiff", ".tif", ".webp")):
+    if lowered.endswith(
+        (".png", ".jpg", ".jpeg", ".bmp", ".tiff", ".tif", ".webp")
+    ):
         return "image"
     if lowered.endswith(".eml"):
         return "email"
+    if lowered.endswith((".xlsx", ".xlsm", ".xls", ".csv", ".tsv")):
+        return "spreadsheet"
     return "document"
 
 
