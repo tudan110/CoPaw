@@ -115,6 +115,13 @@ class TestWeatherProvider:
         assert data["rows"][0]["max"] == 35
         assert len(data["series"]) > 0
         assert data["series"][0]["y"] == 20
+        # English aliases mirror the same real values so LLM
+        # blueprint binds (temperature/condition/...) resolve
+        assert data["metrics"]["temperature"] == 32
+        assert data["metrics"]["condition"] == "局部多云"
+        assert data["metrics"]["location"] == data["metrics"]["地点"]
+        assert isinstance(data["metrics"]["humidity"], int)
+        assert isinstance(data["metrics"]["feelsLike"], int)
 
     def test_provider_error_propagates(
         self,

@@ -360,6 +360,43 @@ class TestFriendlyFailureMessage:
         assert "--token" not in result.message
         assert "数据源暂不可用" in result.message
 
+    async def test_connection_timeout_repr_collapsed(self) -> None:
+        # the exact shape that leaked to a live screen: a wrapped
+        # requests/urllib3 connection chain
+        def _boom(_p: Mapping[str, Any]) -> dict[str, Any]:
+            raise RuntimeError(
+                "ConnectTimeout: HTTPConnectionPool(host='172.28.75.4',"
+                " port=30080): Max retries exceeded with url:"
+                " /flowable/workflow/workOrder/getWorkOrder",
+            )
+
+        result = await execute_capability({}, descriptor=_descriptor(_boom))
+        assert result.source_status == "failed"
+        assert "HTTPConnectionPool" not in result.message
+        assert "172.28.75.4" not in result.message
+        assert "数据源连接超时" in result.message
+        assert "刷新重试" in result.message
+
+    async def test_connection_refused_repr_collapsed(self) -> None:
+        def _boom(_p: Mapping[str, Any]) -> dict[str, Any]:
+            raise OSError("Connection refused by host 10.0.0.1")
+
+        result = await execute_capability({}, descriptor=_descriptor(_boom))
+        assert "Connection refused" not in result.message
+        assert "数据源暂不可用" in result.message
+
+    async def test_friendly_timeout_message_passes_through(self) -> None:
+        result = await execute_capability(
+            {},
+            descriptor=_descriptor(
+                lambda _p: {
+                    "sourceStatus": "unavailable",
+                    "message": "请求超时，请稍后重试或缩小时间范围",
+                },
+            ),
+        )
+        assert result.message == "请求超时，请稍后重试或缩小时间范围"
+
 
 class TestTtlCache:
     @staticmethod
