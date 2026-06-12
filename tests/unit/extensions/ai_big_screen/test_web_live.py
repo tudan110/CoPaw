@@ -102,6 +102,7 @@ class TestWeatherProvider:
 
         def _fake_get(url: str, *, params: Any = None) -> FakeResponse:
             calls.append(url)
+            assert params and params.get("format") == "j1"
             return FakeResponse(json_data=_wttr_payload())
 
         monkeypatch.setattr(web_live, "_http_get", _fake_get)
