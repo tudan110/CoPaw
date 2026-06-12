@@ -173,3 +173,7 @@ tmp/
 .test-reports
 .test-runtime
 ###### Custom ignore files end ######
+
+# Offline image bundles & docker build temp (never commit, multi-GB)
+*-amd64.tar
+.docker_temp_*
