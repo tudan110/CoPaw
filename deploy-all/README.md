@@ -91,6 +91,29 @@ NAMESPACE=cnos-iomp EXTRA_VALUES=my-values.yaml ./deploy-offline.sh
    从镜像初始化）：升级涉及技能代码时，按 `SYNC_GUIDE.md` 同步 PVC 内文件。
 4. 多节点集群：镜像须在每个可调度节点导入，或使用内网镜像仓库。
 
+### 升级已有环境的技能代码（PVC 内热替换）
+
+新镜像内自带最新技能种子（`/app/.working.backup`），可直接从容器内拷进 PVC，
+**只覆盖代码、不动 data/（知识库数据不丢）**。以知识库技能为例：
+
+```bash
+NS=cnos-iomp
+kubectl -n $NS exec deploy/qwenpaw -- bash -c '
+  set -e
+  for base in workspaces/knowledge/skills/knowledge-base skill_pool/knowledge-base; do
+    src=/app/.working.backup/$base; dst=/app/working/$base
+    [ -d "$dst" ] || continue
+    for item in core api retrieval providers domain server.py SKILL.md requirements.txt; do
+      [ -e "$src/$item" ] && cp -rf "$src/$item" "$dst/"
+    done
+    echo "synced: $base"
+  done'
+kubectl -n $NS rollout restart deployment/qwenpaw
+```
+
+升级后清理工作：旧版本解析入库的乱码记录已持久化，需在门户「知识库管理」
+中用「删除」按钮清除并重新上传。
+
 ## 自定义配置
 
 ```bash
