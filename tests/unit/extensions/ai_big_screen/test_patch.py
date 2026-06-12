@@ -274,6 +274,148 @@ class TestDataAffectingPatch:
         assert len(screen["dataBindings"]) == 3
 
 
+class TestDryRunPreview:
+    async def test_preview_mutates_copy_only_no_version(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        import copy as _copy
+
+        _block_all_fetches(monkeypatch)
+        screen = _screen()
+        before = _copy.deepcopy(screen)
+        outcome = await apply_patch(
+            screen=screen,
+            instruction="把告警流标题改成实时告警，整体换成驾驶舱风格",
+            model=FakeModel(
+                [
+                    _ops(
+                        [
+                            {
+                                "op": "setComponentTitle",
+                                "componentId": "comp-alarms",
+                                "value": "实时告警",
+                            },
+                            {"op": "setThemePalette", "value": "executive"},
+                        ],
+                    ),
+                ],
+            ),
+            dry_run=True,
+        )
+        assert screen == before  # 原资产完全不动
+        assert outcome["preview"] is True
+        assert outcome["version"] is None
+        preview_screen = outcome["screen"]
+        assert preview_screen["theme"]["palette"] == "executive"
+        assert preview_screen["versions"] == [{"versionId": "v1"}]
+        by_id = {c["id"]: c for c in preview_screen["components"]}
+        assert by_id["comp-alarms"]["title"] == "实时告警"
+
+        diff = {(d["componentId"], d["field"]): d for d in outcome["diff"]}
+        title_diff = diff[("comp-alarms", "title")]
+        assert title_diff["before"] == "告警流"
+        assert title_diff["after"] == "实时告警"
+        theme_diff = diff[("", "theme.palette")]
+        assert theme_diff["before"] == "industrial"
+        assert theme_diff["after"] == "executive"
+
+    async def test_preview_query_param_change_diffs_and_refetches_copy(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        _block_all_fetches(monkeypatch)
+        log_calls = _allow_log_fetch(monkeypatch)
+        screen = _screen()
+        outcome = await apply_patch(
+            screen=screen,
+            instruction="日志改成最近60分钟",
+            selected_component_ids=["comp-logs"],
+            model=FakeModel(
+                [
+                    _ops(
+                        [
+                            {
+                                "op": "setComponentQueryParams",
+                                "componentId": "comp-logs",
+                                "value": {"lookbackMinutes": 60},
+                            },
+                        ],
+                    ),
+                ],
+            ),
+            dry_run=True,
+        )
+        # 预览取的是真数据（拷贝上），原件数据/参数不动
+        assert len(log_calls) == 1
+        assert screen["components"][1]["queryParams"]["lookbackMinutes"] == 15
+        assert screen["components"][1]["data"]["rows"] == [{"message": "m"}]
+        preview_logs = {c["id"]: c for c in outcome["screen"]["components"]}[
+            "comp-logs"
+        ]
+        assert preview_logs["data"]["rows"] == [{"message": "refetched"}]
+        params_diff = [
+            d
+            for d in outcome["diff"]
+            if d["componentId"] == "comp-logs" and d["field"] == "queryParams"
+        ]
+        assert params_diff
+        assert params_diff[0]["after"]["lookbackMinutes"] == 60
+
+    async def test_preview_add_component_appears_in_diff(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        _block_all_fetches(monkeypatch)
+        _allow_log_fetch(monkeypatch)
+        screen = _screen()
+        outcome = await apply_patch(
+            screen=screen,
+            instruction="再加一个日志风险分析模块",
+            model=FakeModel(
+                [
+                    _ops(
+                        [
+                            {
+                                "op": "addComponent",
+                                "value": {
+                                    "title": "日志风险分析",
+                                    "capabilityId": "system-logs",
+                                    "visualType": "table",
+                                    "queryParams": {"lookbackMinutes": 30},
+                                },
+                            },
+                        ],
+                    ),
+                ],
+            ),
+            dry_run=True,
+        )
+        assert len(screen["components"]) == 2  # 原件不动
+        assert len(outcome["screen"]["components"]) == 3
+        added = [
+            d
+            for d in outcome["diff"]
+            if d["field"] == "component" and d["before"] is None
+        ]
+        assert len(added) == 1
+        assert added[0]["after"]["capabilityId"] == "system-logs"
+
+    async def test_real_patch_has_no_preview_keys_in_wire_shape(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        _block_all_fetches(monkeypatch)
+        outcome = await apply_patch(
+            screen=_screen(),
+            instruction="换驾驶舱风格",
+            model=FakeModel(
+                [_ops([{"op": "setThemePalette", "value": "executive"}])],
+            ),
+        )
+        assert set(outcome) == {"screen", "version", "summary"}
+
+
 class TestVersioningAndContext:
     async def test_version_appended_and_bindings_preserved(
         self,

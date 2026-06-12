@@ -71,6 +71,11 @@ def _now_iso() -> str:
     return _now().isoformat()
 
 
+def now_iso() -> str:
+    """Public clock helper shared by sibling persistence modules."""
+    return _now_iso()
+
+
 def _resolve_db_path(path: str | Path | None) -> Path:
     return Path(path) if path is not None else DEFAULT_DB_PATH
 
@@ -95,6 +100,12 @@ def _connect(path: str | Path | None) -> sqlite3.Connection:
         except Exception:  # migration must never block normal use
             pass
     return connection
+
+
+def connect(path: str | Path | None = None) -> sqlite3.Connection:
+    """Public connection helper for sibling persistence modules
+    (telemetry etc.) that add their own tables to the same database."""
+    return _connect(path)
 
 
 def _dump(payload: Mapping[str, Any]) -> str:

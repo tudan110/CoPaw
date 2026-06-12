@@ -24,6 +24,7 @@ from qwenpaw.extensions.api.ai_big_screen_api import (
     generate_ai_big_screen_draft,
     get_ai_big_screen,
     get_ai_big_screen_draft_task,
+    get_ai_big_screen_metrics,
     list_ai_big_screen_plugins,
     list_ai_big_screens,
     patch_ai_big_screen,
@@ -224,6 +225,36 @@ class TestRefreshEndpoint:
         assert excinfo.value.status_code == 404
 
 
+class TestMetricsEndpoint:
+    def test_metrics_aggregates_recent_window(self) -> None:
+        from qwenpaw.extensions.ai_big_screen import telemetry
+
+        telemetry.record_generation(
+            {"kind": "draft", "success": True, "durationMs": 1000},
+        )
+        telemetry.record_generation(
+            {
+                "kind": "patch",
+                "success": False,
+                "durationMs": 200,
+                "capabilityStatuses": {"real-alarms": "failed"},
+            },
+        )
+        response = get_ai_big_screen_metrics(limit=100)
+        assert response.total == 2
+        assert response.successRate == pytest.approx(0.5)
+        assert response.kinds == {"draft": 1, "patch": 1}
+        assert response.capabilityFailureRates["real-alarms"] == 1.0
+
+    async def test_draft_and_refresh_record_events(self) -> None:
+        saved = await _draft_and_save()
+        await refresh_ai_big_screen(saved["id"])
+        response = get_ai_big_screen_metrics(limit=100)
+        assert response.kinds.get("draft", 0) >= 1
+        assert response.kinds.get("refresh", 0) == 1
+        assert response.successRate == 1.0
+
+
 class TestPatchEndpoint:
     async def test_patch_applies_and_persists_version(
         self,
@@ -282,3 +313,64 @@ class TestPatchEndpoint:
                 AiBigScreenPatchRequest(instruction="  "),
             )
         assert excinfo.value.status_code == 400
+
+    async def test_patch_preview_returns_diff_without_persisting(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        saved = await _draft_and_save()
+        component_id = saved["components"][0]["id"]
+        original_title = saved["components"][0]["title"]
+        from qwenpaw.extensions.ai_big_screen import patch as patch_module
+
+        monkeypatch.setattr(
+            patch_module,
+            "create_pipeline_model",
+            lambda: FakeModel(
+                [
+                    json.dumps(
+                        {
+                            "summary": "预览标题变更",
+                            "operations": [
+                                {
+                                    "op": "setComponentTitle",
+                                    "componentId": component_id,
+                                    "value": "预览后的标题",
+                                },
+                            ],
+                        },
+                        ensure_ascii=False,
+                    ),
+                ],
+            ),
+        )
+        response = await patch_ai_big_screen(
+            saved["id"],
+            AiBigScreenPatchRequest(
+                instruction="把标题改成预览后的标题",
+                selectedComponentId=component_id,
+                requestedBy="tester",
+                preview=True,
+            ),
+        )
+        assert response.preview is True
+        assert response.version is None
+        assert response.diff == [
+            {
+                "componentId": component_id,
+                "field": "title",
+                "before": original_title,
+                "after": "预览后的标题",
+            },
+        ]
+        preview_component = next(
+            c for c in response.screen["components"] if c["id"] == component_id
+        )
+        assert preview_component["title"] == "预览后的标题"
+        # nothing persisted: same title, same single version
+        persisted = get_ai_big_screen(saved["id"]).screen
+        component = next(
+            c for c in persisted["components"] if c["id"] == component_id
+        )
+        assert component["title"] == original_title
+        assert [v["versionId"] for v in persisted["versions"]] == ["v1"]

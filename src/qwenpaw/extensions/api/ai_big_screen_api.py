@@ -10,6 +10,7 @@ from qwenpaw.extensions.api.ai_big_screen_models import (
     AiBigScreenDuplicateRequest,
     AiBigScreenDraftRequest,
     AiBigScreenListResponse,
+    AiBigScreenMetricsResponse,
     AiBigScreenPatchRequest,
     AiBigScreenPatchResponse,
     AiBigScreenPluginsResponse,
@@ -34,6 +35,7 @@ from qwenpaw.extensions.api.ai_big_screen_service import (
     refresh_screen_asset,
     rename_screen_asset,
     save_screen_asset,
+    summarize_generation_metrics,
 )
 
 router = APIRouter(prefix="/ai-big-screens", tags=["portal"])
@@ -42,6 +44,19 @@ router = APIRouter(prefix="/ai-big-screens", tags=["portal"])
 @router.get("/plugins", response_model=AiBigScreenPluginsResponse)
 def list_ai_big_screen_plugins() -> AiBigScreenPluginsResponse:
     return AiBigScreenPluginsResponse(items=list_builtin_plugins())
+
+
+# NOTE: must be registered before the catch-all "/{screen_id}" route.
+@router.get("/metrics", response_model=AiBigScreenMetricsResponse)
+def get_ai_big_screen_metrics(
+    limit: Annotated[int, Query(ge=1, le=1000)] = 100,
+) -> AiBigScreenMetricsResponse:
+    """Generation quality over the recent window (success/degraded/…)."""
+    return AiBigScreenMetricsResponse(
+        **summarize_generation_metrics(
+            limit=limit,
+        ),
+    )
 
 
 @router.get("", response_model=AiBigScreenListResponse)
@@ -104,7 +119,7 @@ def save_ai_big_screen(payload: AiBigScreenSaveRequest) -> AiBigScreenResponse:
 def get_ai_big_screen(screen_id: str) -> AiBigScreenResponse:
     try:
         return AiBigScreenResponse(
-            screen=get_screen_asset(screen_id=screen_id)
+            screen=get_screen_asset(screen_id=screen_id),
         )
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
@@ -116,7 +131,7 @@ def get_ai_big_screen(screen_id: str) -> AiBigScreenResponse:
 def delete_ai_big_screen(screen_id: str) -> AiBigScreenDeleteResponse:
     try:
         return AiBigScreenDeleteResponse(
-            **delete_screen_asset(screen_id=screen_id)
+            **delete_screen_asset(screen_id=screen_id),
         )
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
