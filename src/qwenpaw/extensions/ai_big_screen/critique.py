@@ -130,14 +130,19 @@ async def run_critique(
     screen: dict[str, Any],
     *,
     model: ModelCallable | None = None,
-    max_repair: int = 1,
-    timeout: float = 45.0,
+    max_repair: int = 0,
+    timeout: float = 60.0,
 ) -> dict[str, Any] | None:
     """Critique ``screen`` in place; returns the critique info or None.
 
     Mutates the screen only through the visual op whitelist and
     records ``aiConversationContext.critique``. Any failure returns
     None and leaves the screen exactly as it was.
+
+    Defaults are a single attempt with a 60s wall: the critique is a
+    bonus pass on the user's critical path, so worst-case added
+    latency must stay bounded (measured: slow gateways exceed 45s
+    routinely — better one honest shot than repair loops).
     """
     if not critique_enabled():
         return None

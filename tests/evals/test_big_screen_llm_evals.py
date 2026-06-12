@@ -32,9 +32,21 @@ def _llm_evals_enabled() -> bool:
     }
 
 
-async def test_golden_set_pass_rate_floor() -> None:
+async def test_golden_set_pass_rate_floor(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     if not _llm_evals_enabled():
         pytest.skip("set QWENPAW_RUN_LLM_EVALS=1 to run real-LLM evals")
+
+    # the suite-wide isolated_secret_dir fixture hides the operator's
+    # real provider storage from every test; a real-LLM eval is the
+    # one place that must opt back in (already double-gated above)
+    from qwenpaw.constant import SECRET_DIR as real_secret_dir
+    from qwenpaw.providers import provider_manager as pm_module
+
+    monkeypatch.setattr(pm_module, "SECRET_DIR", real_secret_dir)
+    monkeypatch.setattr(pm_module.ProviderManager, "_instance", None)
+
     try:
         create_pipeline_model()
     except ValueError as exc:
