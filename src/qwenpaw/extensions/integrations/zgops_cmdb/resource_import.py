@@ -20,7 +20,6 @@ from datetime import datetime, timezone
 from ipaddress import ip_address, ip_network
 from pathlib import Path
 from typing import Any, Callable
-from urllib.parse import quote
 
 import httpx
 import pandas as pd
@@ -180,30 +179,15 @@ DEFAULT_ATTRIBUTE_FIELDS = {
     "ipam_address": ["name"],
 }
 
-DEFAULT_GROUP_HINTS = {
-    "Department": "部门组织",
-    "users": "部门组织",
-    "product": "业务",
-    "project": "业务",
-    "PhysicalMachine": "计算资源",
-    "vserver": "计算资源",
-    "networkdevice": "网络设备",
-    "database": "数据库",
-    "mysql": "数据库",
-    "PostgreSQL": "数据库",
-    "redis": "中间件",
-    "Kafka": "中间件",
-    "elasticsearch": "中间件",
-    "nginx": "中间件",
-    "apache": "中间件",
-    "docker": "容器",
-    "kubernetes": "容器",
-    "dcim_idc": "数据中心",
-    "dcim_server_room": "数据中心",
-    "dcim_rack": "数据中心",
-    "ipam_subnet": "IP地址管理",
-    "ipam_address": "IP地址管理",
-}
+# Deprecated: group inference is now derived from the LIVE CMDB model
+# groups (metadata.ciTypeGroups / a CI type's real group membership), not a
+# hardcoded table. The old static map drifted out of sync with the real CMDB
+# group names (e.g. "数据库" vs the real "软件资源-数据库", "计算资源" which
+# does not exist), which caused resources to be silently assigned to
+# non-existent groups. Kept empty so any residual `.get()` callers fall back
+# to live data instead of stale names. Do not repopulate — extend the live
+# derivation instead.
+DEFAULT_GROUP_HINTS: dict[str, str] = {}
 
 FIELD_ALIASES = {
     "asset_code": [
@@ -352,7 +336,14 @@ FIELD_ALIASES = {
         "设备管理ip",
     ],
     "dev_model": ["dev_model", "设备型号", "设备规格", "网络设备型号"],
-    "dev_class": ["dev_class", "设备大类", "网络设备类型", "设备分类"],
+    "dev_class": [
+        "dev_class",
+        "设备大类",
+        "网络设备类型",
+        "设备分类",
+        "设备类别",
+        "设备种类",
+    ],
     "alarm_status": [
         "alarm_status",
         "告警状态",
@@ -1501,6 +1492,22 @@ def _candidate_env_files() -> list[Path]:
     return unique
 
 
+_CMDB_ENV_OVERRIDE_KEYS = (
+    "VEOPS_BASE_URL",
+    "VEOPS_USERNAME",
+    "VEOPS_PASSWORD",
+    "VEOPS_SESSION_NAME",
+)
+
+
+def _env_overrides() -> dict[str, str]:
+    return {
+        key: value
+        for key in _CMDB_ENV_OVERRIDE_KEYS
+        if (value := os.environ.get(key))
+    }
+
+
 def _parse_env() -> dict[str, str]:
     candidates = _candidate_env_files()
     for path in candidates:
@@ -1515,7 +1522,11 @@ def _parse_env() -> dict[str, str]:
             if value is not None
         }
         if values:
-            return values
+            return {**values, **_env_overrides()}
+
+    overrides = _env_overrides()
+    if overrides.get("VEOPS_BASE_URL"):
+        return overrides
 
     listing = "\n".join(f"  - {p}" for p in candidates)
     raise RuntimeError(
@@ -1880,7 +1891,11 @@ class VeopsCmdbClient:
                 continue
             value = _clean_text(attributes.get(key))
             if value:
-                filters.append(f"{key}:{quote(value, safe='._-:/')}")
+                # Pass the raw value; query_ci feeds it to httpx as a query
+                # param, which URL-encodes once. Pre-quoting here caused
+                # double-encoding that broke matches for non-ASCII (Chinese)
+                # unique keys, e.g. project/app names.
+                filters.append(f"{key}:{value}")
                 break
         items = self.query_ci(",".join(filters), count=1)
         if items:
@@ -2551,6 +2566,49 @@ def _build_runtime_client_from_agent(agent_id: str) -> Any | None:
         )
     except Exception:
         return None
+
+
+def _build_resource_import_llm_pool() -> list[Any]:
+    """Build the dedicated resource-import LLM pool from env.
+
+    Reads numbered blocks: block 1 is ``RESOURCE_IMPORT_LLM_{BASE_URL,
+    API_KEY,MODEL,VISION_MODEL}``; blocks 2..8 are
+    ``RESOURCE_IMPORT_LLM_{N}_{BASE_URL,API_KEY,MODEL}``. Each fully
+    specified block (base_url + model) becomes one OpenAI-compatible client.
+
+    The preview round-robins per-sheet field mapping across this pool, so
+    several models (e.g. ctyun GLM-5.1 + deepseek) share the load and no
+    single model's per-minute token quota (TPM) is the sole bottleneck.
+    Returns ``[]`` when nothing is configured (caller then falls back to the
+    page agent's model, preserving previous behaviour).
+    """
+    pool: list[Any] = []
+    for index in range(1, 9):
+        prefix = (
+            "RESOURCE_IMPORT_LLM_"
+            if index == 1
+            else f"RESOURCE_IMPORT_LLM_{index}_"
+        )
+        base_url = _clean_text(os.environ.get(f"{prefix}BASE_URL"))
+        model = _clean_text(os.environ.get(f"{prefix}MODEL"))
+        if not base_url or not model:
+            continue
+        api_key = str(os.environ.get(f"{prefix}API_KEY") or "").strip()
+        vision_model = (
+            _clean_text(os.environ.get(f"{prefix}VISION_MODEL")) or None
+        )
+        try:
+            pool.append(
+                ResourceImportLLMClient(
+                    base_url=base_url,
+                    api_key=api_key,
+                    model=model,
+                    vision_model=vision_model,
+                )
+            )
+        except Exception:
+            continue
+    return pool
 
 
 async def resolve_resource_import_runtime(
@@ -5279,7 +5337,7 @@ def _find_existing_ci(
     for field, value in candidates:
         try:
             items = client.query_ci(
-                f"_type:{ci_type},{field}:{quote(value, safe='._-:/')}",
+                f"_type:{ci_type},{field}:{value}",
                 count=1,
             )
         except Exception:
@@ -6580,7 +6638,8 @@ def _collect_existing_reference_choice_values(
                 if cache_key not in lookup_cache:
                     try:
                         rows = client.query_ci(
-                            f"_type:{ref_type_name},{ref_attr_name}:{quote(reference_value, safe='._-:/')}",
+                            f"_type:{ref_type_name},"
+                            f"{ref_attr_name}:{reference_value}",
                             count=1,
                         )
                     except Exception:
@@ -6595,6 +6654,254 @@ def _collect_existing_reference_choice_values(
                     )
                     break
     return pending
+
+
+def _default_choice_or_value(attribute: dict[str, Any]) -> str:
+    """Best-effort default for a required attribute on a synthesized CI.
+
+    Prefers the schema default, then the first declared choice value/label.
+    Returns ``""`` when nothing safe can be inferred (caller leaves it empty
+    so preview/preflight can surface it for manual completion).
+    """
+    default = attribute.get("default")
+    if isinstance(default, dict):
+        default = default.get("default")
+    default_text = _clean_text(default)
+    if default_text:
+        return default_text
+    if attribute.get("is_choice"):
+        for choice in attribute.get("choices") or []:
+            if not isinstance(choice, dict):
+                continue
+            candidate = _clean_text(choice.get("value")) or _clean_text(
+                choice.get("label")
+            )
+            if candidate:
+                return candidate
+    return ""
+
+
+def _build_synthesized_reference_ci_record(
+    *,
+    ref_type_name: str,
+    ref_template: dict[str, Any] | None,
+    ref_attr_name: str,
+    value: str,
+    origin_label: str,
+) -> dict[str, Any]:
+    """Build a minimal in-batch record for an upstream CI that a
+    reference-choice attribute points at (e.g. the 应用系统/project a
+    networkdevice's ``platform`` references) but that is neither present in
+    the import nor already in CMDB. Required fields are filled with schema
+    defaults / first choice so the CI can actually be created.
+    """
+    attributes: dict[str, Any] = {}
+    name_key = (
+        _resolve_import_target_key(
+            type_template=ref_template, canonical_field="name"
+        )
+        or "name"
+    )
+    attributes[ref_attr_name] = value
+    attributes[name_key] = value
+    attributes["name"] = value
+    for item in _attribute_definitions(ref_template):
+        attr_name = _clean_text(item.get("name"))
+        if not attr_name or not item.get("required"):
+            continue
+        if _clean_text(attributes.get(attr_name)):
+            continue
+        default_value = _default_choice_or_value(item)
+        if default_value:
+            attributes[attr_name] = default_value
+    preview_key = (
+        f"row::auto-upstream::{ref_type_name}::{_normalize_token(value)}"
+    )
+    return {
+        "previewKey": preview_key,
+        "name": value,
+        "ciType": ref_type_name,
+        "status": _clean_text(attributes.get("status")),
+        "attributes": dict(attributes),
+        "analysisAttributes": {
+            **attributes,
+            "ci_type": ref_type_name,
+            "name": value,
+        },
+        "sourceAttributes": {},
+        "mapping": [],
+        "autoFilledHints": [f"自动补建上游：{origin_label}"],
+        "sourceRows": [],
+        "selected": True,
+        "generated": True,
+        "category": "resource",
+        "importAction": "create",
+        "existingCi": None,
+        "issues": [],
+        "attentionFields": [],
+    }
+
+
+def _materialize_optional_references_enabled() -> bool:
+    """Whether to auto-create upstream CIs for *optional* reference choices.
+
+    Defaults to off: only *required* reference choices (the ones that would
+    otherwise block the import, e.g. networkdevice ``platform``) are
+    auto-materialized. Optional references (DCIM 机房/机柜/数据中心, etc.) are
+    left to drop/flag so device imports don't spawn near-duplicate location
+    CIs. Set ``RESOURCE_IMPORT_MATERIALIZE_OPTIONAL_REFERENCES=1`` to opt in.
+    """
+    return _clean_text(
+        os.environ.get("RESOURCE_IMPORT_MATERIALIZE_OPTIONAL_REFERENCES")
+    ).lower() in {"1", "true", "yes", "on"}
+
+
+def _materialize_missing_reference_cis(
+    *,
+    records: list[dict[str, Any]],
+    type_templates: dict[str, dict[str, Any]],
+    client: VeopsCmdbClient | None,
+) -> tuple[list[dict[str, Any]], list[str]]:
+    """Synthesize upstream CIs that reference-choice attributes point at but
+    that are missing from both the import batch and CMDB.
+
+    This keeps the importer flexible against schema changes: when CMDB turns
+    a free-text field into a "choice from another model" (e.g. networkdevice
+    ``platform`` -> 应用系统/project.name), a device-only sheet whose
+    ``platform`` names a not-yet-existing application still imports — the
+    referenced 应用系统 is auto-created first and registered as a valid
+    choice value. By default only *required* reference choices are
+    materialized (see ``_materialize_optional_references_enabled``).
+    Returns ``(synthesized_records, info_messages)``.
+    """
+    if not records or not type_templates:
+        return [], []
+
+    include_optional = _materialize_optional_references_enabled()
+
+    type_name_by_id: dict[int, str] = {}
+    for name, template in type_templates.items():
+        try:
+            type_name_by_id[int(template.get("id"))] = name
+        except Exception:
+            continue
+
+    batch_values_by_type: dict[str, set[str]] = defaultdict(set)
+    for record in records:
+        ci_type = _clean_text(record.get("ciType"))
+        template = type_templates.get(ci_type)
+        if not template:
+            continue
+        name_key = _resolve_import_target_key(
+            type_template=template, canonical_field="name"
+        )
+        merged = _merged_resource_attributes(record)
+        name_value = _clean_text(merged.get(name_key)) or _clean_text(
+            record.get("name")
+        )
+        if name_value:
+            batch_values_by_type[ci_type].add(_normalize_token(name_value))
+
+    synthesized: dict[tuple[str, str], dict[str, Any]] = {}
+    existing_cache: dict[tuple[str, str, str], bool] = {}
+    messages: list[str] = []
+
+    for record in records:
+        ci_type = _clean_text(record.get("ciType"))
+        template = type_templates.get(ci_type)
+        if not ci_type or not template:
+            continue
+        for item in _attribute_definitions(template):
+            attr_name = _clean_text(item.get("name"))
+            ref_attr_id = item.get("choice_reference_attr_id")
+            ref_type_ids = item.get("choice_reference_type_ids") or []
+            if not attr_name or not ref_attr_id or not ref_type_ids:
+                continue
+            if not item.get("required") and not include_optional:
+                continue
+            reference_value = _choice_reference_value_for_record(
+                record=record,
+                attr_name=attr_name,
+                type_template=template,
+            )
+            if not reference_value:
+                continue
+            normalized_value = _normalize_token(reference_value)
+            static_ok = False
+            for choice in item.get("choices") or []:
+                if not isinstance(choice, dict):
+                    continue
+                if normalized_value in {
+                    _normalize_token(_clean_text(choice.get("value"))),
+                    _normalize_token(_clean_text(choice.get("label"))),
+                }:
+                    static_ok = True
+                    break
+            if static_ok:
+                continue
+            for ref_type_id in ref_type_ids:
+                try:
+                    ref_type_name = type_name_by_id.get(int(ref_type_id))
+                except Exception:
+                    ref_type_name = None
+                if not ref_type_name:
+                    continue
+                ref_template = type_templates.get(ref_type_name)
+                ref_attr_name = _attribute_name_by_id(
+                    ref_template, ref_attr_id
+                )
+                if not ref_attr_name:
+                    continue
+                if normalized_value in batch_values_by_type.get(
+                    ref_type_name, set()
+                ):
+                    break
+                if (ref_type_name, normalized_value) in synthesized:
+                    break
+                exists = False
+                if client is not None:
+                    cache_key = (
+                        ref_type_name,
+                        ref_attr_name,
+                        reference_value,
+                    )
+                    if cache_key not in existing_cache:
+                        try:
+                            rows = client.query_ci(
+                                f"_type:{ref_type_name},"
+                                f"{ref_attr_name}:{reference_value}",
+                                count=1,
+                            )
+                        except Exception:
+                            rows = []
+                        existing_cache[cache_key] = bool(rows)
+                    exists = existing_cache[cache_key]
+                if exists:
+                    break
+                origin_label = (
+                    f"{_clean_text(template.get('alias')) or ci_type}."
+                    f"{_clean_text(item.get('alias')) or attr_name}"
+                    f" = {reference_value}"
+                )
+                synthesized[(ref_type_name, normalized_value)] = (
+                    _build_synthesized_reference_ci_record(
+                        ref_type_name=ref_type_name,
+                        ref_template=ref_template,
+                        ref_attr_name=ref_attr_name,
+                        value=reference_value,
+                        origin_label=origin_label,
+                    )
+                )
+                ref_label = (
+                    _clean_text((ref_template or {}).get("alias"))
+                    or ref_type_name
+                )
+                messages.append(
+                    f"已自动补建上游 {ref_label}：{reference_value}"
+                    f"（因 {origin_label} 在 CMDB 中尚不存在）"
+                )
+                break
+    return list(synthesized.values()), messages
 
 
 def _merge_pending_choice_values(
@@ -8876,6 +9183,20 @@ async def preview_resource_import(
         managed_llm_client = managed_runtime.client
         if not runtime_source:
             runtime_source = managed_runtime.source
+    # Dedicated import LLM pool (RESOURCE_IMPORT_LLM_* / _2_ / _3_ ...).
+    # When configured, per-sheet field mapping round-robins across these
+    # models so the load is split (e.g. GLM-5.1 + deepseek), easing any
+    # single model's TPM rate limit. Empty pool -> fall back to the page
+    # agent's model (unchanged behaviour).
+    resource_import_llm_pool = _build_resource_import_llm_pool()
+    if resource_import_llm_pool:
+        managed_llm_client = resource_import_llm_pool[0]
+        managed_llm_clients = resource_import_llm_pool
+        runtime_source = f"资源导入专用模型池×{len(resource_import_llm_pool)}"
+    else:
+        managed_llm_clients = (
+            [managed_llm_client] if managed_llm_client else []
+        )
     field_stats: dict[tuple[str, str], int] = defaultdict(int)
     mapping_summary_entries: list[dict[str, Any]] = []
     cleaning_changes: Counter[str] = Counter()
@@ -8988,8 +9309,13 @@ async def preview_resource_import(
                     "plan": plan,
                     "mappingMode": mapping_mode,
                 }
+            sheet_llm_client = (
+                managed_llm_clients[index % len(managed_llm_clients)]
+                if managed_llm_clients
+                else None
+            )
             llm_target = "将调用 LLM 做字段语义映射"
-            if not managed_llm_client:
+            if not sheet_llm_client:
                 llm_target = "当前未连接 LLM，将使用规则映射兜底"
             _emit_progress(
                 progress_callback,
@@ -9007,7 +9333,7 @@ async def preview_resource_import(
                     alias_index=alias_index,
                     model_templates=model_templates,
                     metadata=metadata,
-                    llm_client=managed_llm_client,
+                    llm_client=sheet_llm_client,
                 )
             return {
                 **item,
@@ -9029,7 +9355,7 @@ async def preview_resource_import(
         else:
             resolved_sheet_results = []
 
-        if managed_llm_client and resolved_sheet_results:
+        if managed_llm_clients and resolved_sheet_results:
             retryable_failed_sheets = [
                 item
                 for item in resolved_sheet_results
@@ -9052,6 +9378,10 @@ async def preview_resource_import(
                 parsed_filename = str(failed_sheet.get("filename") or "")
                 sheet_name = str(failed_sheet.get("sheetName") or "")
                 sheet_rows = failed_sheet.get("sheetRows") or []
+                retry_llm_client = managed_llm_clients[
+                    int(failed_sheet.get("index") or 0)
+                    % len(managed_llm_clients)
+                ]
                 _emit_progress(
                     progress_callback,
                     stage="sheet_mapping_recovery",
@@ -9070,7 +9400,7 @@ async def preview_resource_import(
                     alias_index=alias_index,
                     model_templates=model_templates,
                     metadata=metadata,
-                    llm_client=managed_llm_client,
+                    llm_client=retry_llm_client,
                     retry_count_override=RESOURCE_IMPORT_LLM_RETRY_COUNT
                     + RESOURCE_IMPORT_LLM_BLOCKING_RECOVERY_RETRY_COUNT,
                 )
@@ -9333,7 +9663,24 @@ async def preview_resource_import(
                         raw_ci_type_value
                         and raw_ci_type_value.lower() != "networkdevice"
                     ):
-                        standardized["dev_class"] = raw_ci_type_value
+                        # Only adopt the raw resource-category value as
+                        # dev_class when it is actually a valid dev_class
+                        # choice (e.g. "路由器"); never inject a generic
+                        # category like "网络设备", which is not a valid
+                        # choice and would otherwise block the import.
+                        dev_class_definition = _find_attribute_definition(
+                            type_template_map.get(normalized_type),
+                            "dev_class",
+                        )
+                        (
+                            normalized_dev_class,
+                            dev_class_unresolved,
+                        ) = _normalize_choice_attribute_value(
+                            attribute_definition=dev_class_definition,
+                            value=raw_ci_type_value,
+                        )
+                        if normalized_dev_class and not dev_class_unresolved:
+                            standardized["dev_class"] = normalized_dev_class
 
                 if not standardized["ci_type"]:
                     warnings.append(
@@ -9504,6 +9851,17 @@ async def preview_resource_import(
                         f"{parsed_filename} / {sheet_name} 第 {row_index} 行仍需人工确认：{', '.join(confirmation_issues)}。"
                     )
 
+        synthesized_upstream, upstream_messages = (
+            _materialize_missing_reference_cis(
+                records=raw_resources,
+                type_templates=type_template_map,
+                client=existing_client,
+            )
+        )
+        if synthesized_upstream:
+            raw_resources.extend(synthesized_upstream)
+            logs.extend(upstream_messages)
+
         relations: dict[tuple[str, str, str], dict[str, Any]] = {}
         _emit_progress(
             progress_callback,
@@ -9669,6 +10027,11 @@ async def preview_resource_import(
             message="解析完成，正在整理预览结果",
             percent=98,
         )
+        for _pool_client in resource_import_llm_pool:
+            try:
+                await _pool_client.aclose()
+            except Exception:
+                pass
         return {
             "summary": {
                 "fileCount": len(parsed_files),
@@ -9913,7 +10276,13 @@ async def _build_structure_analysis(
         records = context["records"]
         raw_type_hints = context["raw_type_hints"]
         exact_groups = context["exact_groups"]
-        suggested_group_name = DEFAULT_GROUP_HINTS.get(resource_ci_type, "")
+        # Live-derived: suggest the CI type's REAL group in CMDB (if it
+        # belongs to one). When it has no live group (e.g. an ungrouped
+        # type), leave empty so it surfaces as missing_group for the user to
+        # pick/create — never invent a stale group name.
+        suggested_group_name = (
+            _clean_text(exact_groups[0].get("name")) if exact_groups else ""
+        )
         status = "matched"
         reason = ""
         selected_group_name = ""
@@ -10119,6 +10488,36 @@ async def _build_structure_analysis(
             create_group_approved = False
         if status == "missing_model":
             create_model_approved = False
+
+        # Guard: a chosen group that does NOT actually exist in CMDB must be
+        # confirmed for creation, never silently treated as "matched". Group
+        # hints (DEFAULT_GROUP_HINTS, semantic catalog groupName) can suggest
+        # a group name with no real CMDB group behind it (e.g. vserver ->
+        # 计算资源). Without this, preview says "ok", the user proceeds, and
+        # the import fails late with "尚未确认创建分组". Surfacing it here lets
+        # the validation step block + prompt to confirm/create or re-pick.
+        existing_group_names = {
+            _clean_text(item.get("name"))
+            for item in ci_type_groups
+            if _clean_text(item.get("name"))
+        }
+        if (
+            selected_group_name
+            and selected_group_name not in existing_group_names
+        ):
+            needs_confirmation = True
+            create_group_approved = False
+            group_option_map[selected_group_name] = {
+                "id": None,
+                "name": selected_group_name,
+                "existing": False,
+            }
+            if status == "matched":
+                status = "missing_group"
+                reason = (
+                    f"建议分组「{selected_group_name}」在 CMDB 中尚不存在，"
+                    "导入前需确认创建（或改选已有分组），否则导入会失败。"
+                )
 
         group_options = sorted(
             group_option_map.values(), key=lambda item: item["name"]
@@ -10371,14 +10770,12 @@ def _enrich_resource_import_metadata(
 
 
 _METADATA_CACHE_LOCK = threading.Lock()
-# CMDB schema (CI types / attributes / parent relations) changes only when an
-# admin edits models in the CMDB UI — typically rare in production. A long
-# default TTL kills the ~25s cold-load cost across daily user sessions; users
-# can force-refresh via invalidate_resource_import_metadata_cache() or by
-# clearing the cache file. Override with RESOURCE_IMPORT_METADATA_CACHE_TTL.
+# CMDB schema is allowed to change while the portal is running. Keep a short
+# warm cache for preview responsiveness, but formal import refreshes live
+# metadata again before writing.
 _METADATA_CACHE_TTL_SECONDS = max(
     0.0,
-    float(os.environ.get("RESOURCE_IMPORT_METADATA_CACHE_TTL", "86400")),
+    float(os.environ.get("RESOURCE_IMPORT_METADATA_CACHE_TTL", "300")),
 )
 _METADATA_FETCH_CONCURRENCY = max(
     1,
@@ -10672,14 +11069,19 @@ def _load_import_preflight_metadata(
 ) -> tuple[dict[str, Any], str]:
     """Load CMDB model metadata for final import preflight.
 
-    Normal imports should use the 24h metadata cache to avoid paying the full
-    per-CI-type schema fan-out on every import. If this import created a model,
-    the cache is necessarily stale, so refresh from the active client and write
-    the new snapshot back to cache.
+    Formal writes should validate against the current CMDB schema, not the
+    preview-time snapshot. A cache fallback can be enabled explicitly for
+    emergency latency-sensitive environments, but the default is live.
     """
 
     env_signature = _resource_import_metadata_env_signature()
-    if not _structure_results_require_live_metadata(structure_results):
+    cache_mode = os.environ.get(
+        "RESOURCE_IMPORT_IMPORT_METADATA_SOURCE", "live"
+    ).strip().lower()
+    if (
+        cache_mode in {"cache", "cached"}
+        and not _structure_results_require_live_metadata(structure_results)
+    ):
         with _METADATA_CACHE_LOCK:
             cached = _read_resource_import_metadata_cache(env_signature)
         if cached is not None:
@@ -10777,6 +11179,60 @@ def _offline_preflight_import_resources(
             }
             for record in selected_records
         ]
+
+    # Fail-fast (before any CMDB writes) on unconfirmed group/model creation.
+    # The actual create step would otherwise raise mid-import; surfacing it
+    # here returns a clean, actionable result so the user resolves it at the
+    # validation step instead of after a partial import.
+    structure_items = (
+        (preview.get("structureAnalysis") or {}).get("items") or []
+    )
+    confirmation_failures: list[dict[str, Any]] = []
+    for structure_item in structure_items:
+        if not isinstance(structure_item, dict):
+            continue
+        item_status = _clean_text(structure_item.get("status"))
+        item_label = (
+            _clean_text(structure_item.get("resourceLabel"))
+            or _clean_text(structure_item.get("resourceCiType"))
+            or "待确认资源"
+        )
+        group_name = _clean_text(
+            structure_item.get("selectedGroupName")
+        ) or _clean_text(structure_item.get("suggestedGroupName"))
+        model_name = _clean_text(structure_item.get("selectedModelName"))
+        if item_status == "missing_group" and not structure_item.get(
+            "createGroupApproved"
+        ):
+            confirmation_failures.append(
+                {
+                    "previewKey": (
+                        f"structure::{structure_item.get('key') or item_label}"
+                    ),
+                    "status": "failed",
+                    "message": (
+                        f"{item_label}：分组「{group_name}」在 CMDB 中尚不存在，"
+                        "请在校验步骤勾选「确认创建分组」或改选已有分组后再导入。"
+                    ),
+                }
+            )
+        elif item_status == "missing_model" and not structure_item.get(
+            "createModelApproved"
+        ):
+            confirmation_failures.append(
+                {
+                    "previewKey": (
+                        f"structure::{structure_item.get('key') or item_label}"
+                    ),
+                    "status": "failed",
+                    "message": (
+                        f"{item_label}：模型「{model_name}」在 CMDB 中尚不存在，"
+                        "请在校验步骤勾选「确认创建模型」或改选已有模型后再导入。"
+                    ),
+                }
+            )
+    if confirmation_failures:
+        return confirmation_failures
 
     preview_ci_types = _ci_types_from_preview_snapshot(preview)
     if not preview_ci_types:
@@ -11002,6 +11458,50 @@ def import_preview_to_cmdb(payload: dict[str, Any]) -> dict[str, Any]:
         )
         report["structureResults"].extend(relation_structure_results)
         resource_groups = payload.get("resourceGroups") or []
+        # Safety net for payloads that reference an upstream CI (e.g. a
+        # networkdevice ``platform`` naming an 应用系统) which exists neither
+        # in the batch nor in CMDB: synthesize and create it first so the
+        # reference-choice validates. Preview normally injects these already;
+        # this also covers hand-built / older payloads.
+        synthesized_upstream, upstream_messages = (
+            _materialize_missing_reference_cis(
+                records=[
+                    record
+                    for group in resource_groups
+                    for record in (group.get("records") or [])
+                    if record.get("selected", True)
+                ],
+                type_templates=type_templates,
+                client=client,
+            )
+        )
+        if synthesized_upstream:
+            groups_by_type = {
+                _clean_text(group.get("ciType")): group
+                for group in resource_groups
+                if _clean_text(group.get("ciType"))
+            }
+            for record in synthesized_upstream:
+                ci_type = _clean_text(record.get("ciType"))
+                group = groups_by_type.get(ci_type)
+                if group is None:
+                    group = {
+                        "ciType": ci_type,
+                        "label": _clean_text(
+                            (type_templates.get(ci_type) or {}).get("alias")
+                        )
+                        or ci_type,
+                        "count": 0,
+                        "records": [],
+                    }
+                    resource_groups.append(group)
+                    groups_by_type[ci_type] = group
+                group.setdefault("records", []).append(record)
+                group["count"] = len(group["records"])
+            report["structureResults"].extend(
+                {"level": "info", "message": message}
+                for message in upstream_messages
+            )
         ordered_records = _ordered_selected_records(
             resource_groups,
             payload.get("relations") or [],
