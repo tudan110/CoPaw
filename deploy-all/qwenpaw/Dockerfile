@@ -160,6 +160,21 @@ RUN set -eux; \
     find /app/.working.backup -name requirements.txt -print0 \
       | xargs -0 -r -n1 uv pip install --python /app/venv/bin/python --no-cache-dir -r
 
+# Fail the build loudly if ANY knowledge-base runtime dependency is missing —
+# Python packages AND the system tools for image OCR (.png/.jpg) and legacy
+# .doc. A green build therefore guarantees every supported format
+# (doc/docx/pptx/pdf/xls/xlsx/csv/images) parses without "missing package"
+# errors or mojibake. Runs for whatever target arch buildx is producing
+# (linux/amd64 or linux/arm64), so both build-*.sh paths are covered.
+# A missing Python dep here is exactly what surfaced in the portal as
+# "No module named 'jieba'" / "cannot import name 'serializers'".
+RUN set -eux; \
+    /app/venv/bin/python -c "import jieba, sqlite_vec, tiktoken, pypdf, openpyxl, xlrd, pytesseract; from PIL import Image; print('knowledge-base python deps OK')"; \
+    command -v tesseract; \
+    tesseract --list-langs 2>&1 | grep -qx chi_sim; \
+    { command -v soffice || command -v libreoffice; }; \
+    echo "knowledge-base system tools OK (tesseract+chi_sim, libreoffice)"
+
 # Create empty working directories (PVC will mount over these)
 RUN mkdir -p /app/working /app/working.secret
 

@@ -65,6 +65,14 @@ dependencies = [
     # Legacy .xls parsing (knowledge base / resource import). xlrd 2.x is
     # .xls-only by design; .xlsx goes through openpyxl above.
     "xlrd>=2.0.1",
+    # Knowledge-base skill retrieval stack — bundled built-in skill, surfaced
+    # in the portal. Kept here (not just the skill's requirements.txt) so every
+    # image build bakes them in for offline deployments; otherwise the portal
+    # knowledge-base management fails with "No module named 'jieba'" and the
+    # cascading "cannot import name 'serializers' from 'api'".
+    "jieba>=0.42.1",
+    "sqlite-vec>=0.1.6",
+    "tiktoken>=0.7.0",
 ]
 
 [tool.setuptools.dynamic]
