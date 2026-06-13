@@ -347,6 +347,22 @@ def _resource_import_bridge_script() -> Path:
     )
 
 
+def _skill_subprocess_env() -> dict[str, str]:
+    """Environment for skill-bridge subprocesses.
+
+    Forces UTF-8 stdio in the child so the parent — which decodes stdout as
+    UTF-8 — does not hit a ``UnicodeDecodeError`` on Windows, where a child
+    Python's piped stdout otherwise defaults to the locale codec (e.g. GBK).
+    Without this, any Chinese text in the bridge output makes the reader
+    thread crash, ``subprocess.run`` returns empty stdout, and the caller
+    raises "skill bridge returned empty output".
+    """
+    env = dict(os.environ)
+    env["PYTHONIOENCODING"] = "utf-8"
+    env["PYTHONUTF8"] = "1"
+    return env
+
+
 def _alarm_analyst_skill_root() -> Path:
     return _resolve_workspace_skill_root("fault", "alarm-analyst")
 
@@ -2533,6 +2549,7 @@ def _run_fault_disposal_chat_skill(command: str, payload: dict) -> dict:
             capture_output=True,
             text=True,
             encoding="utf-8",
+            env=_skill_subprocess_env(),
             timeout=FAULT_DISPOSAL_SCRIPT_TIMEOUT_SECONDS,
             check=False,
         )
@@ -2603,6 +2620,7 @@ def _run_resource_import_skill(
             capture_output=True,
             text=True,
             encoding="utf-8",
+            env=_skill_subprocess_env(),
             timeout=RESOURCE_IMPORT_SCRIPT_TIMEOUT_SECONDS,
             check=False,
         )
@@ -2664,6 +2682,7 @@ def _run_alarm_metric_verification(
         capture_output=True,
         text=True,
         encoding="utf-8",
+        env=_skill_subprocess_env(),
         timeout=ALARM_ANALYST_SCRIPT_TIMEOUT_SECONDS,
         check=False,
     )
