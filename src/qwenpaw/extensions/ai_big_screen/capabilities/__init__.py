@@ -127,6 +127,40 @@ def _proxy_descriptor(capability_id: str) -> CapabilityDescriptor | None:
     )
 
 
+def _skill_descriptor(capability_id: str) -> CapabilityDescriptor | None:
+    """Build a descriptor for a skill-backed capability (M3-C).
+
+    Dynamic, like the proxy connectors: a skill that declares a
+    ``bigscreen`` block in its SKILL.md becomes ``skill:<ws>:<skill>``.
+    """
+    from qwenpaw.extensions.ai_big_screen.capabilities import (
+        skill_capabilities,
+    )
+
+    meta = skill_capabilities.get_skill_metadata(capability_id)
+    if meta is None:
+        return None
+
+    def _fetch(query_params: Mapping[str, Any]) -> dict[str, Any]:
+        return skill_capabilities.fetch_skill_capability(
+            capability_id,
+            query_params,
+        )
+
+    public_meta = {
+        key: value for key, value in meta.items() if not key.startswith("_")
+    }
+    return CapabilityDescriptor(
+        id=capability_id,
+        display_name=str(meta.get("name") or capability_id),
+        domain=str(meta.get("domain") or "skill"),
+        fetcher=_fetch,
+        timeout_seconds=DEFAULT_TIMEOUT_SECONDS,
+        is_gap=False,
+        metadata=public_meta,
+    )
+
+
 def get_descriptor(capability_id: str) -> CapabilityDescriptor | None:
     cid = str(capability_id or "")
     static = REGISTRY.get(cid)
@@ -134,6 +168,8 @@ def get_descriptor(capability_id: str) -> CapabilityDescriptor | None:
         return static
     if cid.startswith("proxy:"):
         return _proxy_descriptor(cid)
+    if cid.startswith("skill:"):
+        return _skill_descriptor(cid)
     return None
 
 
@@ -148,9 +184,11 @@ def list_capability_metadata() -> list[dict[str, Any]]:
     try:
         from qwenpaw.extensions.ai_big_screen.capabilities import (
             proxy_capabilities,
+            skill_capabilities,
         )
 
         catalog.extend(proxy_capabilities.metadata_for_registry())
+        catalog.extend(skill_capabilities.metadata_for_registry())
     except Exception:  # dynamic discovery must never break the catalog
         _LOGGER.warning(
             "dynamic capability discovery failed",

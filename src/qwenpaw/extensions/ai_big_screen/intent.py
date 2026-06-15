@@ -538,10 +538,11 @@ def _resolve_component_capability_id(
     raw_capability_id: str,
     component: Mapping[str, Any],
 ) -> str:
-    # Operator-registered connectors (proxy:<id>) are explicit, dynamic
-    # capabilities — keep them verbatim so a title keyword can't hijack
-    # them onto a static built-in.
-    if raw_capability_id.startswith("proxy:") and _capability_meta(
+    # Dynamic capabilities — operator connectors (proxy:<id>) and
+    # skill-backed (skill:<ws>:<skill>) — are explicit choices; keep
+    # them verbatim so a title keyword can't hijack them onto a static
+    # built-in.
+    if raw_capability_id.startswith(("proxy:", "skill:")) and _capability_meta(
         raw_capability_id,
     ):
         return raw_capability_id

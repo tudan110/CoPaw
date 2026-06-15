@@ -32,3 +32,24 @@ def _isolated_store(
         tmp_path / "ai_big_screen" / "registry.json",
     )
     monkeypatch.setattr(store, "_DEFAULT_MIGRATION_DONE", True)
+
+    # Hermetic dynamic-capability discovery (M3-B/C): point WORKING_DIR
+    # at an empty temp tree so skill discovery finds nothing, and stub
+    # the proxy connector list to empty. Tests that exercise these
+    # (test_proxy_capabilities / test_skill_capabilities) override with
+    # their own monkeypatch, which runs after this autouse fixture.
+    from qwenpaw import constant
+
+    monkeypatch.setattr(constant, "WORKING_DIR", tmp_path / "qwenpaw_home")
+    from qwenpaw.extensions.api import proxy_datasource_service
+
+    monkeypatch.setattr(
+        proxy_datasource_service,
+        "list_bigscreen_datasources",
+        list,
+    )
+    monkeypatch.setattr(
+        proxy_datasource_service,
+        "get_datasource",
+        lambda _datasource_id: None,
+    )
