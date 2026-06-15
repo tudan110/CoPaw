@@ -92,13 +92,71 @@ def _build_registry() -> dict[str, CapabilityDescriptor]:
 REGISTRY: dict[str, CapabilityDescriptor] = _build_registry()
 
 
+def _proxy_descriptor(capability_id: str) -> CapabilityDescriptor | None:
+    """Build a descriptor for an operator-registered connector (M3-B).
+
+    Dynamic (not in REGISTRY) because connectors are added/edited at
+    runtime via ``/proxy/datasources``. Discovery failures degrade to
+    None so the static catalog always works.
+    """
+    from qwenpaw.extensions.ai_big_screen.capabilities import (
+        proxy_capabilities,
+    )
+
+    meta = proxy_capabilities.get_proxy_metadata(capability_id)
+    if meta is None:
+        return None
+
+    def _fetch(query_params: Mapping[str, Any]) -> dict[str, Any]:
+        return proxy_capabilities.fetch_proxy_capability(
+            capability_id,
+            query_params,
+        )
+
+    public_meta = {
+        key: value for key, value in meta.items() if not key.startswith("_")
+    }
+    return CapabilityDescriptor(
+        id=capability_id,
+        display_name=str(meta.get("name") or capability_id),
+        domain=str(meta.get("domain") or "custom"),
+        fetcher=_fetch,
+        timeout_seconds=DEFAULT_TIMEOUT_SECONDS,
+        is_gap=False,
+        metadata=public_meta,
+    )
+
+
 def get_descriptor(capability_id: str) -> CapabilityDescriptor | None:
-    return REGISTRY.get(str(capability_id or ""))
+    cid = str(capability_id or "")
+    static = REGISTRY.get(cid)
+    if static is not None:
+        return static
+    if cid.startswith("proxy:"):
+        return _proxy_descriptor(cid)
+    return None
 
 
 def list_capability_metadata() -> list[dict[str, Any]]:
-    """Legacy-shaped capability catalog (for the AI prompt and API)."""
-    return [copy.deepcopy(d.metadata) for d in REGISTRY.values()]
+    """Legacy-shaped capability catalog (for the AI prompt and API).
+
+    Static built-ins plus any operator-registered connectors that
+    opted into the big-screen catalog (discovered live each call so the
+    LLM always sees the current set).
+    """
+    catalog = [copy.deepcopy(d.metadata) for d in REGISTRY.values()]
+    try:
+        from qwenpaw.extensions.ai_big_screen.capabilities import (
+            proxy_capabilities,
+        )
+
+        catalog.extend(proxy_capabilities.metadata_for_registry())
+    except Exception:  # dynamic discovery must never break the catalog
+        _LOGGER.warning(
+            "dynamic capability discovery failed",
+            exc_info=True,
+        )
+    return catalog
 
 
 class CapabilityCache:
