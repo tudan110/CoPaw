@@ -243,6 +243,59 @@ class TestHonestIntegrationWiring:
         assert result.source_status == "failed"
         assert "alarm backend down" in result.message
 
+    async def test_real_alarms_rows_carry_rich_display_fields(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from qwenpaw.extensions.integrations import portal_real_alarms
+
+        monkeypatch.setattr(
+            "qwenpaw.extensions.integrations.working_secrets"
+            ".ensure_working_secrets_loaded",
+            lambda: None,
+        )
+        monkeypatch.setattr(
+            portal_real_alarms,
+            "query_portal_real_alarms",
+            lambda **_kw: {
+                "source": "live",
+                "total": 1,
+                "items": [
+                    {
+                        "id": "A-1",
+                        "title": "内存使用率",
+                        "level": "critical",
+                        "levelName": "紧急",
+                        "statusName": "活跃",
+                        "className": "性能告警",
+                        "deviceName": "智观部署虚机",
+                        "manageIp": "82.156.83.38",
+                        "ciId": "7953",
+                        "speciality": "操作系统",
+                        "eventTime": "2026-06-15 10:57:31",
+                        "message": "【紧急】内存使用率｜智观部署虚机 82.156.83.38｜活跃",
+                    },
+                ],
+            },
+        )
+        result = await execute_capability(
+            {"limit": 5},
+            capability_id="real-alarms",
+        )
+        assert result.source_status == "live"
+        row = result.rows[0]
+        assert row["levelName"] == "紧急"
+        assert row["statusName"] == "活跃"
+        assert row["ciId"] == "7953"
+        assert row["deviceName"] == "智观部署虚机"
+        assert row["message"]
+        # default columns now mirror the chat alarm table (7 rich cols)
+        column_keys = [c["key"] for c in (result.columns or [])]
+        assert "levelName" in column_keys
+        assert "ciId" in column_keys
+        assert "statusName" in column_keys
+        assert "level" not in column_keys  # raw tone key not a column
+
     async def test_workorders_non_live_source_blocked_as_failed(
         self,
         monkeypatch: pytest.MonkeyPatch,

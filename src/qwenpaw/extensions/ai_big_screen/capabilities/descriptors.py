@@ -17,6 +17,7 @@ Honesty rules enforced here (spec §5/§11):
 from __future__ import annotations
 
 import copy
+from datetime import datetime, timezone
 from typing import Any, Callable, Mapping
 
 from qwenpaw.extensions.ai_big_screen.capabilities.fields import (
@@ -392,6 +393,17 @@ def fetch_real_alarms(query_params: Mapping[str, Any]) -> dict[str, Any]:
         raise_on_error=True,
     )
     rows = list(payload.get("items") or [])
+    # best-effort live duration per alarm (eventTime → now); the row
+    # already carries the rich display fields from _normalize_alarm_row
+    now = datetime.now(timezone.utc)
+    for alarm in rows:
+        if isinstance(alarm, dict) and not alarm.get("duration"):
+            duration = portal_real_alarms.format_alarm_duration(
+                str(alarm.get("eventTime") or ""),
+                now=now,
+            )
+            if duration:
+                alarm["duration"] = duration
     columns = columns_for_capability_fields(
         "real-alarms",
         query_params.get("fields"),

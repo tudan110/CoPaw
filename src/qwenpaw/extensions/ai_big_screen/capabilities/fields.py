@@ -19,23 +19,50 @@ CAPABILITY_FIELD_DEFINITIONS: dict[str, list[dict[str, Any]]] = {
         {"key": "message", "label": "日志内容", "aliases": ["内容", "消息"]},
     ],
     "real-alarms": [
+        {"key": "title", "label": "告警标题", "aliases": ["告警", "标题"]},
         {
-            "key": "eventTime",
-            "label": "时间",
-            "aliases": ["告警时间", "发生时间"],
-        },
-        {
-            "key": "level",
+            "key": "levelName",
             "label": "级别",
-            "aliases": ["告警级别", "严重级别"],
+            "aliases": ["告警级别", "严重级别", "level"],
         },
-        {"key": "title", "label": "告警", "aliases": ["告警标题", "标题"]},
         {
             "key": "deviceName",
-            "label": "资源",
-            "aliases": ["设备", "对象"],
+            "label": "设备名称",
+            "aliases": ["设备", "资源", "对象"],
         },
-        {"key": "manageIp", "label": "IP", "aliases": ["管理IP", "资源IP"]},
+        {"key": "manageIp", "label": "管理IP", "aliases": ["IP", "资源IP"]},
+        {
+            "key": "ciId",
+            "label": "CI ID",
+            "aliases": ["CIID", "neId", "资源ID", "配置项"],
+        },
+        {
+            "key": "eventTime",
+            "label": "告警发生时间",
+            "aliases": ["告警时间", "发生时间", "时间"],
+        },
+        {
+            "key": "statusName",
+            "label": "告警状态",
+            "aliases": ["状态", "告警状态名"],
+        },
+        {
+            "key": "className",
+            "label": "告警类别",
+            "aliases": ["类别", "告警类型"],
+        },
+        {
+            "key": "speciality",
+            "label": "专业",
+            "aliases": ["专业分类", "专业领域"],
+        },
+        {"key": "region", "label": "区域", "aliases": ["告警区域", "地域"]},
+        {
+            "key": "eventLastTime",
+            "label": "最近发生",
+            "aliases": ["最后发生时间", "持续至"],
+        },
+        {"key": "count", "label": "触发次数", "aliases": ["次数", "告警次数"]},
     ],
     "cmdb-resources": [
         {"key": "name", "label": "指标", "aliases": ["名称", "资源指标"]},
@@ -89,7 +116,15 @@ CAPABILITY_FIELD_DEFINITIONS: dict[str, list[dict[str, Any]]] = {
 
 DEFAULT_CAPABILITY_FIELDS: dict[str, list[str]] = {
     "system-logs": ["time", "level", "host", "service", "message"],
-    "real-alarms": ["eventTime", "level", "title", "deviceName", "manageIp"],
+    "real-alarms": [
+        "title",
+        "levelName",
+        "deviceName",
+        "manageIp",
+        "ciId",
+        "eventTime",
+        "statusName",
+    ],
     "cmdb-resources": ["name", "value"],
     "workorders": ["workorderNo", "title", "status", "severity", "eventTime"],
 }

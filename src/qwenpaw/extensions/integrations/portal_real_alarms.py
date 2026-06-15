@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 from __future__ import annotations
 
 import json
@@ -23,6 +24,27 @@ SEVERITY_TO_LEVEL = {
     "1": "critical",
     "2": "urgent",
     "3": "warning",
+}
+
+# Display-oriented maps, aligned with the real-alarm skill's
+# scripts/utils/alarm_normalizer.py so the big-screen shows the same
+# human-readable values the chat table does.
+SEVERITY_TO_NAME = {
+    "1": "紧急",
+    "2": "严重",
+    "3": "普通",
+    "4": "预警",
+}
+STATUS_TO_NAME = {
+    "0": "自动清除",
+    "1": "活跃",
+    "2": "同步清除",
+    "3": "手工清除",
+}
+CLASS_TO_NAME = {
+    "sys_log": "设备告警",
+    "threshold": "性能告警",
+    "derivative": "衍生告警",
 }
 
 
@@ -104,6 +126,28 @@ def parse_alarm_event_time(text: str) -> datetime | None:
             continue
         return parsed.replace(tzinfo=_get_alarm_timezone())
     return None
+
+
+def format_alarm_duration(event_time: str, *, now: datetime) -> str:
+    """Human-readable elapsed time since an alarm fired (e.g. ``4h10m``).
+
+    Returns ``""`` when the event time is unparsable or in the future,
+    so a missing/garbled timestamp never shows a misleading duration.
+    """
+    started = parse_alarm_event_time(event_time)
+    if started is None:
+        return ""
+    elapsed = now - started
+    minutes_total = int(elapsed.total_seconds() // 60)
+    if minutes_total < 0:
+        return ""
+    days, rem = divmod(minutes_total, 24 * 60)
+    hours, minutes = divmod(rem, 60)
+    if days:
+        return f"{days}d{hours}h"
+    if hours:
+        return f"{hours}h{minutes}m"
+    return f"{minutes}m"
 
 
 def filter_alarms_started_after(
@@ -364,6 +408,30 @@ def _build_dispatch_content(
     return " / ".join(filter(None, (title, fallback_device_name, subtype)))
 
 
+def _build_alarm_message(
+    *,
+    level_name: str,
+    title: str,
+    device_name: str,
+    manage_ip: str,
+    status_name: str,
+) -> str:
+    """Rich one-line summary for stream/list/timeline visuals.
+
+    The alarm-stream widget reads ``row["message"]``; without it a
+    single alarm renders as a bare dot. Built from real fields only.
+    """
+    parts = [f"【{level_name}】{title}"]
+    location = " ".join(
+        token for token in (device_name, manage_ip) if token and token != "--"
+    )
+    if location:
+        parts.append(location)
+    if status_name and status_name != "未知":
+        parts.append(status_name)
+    return "｜".join(parts)
+
+
 def _normalize_alarm_row(row: dict[str, Any]) -> dict[str, Any]:
     severity = str(row.get("alarmseverity") or "").strip() or "4"
     device_name = str(row.get("devName") or "").strip() or "--"
@@ -372,7 +440,19 @@ def _normalize_alarm_row(row: dict[str, Any]) -> dict[str, Any]:
     event_time = str(row.get("eventtime") or "")
     alarm_id = str(row.get("alarmuniqueid") or title)
     res_id = str(row.get("devId") or "").strip()
-    return {
+    # Display-oriented enrichment (skill parity). Additive only — the
+    # dispatch/chat flow reads title/level/status/dispatchContent/
+    # employeeId/visibleContent, all left unchanged below.
+    level_name = SEVERITY_TO_NAME.get(severity, severity or "未知")
+    alarm_status = str(row.get("alarmstatus") or "").strip()
+    status_name = STATUS_TO_NAME.get(alarm_status, alarm_status or "未知")
+    alarm_class = str(row.get("alarmclass") or "").strip()
+    class_name = CLASS_TO_NAME.get(alarm_class, alarm_class or "")
+    speciality = str(row.get("speciality") or "").strip()
+    region = str(row.get("alarmregion") or "").strip()
+    ci_id = str(row.get("neId") or "").strip() or res_id
+    event_last_time = str(row.get("eventlasttime") or "").strip()
+    normalized = {
         "id": alarm_id,
         "alarmId": alarm_id,
         "resId": res_id,
@@ -390,7 +470,31 @@ def _normalize_alarm_row(row: dict[str, Any]) -> dict[str, Any]:
             device_name=device_name,
         ),
         "visibleContent": f"{title}（{device_name} {manage_ip}）",
+        # --- rich display fields (aligned with real-alarm skill) ---
+        "levelName": level_name,
+        "statusName": status_name,
+        "className": class_name,
+        "speciality": speciality,
+        "region": region,
+        "ciId": ci_id,
+        "eventLastTime": event_last_time,
+        "message": _build_alarm_message(
+            level_name=level_name,
+            title=title,
+            device_name=device_name,
+            manage_ip=manage_ip,
+            status_name=status_name,
+        ),
     }
+    raw_count = row.get("alarmcount")
+    if raw_count is None:
+        raw_count = row.get("count")
+    if raw_count is not None:
+        try:
+            normalized["count"] = int(raw_count)
+        except (TypeError, ValueError):
+            pass
+    return normalized
 
 
 def query_real_alarm_active_status(alarm_id: str) -> str:
@@ -422,7 +526,7 @@ def query_real_alarm_active_status(alarm_id: str) -> str:
         if not isinstance(row, dict):
             continue
         candidate = str(
-            row.get("alarmuniqueid") or row.get("alarmtitle") or ""
+            row.get("alarmuniqueid") or row.get("alarmtitle") or "",
         ).strip()
         if candidate and candidate == normalized:
             return "still_active"
