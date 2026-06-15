@@ -6,7 +6,6 @@ import {
   normalizeSpec,
   type DashboardSpec,
   type ScreenComponent,
-  type VisualSpec,
 } from "./types.ts";
 import { ScreenStage } from "./panels/ScreenStage.tsx";
 import { AuroraBackground } from "./panels/AuroraBackground.tsx";
@@ -15,10 +14,17 @@ import { GlassPanel } from "./panels/GlassPanel.tsx";
 import { COMPONENT_REGISTRY, resolveComponentType } from "./registry.ts";
 import { visualSpecClassTokens } from "./visualSpec.ts";
 import { computeAutoLayout } from "./autoLayout.ts";
+import { intrinsicSize } from "./intrinsicSize.ts";
 
 /** Honest L2 status: failed/empty render an explicit note instead of an
  *  empty/broken-looking widget body. gap/live fall through to the widget. */
-function StatusNote({ kind, text }: { kind: "failed" | "empty"; text: string }) {
+function StatusNote({
+  kind,
+  text,
+}: {
+  kind: "failed" | "empty";
+  text: string;
+}) {
   const color = kind === "failed" ? "#f87171" : "#9fb2cc";
   return (
     <div
@@ -47,7 +53,10 @@ function ComponentBody({ component }: { component: ScreenComponent }) {
   const status = component.data?.sourceStatus;
   if (status === "failed") {
     return (
-      <StatusNote kind="failed" text={component.data?.message ?? "数据获取失败"} />
+      <StatusNote
+        kind="failed"
+        text={component.data?.message ?? "数据获取失败"}
+      />
     );
   }
   if (status === "empty") {
@@ -63,21 +72,6 @@ function ComponentBody({ component }: { component: ScreenComponent }) {
 }
 
 const DEFAULT_POS = { x: 0, y: 0, w: 480, h: 280 };
-
-/** Derive a relative size weight from the component's visual role, used by the
- *  auto-layout engine when a spec ships without explicit coordinates. */
-function weightOf(vs: VisualSpec | undefined): number {
-  switch (vs?.composition) {
-    case "primary":
-      return 3;
-    case "secondary":
-      return 1.6;
-    case "supporting":
-      return 0.9;
-    default:
-      return 1.2;
-  }
-}
 
 /**
  * BigScreenRenderer — turns a DashboardSpec into the full D-max screen.
@@ -113,17 +107,15 @@ export function BigScreenRenderer({
   );
 
   // Coordinate-free specs (AI-generated) carry no layoutPosition → run the
-  // auto-layout engine over per-component weights so panels fill the canvas
-  // with no overlap, for any component count. Fully hand-positioned specs
-  // (e.g. the D-max fixture) are used as authored.
+  // auto-layout engine over each panel's content-aware intrinsic size, so
+  // panels are packed to their content (sparse → compact + whitespace, rich
+  // → fills) with no overlap, for any component count. Fully hand-positioned
+  // specs (e.g. the D-max fixture) are used as authored.
   const autoPos =
     s.components.length > 0 && s.components.some((c) => !c.layoutPosition)
       ? new Map(
           computeAutoLayout(
-            s.components.map((c) => ({
-              id: c.id,
-              weight: weightOf(c.visualSpec),
-            })),
+            s.components.map((c) => ({ id: c.id, ...intrinsicSize(c) })),
             { width: s.layout.designWidth, height: s.layout.designHeight },
           ).map((r) => [r.id, r]),
         )
