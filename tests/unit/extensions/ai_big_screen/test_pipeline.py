@@ -119,6 +119,49 @@ class TestDraftPipeline:
         assert len(workorder_components) == 2
         assert len(calls) == 1  # fetch-once shared both components
 
+    async def test_data_rebalance_recorded_and_promotes_dense_component(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from qwenpaw.extensions.integrations import order_workflow
+
+        # 9 workorder rows → dense → the list should earn the primary slot
+        monkeypatch.setattr(
+            order_workflow,
+            "query_order_workorders",
+            lambda **_kw: {
+                "source": "live",
+                "total": 9,
+                "items": [
+                    {"id": f"wo-{i}", "title": f"工单{i}"} for i in range(9)
+                ],
+                "stats": {"todo": 9},
+            },
+        )
+        plan_json = json.dumps(
+            {
+                "name": "工单大屏",
+                "components": [
+                    {
+                        "title": "工单列表",
+                        "capabilityId": "workorders",
+                        "visualType": "table",
+                        "queryParams": {"timeRange": "today", "limit": 20},
+                    },
+                ],
+            },
+            ensure_ascii=False,
+        )
+        screen = await run_draft_pipeline(
+            prompt="工单处理分析大屏",
+            model=FakeModel([plan_json]),
+        )
+        context = screen["aiConversationContext"]
+        assert "dataRebalance" in context
+        assert context["dataRebalance"]["volumes"]
+        component = screen["components"][0]
+        assert component["visualSpec"]["composition"] == "primary"
+
     async def test_failed_capability_does_not_block_screen(
         self,
         monkeypatch: pytest.MonkeyPatch,

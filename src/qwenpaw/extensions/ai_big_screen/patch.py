@@ -335,6 +335,19 @@ def _apply_set_palette(component: dict[str, Any], value: Any) -> bool:
     return changed
 
 
+def _apply_set_composition(component: dict[str, Any], value: Any) -> bool:
+    payload = value if isinstance(value, dict) else {"composition": value}
+    composition = str(payload.get("composition") or "").strip()
+    if composition not in {"primary", "secondary", "supporting"}:
+        return False
+    visual_spec = dict(component.get("visualSpec") or {})
+    if visual_spec.get("composition") == composition:
+        return False
+    visual_spec["composition"] = composition
+    component["visualSpec"] = visual_spec
+    return True
+
+
 def _apply_set_query_params(component: dict[str, Any], value: Any) -> bool:
     if not isinstance(value, dict) or not value:
         return False
@@ -382,6 +395,7 @@ _COMPONENT_OP_HANDLERS = {
     "setComponentType": _apply_set_type,
     "setComponentLayout": _apply_set_layout,
     "setComponentPalette": _apply_set_palette,
+    "setComponentComposition": _apply_set_composition,
     "setComponentQueryParams": _apply_set_query_params,
     "setComponentFields": _apply_set_fields,
 }

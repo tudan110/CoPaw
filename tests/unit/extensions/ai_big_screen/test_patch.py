@@ -201,6 +201,66 @@ class TestVisualOnlyPatch:
         )
         assert outcome["screen"]["theme"]["palette"] == "executive"
 
+    async def test_set_composition_visual_only_no_refetch(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        invoked = _block_all_fetches(monkeypatch)
+        outcome = await apply_patch(
+            screen=_screen(),
+            instruction="把告警流设为主体",
+            selected_component_ids=["comp-alarms"],
+            model=FakeModel(
+                [
+                    _ops(
+                        [
+                            {
+                                "op": "setComponentComposition",
+                                "componentId": "comp-alarms",
+                                "value": "primary",
+                            },
+                        ],
+                    ),
+                ],
+            ),
+        )
+        assert not invoked  # composition is visual-only, no refetch
+        comp = {c["id"]: c for c in outcome["screen"]["components"]}[
+            "comp-alarms"
+        ]
+        assert comp["visualSpec"]["composition"] == "primary"
+        # data + queryParams untouched
+        assert comp["queryParams"] == {"limit": 50}
+
+    async def test_set_composition_rejects_invalid_value(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        _block_all_fetches(monkeypatch)
+        outcome = await apply_patch(
+            screen=_screen(),
+            instruction="乱设主次",
+            selected_component_ids=["comp-alarms"],
+            model=FakeModel(
+                [
+                    _ops(
+                        [
+                            {
+                                "op": "setComponentComposition",
+                                "componentId": "comp-alarms",
+                                "value": "gigantic",
+                            },
+                        ],
+                    ),
+                ],
+            ),
+        )
+        comp = {c["id"]: c for c in outcome["screen"]["components"]}[
+            "comp-alarms"
+        ]
+        # invalid value ignored — no composition forced in
+        assert (comp.get("visualSpec") or {}).get("composition") != "gigantic"
+
 
 class TestDataAffectingPatch:
     async def test_query_param_change_refetches_only_target(

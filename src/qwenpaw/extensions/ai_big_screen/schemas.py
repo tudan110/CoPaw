@@ -30,6 +30,7 @@ PatchOp = Literal[
     "setComponentType",
     "setComponentLayout",
     "setComponentTitle",
+    "setComponentComposition",
     "setComponentQueryParams",
     "setComponentFields",
 ]

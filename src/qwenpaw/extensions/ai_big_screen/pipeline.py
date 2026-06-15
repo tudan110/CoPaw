@@ -22,6 +22,9 @@ from qwenpaw.extensions.ai_big_screen.capabilities import (
     execute_capability,
 )
 from qwenpaw.extensions.ai_big_screen.critique import run_critique
+from qwenpaw.extensions.ai_big_screen.rebalance import (
+    rebalance_screen_by_data,
+)
 from qwenpaw.extensions.ai_big_screen.intent import (
     build_screen_plan,
     prompt_is_simple_data_query,
@@ -135,6 +138,14 @@ async def run_draft_pipeline(
         intent_source=intent_source,
     )
 
+    # M3-A: deterministic data-aware rebalance — resize each panel's
+    # importance from its REAL data volume (sparse → small, dense →
+    # primary anchor) before the optional LLM polish. All paths, no LLM.
+    rebalance_summary = rebalance_screen_by_data(screen)
+    context = screen.get("aiConversationContext")
+    if isinstance(context, dict):
+        context["dataRebalance"] = rebalance_summary
+
     # M2 quality loop: one spec-level critique + bounded visual
     # revision. LLM path only (the fast path is deterministic by
     # design), and skipped for degraded plans — the model is already
@@ -156,6 +167,7 @@ async def run_draft_pipeline(
             "screenId": str(screen.get("id") or ""),
             "promptChars": len(normalized_prompt),
             "intentMode": intent_mode,
+            "rebalancedCount": len(rebalance_summary.get("adjusted") or []),
             "stages": stage_ms,
             "capabilityStatuses": {
                 component.capability_id: result.source_status

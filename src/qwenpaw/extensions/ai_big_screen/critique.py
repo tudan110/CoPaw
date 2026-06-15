@@ -44,6 +44,7 @@ CRITIQUE_ALLOWED_OPS = frozenset(
         "setComponentType",
         "setComponentLayout",
         "setComponentPalette",
+        "setComponentComposition",
         "setThemePalette",
     },
 )
@@ -60,8 +61,14 @@ _CRITIC_SYSTEM_PROMPT = (
     '"issues": ["问题描述"], "operations": [...]}。\n'
     "operations 仅允许这些 op："
     "setComponentTitle / setComponentType / setComponentLayout / "
-    "setComponentPalette（带 componentId）和 setThemePalette。"
-    "绝对不允许修改数据查询、字段或新增组件。"
+    "setComponentPalette / setComponentComposition（带 componentId）"
+    "和 setThemePalette。"
+    "绝对不允许修改数据查询、字段或新增组件。\n"
+    "概要里每个组件带 rowCount(实际数据行数)与 sourceStatus，"
+    "请据此重排:数据稀疏的组件改更紧凑形态(如 1 行表格→翻牌/KPI)"
+    "并把 composition 调成 supporting/secondary;数据丰富的提升为 "
+    "primary 主体。只动视觉,绝不改查询。\n"
+    "composition 取值仅 primary/secondary/supporting。"
     "屏幕已经合格时返回空 operations。最多 5 个 operations。"
 )
 
@@ -73,6 +80,18 @@ def critique_enabled() -> bool:
         "0",
         "false",
     }
+
+
+def _row_count(data: Any) -> int:
+    """Data volume signal for the critic — counts, never the rows."""
+    if not isinstance(data, dict):
+        return 0
+    counts = [
+        len(data.get(key) or [])
+        for key in ("rows", "series", "nodes", "categories")
+        if isinstance(data.get(key), list)
+    ]
+    return max(counts) if counts else 0
 
 
 def summarize_screen_spec(screen: dict[str, Any]) -> dict[str, Any]:
@@ -100,6 +119,11 @@ def summarize_screen_spec(screen: dict[str, Any]) -> dict[str, Any]:
                     str(data.get("sourceStatus") or "")
                     if isinstance(data, dict)
                     else ""
+                ),
+                "rowCount": _row_count(data),
+                "composition": str(
+                    (component.get("visualSpec") or {}).get("composition")
+                    or "",
                 ),
                 "composed": bool(component.get("composition")),
             },

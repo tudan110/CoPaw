@@ -159,6 +159,16 @@ class TestRunCritique:
         assert component["sourceStatus"] == "live"
         assert component["type"] == "table"
 
+    def test_summary_includes_row_count_for_density(self) -> None:
+        summary = summarize_screen_spec(_screen())
+        component = summary["components"][0]
+        # the base _screen() fixture seeds one data row → rowCount 1
+        assert component["rowCount"] == 1
+        assert "composition" in component
+
+    def test_composition_op_is_whitelisted(self) -> None:
+        assert "setComponentComposition" in CRITIQUE_ALLOWED_OPS
+
     def test_whitelist_excludes_data_semantics(self) -> None:
         assert "setComponentQueryParams" not in CRITIQUE_ALLOWED_OPS
         assert "setComponentFields" not in CRITIQUE_ALLOWED_OPS
