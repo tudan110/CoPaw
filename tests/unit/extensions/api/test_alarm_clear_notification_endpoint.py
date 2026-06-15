@@ -24,6 +24,7 @@ def recorded_events(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, Any]]:
         return {
             "id": len(events),
             "alarmId": kwargs.get("alarm_id"),
+            "verifyStatus": kwargs.get("initial_status", "pending"),
             "nextVerifyAt": kwargs.get("next_verify_at"),
             "deduped": False,
         }
@@ -46,10 +47,13 @@ def recorded_events(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, Any]]:
     return events
 
 
-def test_clear_notification_accepts_minimal_payload(
+def test_clear_notification_ignores_untracked_alarm(
     client: TestClient,
     recorded_events: list[dict[str, Any]],
 ) -> None:
+    """An alarm not in our registry is recorded for audit but never
+    scheduled for verification — it was converged away upstream and we
+    have no disposal context to verify against."""
     response = client.post(
         "/api/portal/real-alarms/clear-notifications",
         json={"alarmId": "alarm-1"},
@@ -60,9 +64,12 @@ def test_clear_notification_accepts_minimal_payload(
     assert body["status"] == "accepted"
     assert body["alarmId"] == "alarm-1"
     assert body["tracked"] is False
+    assert body["eventStatus"] == "ignored"
     assert body["eventId"] == 1
     assert recorded_events[0]["alarm_id"] == "alarm-1"
-    assert recorded_events[0]["next_verify_at"]
+    # Recorded as ignored with no schedule so the loop never picks it up.
+    assert recorded_events[0]["initial_status"] == "ignored"
+    assert recorded_events[0]["next_verify_at"] == ""
 
 
 def test_clear_notification_accepts_inoe_field_names(
@@ -123,8 +130,14 @@ def test_clear_notification_supplements_res_id_from_registry(
     )
 
     assert response.status_code == 200
-    assert response.json()["tracked"] is True
+    body = response.json()
+    assert body["tracked"] is True
+    # A tracked alarm enters the verification pipeline: pending + a real
+    # schedule, and a registry note that a clear was reported.
+    assert body["eventStatus"] == "pending"
     assert recorded_events[0]["res_id"] == "3094"
+    assert recorded_events[0]["initial_status"] == "pending"
+    assert recorded_events[0]["next_verify_at"]
     assert registry_updates[0]["verification_status"] == "clear_reported"
 
 

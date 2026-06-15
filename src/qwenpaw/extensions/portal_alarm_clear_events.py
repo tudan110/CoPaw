@@ -29,9 +29,12 @@ from qwenpaw.extensions.runtime_data_paths import (
 
 # Event statuses that still need work from the verification loop.
 ALARM_CLEAR_ACTIVE_STATUSES = frozenset({"pending", "verifying", "observing"})
-# Final statuses; the loop never touches these again.
+# Final statuses; the loop never touches these again. ``ignored`` is the
+# terminal state for clear notifications whose alarm was never in our
+# registry (converged away by the upstream feed, so we never analyzed it
+# and have nothing to verify) — recorded for audit only.
 ALARM_CLEAR_TERMINAL_STATUSES = frozenset(
-    {"recovered", "unrecovered", "unknown", "recurred"},
+    {"recovered", "unrecovered", "unknown", "recurred", "ignored"},
 )
 
 _EVENTS_LOCK = threading.Lock()
@@ -149,6 +152,7 @@ def record_clear_notification(
     metric_type: str = "",
     raw_payload: str = "",
     next_verify_at: str = "",
+    initial_status: str = "pending",
     path: str | Path | None = None,
 ) -> dict[str, Any]:
     """Persist a clear notification, deduplicating per alarm.
@@ -158,10 +162,16 @@ def record_clear_notification(
     row is created — repeated pushes from INOE therefore cannot pile up
     verification work. The returned dict carries ``deduped: True`` in
     that case.
+
+    ``initial_status`` controls the status the new row starts in. The
+    caller passes ``"ignored"`` for alarms that are not in our registry
+    so the row is recorded for audit but never picked up by the
+    verification loop.
     """
     normalized_alarm_id = str(alarm_id or "").strip()
     if not normalized_alarm_id:
         raise ValueError("alarm_id is required")
+    status = str(initial_status or "pending").strip() or "pending"
 
     db_path = _resolve_db_path(path)
     now = _local_now_iso()
@@ -220,12 +230,21 @@ def record_clear_notification(
                 result["deduped"] = True
                 return result
 
+            resolved_next_verify_at = str(next_verify_at or "").strip()
+            if (
+                not resolved_next_verify_at
+                and status not in ALARM_CLEAR_TERMINAL_STATUSES
+            ):
+                # Safety net: an active event with no schedule would never
+                # be picked up by the loop. Terminal rows (e.g. ignored)
+                # keep an empty schedule on purpose.
+                resolved_next_verify_at = now
             cursor = conn.execute(
                 "INSERT INTO alarm_clear_events ("
                 "alarm_id, res_id, clear_time, clear_type, operator, "
                 "reason, metric_type, raw_payload, verify_status, "
                 "verify_attempts, next_verify_at, created_at, updated_at"
-                ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', 0, ?, ?, ?)",
+                ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?)",
                 (
                     normalized_alarm_id,
                     str(res_id or "").strip(),
@@ -235,7 +254,8 @@ def record_clear_notification(
                     str(reason or "").strip(),
                     str(metric_type or "").strip(),
                     raw_payload or "",
-                    str(next_verify_at or "").strip() or now,
+                    status,
+                    resolved_next_verify_at,
                     now,
                     now,
                 ),

@@ -33,6 +33,26 @@ def test_record_clear_notification_creates_pending_event(
     assert event["deduped"] is False
 
 
+def test_record_clear_notification_ignored_status_not_due(
+    tmp_path: Path,
+) -> None:
+    """An ignored event keeps an empty schedule and is never returned by
+    fetch_due_clear_events, so the verification loop skips it."""
+    db_path = _db_path(tmp_path)
+    event = store.record_clear_notification(
+        alarm_id="alarm-untracked",
+        initial_status="ignored",
+        path=db_path,
+    )
+
+    assert event["verifyStatus"] == "ignored"
+    assert event["nextVerifyAt"] == ""
+    assert event["deduped"] is False
+    assert store.fetch_due_clear_events(limit=10, path=db_path) == []
+    # Still visible for audit.
+    assert len(store.list_clear_events(path=db_path)) == 1
+
+
 def test_record_clear_notification_requires_alarm_id(tmp_path: Path) -> None:
     with pytest.raises(ValueError):
         store.record_clear_notification(

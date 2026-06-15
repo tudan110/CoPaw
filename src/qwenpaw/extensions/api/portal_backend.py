@@ -1205,10 +1205,20 @@ async def receive_real_alarm_clear_notification(
         )
 
         settings = _recovery_verification_settings()
-        next_verify_at = (
-            clear_events_local_now()
-            + timedelta(seconds=settings["delay_seconds"])
-        ).isoformat()
+        if tracked:
+            next_verify_at = (
+                clear_events_local_now()
+                + timedelta(seconds=settings["delay_seconds"])
+            ).isoformat()
+            initial_status = "pending"
+        else:
+            # The alarm is not in our registry: the upstream alarm feed
+            # converged it away, so we never analyzed it and have no
+            # disposal context to verify against. Record the notification
+            # for audit only — no schedule, no INOE recheck / metric
+            # query / notification, and no new registry row.
+            next_verify_at = ""
+            initial_status = "ignored"
 
         event = await asyncio.to_thread(
             record_clear_notification,
@@ -1221,6 +1231,7 @@ async def receive_real_alarm_clear_notification(
             metric_type=parsed.metric_type,
             raw_payload=json.dumps(payload, ensure_ascii=False),
             next_verify_at=next_verify_at,
+            initial_status=initial_status,
         )
 
         if tracked:
@@ -1235,6 +1246,7 @@ async def receive_real_alarm_clear_notification(
             "eventId": event.get("id"),
             "alarmId": alarm_id,
             "tracked": tracked,
+            "eventStatus": event.get("verifyStatus"),
             "deduped": bool(event.get("deduped")),
             "nextVerifyAt": event.get("nextVerifyAt"),
             "verificationEnabled": _recovery_verification_enabled(),
@@ -1318,6 +1330,30 @@ async def _process_clear_event(
     )
 
     alarm_record = get_alarm_record(alarm_id)
+    if alarm_record is None:
+        # Defense in depth: the alarm is not (or no longer) in our
+        # registry, so there is nothing to verify against. Drop the event
+        # to a terminal 'ignored' state without INOE recheck, metric
+        # query, notification or registry write. Untracked alarms are
+        # normally recorded as 'ignored' at intake and never reach here;
+        # this covers the race where the registry row vanished after the
+        # event was queued.
+        await asyncio.to_thread(
+            update_clear_event,
+            event_id,
+            verify_status="ignored",
+            next_verify_at="",
+            verify_result=json.dumps(
+                {"phase": phase, "reason": "alarm_not_in_registry"},
+                ensure_ascii=False,
+            ),
+        )
+        print(
+            "[INFO] recovery verification skipped (not in registry): "
+            f"alarm={alarm_id} event={event_id}",
+        )
+        return
+
     inoe_recheck = await asyncio.to_thread(
         query_real_alarm_active_status,
         alarm_id,
