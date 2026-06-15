@@ -272,7 +272,6 @@ class ConsoleChannel(BaseChannel):
         channel_id = payload.get("channel_id") or self.channel
         sender_id = payload.get("sender_id") or ""
         content_parts = payload.get("content_parts") or []
-        content_parts = self._resolve_console_upload_refs(content_parts)
         meta = payload.get("meta") or {}
         session_id = self.resolve_session_id(sender_id, meta)
         request = self.build_agent_request_from_user_content(

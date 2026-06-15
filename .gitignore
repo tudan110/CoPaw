@@ -31,6 +31,7 @@ dist/
 .wheelshim/
 # Console frontend build (generated in Docker/CI, do not commit)
 console/.cursor/
+console/.wiki/
 src/qwenpaw/console/dist/
 src/qwenpaw/console/
 
@@ -107,7 +108,6 @@ AGENTS.md
 openspec
 CLAUDE.md
 *.tmp
-.superpowers/
 
 # Build cache
 .cache/  # Includes conda_unpack_wheels/ for Windows packaging workaround
@@ -125,12 +125,16 @@ src/.hypothesis/
 # Cursor IDE
 .cursor/
 
+# Codex IDE
+.codex/
+
 # Worktrees
 .worktrees/
 .qwenpaw/worktrees/
 
 # Local File
 /localfile/
+local-docs/
 
 # E2E test artifacts
 e2e/reports/
@@ -140,6 +144,8 @@ e2e/__pycache__/
 
 # knowledge-base related
 graphify-out/
+local-docs/
+docs-site/
 
 
 
@@ -167,6 +173,7 @@ tmp/
 
 .codex
 .omx
+.superpowers/
 .github
 .specify
 .test*
