@@ -88,3 +88,25 @@ export const diagnosisSettingsApi = {
       body: JSON.stringify({ key }),
     }),
 };
+
+// --- INOE gateway connection (standalone settings concern) ---
+//
+// The INOE alarm-gateway (base URL / token / timeout) is shared by the
+// monitoring overview, real-alarm list and workorder bridge, so it has its
+// own namespace + endpoint. The payload shape matches DiagnosisSettingsPayload.
+
+export const inoeSettingsApi = {
+  get: () => requestSettings<DiagnosisSettingsPayload>("/inoe-settings"),
+
+  update: (body: Record<string, number | boolean | string>) =>
+    requestSettings<DiagnosisSettingsPayload>("/inoe-settings", {
+      method: "PUT",
+      body: JSON.stringify(body),
+    }),
+
+  reset: (key: string) =>
+    requestSettings<DiagnosisSettingsPayload>("/inoe-settings/reset", {
+      method: "POST",
+      body: JSON.stringify({ key }),
+    }),
+};

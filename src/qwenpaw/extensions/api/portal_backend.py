@@ -126,9 +126,12 @@ from qwenpaw.extensions.integrations.portal_monitoring_overview import (
     query_alarm_top5 as query_monitoring_alarm_top5,
     query_asset_overview as query_monitoring_asset_overview,
     query_topology as query_monitoring_topology,
+    query_workorder_stats as query_monitoring_workorder_stats,
+    query_severity_trend as query_monitoring_severity_trend,
 )
 from qwenpaw.extensions.integrations import knowledge_base
 from qwenpaw.extensions.api import diagnosis_settings_store
+from qwenpaw.extensions.api import inoe_settings_store
 from qwenpaw.extensions.api import fde_workbench_service
 from qwenpaw.extensions.api.fde_workbench_models import (
     FdeCopyInstalledRequest,
@@ -1638,6 +1641,49 @@ async def reset_diagnosis_setting(
     return diagnosis_settings_store.build_settings_payload()
 
 
+@router.get("/inoe-settings")
+async def get_inoe_settings() -> dict[str, Any]:
+    """Return INOE gateway settings as ``{effective, env, overrides}``.
+
+    The INOE connection (base URL / token / timeout) is shared by the
+    monitoring overview, real-alarm list, and workorder bridge — see
+    :mod:`inoe_settings_store`. The token is masked in both layers.
+    """
+    return inoe_settings_store.build_settings_payload()
+
+
+@router.put("/inoe-settings")
+async def put_inoe_settings(
+    body: dict[str, Any] = Body(default_factory=dict),
+) -> dict[str, Any]:
+    """Persist a partial update of the INOE gateway settings.
+
+    Page values win over env. The token left empty keeps the stored secret;
+    sending ``inoe_settings_store.CLEAR_SENTINEL`` clears it.
+    """
+    try:
+        inoe_settings_store.apply_settings_update(body)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return inoe_settings_store.build_settings_payload()
+
+
+@router.post("/inoe-settings/reset")
+async def reset_inoe_setting(
+    body: dict[str, Any] = Body(default_factory=dict),
+) -> dict[str, Any]:
+    """Drop one INOE field's override so it falls back to env/default.
+
+    Body: ``{"key": "<field>"}``.
+    """
+    key = str(body.get("key") or "").strip()
+    try:
+        inoe_settings_store.reset_setting(key)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return inoe_settings_store.build_settings_payload()
+
+
 def _read_preview_progress(progress_file: Path) -> list[dict[str, Any]]:
     if not progress_file.exists():
         return []
@@ -2873,17 +2919,23 @@ async def get_monitoring_overview_dashboard():
         asset_overview,
         alarm_top5,
         topology,
+        workorder_stats,
+        severity_trend,
         active_alarm_total,
     ) = await asyncio.gather(
         asyncio.to_thread(query_monitoring_asset_overview),
         asyncio.to_thread(query_monitoring_alarm_top5),
         asyncio.to_thread(query_monitoring_topology),
+        asyncio.to_thread(query_monitoring_workorder_stats),
+        asyncio.to_thread(query_monitoring_severity_trend),
         asyncio.to_thread(query_monitoring_active_alarm_total),
     )
     return {
         "assetOverview": asset_overview,
         "alarmTop5": alarm_top5,
         "topology": topology,
+        "workorderStats": workorder_stats,
+        "severityTrend": severity_trend,
         "activeAlarmTotal": active_alarm_total,
     }
 
