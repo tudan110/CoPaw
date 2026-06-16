@@ -110,6 +110,28 @@ SAMPLE_TREE = [
             }
         ],
     },
+    {
+        # 纯容器(Layout):其下漏洞扫描是叶子,且 path 是绝对的
+        # /prismx-web(对应真实 //safe 结构里 漏洞扫描被 hoist 出来)。
+        "name": "/safe",
+        "path": "//safe",
+        "component": "Layout",
+        "meta": {"title": "安全中心"},
+        "children": [
+            {
+                "name": "Prismx",
+                "path": "/prismx-web",
+                "component": "safe/prismx/index",
+                "meta": {"title": "漏洞扫描"},
+            },
+            {
+                "name": "Baseline",
+                "path": "/baseline",
+                "component": "safe/baseline/index",
+                "meta": {"title": "安全基线核查"},
+            },
+        ],
+    },
 ]
 
 
@@ -192,3 +214,24 @@ def test_resolve_not_found():
     result = menu.resolve(SAMPLE_TREE, "蓝牙耳机配对教程")
     assert result["mode"] == "not_found"
     assert "directive" not in result
+
+
+def test_container_not_a_candidate():
+    # 父级容器"安全中心"(Layout)不该作为候选,免得和子页面争抢、
+    # 逼出多余的二次确认。
+    entries = menu.flatten_menu(SAMPLE_TREE)
+    assert _by_title(entries, "安全中心").is_container  # 它确实是容器
+    ranked = menu.search_pages(entries, "安全中心 漏洞扫描")
+    cand_titles = [r.entry.title for r in ranked]
+    assert "安全中心" not in cand_titles
+    assert ranked[0].entry.title == "漏洞扫描"
+
+
+def test_container_descendant_navigates_not_disambiguate():
+    # 复刻截图场景:输入"安全中心 漏洞扫描"。之前容器"安全中心"会凑成
+    # 第二候选 → 误触发确认;现在容器排除 + 不相似兄弟"安全基线核查"
+    # 分差够大 → 直接 navigate 到漏洞扫描。
+    result = menu.resolve(SAMPLE_TREE, "安全中心 漏洞扫描")
+    assert result["mode"] == "navigate"
+    assert result["candidates"][0]["path"] == "/prismx-web"
+    assert all(c["title"] != "安全中心" for c in result["candidates"])

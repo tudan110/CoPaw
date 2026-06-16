@@ -164,16 +164,22 @@ def search_pages(
     top_k: int = 5,
     min_score: float = 0.45,
 ) -> list[Ranked]:
-    """按相关度返回 top_k 候选(已过滤低分项)。"""
-    ranked = [Ranked(e, _score(e, query)) for e in entries]
+    """按相关度返回 top_k 候选。
+
+    只在【真正可导航的叶子页】里检索:布局容器(Layout/ParentView 这类
+    自身没有页面的父级节点)不作为候选 —— 单独打开它们无意义,而且会和
+    自己的子页面争抢、逼出多余的二次确认。需要"进某个分区"时,该分区下
+    的子页面会凭面包屑命中并浮上来。
+    """
+    ranked = [
+        Ranked(e, _score(e, query))
+        for e in entries
+        if not e.is_container
+    ]
     ranked = [r for r in ranked if r.score >= min_score]
-    # 同分时:叶子优先、路径短优先,保证稳定且更"可点"。
+    # 同分时:路径短优先,稳定且更"可点"。
     ranked.sort(
-        key=lambda r: (
-            r.score,
-            not r.entry.is_container,
-            -len(r.entry.path),
-        ),
+        key=lambda r: (r.score, -len(r.entry.path)),
         reverse=True,
     )
     return ranked[:top_k]
@@ -182,18 +188,22 @@ def search_pages(
 def decide_mode(
     ranked: list[Ranked],
     *,
-    confident_min: float = 0.8,
     confident_gap: float = 0.15,
 ) -> str:
-    """根据候选列表判断动作:navigate / disambiguate / not_found。"""
+    """判断动作:navigate / disambiguate / not_found。
+
+    只在【多个相近的叶子页】之间才让用户确认:
+    - 0 个候选 → not_found。
+    - 1 个候选 → 直接 navigate(它就是用户要的页)。
+    - 多个候选:头名与次名分差 >= confident_gap(明显领先)→ navigate;
+      否则(几个叶子分数接近、输入分不清)→ disambiguate。
+    容器节点已在 search_pages 阶段排除,不会出现在候选里。
+    """
     if not ranked:
         return "not_found"
-    top = ranked[0]
-    if top.score < confident_min:
-        return "disambiguate"
     if len(ranked) == 1:
         return "navigate"
-    if top.score - ranked[1].score >= confident_gap:
+    if ranked[0].score - ranked[1].score >= confident_gap:
         return "navigate"
     return "disambiguate"
 
