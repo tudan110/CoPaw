@@ -1,6 +1,6 @@
 {
   "pageTitle": "专线业务监控",
-  "sourceUrl": "http://192.168.134.96:30081/circuit/zhunneng-private-line-monitor.html",
+  "sourceUrl": "http://82.156.83.38:30081/circuit/zhunneng-private-line-monitor.html",
   "dataNature": "static-demo",
   "baseTimeDisplay": "2026-05-08 18:00",
   "statusMap": {
