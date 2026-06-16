@@ -16,6 +16,25 @@ if [ -d "$WORKING_BACKUP" ] && [ -z "$(ls -A "$WORKING_DIR" 2>/dev/null)" ]; the
   cp -r "$WORKING_BACKUP"/* "$WORKING_DIR"/ 2>/dev/null || true
 fi
 
+# Always refresh the built-in knowledge-base skill *code* from the image
+# backup. The PVC persists across image upgrades and is only seeded when
+# empty, so an existing PVC otherwise keeps stale parser code and re-introduces
+# bugs like xlsx/docx mojibake even after a fix ships in a new image. Only code
+# is refreshed; the ingested DB under .../knowledge-base/data/ and any user
+# content are left untouched.
+KB_REL="workspaces/knowledge/skills/knowledge-base"
+KB_SRC="${WORKING_BACKUP}/${KB_REL}"
+KB_DST="${WORKING_DIR}/${KB_REL}"
+if [ -d "$KB_SRC" ] && [ -d "$KB_DST" ]; then
+  echo "Refreshing knowledge-base skill code from backup..."
+  for item in api core domain providers retrieval builtin_kb server.py SKILL.md requirements.txt; do
+    if [ -e "$KB_SRC/$item" ]; then
+      rm -rf "$KB_DST/$item" 2>/dev/null || true
+      cp -r "$KB_SRC/$item" "$KB_DST/" 2>/dev/null || true
+    fi
+  done
+fi
+
 if [ -d "$SECRET_BACKUP" ] && [ -z "$(ls -A "$SECRET_DIR" 2>/dev/null)" ]; then
   echo "Initializing secret directory from backup..."
   cp -r "$SECRET_BACKUP"/* "$SECRET_DIR"/ 2>/dev/null || true

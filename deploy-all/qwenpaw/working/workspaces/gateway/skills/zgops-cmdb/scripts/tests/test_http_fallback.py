@@ -18,11 +18,11 @@ def _load_module(module_name: str, path: Path):
 
 
 SCRIPT_DIR = Path(__file__).resolve().parents[1]
-VEOPS_HTTP = _load_module("veops_http_fallback_test", SCRIPT_DIR / "veops_http.py")
-FIND_PROJECT = _load_module("veops_find_project_fallback_test", SCRIPT_DIR / "find_project.py")
+ZGOPS_HTTP = _load_module("zgops_http_fallback_test", SCRIPT_DIR / "zgops_http.py")
+FIND_PROJECT = _load_module("zgops_find_project_fallback_test", SCRIPT_DIR / "find_project.py")
 
 
-class VeopsHttpFallbackTests(unittest.TestCase):
+class ZgopsHttpFallbackTests(unittest.TestCase):
     def test_request_with_fallback_uses_curl_after_requests_connection_error(self):
         session = requests.Session()
         session.headers.update({"Accept-Language": "zh"})
@@ -33,8 +33,8 @@ class VeopsHttpFallbackTests(unittest.TestCase):
             return SimpleNamespace(returncode=0, stdout="200", stderr="")
 
         with patch.object(session, "request", side_effect=requests.ConnectionError("No route to host")):
-            with patch.object(VEOPS_HTTP.subprocess, "run", side_effect=_fake_run):
-                response = VEOPS_HTTP.request_with_fallback(
+            with patch.object(ZGOPS_HTTP.subprocess, "run", side_effect=_fake_run):
+                response = ZGOPS_HTTP.request_with_fallback(
                     session,
                     "GET",
                     "http://cmdb.example.com/api/v0.1/ci/3094",
@@ -60,20 +60,20 @@ class VeopsHttpFallbackTests(unittest.TestCase):
 
     def test_fetch_with_auth_fallback_logs_in_only_after_anonymous_401(self):
         session = requests.Session()
-        anonymous_response = VEOPS_HTTP.FallbackResponse(401, json.dumps({"msg": "unauthorized"}))
-        authenticated_response = VEOPS_HTTP.FallbackResponse(200, json.dumps({"result": {"id": 3094}}))
+        anonymous_response = ZGOPS_HTTP.FallbackResponse(401, json.dumps({"msg": "unauthorized"}))
+        authenticated_response = ZGOPS_HTTP.FallbackResponse(200, json.dumps({"result": {"id": 3094}}))
 
         with patch.object(
-            VEOPS_HTTP,
+            ZGOPS_HTTP,
             "request_with_fallback",
             side_effect=[anonymous_response, authenticated_response],
         ) as request_mock:
             with patch.object(
-                VEOPS_HTTP,
+                ZGOPS_HTTP,
                 "try_login",
                 return_value={"username": "tester"},
             ) as login_mock:
-                response = VEOPS_HTTP.fetch_with_auth_fallback(
+                response = ZGOPS_HTTP.fetch_with_auth_fallback(
                     session,
                     base_url="http://cmdb.example.com",
                     path="/api/v0.1/ci/3094",

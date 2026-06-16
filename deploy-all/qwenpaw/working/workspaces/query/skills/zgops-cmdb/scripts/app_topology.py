@@ -16,7 +16,7 @@ from find_project import (
     _match_projects,
     _normalize_token,
     _project_name,
-    _resolve_veops_env,
+    _resolve_zgops_env,
 )
 
 
@@ -48,7 +48,7 @@ SOFTWARE_TYPES = {
 }
 
 
-# Some VEOPS deployments encode a project's relationships as **inline attributes** on
+# Some ZGOPS deployments encode a project's relationships as **inline attributes** on
 # the project CI itself instead of (or in addition to) `ci_relations` rows — e.g. the
 # project document carries `Kafka`, `mysql`, `redis`, `operatingsystem` fields whose
 # values are the names of related CIs. The map below is the fallback catalog used
@@ -222,7 +222,7 @@ def _resolve_inline_resources(
 ) -> list[dict[str, Any]]:
     """Walk a project's attributes and resolve inline ci-type fields into CIs.
 
-    Some VEOPS environments record a project's related middleware/database/host
+    Some ZGOPS environments record a project's related middleware/database/host
     set as inline string fields (e.g. `Kafka: "kafka-web01, kafka-web02"`). The
     `ci_relations` endpoint does not return those, so this is queried as a
     complement to `_fetch_relations`. Returns CI items that can be merged into
@@ -492,11 +492,11 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    env = _resolve_veops_env()
+    env = _resolve_zgops_env()
     client = CmdbHttpClient(
-        base_url=env.get("VEOPS_BASE_URL", ""),
-        username=env.get("VEOPS_USERNAME", ""),
-        password=env.get("VEOPS_PASSWORD", ""),
+        base_url=env.get("ZGOPS_BASE_URL", ""),
+        username=env.get("ZGOPS_USERNAME", ""),
+        password=env.get("ZGOPS_PASSWORD", ""),
     )
     client.try_login()
 
@@ -514,7 +514,7 @@ def main() -> int:
     project_id = project.get("_id") or project.get("id")
     items = _fetch_relations(client, project_id)
 
-    # Some VEOPS deployments express a project's relationships as inline
+    # Some ZGOPS deployments express a project's relationships as inline
     # attributes on the project CI itself (e.g. `Kafka`, `mysql`, `redis`,
     # `operatingsystem` fields whose values are CI names). Always merge those
     # in — `ci_relations` alone is not authoritative.

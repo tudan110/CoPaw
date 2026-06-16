@@ -243,10 +243,10 @@ def main() -> int:
 
     args = parser.parse_args()
 
-    base_url = os.environ["VEOPS_BASE_URL"]
-    username = os.environ.get("VEOPS_USERNAME", "")
-    password = os.environ.get("VEOPS_PASSWORD", "")
-    cmdb_url = os.environ.get("VEOPS_CMDB_URL", base_url.rstrip("/") + "/cmdb/")
+    base_url = os.environ["ZGOPS_BASE_URL"]
+    username = os.environ.get("ZGOPS_USERNAME", "")
+    password = os.environ.get("ZGOPS_PASSWORD", "")
+    cmdb_url = os.environ.get("ZGOPS_CMDB_URL", base_url.rstrip("/") + "/cmdb/")
 
     session = create_session()
 

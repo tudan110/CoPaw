@@ -31,18 +31,18 @@ def _default_env_file() -> Path:
 
 
 def _candidate_env_files() -> list[Path]:
-    """VEOPS env resolution order (first existing file wins).
+    """ZGOPS env resolution order (first existing file wins).
 
     Shared secrets are preferred; the per-skill ``.env`` is only a
     legacy fallback used when secrets are not yet provisioned.
 
-    1. ``$VEOPS_ENV_FILE`` if set (explicit override).
+    1. ``$ZGOPS_ENV_FILE`` if set (explicit override).
     2. ``$QWENPAW_WORKING_DIR/secrets/zgops-cmdb.env`` (or COPAW).
     3. ``~/.qwenpaw/secrets/zgops-cmdb.env`` — default working dir.
     4. The per-skill ``.env`` next to this skill (legacy fallback).
     """
     candidates: list[Path] = []
-    explicit = os.environ.get("VEOPS_ENV_FILE")
+    explicit = os.environ.get("ZGOPS_ENV_FILE")
     if explicit:
         candidates.append(Path(explicit).expanduser())
     working = os.environ.get("QWENPAW_WORKING_DIR") or os.environ.get(
@@ -72,11 +72,11 @@ def _candidate_env_files() -> list[Path]:
     return unique
 
 
-def _resolve_veops_env() -> dict[str, str]:
-    """Resolve VEOPS_* config from the shared secrets cascade.
+def _resolve_zgops_env() -> dict[str, str]:
+    """Resolve ZGOPS_* config from the shared secrets cascade.
 
     Falls back through ``_candidate_env_files``; real environment values
-    (e.g. backend-injected shared secrets) always win for VEOPS_* keys.
+    (e.g. backend-injected shared secrets) always win for ZGOPS_* keys.
     """
     values: dict[str, str] = {}
     for path in _candidate_env_files():
@@ -86,13 +86,13 @@ def _resolve_veops_env() -> dict[str, str]:
         except OSError:
             continue
         values = _load_env_file(path)
-        if values.get("VEOPS_BASE_URL"):
+        if values.get("ZGOPS_BASE_URL"):
             break
     for key in (
-        "VEOPS_BASE_URL",
-        "VEOPS_USERNAME",
-        "VEOPS_PASSWORD",
-        "VEOPS_SESSION_NAME",
+        "ZGOPS_BASE_URL",
+        "ZGOPS_USERNAME",
+        "ZGOPS_PASSWORD",
+        "ZGOPS_SESSION_NAME",
     ):
         env_val = os.environ.get(key)
         if env_val:
@@ -397,11 +397,11 @@ def main() -> int:
     parser.add_argument("--json", action="store_true", help="输出 JSON")
     args = parser.parse_args()
 
-    env = _resolve_veops_env()
+    env = _resolve_zgops_env()
     client = CmdbHttpClient(
-        base_url=env.get("VEOPS_BASE_URL", ""),
-        username=env.get("VEOPS_USERNAME", ""),
-        password=env.get("VEOPS_PASSWORD", ""),
+        base_url=env.get("ZGOPS_BASE_URL", ""),
+        username=env.get("ZGOPS_USERNAME", ""),
+        password=env.get("ZGOPS_PASSWORD", ""),
     )
     client.try_login()
     projects = client.list_projects()

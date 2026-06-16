@@ -15,4 +15,4 @@ if [[ "${API_PATH}" != /* ]]; then
   API_PATH="/${API_PATH}"
 fi
 
-"${VEOPS_PYTHON_BIN}" "${SCRIPT_DIR}/veops_http.py" fetch "${API_PATH}"
+"${ZGOPS_PYTHON_BIN}" "${SCRIPT_DIR}/zgops_http.py" fetch "${API_PATH}"

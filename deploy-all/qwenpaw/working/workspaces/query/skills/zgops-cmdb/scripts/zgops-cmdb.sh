@@ -38,7 +38,7 @@ case "${COMMAND}" in
     ;;
   app-topology)
     source "${SCRIPT_DIR}/_env.sh"
-    exec "${VEOPS_PYTHON_BIN}" "${SCRIPT_DIR}/app_topology.py" "$@"
+    exec "${ZGOPS_PYTHON_BIN}" "${SCRIPT_DIR}/app_topology.py" "$@"
     ;;
   list-models)
     exec "${SCRIPT_DIR}/list-models.sh" "$@"
@@ -51,11 +51,11 @@ case "${COMMAND}" in
     ;;
   analyze)
     source "${SCRIPT_DIR}/_env.sh"
-    exec "${VEOPS_PYTHON_BIN}" "${SCRIPT_DIR}/analyze_cmdb.py" "$@"
+    exec "${ZGOPS_PYTHON_BIN}" "${SCRIPT_DIR}/analyze_cmdb.py" "$@"
     ;;
   inoe-stat)
     source "${SCRIPT_DIR}/_env.sh"
-    exec "${VEOPS_PYTHON_BIN}" "${SCRIPT_DIR}/inoe_cmdb_stats.py" "$@"
+    exec "${ZGOPS_PYTHON_BIN}" "${SCRIPT_DIR}/inoe_cmdb_stats.py" "$@"
     ;;
   *)
     echo "未知命令：${COMMAND}" >&2

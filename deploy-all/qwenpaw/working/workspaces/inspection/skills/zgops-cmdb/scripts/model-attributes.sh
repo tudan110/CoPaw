@@ -12,7 +12,7 @@ fi
 
 JSON_RESPONSE="$("${SCRIPT_DIR}/fetch-json.sh" "/api/v0.1/ci_types/${TYPE_ID}/attributes")"
 
-JSON_RESPONSE="${JSON_RESPONSE}" "${VEOPS_PYTHON_BIN}" - <<'PY'
+JSON_RESPONSE="${JSON_RESPONSE}" "${ZGOPS_PYTHON_BIN}" - <<'PY'
 import json
 import os
 

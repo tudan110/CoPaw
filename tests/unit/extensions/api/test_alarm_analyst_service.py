@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -22,7 +23,7 @@ def test_alarm_analyst_service_fault_skill_root_prefers_env_override(
 
 def test_parse_alarm_dispatch_context_extracts_res_id_and_event_time() -> None:
     context = parse_alarm_dispatch_context(
-        "数据库锁异常（db_mysql_001 10.43.150.186）\n资源 ID（CI ID）：3094\n告警时间：2026-04-20 18:39:19"
+        "数据库锁异常（db_mysql_001 10.43.150.186）\n资源 ID（CI ID）：3094\n告警时间：2026-04-20 18:39:19",
     )
 
     assert context["res_id"] == "3094"
@@ -32,7 +33,7 @@ def test_parse_alarm_dispatch_context_extracts_res_id_and_event_time() -> None:
 
 def test_parse_alarm_dispatch_context_accepts_res_id_label_variants() -> None:
     context = parse_alarm_dispatch_context(
-        "数据库锁异常\nCI ID：3094\n告警时间：2026-04-20 18:39:19"
+        "数据库锁异常\nCI ID：3094\n告警时间：2026-04-20 18:39:19",
     )
 
     assert context["res_id"] == "3094"
@@ -45,13 +46,17 @@ def test_parse_alarm_dispatch_context_extracts_app_keyword() -> None:
     assert context["app_keyword"] == "计费"
 
 
-def test_parse_alarm_dispatch_context_infers_cmdb_as_application_keyword() -> None:
+def test_parse_alarm_dispatch_context_infers_cmdb_as_application_keyword() -> (
+    None
+):
     context = parse_alarm_dispatch_context("cmdb 应用插入数据失败")
 
     assert context["app_keyword"] == "cmdb"
 
 
-def test_build_alarm_analyst_result_maps_partial_execution_to_steps_and_logs() -> None:
+def test_build_alarm_analyst_result_maps_partial_execution_to_steps_and_logs() -> (
+    None
+):
     result = _build_alarm_analyst_result(
         {
             "topology": {
@@ -127,7 +132,9 @@ def test_build_alarm_analyst_result_maps_partial_execution_to_steps_and_logs() -
     assert "失败 2 个" in result["logEntries"][3]["summary"]
 
 
-def test_build_alarm_analyst_result_blocks_steps_when_execution_is_blocked() -> None:
+def test_build_alarm_analyst_result_blocks_steps_when_execution_is_blocked() -> (
+    None
+):
     result = _build_alarm_analyst_result(
         {
             "topology": {
@@ -199,16 +206,18 @@ def test_run_alarm_analyst_diagnose_requires_session_id() -> None:
         run_alarm_analyst_diagnose({})
 
 
-def test_run_alarm_analyst_diagnose_returns_partial_result_when_res_id_and_app_keyword_missing() -> None:
+def test_run_alarm_analyst_diagnose_returns_partial_result_when_res_id_and_app_keyword_missing() -> (
+    None
+):
     payload = run_alarm_analyst_diagnose(
         {
             "sessionId": "alarm-analyst-1",
             "content": "应用插入数据失败",
-        }
+        },
     )
 
     assert payload["session"]["scene"] == "alarm_analyst_rca"
-    assert "缺少可直接执行的资源 ID" in payload["result"]["summary"]
+    assert "请补充应用名或资源 ID" in payload["result"]["summary"]
     assert payload["result"]["steps"][1]["status"] == "blocked"
 
 
@@ -221,7 +230,9 @@ def test_run_alarm_analyst_diagnose_uses_application_driven_path_when_app_keywor
             "summary": "已匹配应用拓扑并继续执行 RCA。",
             "rootCause": {"type": "mysql", "object": "billing-mysql"},
             "steps": [{"id": "match-application", "status": "success"}],
-            "logEntries": [{"stage": "application-topology", "summary": "已获取应用拓扑"}],
+            "logEntries": [
+                {"stage": "application-topology", "summary": "已获取应用拓扑"},
+            ],
             "actions": [],
         },
     )
@@ -230,7 +241,7 @@ def test_run_alarm_analyst_diagnose_uses_application_driven_path_when_app_keywor
         {
             "sessionId": "alarm-analyst-2",
             "content": "cmdb 应用插入数据失败",
-        }
+        },
     )
 
     assert payload["session"]["scene"] == "alarm_analyst_rca"
@@ -242,29 +253,43 @@ def test_run_alarm_analyst_context_from_application_selects_single_matching_proj
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     fake_find_project = SimpleNamespace(
-        _project_summary=lambda item: {"id": item["_id"], "name": item["project_name"]},
+        _project_summary=lambda item: {
+            "id": item["_id"],
+            "name": item["project_name"],
+        },
         _project_name=lambda item: item["project_name"],
         _match_projects=lambda projects, keyword: (projects, "exact"),
     )
     fake_app_topology = SimpleNamespace(
         _fetch_relations=lambda client, project_id: [
-            {"_id": 3094, "ci_type": "mysql", "name": "cmdb-mysql", "manage_ip": "10.43.150.186"},
+            {
+                "_id": 3094,
+                "ci_type": "mysql",
+                "name": "cmdb-mysql",
+                "manage_ip": "10.43.150.186",
+            },
             {"_id": 5002, "ci_type": "docker", "name": "cmdb-pod"},
         ],
-        _build_tree=lambda project, relation_rows: {"name": project["project_name"], "children": relation_rows},
-        _build_option=lambda tree, title: {"title": title, "series": [{"data": [tree]}]},
+        _build_tree=lambda project, relation_rows: {
+            "name": project["project_name"],
+            "children": relation_rows,
+        },
+        _build_option=lambda tree, title: {
+            "title": title,
+            "series": [{"data": [tree]}],
+        },
     )
 
     monkeypatch.setattr(
         alarm_analyst_service,
-        "_load_veops_modules",
+        "_load_zgops_modules",
         lambda: (fake_find_project, fake_app_topology),
     )
     monkeypatch.setattr(
         alarm_analyst_service,
-        "_load_veops_client",
+        "_load_zgops_client",
         lambda _find_project: SimpleNamespace(
-            list_projects=lambda: [{"_id": 1001, "project_name": "cmdb"}]
+            list_projects=lambda: [{"_id": 1001, "project_name": "cmdb"}],
         ),
     )
     monkeypatch.setattr(
@@ -281,8 +306,18 @@ def test_run_alarm_analyst_context_from_application_selects_single_matching_proj
 
     result = alarm_analyst_service._run_alarm_analyst_context_from_application(
         {"content": "cmdb 应用插入数据失败"},
-        {"app_keyword": "cmdb", "device_name": "", "manage_ip": "", "alarm_title": "", "event_time": "", "res_id": ""},
+        {
+            "app_keyword": "cmdb",
+            "device_name": "",
+            "manage_ip": "",
+            "alarm_title": "",
+            "event_time": "",
+            "res_id": "",
+        },
     )
 
     assert "application-topology" in result["logEntries"][0]["stage"]
-    assert any(action["type"] == "alarm-analyst-application-topology" for action in result["actions"])
+    assert any(
+        action["type"] == "alarm-analyst-application-topology"
+        for action in result["actions"]
+    )

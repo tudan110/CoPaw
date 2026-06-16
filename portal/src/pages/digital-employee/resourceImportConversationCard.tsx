@@ -34,7 +34,9 @@ type ResourceImportFileSummary = {
   size: number;
 };
 
-type ResourceImportRecordIssue = NonNullable<ResourceImportRecord["issues"]>[number];
+type ResourceImportRecordIssue = NonNullable<
+  ResourceImportRecord["issues"]
+>[number];
 type ResourceImportRequiredIssue = ResourceImportRecordIssue & {
   previewKey: string;
   ciType: string;
@@ -70,10 +72,7 @@ type ResourceImportConversationCardProps = {
     flowId: string;
     files: File[];
   }) => void;
-  onStartParse: (payload: {
-    messageId: string;
-    flowId: string;
-  }) => void;
+  onStartParse: (payload: { messageId: string; flowId: string }) => void;
   onParseResolved: (payload: {
     messageId: string;
     flowId: string;
@@ -102,10 +101,7 @@ type ResourceImportConversationCardProps = {
     resourceGroups: ResourceImportGroup[];
     relations: ResourceImportRelation[];
   }) => void;
-  onBackToConfirm: (payload: {
-    messageId: string;
-    flowId: string;
-  }) => void;
+  onBackToConfirm: (payload: { messageId: string; flowId: string }) => void;
   onSubmitImport: (payload: {
     messageId: string;
     flowId: string;
@@ -113,12 +109,8 @@ type ResourceImportConversationCardProps = {
     resourceGroups: ResourceImportGroup[];
     relations: ResourceImportRelation[];
   }) => void;
-  onContinueImport: (payload: {
-    flowId: string;
-  }) => void;
-  onOpenSystemTopology: (payload: {
-    flowId: string;
-  }) => void;
+  onContinueImport: (payload: { flowId: string }) => void;
+  onOpenSystemTopology: (payload: { flowId: string }) => void;
   onScrollToStage: (payload: {
     flowId: string;
     stage: ResourceImportFlowStage;
@@ -137,7 +129,14 @@ const FLOW_STEPS = [
 
 const CUSTOM_STRUCTURE_OPTION_VALUE = "__custom__";
 
-const STATUS_OPTIONS = ["待确认", "未监控", "已纳管", "在线", "离线", "告警"] as const;
+const STATUS_OPTIONS = [
+  "待确认",
+  "未监控",
+  "已纳管",
+  "在线",
+  "离线",
+  "告警",
+] as const;
 const ATTRIBUTE_FIELD_LABELS: Record<string, string> = {
   asset_code: "资产编号",
   name: "名称",
@@ -209,7 +208,12 @@ const DEFAULT_PARSE_LOGS = [
   "→ 正在生成待确认预览结果...",
 ] as const;
 const ROOT_RELATION_TYPES = new Set(["project", "product", "Department"]);
-const RESOURCE_DEPLOY_TYPES = new Set(["PhysicalMachine", "vserver", "docker", "kubernetes"]);
+const RESOURCE_DEPLOY_TYPES = new Set([
+  "PhysicalMachine",
+  "vserver",
+  "docker",
+  "kubernetes",
+]);
 const SOFTWARE_RESOURCE_TYPES = new Set([
   "database",
   "mysql",
@@ -256,19 +260,20 @@ function getFileEmoji(name: string) {
 
 function countSelectedRecords(groups: ResourceImportGroup[]) {
   return groups.reduce(
-    (total, group) => total + group.records.filter((record) => record.selected).length,
+    (total, group) =>
+      total + group.records.filter((record) => record.selected).length,
     0,
   );
 }
 
 function getRecordAddress(record: ResourceImportRecord) {
   return (
-    record.attributes.manage_ip
-    || record.attributes.private_ip
-    || record.attributes.host
-    || record.attributes.host_name
-    || record.attributes.public_ip
-    || "-"
+    record.attributes.manage_ip ||
+    record.attributes.private_ip ||
+    record.attributes.host ||
+    record.attributes.host_name ||
+    record.attributes.public_ip ||
+    "-"
   );
 }
 
@@ -338,7 +343,9 @@ function getVisibleAttributeDefinitions(
 ) {
   const typeMeta = getCiTypeMeta(preview, ciType);
   const definitions = typeMeta?.attributeDefinitions || [];
-  const visibleDefinitions = definitions.filter((item) => item.default_show || item.required);
+  const visibleDefinitions = definitions.filter(
+    (item) => item.default_show || item.required,
+  );
   const definitionMap = new Map(definitions.map((item) => [item.name, item]));
 
   Object.keys(record.attributes || {}).forEach((key) => {
@@ -354,7 +361,13 @@ function getVisibleAttributeDefinitions(
   return visibleDefinitions.sort((left, right) => {
     const leftRequired = left.required ? 0 : 1;
     const rightRequired = right.required ? 0 : 1;
-    return leftRequired - rightRequired || (left.alias || left.name).localeCompare(right.alias || right.name, "zh-CN");
+    return (
+      leftRequired - rightRequired ||
+      (left.alias || left.name).localeCompare(
+        right.alias || right.name,
+        "zh-CN",
+      )
+    );
   });
 }
 
@@ -369,13 +382,17 @@ function getRequiredAttributeDefinitions(
   const systemGeneratedUniqueKey = typeMeta?.system_generated_unique_key
     ? String(typeMeta.unique_key || "").trim()
     : "";
-  const requiredDefinitions = (typeMeta.attributeDefinitions || []).filter((definition) => {
-    const fieldName = String(definition.name || "").trim();
-    if (!fieldName || !definition.required) {
-      return false;
-    }
-    return !(systemGeneratedUniqueKey && fieldName === systemGeneratedUniqueKey);
-  });
+  const requiredDefinitions = (typeMeta.attributeDefinitions || []).filter(
+    (definition) => {
+      const fieldName = String(definition.name || "").trim();
+      if (!fieldName || !definition.required) {
+        return false;
+      }
+      return !(
+        systemGeneratedUniqueKey && fieldName === systemGeneratedUniqueKey
+      );
+    },
+  );
   if (requiredDefinitions.length) {
     return requiredDefinitions;
   }
@@ -383,19 +400,25 @@ function getRequiredAttributeDefinitions(
   if (!uniqueKey || systemGeneratedUniqueKey) {
     return [];
   }
-  return [{
-    name: uniqueKey,
-    alias: getAttributeLabel(uniqueKey),
-    required: true,
-  }];
+  return [
+    {
+      name: uniqueKey,
+      alias: getAttributeLabel(uniqueKey),
+      required: true,
+    },
+  ];
 }
 
-function getChoiceOptions(definition?: ResourceImportCiTypeAttributeDefinition | null) {
+function getChoiceOptions(
+  definition?: ResourceImportCiTypeAttributeDefinition | null,
+) {
   return definition?.choices || [];
 }
 
 function isServerDefaultMacro(value: unknown) {
-  return String(value ?? "").trim().startsWith("$");
+  return String(value ?? "")
+    .trim()
+    .startsWith("$");
 }
 
 function cleanDefaultValue(value: unknown) {
@@ -403,12 +426,18 @@ function cleanDefaultValue(value: unknown) {
   return cleaned && !isServerDefaultMacro(cleaned) ? cleaned : "";
 }
 
-function getAttributeDefaultValue(definition?: ResourceImportCiTypeAttributeDefinition | null) {
+function getAttributeDefaultValue(
+  definition?: ResourceImportCiTypeAttributeDefinition | null,
+) {
   if (!definition) {
     return "";
   }
   const rawDefault = definition.default;
-  if (rawDefault && typeof rawDefault === "object" && !Array.isArray(rawDefault)) {
+  if (
+    rawDefault &&
+    typeof rawDefault === "object" &&
+    !Array.isArray(rawDefault)
+  ) {
     const defaultObject = rawDefault as Record<string, unknown>;
     for (const key of ["default", "value", "label"]) {
       const value = cleanDefaultValue(defaultObject[key]);
@@ -430,7 +459,9 @@ function getAttributeDefaultValue(definition?: ResourceImportCiTypeAttributeDefi
     }
   }
 
-  const fieldName = String(definition.name || "").trim().toLowerCase();
+  const fieldName = String(definition.name || "")
+    .trim()
+    .toLowerCase();
   const fieldAlias = String(definition.alias || "").trim();
   if (fieldName === "status" || fieldAlias === "资产状态") {
     const onlineOption = (definition.choices || []).find(
@@ -439,13 +470,17 @@ function getAttributeDefaultValue(definition?: ResourceImportCiTypeAttributeDefi
     if (onlineOption) {
       return onlineOption.value || onlineOption.label || "";
     }
-    const firstOption = (definition.choices || []).find((option) => option.value || option.label);
+    const firstOption = (definition.choices || []).find(
+      (option) => option.value || option.label,
+    );
     return firstOption?.value || firstOption?.label || "";
   }
   return "";
 }
 
-function hasEffectiveAttributeDefault(definition?: ResourceImportCiTypeAttributeDefinition | null) {
+function hasEffectiveAttributeDefault(
+  definition?: ResourceImportCiTypeAttributeDefinition | null,
+) {
   const defaultValue = getAttributeDefaultValue(definition);
   if (!defaultValue) {
     return false;
@@ -454,7 +489,13 @@ function hasEffectiveAttributeDefault(definition?: ResourceImportCiTypeAttribute
     return true;
   }
   const options = definition.choices || [];
-  return !options.length || options.some((option) => option.value === defaultValue || option.label === defaultValue);
+  return (
+    !options.length ||
+    options.some(
+      (option) =>
+        option.value === defaultValue || option.label === defaultValue,
+    )
+  );
 }
 
 function requiredFieldNeedsManualValue(
@@ -465,14 +506,22 @@ function requiredFieldNeedsManualValue(
   if (!definition?.required) {
     return false;
   }
-  return isEmptyValue(getRecordFieldValue(record, field)) && !hasEffectiveAttributeDefault(definition);
+  return (
+    isEmptyValue(getRecordFieldValue(record, field)) &&
+    !hasEffectiveAttributeDefault(definition)
+  );
 }
 
 function normalizeChoiceToken(value: string) {
-  return String(value || "").trim().toLowerCase().replace(/[\s_\-/:]+/g, "");
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[\s_\-/:]+/g, "");
 }
 
-function formatChoiceOptions(definition?: ResourceImportCiTypeAttributeDefinition | null) {
+function formatChoiceOptions(
+  definition?: ResourceImportCiTypeAttributeDefinition | null,
+) {
   return (definition?.choices || [])
     .map((option) => String(option.label || option.value || "").trim())
     .filter(Boolean)
@@ -500,9 +549,11 @@ function requiredChoiceNeedsManualValue(
     const optionValue = String(option.value || "").trim();
     const optionLabel = String(option.label || "").trim();
     return (
-      value === optionValue
-      || normalizeChoiceToken(optionValue) === normalizedValue
-      || (optionLabel && (value === optionLabel || normalizeChoiceToken(optionLabel) === normalizedValue))
+      value === optionValue ||
+      normalizeChoiceToken(optionValue) === normalizedValue ||
+      (optionLabel &&
+        (value === optionLabel ||
+          normalizeChoiceToken(optionLabel) === normalizedValue))
     );
   });
 }
@@ -517,7 +568,11 @@ function getRequiredChoiceManualMessage(
   }
   const value = getRecordFieldValue(record, field);
   const optionText = formatChoiceOptions(definition);
-  return `${definition?.alias || getAttributeLabel(field)} 的值 ${value} 不在系统预定义值中${optionText ? `，可选值：${optionText}` : ""}`;
+  return `${
+    definition?.alias || getAttributeLabel(field)
+  } 的值 ${value} 不在系统预定义值中${
+    optionText ? `，可选值：${optionText}` : ""
+  }`;
 }
 
 function getRequiredDefaultMessage(
@@ -525,7 +580,10 @@ function getRequiredDefaultMessage(
   field: string,
   definition?: ResourceImportCiTypeAttributeDefinition | null,
 ) {
-  if (!definition?.required || !isEmptyValue(getRecordFieldValue(record, field))) {
+  if (
+    !definition?.required ||
+    !isEmptyValue(getRecordFieldValue(record, field))
+  ) {
     return "";
   }
   const defaultValue = getAttributeDefaultValue(definition);
@@ -539,7 +597,9 @@ type ResourceImportStructureItem = NonNullable<
   ResourceImportPreview["structureAnalysis"]
 >["items"][number];
 
-function getStructureStatusLabel(status: ResourceImportStructureItem["status"]) {
+function getStructureStatusLabel(
+  status: ResourceImportStructureItem["status"],
+) {
   switch (status) {
     case "matched":
       return "已匹配";
@@ -554,7 +614,9 @@ function getStructureStatusLabel(status: ResourceImportStructureItem["status"]) 
   }
 }
 
-function getStructureConfidenceLabel(confidence?: ResourceImportStructureItem["semanticConfidence"]) {
+function getStructureConfidenceLabel(
+  confidence?: ResourceImportStructureItem["semanticConfidence"],
+) {
   switch (confidence) {
     case "high":
       return "高";
@@ -565,11 +627,17 @@ function getStructureConfidenceLabel(confidence?: ResourceImportStructureItem["s
   }
 }
 
-function getBlockingAnalysisIssues(preview: ResourceImportPreview | null | undefined) {
-  return (preview?.analysisIssues || []).filter((item) => item.severity === "blocking");
+function getBlockingAnalysisIssues(
+  preview: ResourceImportPreview | null | undefined,
+) {
+  return (preview?.analysisIssues || []).filter(
+    (item) => item.severity === "blocking",
+  );
 }
 
-function getBlockingAnalysisMessage(preview: ResourceImportPreview | null | undefined) {
+function getBlockingAnalysisMessage(
+  preview: ResourceImportPreview | null | undefined,
+) {
   const blockingIssues = getBlockingAnalysisIssues(preview);
   if (!blockingIssues.length) {
     return "";
@@ -619,7 +687,17 @@ function getTopologyPalette(ciType: string, generated: boolean) {
       line: "#fdba74",
     };
   }
-  if (["redis", "kafka", "elasticsearch", "nginx", "apache", "docker", "kubernetes"].includes(normalized)) {
+  if (
+    [
+      "redis",
+      "kafka",
+      "elasticsearch",
+      "nginx",
+      "apache",
+      "docker",
+      "kubernetes",
+    ].includes(normalized)
+  ) {
     return {
       fill: "#faf5ff",
       border: "#8b5cf6",
@@ -677,12 +755,19 @@ function formatAutoFilledHint(hints?: string[]) {
 function buildAggregatedAmbiguousMappings(
   items: NonNullable<ResourceImportPreview["mappingSummary"]>,
 ) {
-  const grouped = new Map<string, {
-    sourceField: string;
-    message: string;
-    candidates: Array<{ targetField: string; confidence: string; source?: string }>;
-    scopes: Array<{ fileName: string; sheetName: string }>;
-  }>();
+  const grouped = new Map<
+    string,
+    {
+      sourceField: string;
+      message: string;
+      candidates: Array<{
+        targetField: string;
+        confidence: string;
+        source?: string;
+      }>;
+      scopes: Array<{ fileName: string; sheetName: string }>;
+    }
+  >();
 
   items.forEach((item) => {
     if (!(item.status === "needs_confirmation" || item.needsConfirmation)) {
@@ -695,11 +780,14 @@ function buildAggregatedAmbiguousMappings(
         confidence: String(candidate.confidence || ""),
         source: candidate.source,
       }))
-      .sort((left, right) =>
-        left.targetField.localeCompare(right.targetField, "zh-CN")
-        || left.confidence.localeCompare(right.confidence, "zh-CN"),
+      .sort(
+        (left, right) =>
+          left.targetField.localeCompare(right.targetField, "zh-CN") ||
+          left.confidence.localeCompare(right.confidence, "zh-CN"),
       );
-    const candidateKey = candidates.map((candidate) => `${candidate.targetField}:${candidate.confidence}`).join("|");
+    const candidateKey = candidates
+      .map((candidate) => `${candidate.targetField}:${candidate.confidence}`)
+      .join("|");
     const key = `${item.sourceField}::${candidateKey}`;
     const scope = {
       fileName: String(item.fileName || ""),
@@ -707,7 +795,13 @@ function buildAggregatedAmbiguousMappings(
     };
     const current = grouped.get(key);
     if (current) {
-      if (!current.scopes.some((entry) => entry.fileName === scope.fileName && entry.sheetName === scope.sheetName)) {
+      if (
+        !current.scopes.some(
+          (entry) =>
+            entry.fileName === scope.fileName &&
+            entry.sheetName === scope.sheetName,
+        )
+      ) {
         current.scopes.push(scope);
       }
       return;
@@ -723,14 +817,16 @@ function buildAggregatedAmbiguousMappings(
   return Array.from(grouped.values())
     .map((item) => ({
       ...item,
-      scopes: item.scopes.sort((left, right) =>
-        left.fileName.localeCompare(right.fileName, "zh-CN")
-        || left.sheetName.localeCompare(right.sheetName, "zh-CN"),
+      scopes: item.scopes.sort(
+        (left, right) =>
+          left.fileName.localeCompare(right.fileName, "zh-CN") ||
+          left.sheetName.localeCompare(right.sheetName, "zh-CN"),
       ),
     }))
-    .sort((left, right) =>
-      left.sourceField.localeCompare(right.sourceField, "zh-CN")
-      || right.scopes.length - left.scopes.length,
+    .sort(
+      (left, right) =>
+        left.sourceField.localeCompare(right.sourceField, "zh-CN") ||
+        right.scopes.length - left.scopes.length,
     );
 }
 
@@ -745,7 +841,9 @@ function buildTopologyTreeData(
     .flatMap((group) => group.records)
     .filter((record) => record.selected);
   const selectedRelations = relations.filter((relation) => relation.selected);
-  const recordMap = new Map(selectedRecords.map((record) => [record.previewKey, record]));
+  const recordMap = new Map(
+    selectedRecords.map((record) => [record.previewKey, record]),
+  );
   const collapsedDepth = options?.collapsedDepth ?? Number.POSITIVE_INFINITY;
   const relationPriority: Record<string, number> = {
     contain: 0,
@@ -756,12 +854,17 @@ function buildTopologyTreeData(
 
   const parentChoiceMap = new Map<string, ResourceImportRelation>();
   selectedRelations.forEach((relation) => {
-    if (!recordMap.has(relation.sourceKey) || !recordMap.has(relation.targetKey)) {
+    if (
+      !recordMap.has(relation.sourceKey) ||
+      !recordMap.has(relation.targetKey)
+    ) {
       return;
     }
     const current = parentChoiceMap.get(relation.targetKey);
     const nextPriority = relationPriority[relation.relationType] ?? 99;
-    const currentPriority = current ? (relationPriority[current.relationType] ?? 99) : Number.POSITIVE_INFINITY;
+    const currentPriority = current
+      ? relationPriority[current.relationType] ?? 99
+      : Number.POSITIVE_INFINITY;
     if (!current || nextPriority < currentPriority) {
       parentChoiceMap.set(relation.targetKey, relation);
     }
@@ -775,14 +878,27 @@ function buildTopologyTreeData(
     childMap.set(sourceKey, current);
   });
 
-  const buildNode = (previewKey: string, relationTypeFromParent = "", depth = 0): any => {
+  const buildNode = (
+    previewKey: string,
+    relationTypeFromParent = "",
+    depth = 0,
+  ): any => {
     const record = recordMap.get(previewKey);
     if (!record) {
       return null;
     }
-    const palette = getTopologyPalette(record.ciType, Boolean(record.generated));
+    const palette = getTopologyPalette(
+      record.ciType,
+      Boolean(record.generated),
+    );
     const children = (childMap.get(previewKey) || [])
-      .map((childKey) => buildNode(childKey, parentChoiceMap.get(childKey)?.relationType || "", depth + 1))
+      .map((childKey) =>
+        buildNode(
+          childKey,
+          parentChoiceMap.get(childKey)?.relationType || "",
+          depth + 1,
+        ),
+      )
       .filter(Boolean);
     children.sort((left, right) => {
       const leftBranch = left.children?.length ? 1 : 0;
@@ -795,7 +911,10 @@ function buildTopologyTreeData(
       if (leftDescendants !== rightDescendants) {
         return rightDescendants - leftDescendants;
       }
-      return String(left.name || "").localeCompare(String(right.name || ""), "zh-CN");
+      return String(left.name || "").localeCompare(
+        String(right.name || ""),
+        "zh-CN",
+      );
     });
     const descendantCount = children.reduce(
       (total, child) => total + 1 + Number(child.descendantCount || 0),
@@ -823,11 +942,10 @@ function buildTopologyTreeData(
       label: {
         position: "right",
         distance: 10,
-        formatter: () => (
-          `{name|${truncateTopologyText(record.name || previewKey)}}`
-          + ` {meta|${truncateTopologyText(record.ciType || "未分类", 14)}}`
-          + (descendantCount ? ` {count|+${descendantCount}}` : "")
-        ),
+        formatter: () =>
+          `{name|${truncateTopologyText(record.name || previewKey)}}` +
+          ` {meta|${truncateTopologyText(record.ciType || "未分类", 14)}}` +
+          (descendantCount ? ` {count|+${descendantCount}}` : ""),
         rich: {
           name: {
             color: "#0f172a",
@@ -878,7 +996,8 @@ function buildTopologyTreeData(
       label: {
         position: "right",
         distance: 12,
-        formatter: () => `{name|本次导入拓扑} {meta|${selectedRecords.length}个资源}`,
+        formatter: () =>
+          `{name|本次导入拓扑} {meta|${selectedRecords.length}个资源}`,
         rich: {
           name: {
             color: "#0f172a",
@@ -903,7 +1022,10 @@ function getStructureSelectValue(
   options: Array<{ name: string; existing: boolean }>,
 ) {
   const targetValue = String(currentValue || "").trim();
-  if (targetValue && options.some((option) => option.existing && option.name === targetValue)) {
+  if (
+    targetValue &&
+    options.some((option) => option.existing && option.name === targetValue)
+  ) {
     return targetValue;
   }
   return CUSTOM_STRUCTURE_OPTION_VALUE;
@@ -914,16 +1036,24 @@ function getStructureModelOptions(
   metadata: ResourceImportMetadata | null,
   selectedGroupName: string,
 ) {
-  const optionMap = new Map<string, {
-    id?: number | string;
-    name: string;
-    alias?: string;
-    groupName?: string;
-    existing: boolean;
-  }>();
+  const optionMap = new Map<
+    string,
+    {
+      id?: number | string;
+      name: string;
+      alias?: string;
+      groupName?: string;
+      existing: boolean;
+    }
+  >();
 
   (item.modelOptions || [])
-    .filter((option) => !selectedGroupName || !option.groupName || option.groupName === selectedGroupName)
+    .filter(
+      (option) =>
+        !selectedGroupName ||
+        !option.groupName ||
+        option.groupName === selectedGroupName,
+    )
     .forEach((option) => {
       if (!option?.name) {
         return;
@@ -937,7 +1067,9 @@ function getStructureModelOptions(
       });
     });
 
-  const selectedGroup = (metadata?.ciTypeGroups || []).find((group) => group.name === selectedGroupName);
+  const selectedGroup = (metadata?.ciTypeGroups || []).find(
+    (group) => group.name === selectedGroupName,
+  );
   if (selectedGroup) {
     selectedGroup.ciTypes.forEach((ciType) => {
       if (!ciType?.name) {
@@ -963,7 +1095,10 @@ function getStructureModelOptions(
     const leftIndex = preferredNames.findIndex((name) => name === left.name);
     const rightIndex = preferredNames.findIndex((name) => name === right.name);
     if (leftIndex !== rightIndex) {
-      return (leftIndex === -1 ? 99 : leftIndex) - (rightIndex === -1 ? 99 : rightIndex);
+      return (
+        (leftIndex === -1 ? 99 : leftIndex) -
+        (rightIndex === -1 ? 99 : rightIndex)
+      );
     }
     return left.name.localeCompare(right.name, "zh-CN");
   });
@@ -973,11 +1108,14 @@ function getStructureGroupOptions(
   item: ResourceImportStructureItem,
   metadata: ResourceImportMetadata | null,
 ) {
-  const optionMap = new Map<string, {
-    id?: number | string;
-    name: string;
-    existing: boolean;
-  }>();
+  const optionMap = new Map<
+    string,
+    {
+      id?: number | string;
+      name: string;
+      existing: boolean;
+    }
+  >();
 
   (item.groupOptions || []).forEach((option) => {
     if (!option?.name) {
@@ -1038,7 +1176,13 @@ function getStructureTargetGroup(
   preview: ResourceImportPreview | null | undefined,
   item: ResourceImportStructureItem,
 ) {
-  return (preview?.resourceGroups || []).find((group) => group.ciType === item.resourceCiType || group.label === item.resourceLabel) || null;
+  return (
+    (preview?.resourceGroups || []).find(
+      (group) =>
+        group.ciType === item.resourceCiType ||
+        group.label === item.resourceLabel,
+    ) || null
+  );
 }
 
 function getStructureUniqueKeyOptions(
@@ -1066,19 +1210,25 @@ function getStructureUniqueKeyOptions(
     });
   }
 
-  const optionMap = new Map<string, {
-    name: string;
-    label: string;
-    coverage: number;
-    priority: number;
-  }>();
+  const optionMap = new Map<
+    string,
+    {
+      name: string;
+      label: string;
+      coverage: number;
+      priority: number;
+    }
+  >();
   const preferredTypeName =
-    draft?.inheritFrom
-    || item.modelDraft?.inheritFrom
-    || item.selectedModelName
-    || item.suggestedModelName
-    || item.resourceCiType;
-  const preferredTypeMeta = getMetadataCiTypeMeta(metadata, preferredTypeName || "");
+    draft?.inheritFrom ||
+    item.modelDraft?.inheritFrom ||
+    item.selectedModelName ||
+    item.suggestedModelName ||
+    item.resourceCiType;
+  const preferredTypeMeta = getMetadataCiTypeMeta(
+    metadata,
+    preferredTypeName || "",
+  );
   const preferredUniqueKey = preferredTypeMeta?.unique_key || "";
 
   (preferredTypeMeta?.attributeDefinitions || []).forEach((definition) => {
@@ -1086,14 +1236,24 @@ function getStructureUniqueKeyOptions(
     if (!name) {
       return;
     }
-    const coverage = total ? Math.round(((counts.get(name) || 0) / total) * 100) : 0;
-    const priority = name === preferredUniqueKey
-      ? 0
-      : counts.has(name)
+    const coverage = total
+      ? Math.round(((counts.get(name) || 0) / total) * 100)
+      : 0;
+    const priority =
+      name === preferredUniqueKey
+        ? 0
+        : counts.has(name)
         ? 1
-        : ["dev_no", "property_no", "manage_ip", "private_ip", "name", "dev_name"].includes(name)
-          ? 2
-          : 5;
+        : [
+            "dev_no",
+            "property_no",
+            "manage_ip",
+            "private_ip",
+            "name",
+            "dev_name",
+          ].includes(name)
+        ? 2
+        : 5;
     optionMap.set(name, {
       name,
       label: definition.alias || getAttributeLabel(name),
@@ -1107,7 +1267,16 @@ function getStructureUniqueKeyOptions(
       return;
     }
     const existing = optionMap.get(name);
-    const priority = ["dev_no", "property_no", "asset_code", "private_ip", "manage_ip", "serverName", "name", "dev_name"].indexOf(name);
+    const priority = [
+      "dev_no",
+      "property_no",
+      "asset_code",
+      "private_ip",
+      "manage_ip",
+      "serverName",
+      "name",
+      "dev_name",
+    ].indexOf(name);
     optionMap.set(name, {
       name,
       label: labels.get(name) || existing?.label || name,
@@ -1117,10 +1286,11 @@ function getStructureUniqueKeyOptions(
   });
 
   return Array.from(optionMap.values())
-    .sort((left, right) =>
-      left.priority - right.priority
-      || right.coverage - left.coverage
-      || left.label.localeCompare(right.label, "zh-CN"),
+    .sort(
+      (left, right) =>
+        left.priority - right.priority ||
+        right.coverage - left.coverage ||
+        left.label.localeCompare(right.label, "zh-CN"),
     )
     .map(({ priority, ...option }) => option);
 }
@@ -1129,7 +1299,11 @@ function getStructureInheritanceOptions(
   metadata: ResourceImportMetadata | null,
   item: ResourceImportStructureItem,
 ) {
-  const options = getStructureModelOptions(item, metadata, item.selectedGroupName || "");
+  const options = getStructureModelOptions(
+    item,
+    metadata,
+    item.selectedGroupName || "",
+  );
   if (options.length) {
     return options;
   }
@@ -1150,11 +1324,16 @@ function getSuggestedUniqueKey(
     uniqueKey?: string;
   },
 ) {
-  return getStructureUniqueKeyOptions(preview, item, metadata, draft)[0]?.name || "";
+  return (
+    getStructureUniqueKeyOptions(preview, item, metadata, draft)[0]?.name || ""
+  );
 }
 
 function normalizeFieldToken(value: string) {
-  return String(value || "").trim().toLowerCase().replace(/[\s_\-/:]+/g, "");
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[\s_\-/:]+/g, "");
 }
 
 function splitSemanticTokens(value: string) {
@@ -1168,40 +1347,77 @@ function splitSemanticTokens(value: string) {
 
 function isNameLikeUniqueKey(uniqueKey: string) {
   const normalized = normalizeFieldToken(uniqueKey);
-  const raw = String(uniqueKey || "").trim().toLowerCase();
+  const raw = String(uniqueKey || "")
+    .trim()
+    .toLowerCase();
   const tokens = new Set(splitSemanticTokens(uniqueKey));
   return (
-    normalized.endsWith("name")
-    || tokens.has("name")
-    || tokens.has("instance")
-    || tokens.has("hostname")
-    || tokens.has("servername")
-    || tokens.has("devname")
-    || tokens.has("vservername")
-    || ["名称", "名字", "主机名", "设备名", "实例名", "实例名称", "组件实例名", "数据库实例名"].some((token) => raw.includes(token))
+    normalized.endsWith("name") ||
+    tokens.has("name") ||
+    tokens.has("instance") ||
+    tokens.has("hostname") ||
+    tokens.has("servername") ||
+    tokens.has("devname") ||
+    tokens.has("vservername") ||
+    [
+      "名称",
+      "名字",
+      "主机名",
+      "设备名",
+      "实例名",
+      "实例名称",
+      "组件实例名",
+      "数据库实例名",
+    ].some((token) => raw.includes(token))
   );
 }
 
 function isIpLikeUniqueKey(uniqueKey: string) {
   const normalized = normalizeFieldToken(uniqueKey);
-  const raw = String(uniqueKey || "").trim().toLowerCase();
+  const raw = String(uniqueKey || "")
+    .trim()
+    .toLowerCase();
   return (
-    normalized.includes("ip")
-    || ["管理地址", "管理ip", "内网地址", "内网ip", "ip地址", "主机地址", "数据库地址", "组件地址"].some((token) => raw.includes(token))
+    normalized.includes("ip") ||
+    [
+      "管理地址",
+      "管理ip",
+      "内网地址",
+      "内网ip",
+      "ip地址",
+      "主机地址",
+      "数据库地址",
+      "组件地址",
+    ].some((token) => raw.includes(token))
   );
 }
 
 function isCodeLikeUniqueKey(uniqueKey: string) {
   const normalized = normalizeFieldToken(uniqueKey);
-  const raw = String(uniqueKey || "").trim().toLowerCase();
+  const raw = String(uniqueKey || "")
+    .trim()
+    .toLowerCase();
   const tokens = new Set(splitSemanticTokens(uniqueKey));
-  if (["主键", "唯一", "唯一标识", "资源主键", "资产标识", "编号", "编码", "标识"].some((token) => raw.includes(token))) {
+  if (
+    [
+      "主键",
+      "唯一",
+      "唯一标识",
+      "资源主键",
+      "资产标识",
+      "编号",
+      "编码",
+      "标识",
+    ].some((token) => raw.includes(token))
+  ) {
     return true;
   }
   if (["rowid", "ciid", "pid"].includes(normalized)) {
     return true;
   }
-  return ["code", "no", "id", "key", "pk", "unique", "identifier"].some((token) => tokens.has(token));
+  return ["code", "no", "id", "key", "pk", "unique", "identifier"].some(
+    (token) => tokens.has(token),
+  );
 }
 
 function getUniqueKeySemanticKind(uniqueKey: string, uniqueKeyLabel?: string) {
@@ -1227,7 +1443,9 @@ function getUniqueKeyLabel(
   if (!uniqueKey) {
     return "";
   }
-  const definition = (typeMeta?.attributeDefinitions || []).find((item) => item.name === uniqueKey);
+  const definition = (typeMeta?.attributeDefinitions || []).find(
+    (item) => item.name === uniqueKey,
+  );
   return definition?.alias || getAttributeLabel(uniqueKey);
 }
 
@@ -1265,10 +1483,20 @@ function isSystemGeneratedUniqueKey(
     return true;
   }
 
-  const definition = (typeMeta.attributeDefinitions || []).find((item) => item.name === uniqueKey);
+  const definition = (typeMeta.attributeDefinitions || []).find(
+    (item) => item.name === uniqueKey,
+  );
   const alias = String(definition?.alias || "").trim();
-  const valueType = String(definition?.value_type || "").trim().toLowerCase();
-  return normalized === "id" && ["主键", "系统主键"].includes(alias) && ["int", "integer", "bigint", "smallint", "long", "number"].includes(valueType);
+  const valueType = String(definition?.value_type || "")
+    .trim()
+    .toLowerCase();
+  return (
+    normalized === "id" &&
+    ["主键", "系统主键"].includes(alias) &&
+    ["int", "integer", "bigint", "smallint", "long", "number"].includes(
+      valueType,
+    )
+  );
 }
 
 function getRecordFieldValue(record: ResourceImportRecord, field: string) {
@@ -1276,10 +1504,10 @@ function getRecordFieldValue(record: ResourceImportRecord, field: string) {
     return getRecordDisplayNameValue(record);
   }
   return String(
-    record.attributes?.[field]
-    || record.analysisAttributes?.[field]
-    || record.sourceAttributes?.[field]
-    || "",
+    record.attributes?.[field] ||
+      record.analysisAttributes?.[field] ||
+      record.sourceAttributes?.[field] ||
+      "",
   ).trim();
 }
 
@@ -1295,37 +1523,43 @@ function getSemanticSourceAttributeValue(
       value: String(value || "").trim(),
       label: getAttributeLabel(field),
       semanticKind: getFieldSemanticKind(field, getAttributeLabel(field)),
-      similarity: getUniqueKeySemanticSimilarity(uniqueKey || semanticKind, uniqueKeyLabel, field, getAttributeLabel(field)),
+      similarity: getUniqueKeySemanticSimilarity(
+        uniqueKey || semanticKind,
+        uniqueKeyLabel,
+        field,
+        getAttributeLabel(field),
+      ),
     }))
     .filter((item) => item.value);
   const candidates = sourceEntries
     .filter((item) => item.semanticKind === semanticKind)
-    .sort((left, right) =>
-      right.similarity - left.similarity
-      || left.field.localeCompare(right.field, "zh-CN")
+    .sort(
+      (left, right) =>
+        right.similarity - left.similarity ||
+        left.field.localeCompare(right.field, "zh-CN"),
     );
   return candidates[0]?.value || "";
 }
 
 function getRecordDisplayNameValue(record: ResourceImportRecord) {
   return String(
-    record.name
-    || record.attributes?.name
-    || record.analysisAttributes?.name
-    || record.attributes?.middleware_name
-    || record.analysisAttributes?.middleware_name
-    || record.attributes?.db_instance
-    || record.analysisAttributes?.db_instance
-    || record.attributes?.serverName
-    || record.analysisAttributes?.serverName
-    || record.attributes?.dev_name
-    || record.analysisAttributes?.dev_name
-    || record.attributes?.hostname
-    || record.analysisAttributes?.hostname
-    || record.attributes?.vserver_name
-    || record.analysisAttributes?.vserver_name
-    || getSemanticSourceAttributeValue(record, "name", "name", "名称")
-    || "",
+    record.name ||
+      record.attributes?.name ||
+      record.analysisAttributes?.name ||
+      record.attributes?.middleware_name ||
+      record.analysisAttributes?.middleware_name ||
+      record.attributes?.db_instance ||
+      record.analysisAttributes?.db_instance ||
+      record.attributes?.serverName ||
+      record.analysisAttributes?.serverName ||
+      record.attributes?.dev_name ||
+      record.analysisAttributes?.dev_name ||
+      record.attributes?.hostname ||
+      record.analysisAttributes?.hostname ||
+      record.attributes?.vserver_name ||
+      record.analysisAttributes?.vserver_name ||
+      getSemanticSourceAttributeValue(record, "name", "name", "名称") ||
+      "",
   ).trim();
 }
 
@@ -1340,32 +1574,45 @@ function getSemanticResolvedUniqueKeyValue(
   }
   const semanticKind = getUniqueKeySemanticKind(uniqueKey, uniqueKeyLabel);
   if (semanticKind === "name") {
-    return getRecordDisplayNameValue(record) || getSemanticSourceAttributeValue(record, "name", uniqueKey, uniqueKeyLabel);
+    return (
+      getRecordDisplayNameValue(record) ||
+      getSemanticSourceAttributeValue(record, "name", uniqueKey, uniqueKeyLabel)
+    );
   }
   if (semanticKind === "ip") {
     return String(
-      record.attributes?.manage_ip
-      || record.analysisAttributes?.manage_ip
-      || record.attributes?.private_ip
-      || record.analysisAttributes?.private_ip
-      || record.attributes?.host_ip
-      || record.analysisAttributes?.host_ip
-      || getSemanticSourceAttributeValue(record, "ip", uniqueKey, uniqueKeyLabel)
-      || "",
+      record.attributes?.manage_ip ||
+        record.analysisAttributes?.manage_ip ||
+        record.attributes?.private_ip ||
+        record.analysisAttributes?.private_ip ||
+        record.attributes?.host_ip ||
+        record.analysisAttributes?.host_ip ||
+        getSemanticSourceAttributeValue(
+          record,
+          "ip",
+          uniqueKey,
+          uniqueKeyLabel,
+        ) ||
+        "",
     ).trim();
   }
   if (semanticKind === "code") {
     return String(
-      record.attributes?.asset_code
-      || record.analysisAttributes?.asset_code
-      || record.attributes?.property_no
-      || record.analysisAttributes?.property_no
-      || record.attributes?.dev_no
-      || record.analysisAttributes?.dev_no
-      || record.attributes?.id
-      || record.analysisAttributes?.id
-      || getSemanticSourceAttributeValue(record, "code", uniqueKey, uniqueKeyLabel)
-      || "",
+      record.attributes?.asset_code ||
+        record.analysisAttributes?.asset_code ||
+        record.attributes?.property_no ||
+        record.analysisAttributes?.property_no ||
+        record.attributes?.dev_no ||
+        record.analysisAttributes?.dev_no ||
+        record.attributes?.id ||
+        record.analysisAttributes?.id ||
+        getSemanticSourceAttributeValue(
+          record,
+          "code",
+          uniqueKey,
+          uniqueKeyLabel,
+        ) ||
+        "",
     ).trim();
   }
   return "";
@@ -1386,11 +1633,17 @@ function getFieldSemanticKind(field: string, label = "") {
 }
 
 function getSemanticTerms(value: string) {
-  return splitSemanticTokens(value)
-    .filter((item) => item && (item.length >= 2 || /[\u4e00-\u9fff]/.test(item)));
+  return splitSemanticTokens(value).filter(
+    (item) => item && (item.length >= 2 || /[\u4e00-\u9fff]/.test(item)),
+  );
 }
 
-function getUniqueKeySemanticSimilarity(uniqueKey: string, uniqueKeyLabel: string, field: string, fieldLabel: string) {
+function getUniqueKeySemanticSimilarity(
+  uniqueKey: string,
+  uniqueKeyLabel: string,
+  field: string,
+  fieldLabel: string,
+) {
   const uniqueMerged = `${uniqueKey} ${uniqueKeyLabel}`.trim();
   const fieldMerged = `${field} ${fieldLabel}`.trim();
   const normalizedUnique = normalizeFieldToken(uniqueMerged);
@@ -1402,15 +1655,18 @@ function getUniqueKeySemanticSimilarity(uniqueKey: string, uniqueKeyLabel: strin
     return 100;
   }
   if (
-    normalizedUnique.length >= 4
-    && normalizedField.length >= 4
-    && (normalizedUnique.includes(normalizedField) || normalizedField.includes(normalizedUnique))
+    normalizedUnique.length >= 4 &&
+    normalizedField.length >= 4 &&
+    (normalizedUnique.includes(normalizedField) ||
+      normalizedField.includes(normalizedUnique))
   ) {
     return 82;
   }
   const uniqueTerms = new Set(getSemanticTerms(uniqueMerged));
   const fieldTerms = new Set(getSemanticTerms(fieldMerged));
-  const overlap = Array.from(uniqueTerms).filter((item) => fieldTerms.has(item));
+  const overlap = Array.from(uniqueTerms).filter((item) =>
+    fieldTerms.has(item),
+  );
   if (overlap.length) {
     return 56 + Math.min(20, overlap.length * 10);
   }
@@ -1427,9 +1683,20 @@ function getUniqueKeyCandidatePriority(
   if (field === uniqueKey) {
     return -1;
   }
-  const uniqueSemanticKind = getUniqueKeySemanticKind(uniqueKey, uniqueKeyLabel);
-  const similarity = getUniqueKeySemanticSimilarity(uniqueKey, uniqueKeyLabel, field, fieldLabel);
-  if (uniqueSemanticKind !== "unknown" && fieldSemanticKind === uniqueSemanticKind) {
+  const uniqueSemanticKind = getUniqueKeySemanticKind(
+    uniqueKey,
+    uniqueKeyLabel,
+  );
+  const similarity = getUniqueKeySemanticSimilarity(
+    uniqueKey,
+    uniqueKeyLabel,
+    field,
+    fieldLabel,
+  );
+  if (
+    uniqueSemanticKind !== "unknown" &&
+    fieldSemanticKind === uniqueSemanticKind
+  ) {
     return Math.max(0, 8 - Math.floor(similarity / 15));
   }
   if (similarity >= 56) {
@@ -1445,8 +1712,16 @@ function getUniqueKeyCandidateCompatibility(
   fieldLabel: string,
   fieldSemanticKind: string,
 ) {
-  const uniqueSemanticKind = getUniqueKeySemanticKind(uniqueKey, uniqueKeyLabel);
-  const similarity = getUniqueKeySemanticSimilarity(uniqueKey, uniqueKeyLabel, field, fieldLabel);
+  const uniqueSemanticKind = getUniqueKeySemanticKind(
+    uniqueKey,
+    uniqueKeyLabel,
+  );
+  const similarity = getUniqueKeySemanticSimilarity(
+    uniqueKey,
+    uniqueKeyLabel,
+    field,
+    fieldLabel,
+  );
   if (field === uniqueKey) {
     return 6;
   }
@@ -1485,26 +1760,36 @@ function getUniqueKeyResolutionPlans(
       }
       const selectedRecords = group.records.filter((record) => record.selected);
       const missingRecords = selectedRecords.filter((record) =>
-        isEmptyValue(getSemanticResolvedUniqueKeyValue(record, uniqueKey, uniqueKeyLabel)),
+        isEmptyValue(
+          getSemanticResolvedUniqueKeyValue(record, uniqueKey, uniqueKeyLabel),
+        ),
       );
       if (!missingRecords.length) {
         return null;
       }
 
-      const candidateMap = new Map<string, {
-        field: string;
-        label: string;
-        count: number;
-        examples: string[];
-        priority: number;
-        compatibility: number;
-        semanticKind: string;
-        similarity: number;
-        values: Set<string>;
-      }>();
+      const candidateMap = new Map<
+        string,
+        {
+          field: string;
+          label: string;
+          count: number;
+          examples: string[];
+          priority: number;
+          compatibility: number;
+          semanticKind: string;
+          similarity: number;
+          values: Set<string>;
+        }
+      >();
 
       const registerCandidateValue = (field: string, value: string) => {
-        if (!field || field === uniqueKey || field === "ci_type" || field.startsWith("_")) {
+        if (
+          !field ||
+          field === uniqueKey ||
+          field === "ci_type" ||
+          field.startsWith("_")
+        ) {
           return;
         }
         const cleanedValue = String(value || "").trim();
@@ -1513,12 +1798,20 @@ function getUniqueKeyResolutionPlans(
         }
         const label = getAttributeLabel(field);
         const semanticKind = getFieldSemanticKind(field, label);
-        const similarity = getUniqueKeySemanticSimilarity(uniqueKey, uniqueKeyLabel, field, label);
+        const similarity = getUniqueKeySemanticSimilarity(
+          uniqueKey,
+          uniqueKeyLabel,
+          field,
+          label,
+        );
         const current = candidateMap.get(field);
         if (current) {
           current.count += 1;
           current.values.add(cleanedValue);
-          if (current.examples.length < 2 && !current.examples.includes(cleanedValue)) {
+          if (
+            current.examples.length < 2 &&
+            !current.examples.includes(cleanedValue)
+          ) {
             current.examples.push(cleanedValue);
           }
           return;
@@ -1528,8 +1821,20 @@ function getUniqueKeyResolutionPlans(
           label,
           count: 1,
           examples: [cleanedValue],
-          priority: getUniqueKeyCandidatePriority(uniqueKey, uniqueKeyLabel, field, label, semanticKind),
-          compatibility: getUniqueKeyCandidateCompatibility(uniqueKey, uniqueKeyLabel, field, label, semanticKind),
+          priority: getUniqueKeyCandidatePriority(
+            uniqueKey,
+            uniqueKeyLabel,
+            field,
+            label,
+            semanticKind,
+          ),
+          compatibility: getUniqueKeyCandidateCompatibility(
+            uniqueKey,
+            uniqueKeyLabel,
+            field,
+            label,
+            semanticKind,
+          ),
           semanticKind,
           similarity,
           values: new Set([cleanedValue]),
@@ -1550,13 +1855,14 @@ function getUniqueKeyResolutionPlans(
       });
 
       const candidates = Array.from(candidateMap.values())
-        .sort((left, right) =>
-          right.compatibility - left.compatibility
-          || right.similarity - left.similarity
-          || left.priority - right.priority
-          || right.values.size - left.values.size
-          || right.count - left.count
-          || left.label.localeCompare(right.label, "zh-CN")
+        .sort(
+          (left, right) =>
+            right.compatibility - left.compatibility ||
+            right.similarity - left.similarity ||
+            left.priority - right.priority ||
+            right.values.size - left.values.size ||
+            right.count - left.count ||
+            left.label.localeCompare(right.label, "zh-CN"),
         )
         .map((item) => ({
           field: item.field,
@@ -1564,7 +1870,9 @@ function getUniqueKeyResolutionPlans(
           count: item.count,
           coverage: Math.round((item.count / missingRecords.length) * 100),
           distinctCount: item.values.size,
-          distinctCoverage: Math.round((item.values.size / missingRecords.length) * 100),
+          distinctCoverage: Math.round(
+            (item.values.size / missingRecords.length) * 100,
+          ),
           duplicateCount: Math.max(0, item.count - item.values.size),
           compatibility: item.compatibility,
           priority: item.priority,
@@ -1574,7 +1882,10 @@ function getUniqueKeyResolutionPlans(
           examples: item.examples,
         }));
 
-      const uniqueSemanticKind = getUniqueKeySemanticKind(uniqueKey, uniqueKeyLabel);
+      const uniqueSemanticKind = getUniqueKeySemanticKind(
+        uniqueKey,
+        uniqueKeyLabel,
+      );
       const compatibleCandidates = candidates.filter((item) => {
         if (item.compatibility <= 0) {
           return false;
@@ -1582,9 +1893,13 @@ function getUniqueKeyResolutionPlans(
         if (uniqueSemanticKind === "unknown") {
           return true;
         }
-        return item.semanticKind === uniqueSemanticKind || item.similarity >= 86;
+        return (
+          item.semanticKind === uniqueSemanticKind || item.similarity >= 86
+        );
       });
-      const finalCandidates = compatibleCandidates.length ? compatibleCandidates : candidates;
+      const finalCandidates = compatibleCandidates.length
+        ? compatibleCandidates
+        : candidates;
 
       return {
         ciType: group.ciType,
@@ -1613,7 +1928,13 @@ function getSystemGeneratedUniqueKeyPlans(
       }
       const selectedRecords = group.records.filter((record) => record.selected);
       const missingRecords = selectedRecords.filter((record) =>
-        isEmptyValue(getSemanticResolvedUniqueKeyValue(record, uniqueKey, getUniqueKeyLabel(preview, group.ciType))),
+        isEmptyValue(
+          getSemanticResolvedUniqueKeyValue(
+            record,
+            uniqueKey,
+            getUniqueKeyLabel(preview, group.ciType),
+          ),
+        ),
       );
       if (!missingRecords.length) {
         return null;
@@ -1622,7 +1943,8 @@ function getSystemGeneratedUniqueKeyPlans(
         ciType: group.ciType,
         label: group.label,
         uniqueKey,
-        uniqueKeyDisplay: getUniqueKeyDisplay(preview, group.ciType) || uniqueKey,
+        uniqueKeyDisplay:
+          getUniqueKeyDisplay(preview, group.ciType) || uniqueKey,
         missingCount: missingRecords.length,
         totalCount: selectedRecords.length,
       };
@@ -1631,7 +1953,14 @@ function getSystemGeneratedUniqueKeyPlans(
 }
 
 function shouldAutoApplyUniqueKeyPlan(plan: {
-  candidates: Array<{ field: string; coverage: number; distinctCoverage: number; recommended: boolean; compatibility: number; priority: number }>;
+  candidates: Array<{
+    field: string;
+    coverage: number;
+    distinctCoverage: number;
+    recommended: boolean;
+    compatibility: number;
+    priority: number;
+  }>;
 }) {
   const [first, second] = plan.candidates;
   if (!first || !first.field) {
@@ -1681,7 +2010,8 @@ function applyStructureSelectionsToPreview(
       return group;
     }
     const nextCiType = structureItem.selectedModelName || group.ciType;
-    const nextLabel = preview.ciTypeMetadata?.[nextCiType]?.alias || group.label;
+    const nextLabel =
+      preview.ciTypeMetadata?.[nextCiType]?.alias || group.label;
     return {
       ...group,
       ciType: nextCiType,
@@ -1699,16 +2029,26 @@ function applyStructureSelectionsToPreview(
     });
   });
 
-  const inferRelationTypeForModels = (sourceType: string, targetType: string) => {
+  const inferRelationTypeForModels = (
+    sourceType: string,
+    targetType: string,
+  ) => {
     const targetMeta = preview.ciTypeMetadata?.[targetType];
-    const matchingParent = (targetMeta?.parentTypes || []).find((item) => item.name === sourceType);
+    const matchingParent = (targetMeta?.parentTypes || []).find(
+      (item) => item.name === sourceType,
+    );
     if (matchingParent) {
-      return String(matchingParent.relationType || "contain").trim() || "contain";
+      return (
+        String(matchingParent.relationType || "contain").trim() || "contain"
+      );
     }
     if (ROOT_RELATION_TYPES.has(sourceType)) {
       return "contain";
     }
-    if (SOFTWARE_RESOURCE_TYPES.has(targetType) && RESOURCE_DEPLOY_TYPES.has(sourceType)) {
+    if (
+      SOFTWARE_RESOURCE_TYPES.has(targetType) &&
+      RESOURCE_DEPLOY_TYPES.has(sourceType)
+    ) {
       return "deploy";
     }
     return "connect";
@@ -1717,18 +2057,27 @@ function applyStructureSelectionsToPreview(
   const relations = (preview.relations || []).map((relation) => {
     const sourceRecord = recordMap.get(relation.sourceKey);
     const targetRecord = recordMap.get(relation.targetKey);
-    const sourceType = String(sourceRecord?.ciType || relation.sourceType || "").trim();
-    const targetType = String(targetRecord?.ciType || relation.targetType || "").trim();
-    const nextRelationType = sourceType && targetType
-      ? inferRelationTypeForModels(sourceType, targetType)
-      : relation.relationType;
+    const sourceType = String(
+      sourceRecord?.ciType || relation.sourceType || "",
+    ).trim();
+    const targetType = String(
+      targetRecord?.ciType || relation.targetType || "",
+    ).trim();
+    const nextRelationType =
+      sourceType && targetType
+        ? inferRelationTypeForModels(sourceType, targetType)
+        : relation.relationType;
     return {
       ...relation,
       relationType: nextRelationType,
       sourceType,
       targetType,
-      sourceName: String(sourceRecord?.name || relation.sourceName || "").trim(),
-      targetName: String(targetRecord?.name || relation.targetName || "").trim(),
+      sourceName: String(
+        sourceRecord?.name || relation.sourceName || "",
+      ).trim(),
+      targetName: String(
+        targetRecord?.name || relation.targetName || "",
+      ).trim(),
     };
   });
 
@@ -1763,12 +2112,22 @@ function syncPreviewWithCurrentData(
 
 function sortAttributeKeys(keys: string[]) {
   return [...keys].sort((left, right) => {
-    const leftIndex = ATTRIBUTE_FIELD_ORDER.indexOf(left as typeof ATTRIBUTE_FIELD_ORDER[number]);
-    const rightIndex = ATTRIBUTE_FIELD_ORDER.indexOf(right as typeof ATTRIBUTE_FIELD_ORDER[number]);
+    const leftIndex = ATTRIBUTE_FIELD_ORDER.indexOf(
+      left as (typeof ATTRIBUTE_FIELD_ORDER)[number],
+    );
+    const rightIndex = ATTRIBUTE_FIELD_ORDER.indexOf(
+      right as (typeof ATTRIBUTE_FIELD_ORDER)[number],
+    );
     if (leftIndex !== -1 || rightIndex !== -1) {
-      return (leftIndex === -1 ? 999 : leftIndex) - (rightIndex === -1 ? 999 : rightIndex);
+      return (
+        (leftIndex === -1 ? 999 : leftIndex) -
+        (rightIndex === -1 ? 999 : rightIndex)
+      );
     }
-    return getAttributeLabel(left).localeCompare(getAttributeLabel(right), "zh-CN");
+    return getAttributeLabel(left).localeCompare(
+      getAttributeLabel(right),
+      "zh-CN",
+    );
   });
 }
 
@@ -1779,7 +2138,11 @@ function getBatchEditorColumns(
   const columnMap = new Map<string, { key: string; label: string }>();
   for (const group of groups) {
     for (const record of group.records) {
-      const definitions = getVisibleAttributeDefinitions(preview, record.ciType, record);
+      const definitions = getVisibleAttributeDefinitions(
+        preview,
+        record.ciType,
+        record,
+      );
       for (const definition of definitions) {
         columnMap.set(definition.name, {
           key: definition.name,
@@ -1796,7 +2159,9 @@ function getBatchEditorColumns(
       }
     }
   }
-  return sortAttributeKeys(Array.from(columnMap.keys())).map((key) => columnMap.get(key)!);
+  return sortAttributeKeys(Array.from(columnMap.keys())).map(
+    (key) => columnMap.get(key)!,
+  );
 }
 
 const EXPORT_FIELD_ORDER = [
@@ -1825,20 +2190,28 @@ const EXPORT_FIELD_ORDER = [
 
 function sortExportFieldKeys(keys: string[]) {
   return [...keys].sort((left, right) => {
-    const leftIndex = EXPORT_FIELD_ORDER.indexOf(left as typeof EXPORT_FIELD_ORDER[number]);
-    const rightIndex = EXPORT_FIELD_ORDER.indexOf(right as typeof EXPORT_FIELD_ORDER[number]);
+    const leftIndex = EXPORT_FIELD_ORDER.indexOf(
+      left as (typeof EXPORT_FIELD_ORDER)[number],
+    );
+    const rightIndex = EXPORT_FIELD_ORDER.indexOf(
+      right as (typeof EXPORT_FIELD_ORDER)[number],
+    );
     if (leftIndex !== -1 || rightIndex !== -1) {
-      return (leftIndex === -1 ? 999 : leftIndex) - (rightIndex === -1 ? 999 : rightIndex);
+      return (
+        (leftIndex === -1 ? 999 : leftIndex) -
+        (rightIndex === -1 ? 999 : rightIndex)
+      );
     }
     return left.localeCompare(right, "zh-CN");
   });
 }
 
 function sanitizeWorksheetName(name: string, usedNames: Set<string>) {
-  const cleaned = String(name || "Sheet")
-    .replace(/[\\/?*[\]:]/g, "-")
-    .trim()
-    .slice(0, 31) || "Sheet";
+  const cleaned =
+    String(name || "Sheet")
+      .replace(/[\\/?*[\]:]/g, "-")
+      .trim()
+      .slice(0, 31) || "Sheet";
   let nextName = cleaned;
   let counter = 2;
   while (usedNames.has(nextName)) {
@@ -1855,7 +2228,9 @@ function buildStandardExportRows(group: ResourceImportGroup) {
     const sourceRow = record.sourceRows?.[0] || {};
     const base = Object.fromEntries(
       Object.entries(record.analysisAttributes || {})
-        .filter(([key, value]) => key && !key.startsWith("_") && !isEmptyValue(value))
+        .filter(
+          ([key, value]) => key && !key.startsWith("_") && !isEmptyValue(value),
+        )
         .map(([key, value]) => [key, value]),
     ) as Record<string, unknown>;
     Object.entries(record.attributes || {}).forEach(([key, value]) => {
@@ -1884,7 +2259,11 @@ function getRequiredExportFieldKeys(
   group: ResourceImportGroup,
 ) {
   const ciTypes = Array.from(
-    new Set([group.ciType, ...group.records.map((record) => record.ciType)].filter(Boolean)),
+    new Set(
+      [group.ciType, ...group.records.map((record) => record.ciType)].filter(
+        Boolean,
+      ),
+    ),
   );
   return Array.from(
     new Set(
@@ -1952,7 +2331,8 @@ function downloadConfirmationData(
   const instructions = [
     {
       title: "说明",
-      content: "请直接在各资源 Sheet 中补充或修改标准字段后，再重新上传该 Excel。",
+      content:
+        "请直接在各资源 Sheet 中补充或修改标准字段后，再重新上传该 Excel。",
     },
     {
       title: "字段规则",
@@ -1960,7 +2340,8 @@ function downloadConfirmationData(
     },
     {
       title: "保留字段",
-      content: "建议保留 ci_type、selected、import_action 这几列；source_* 仅作溯源参考。",
+      content:
+        "建议保留 ci_type、selected、import_action 这几列；source_* 仅作溯源参考。",
     },
   ];
   XLSX.utils.book_append_sheet(
@@ -1974,12 +2355,16 @@ function downloadConfirmationData(
     const fieldKeys = sortExportFieldKeys(
       Array.from(
         new Set([
-          ...rows.flatMap((row) => Object.keys(row).filter((key) => !isEmptyValue(row[key]))),
+          ...rows.flatMap((row) =>
+            Object.keys(row).filter((key) => !isEmptyValue(row[key])),
+          ),
           ...getRequiredExportFieldKeys(preview, group),
         ]),
       ),
     );
-    const normalizedRows = rows.map((row) => Object.fromEntries(fieldKeys.map((key) => [key, row[key] ?? ""])));
+    const normalizedRows = rows.map((row) =>
+      Object.fromEntries(fieldKeys.map((key) => [key, row[key] ?? ""])),
+    );
     const worksheet = XLSX.utils.json_to_sheet(normalizedRows, {
       header: fieldKeys,
     });
@@ -2018,25 +2403,35 @@ function getRecordRequiredModelIssues(
   if (!record.selected || (record.importAction || "create") === "skip") {
     return [];
   }
-  return getRequiredAttributeDefinitions(preview, record.ciType).flatMap((definition) => {
-    const label = definition.alias || getAttributeLabel(definition.name);
-    if (requiredFieldNeedsManualValue(record, definition.name, definition)) {
-      return [{
-        field: definition.name,
-        level: "blocking",
-        message: `缺少必填字段：${label}`,
-      } satisfies ResourceImportRecordIssue];
-    }
-    const choiceMessage = getRequiredChoiceManualMessage(record, definition.name, definition);
-    if (choiceMessage) {
-      return [{
-        field: definition.name,
-        level: "blocking",
-        message: choiceMessage,
-      } satisfies ResourceImportRecordIssue];
-    }
-    return [];
-  });
+  return getRequiredAttributeDefinitions(preview, record.ciType).flatMap(
+    (definition) => {
+      const label = definition.alias || getAttributeLabel(definition.name);
+      if (requiredFieldNeedsManualValue(record, definition.name, definition)) {
+        return [
+          {
+            field: definition.name,
+            level: "blocking",
+            message: `缺少必填字段：${label}`,
+          } satisfies ResourceImportRecordIssue,
+        ];
+      }
+      const choiceMessage = getRequiredChoiceManualMessage(
+        record,
+        definition.name,
+        definition,
+      );
+      if (choiceMessage) {
+        return [
+          {
+            field: definition.name,
+            level: "blocking",
+            message: choiceMessage,
+          } satisfies ResourceImportRecordIssue,
+        ];
+      }
+      return [];
+    },
+  );
 }
 
 function dedupeRecordIssues(issues: ResourceImportRecordIssue[]) {
@@ -2086,7 +2481,11 @@ function getDefaultedRequiredModelIssues(
     group.records.flatMap((record) =>
       getRequiredAttributeDefinitions(preview, record.ciType)
         .map((definition) => {
-          const message = getRequiredDefaultMessage(record, definition.name, definition);
+          const message = getRequiredDefaultMessage(
+            record,
+            definition.name,
+            definition,
+          );
           if (!message) {
             return null;
           }
@@ -2101,12 +2500,16 @@ function getDefaultedRequiredModelIssues(
             defaultValue: getAttributeDefaultValue(definition),
           } satisfies ResourceImportDefaultedRequiredIssue;
         })
-        .filter((item): item is ResourceImportDefaultedRequiredIssue => Boolean(item)),
+        .filter((item): item is ResourceImportDefaultedRequiredIssue =>
+          Boolean(item),
+        ),
     ),
   );
 }
 
-function getDefaultedRequiredModelMessage(issues: ResourceImportDefaultedRequiredIssue[]) {
+function getDefaultedRequiredModelMessage(
+  issues: ResourceImportDefaultedRequiredIssue[],
+) {
   if (!issues.length) {
     return "";
   }
@@ -2114,7 +2517,9 @@ function getDefaultedRequiredModelMessage(issues: ResourceImportDefaultedRequire
   return `有 ${recordCount} 条记录的 ${issues.length} 个必填字段将使用 CMDB 模型默认值。`;
 }
 
-function getRequiredModelBlockingMessage(issues: ResourceImportRequiredIssue[]) {
+function getRequiredModelBlockingMessage(
+  issues: ResourceImportRequiredIssue[],
+) {
   if (!issues.length) {
     return "";
   }
@@ -2122,7 +2527,9 @@ function getRequiredModelBlockingMessage(issues: ResourceImportRequiredIssue[]) 
   return `当前数据存在 CMDB 模型必填字段问题：${recordCount} 条记录、${issues.length} 个字段需要补齐或修正。`;
 }
 
-function getMetadataBlockingMessage(preview: ResourceImportPreview | null | undefined) {
+function getMetadataBlockingMessage(
+  preview: ResourceImportPreview | null | undefined,
+) {
   if (!preview || preview.metadataConnected !== false) {
     return "";
   }
@@ -2194,7 +2601,11 @@ function getFieldAttentionMessage(
   if (requiredFieldNeedsManualValue(record, field, definition)) {
     return `${definition?.alias || getAttributeLabel(field)} 为空，请补充`;
   }
-  const choiceMessage = getRequiredChoiceManualMessage(record, field, definition);
+  const choiceMessage = getRequiredChoiceManualMessage(
+    record,
+    field,
+    definition,
+  );
   if (choiceMessage) {
     return choiceMessage;
   }
@@ -2266,14 +2677,18 @@ function getGroupIcon(group: ResourceImportGroup) {
   if (ciType.includes("server")) {
     return "🖥️";
   }
-  if (ciType.includes("switch") || ciType.includes("router") || ciType.includes("firewall")) {
+  if (
+    ciType.includes("switch") ||
+    ciType.includes("router") ||
+    ciType.includes("firewall")
+  ) {
     return "🌐";
   }
   if (
-    ciType.includes("mysql")
-    || ciType.includes("redis")
-    || ciType.includes("kafka")
-    || ciType.includes("nginx")
+    ciType.includes("mysql") ||
+    ciType.includes("redis") ||
+    ciType.includes("kafka") ||
+    ciType.includes("nginx")
   ) {
     return "🔧";
   }
@@ -2314,14 +2729,21 @@ function FlowSteps({
         const status = forceCompleted
           ? "completed"
           : flowStep.index < currentStep
-            ? "completed"
-            : flowStep.index === currentStep
-              ? "active"
-              : "";
+          ? "completed"
+          : flowStep.index === currentStep
+          ? "active"
+          : "";
         return (
-          <div key={flowStep.index} className={`resource-import-flow-step ${status}`.trim()}>
-            <span className="resource-import-flow-step-icon">{flowStep.icon}</span>
-            <span className="resource-import-flow-step-label">{flowStep.label}</span>
+          <div
+            key={flowStep.index}
+            className={`resource-import-flow-step ${status}`.trim()}
+          >
+            <span className="resource-import-flow-step-icon">
+              {flowStep.icon}
+            </span>
+            <span className="resource-import-flow-step-label">
+              {flowStep.label}
+            </span>
           </div>
         );
       })}
@@ -2329,59 +2751,60 @@ function FlowSteps({
   );
 }
 
-const CANONICAL_RESOURCE_IMPORT_COPY_BLOCKS: ResourceImportStartPayload["copyBlocks"] = [
-  {
-    title: "资源导入入口已准备好",
-    paragraphs: [
-      "请在下方上传资源清单文件，我会先解析字段、清洗数据并生成预览，确认无误后再导入 CMDB。",
-    ],
-  },
-  {
-    title: "我能处理的各种资料：",
-    items: [
-      "资源实例：服务器、虚拟机、容器、Kubernetes 节点、数据库、中间件、Nginx / Apache、网络设备。",
-      "业务对象：产品、应用、服务、平台、负责人、环境、所属部门。",
-      "网络与机房：IP 地址、子网、VLAN、机柜、机房、交换机端口。",
-      "资源关系：服务器属于哪个应用、应用属于哪个产品、IP 与设备绑定、上下游依赖关系。",
-    ],
-  },
-  {
-    title: "建议清单中包含的字段：",
-    items: [
-      "基础字段：名称、资源类型、IP、环境、状态、所属应用或产品。",
-      "可选字段：厂商、型号、序列号、系统版本、负责人、机房、机柜、备注。",
-      "关系字段：应用名、产品名、父级资源、关联 IP、依赖服务。",
-    ],
-  },
-  {
-    title: "导入前会自动处理：",
-    items: [
-      "识别 Excel/CSV 表头并映射到 CMDB 字段。",
-      "清洗名称、IP、状态、类型等不统一的数据。",
-      "按命名、网段、应用字段推断资源拓扑关系。",
-      "生成可编辑预览，确认后才会写入 CMDB。",
-    ],
-  },
-  {
-    title: "导入流程：",
-    ordered: true,
-    items: [
-      "上传资源清单文件。",
-      "AI 解析字段并清洗数据。",
-      "确认资源和关系预览。",
-      "查看推断拓扑。",
-      "确认导入 CMDB。",
-    ],
-  },
-  {
-    title: "支持的文件：",
-    items: [
-      "Excel / CSV 资源台账优先支持。",
-      "Word 文档、拓扑图片可上传，系统会尽量抽取结构化信息。",
-      "可以一次上传多个客户或多个系统的清单，进入预览后再筛选。",
-    ],
-  },
-];
+const CANONICAL_RESOURCE_IMPORT_COPY_BLOCKS: ResourceImportStartPayload["copyBlocks"] =
+  [
+    {
+      title: "资源导入入口已准备好",
+      paragraphs: [
+        "请在下方上传资源清单文件，我会先解析字段、清洗数据并生成预览，确认无误后再导入 CMDB。",
+      ],
+    },
+    {
+      title: "我能处理的各种资料：",
+      items: [
+        "资源实例：服务器、虚拟机、容器、Kubernetes 节点、数据库、中间件、Nginx / Apache、网络设备。",
+        "业务对象：产品、应用、服务、平台、负责人、环境、所属部门。",
+        "网络与机房：IP 地址、子网、VLAN、机柜、机房、交换机端口。",
+        "资源关系：服务器属于哪个应用、应用属于哪个产品、IP 与设备绑定、上下游依赖关系。",
+      ],
+    },
+    {
+      title: "建议清单中包含的字段：",
+      items: [
+        "基础字段：名称、资源类型、IP、环境、状态、所属应用或产品。",
+        "可选字段：厂商、型号、序列号、系统版本、负责人、机房、机柜、备注。",
+        "关系字段：应用名、产品名、父级资源、关联 IP、依赖服务。",
+      ],
+    },
+    {
+      title: "导入前会自动处理：",
+      items: [
+        "识别 Excel/CSV 表头并映射到 CMDB 字段。",
+        "清洗名称、IP、状态、类型等不统一的数据。",
+        "按命名、网段、应用字段推断资源拓扑关系。",
+        "生成可编辑预览，确认后才会写入 CMDB。",
+      ],
+    },
+    {
+      title: "导入流程：",
+      ordered: true,
+      items: [
+        "上传资源清单文件。",
+        "AI 解析字段并清洗数据。",
+        "确认资源和关系预览。",
+        "查看推断拓扑。",
+        "确认导入 CMDB。",
+      ],
+    },
+    {
+      title: "支持的文件：",
+      items: [
+        "Excel / CSV 资源台账优先支持。",
+        "Word 文档、拓扑图片可上传，系统会尽量抽取结构化信息。",
+        "可以一次上传多个客户或多个系统的清单，进入预览后再筛选。",
+      ],
+    },
+  ];
 
 function normalizeResourceImportStartPayload(
   payload: ResourceImportStartPayload | null,
@@ -2416,7 +2839,8 @@ function IntroStage({
   onStartParse: ResourceImportConversationCardProps["onStartParse"];
 }) {
   const [metadata, setMetadata] = useState<ResourceImportMetadata | null>(null);
-  const [startPayload, setStartPayload] = useState<ResourceImportStartPayload | null>(null);
+  const [startPayload, setStartPayload] =
+    useState<ResourceImportStartPayload | null>(null);
   const [dragActive, setDragActive] = useState(false);
 
   const fallbackStartPayload: ResourceImportStartPayload = {
@@ -2434,7 +2858,10 @@ function IntroStage({
       })
       .catch((err) => {
         if (!cancelled) {
-          console.warn("[resource-import] CMDB metadata load failed; using fallback intro copy", err);
+          console.warn(
+            "[resource-import] CMDB metadata load failed; using fallback intro copy",
+            err,
+          );
         }
       });
     void getResourceImportStart(agentId || undefined)
@@ -2455,7 +2882,9 @@ function IntroStage({
   }, [agentId]);
 
   const handleFiles = (nextFiles: FileList | File[] | null) => {
-    const normalized = nextFiles ? Array.from(nextFiles).filter((file) => file.size > 0) : [];
+    const normalized = nextFiles
+      ? Array.from(nextFiles).filter((file) => file.size > 0)
+      : [];
     if (!normalized.length) {
       return;
     }
@@ -2466,14 +2895,21 @@ function IntroStage({
     });
   };
 
-  const introPayload = normalizeResourceImportStartPayload(startPayload, fallbackStartPayload);
+  const introPayload = normalizeResourceImportStartPayload(
+    startPayload,
+    fallbackStartPayload,
+  );
   const supportedFormats = metadata?.supportedFormats?.length
     ? metadata.supportedFormats
     : introPayload.supportedFormats;
 
   return (
     <div
-      className={dragActive ? "resource-import-conversation-card drag-active" : "resource-import-conversation-card"}
+      className={
+        dragActive
+          ? "resource-import-conversation-card drag-active"
+          : "resource-import-conversation-card"
+      }
       onDragEnter={(event) => {
         event.preventDefault();
         setDragActive(true);
@@ -2530,7 +2966,9 @@ function IntroStage({
               onChange={(event) => handleFiles(event.target.files)}
             />
             <div className="resource-import-dropzone-icon">📂</div>
-            <div className="resource-import-dropzone-title">拖拽文件到此处，或点击选择文件</div>
+            <div className="resource-import-dropzone-title">
+              拖拽文件到此处，或点击选择文件
+            </div>
             <div className="resource-import-dropzone-hint">
               支持 Excel、CSV、Word、图片，可一次上传多个文件
             </div>
@@ -2540,7 +2978,10 @@ function IntroStage({
         {flow.files?.length ? (
           <div className="resource-import-file-stack">
             {flow.files.map((file) => (
-              <div key={`${file.name}-${file.size}`} className="resource-import-file-chip">
+              <div
+                key={`${file.name}-${file.size}`}
+                className="resource-import-file-chip"
+              >
                 <span>{getFileEmoji(file.name)}</span>
                 <div>
                   <strong>{file.name}</strong>
@@ -2555,7 +2996,9 @@ function IntroStage({
           <button
             type="button"
             className="secondary"
-            onClick={() => onReturnToUpload({ flowId, sourceMessageId: messageId })}
+            onClick={() =>
+              onReturnToUpload({ flowId, sourceMessageId: messageId })
+            }
           >
             清空文件
           </button>
@@ -2598,8 +3041,12 @@ function ParsingStage({
   onReturnToUpload: ResourceImportConversationCardProps["onReturnToUpload"];
 }) {
   const startedRef = useRef(false);
-  const [displayedLogs, setDisplayedLogs] = useState<string[]>(flow.preview?.logs || []);
-  const [parsePercent, setParsePercent] = useState(flow.status === "completed" ? 100 : 8);
+  const [displayedLogs, setDisplayedLogs] = useState<string[]>(
+    flow.preview?.logs || [],
+  );
+  const [parsePercent, setParsePercent] = useState(
+    flow.status === "completed" ? 100 : 8,
+  );
 
   useEffect(() => {
     if (flow.preview?.logs?.length) {
@@ -2700,12 +3147,17 @@ function ParsingStage({
     <div className="resource-import-conversation-card">
       <FlowSteps stage="parsing" forceCompleted={flow.status === "completed"} />
 
-      {flow.error ? <div className="resource-import-inline-error">{flow.error}</div> : null}
+      {flow.error ? (
+        <div className="resource-import-inline-error">{flow.error}</div>
+      ) : null}
 
       <div className="resource-import-stage">
         <div className="resource-import-file-stack">
           {(flow.files || []).map((file) => (
-            <div key={`${file.name}-${file.size}`} className="resource-import-file-chip">
+            <div
+              key={`${file.name}-${file.size}`}
+              className="resource-import-file-chip"
+            >
               <span>{getFileEmoji(file.name)}</span>
               <div>
                 <strong>{file.name}</strong>
@@ -2721,21 +3173,29 @@ function ParsingStage({
             <span>{flow.status === "error" ? "失败" : `${parsePercent}%`}</span>
           </div>
           <div className="resource-import-parse-bar">
-            <div className="resource-import-parse-bar-fill" style={{ width: `${parsePercent}%` }} />
+            <div
+              className="resource-import-parse-bar-fill"
+              style={{ width: `${parsePercent}%` }}
+            />
           </div>
           <div className="resource-import-parse-status">
             {flow.status === "completed"
               ? "解析完成"
               : flow.status === "error"
-                ? "解析失败"
-                : "解析中..."}
+              ? "解析失败"
+              : "解析中..."}
           </div>
           <div className="resource-import-parse-log">
-            {(displayedLogs.length ? displayedLogs : ["→ 等待解析开始..."]).map((logLine, index) => (
-              <div key={`${logLine}-${index}`} className="resource-import-log-line">
-                {logLine}
-              </div>
-            ))}
+            {(displayedLogs.length ? displayedLogs : ["→ 等待解析开始..."]).map(
+              (logLine, index) => (
+                <div
+                  key={`${logLine}-${index}`}
+                  className="resource-import-log-line"
+                >
+                  {logLine}
+                </div>
+              ),
+            )}
           </div>
         </div>
 
@@ -2819,13 +3279,20 @@ function StructureStage({
     key: string,
     updater: (item: ResourceImportStructureItem) => ResourceImportStructureItem,
   ) => {
-    setItems((current) => current.map((item) => (item.key === key ? updater(item) : item)));
+    setItems((current) =>
+      current.map((item) => (item.key === key ? updater(item) : item)),
+    );
   };
 
   const openModelConfig = (item: ResourceImportStructureItem) => {
     const nextDraft = {
       groupName: item.selectedGroupName || item.suggestedGroupName || "",
-      name: item.modelDraft?.name || item.selectedModelName || item.suggestedModelName || item.resourceCiType || "",
+      name:
+        item.modelDraft?.name ||
+        item.selectedModelName ||
+        item.suggestedModelName ||
+        item.resourceCiType ||
+        "",
       alias: item.modelDraft?.alias || item.resourceLabel || "",
       inheritFrom: item.modelDraft?.inheritFrom || "",
       uniqueKey: item.modelDraft?.uniqueKey || "",
@@ -2833,25 +3300,45 @@ function StructureStage({
     setEditingItemKey(item.key);
     setModelDraft({
       ...nextDraft,
-      uniqueKey: nextDraft.uniqueKey || getSuggestedUniqueKey(flow.preview, item, metadata, nextDraft),
+      uniqueKey:
+        nextDraft.uniqueKey ||
+        getSuggestedUniqueKey(flow.preview, item, metadata, nextDraft),
     });
   };
 
   const editingItem = editingItemKey
     ? items.find((item) => item.key === editingItemKey) || null
     : null;
-  const editingGroupOptions = editingItem ? getStructureGroupOptions(editingItem, metadata) : [];
+  const editingGroupOptions = editingItem
+    ? getStructureGroupOptions(editingItem, metadata)
+    : [];
   const editingModelOptions = editingItem
-    ? getStructureModelOptions(editingItem, metadata, modelDraft.groupName || "")
+    ? getStructureModelOptions(
+        editingItem,
+        metadata,
+        modelDraft.groupName || "",
+      )
     : [];
   const editingGroupExists = editingItem
-    ? isExistingStructureGroup(editingItem, metadata, modelDraft.groupName || "")
+    ? isExistingStructureGroup(
+        editingItem,
+        metadata,
+        modelDraft.groupName || "",
+      )
     : false;
   const editingModelExists = editingItem
-    ? editingModelOptions.some((option) => option.existing && option.name === modelDraft.name)
+    ? editingModelOptions.some(
+        (option) => option.existing && option.name === modelDraft.name,
+      )
     : false;
-  const editingGroupSelectValue = getStructureSelectValue(modelDraft.groupName, editingGroupOptions);
-  const editingModelSelectValue = getStructureSelectValue(modelDraft.name, editingModelOptions);
+  const editingGroupSelectValue = getStructureSelectValue(
+    modelDraft.groupName,
+    editingGroupOptions,
+  );
+  const editingModelSelectValue = getStructureSelectValue(
+    modelDraft.name,
+    editingModelOptions,
+  );
   const blockingAnalysisIssues = getBlockingAnalysisIssues(flow.preview);
   const blockingAnalysisMessage = getBlockingAnalysisMessage(flow.preview);
 
@@ -2864,7 +3351,9 @@ function StructureStage({
     const existingModelSelected = isExistingStructureModel(item, metadata);
     const requiresGroupCreate = !existingGroupSelected;
     const requiresModelDraft = !existingModelSelected;
-    const hasValidModelDraft = item.modelDraft?.name === item.selectedModelName && Boolean(item.modelDraft?.uniqueKey);
+    const hasValidModelDraft =
+      item.modelDraft?.name === item.selectedModelName &&
+      Boolean(item.modelDraft?.uniqueKey);
     if (requiresGroupCreate && !item.createGroupApproved) {
       return true;
     }
@@ -2886,19 +3375,29 @@ function StructureStage({
       <div className="resource-import-stage">
         <section className="resource-import-section">
           <div className="resource-import-section-header">
-            <div className="resource-import-section-title">分组与模型预检查</div>
+            <div className="resource-import-section-title">
+              分组与模型预检查
+            </div>
             <span className="resource-import-section-subtitle">
               解析后先判断分组和模型，再进入数据确认
             </span>
           </div>
 
-          {error ? <div className="resource-import-inline-error">{error}</div> : null}
+          {error ? (
+            <div className="resource-import-inline-error">{error}</div>
+          ) : null}
           {blockingAnalysisIssues.length ? (
             <div className="resource-import-inline-error">
               <strong>本次解析结果不完整，已禁止继续导入。</strong>
               <ul className="resource-import-issue-list">
                 {blockingAnalysisIssues.map((issue, index) => (
-                  <li key={`${issue.fileName || issue.sheetName || "issue"}-${index}`}>{issue.message}</li>
+                  <li
+                    key={`${
+                      issue.fileName || issue.sheetName || "issue"
+                    }-${index}`}
+                  >
+                    {issue.message}
+                  </li>
                 ))}
               </ul>
             </div>
@@ -2917,23 +3416,36 @@ function StructureStage({
                 metadata,
                 item.selectedGroupName || "",
               );
-              const existingModelSelected = isExistingStructureModel(item, metadata);
+              const existingModelSelected = isExistingStructureModel(
+                item,
+                metadata,
+              );
               const requiresGroupCreate = !existingGroupSelected;
               const requiresModelDraft = !existingModelSelected;
-              const groupSelectValue = getStructureSelectValue(item.selectedGroupName || "", groupOptions);
-              const modelSelectValue = getStructureSelectValue(item.selectedModelName || "", modelOptions);
+              const groupSelectValue = getStructureSelectValue(
+                item.selectedGroupName || "",
+                groupOptions,
+              );
+              const modelSelectValue = getStructureSelectValue(
+                item.selectedModelName || "",
+                modelOptions,
+              );
               const originalTypeText = String(
-                item.originalTypeText
-                || item.rawTypeHints?.[0]
-                || item.resourceCiType
-                || item.resourceLabel
-                || "",
+                item.originalTypeText ||
+                  item.rawTypeHints?.[0] ||
+                  item.resourceCiType ||
+                  item.resourceLabel ||
+                  "",
               ).trim();
-              const selectedModelOption = modelOptions.find((option) => option.name === item.selectedModelName);
+              const selectedModelOption = modelOptions.find(
+                (option) => option.name === item.selectedModelName,
+              );
               const selectedModelDisplayName = selectedModelOption?.alias
                 ? `${selectedModelOption.alias} (${selectedModelOption.name})`
                 : String(item.selectedModelName || "").trim();
-              const selectedGroupDisplayName = String(item.selectedGroupName || "").trim();
+              const selectedGroupDisplayName = String(
+                item.selectedGroupName || "",
+              ).trim();
 
               return (
                 <div key={item.key} className="resource-import-structure-card">
@@ -2942,22 +3454,36 @@ function StructureStage({
                       <strong>{item.resourceLabel}</strong>
                       <small>{item.recordCount} 条记录</small>
                     </div>
-                    <span className={`resource-import-structure-badge ${item.status}`.trim()}>
+                    <span
+                      className={`resource-import-structure-badge ${item.status}`.trim()}
+                    >
                       {getStructureStatusLabel(item.status)}
                     </span>
                   </div>
 
-                  {item.reason ? <p className="resource-import-structure-reason">{item.reason}</p> : null}
+                  {item.reason ? (
+                    <p className="resource-import-structure-reason">
+                      {item.reason}
+                    </p>
+                  ) : null}
 
                   <div className="resource-import-structure-mapping">
-                    <div><span>原文类型</span>{originalTypeText || "未提供"}</div>
+                    <div>
+                      <span>原文类型</span>
+                      {originalTypeText || "未提供"}
+                    </div>
                     <div>
                       <span>当前映射</span>
                       {selectedGroupDisplayName || selectedModelDisplayName
-                        ? `${selectedGroupDisplayName || "未定分组"} / ${selectedModelDisplayName || "未定模型"}`
+                        ? `${selectedGroupDisplayName || "未定分组"} / ${
+                            selectedModelDisplayName || "未定模型"
+                          }`
                         : "待确认"}
                     </div>
-                    <div><span>匹配置信度</span>{getStructureConfidenceLabel(item.semanticConfidence)}</div>
+                    <div>
+                      <span>匹配置信度</span>
+                      {getStructureConfidenceLabel(item.semanticConfidence)}
+                    </div>
                   </div>
 
                   {item.rawTypeHints?.length ? (
@@ -2974,31 +3500,53 @@ function StructureStage({
                         onChange={(event) => {
                           const selectedValue = event.target.value;
                           updateItem(item.key, (current) => {
-                            const nextGroupName = selectedValue === CUSTOM_STRUCTURE_OPTION_VALUE
-                              ? (isExistingStructureGroup(current, metadata, current.selectedGroupName || "")
-                                ? ""
-                                : String(current.selectedGroupName || "").trim())
-                              : selectedValue;
-                            const nextModelOptions = getStructureModelOptions(current, metadata, nextGroupName);
+                            const nextGroupName =
+                              selectedValue === CUSTOM_STRUCTURE_OPTION_VALUE
+                                ? isExistingStructureGroup(
+                                    current,
+                                    metadata,
+                                    current.selectedGroupName || "",
+                                  )
+                                  ? ""
+                                  : String(
+                                      current.selectedGroupName || "",
+                                    ).trim()
+                                : selectedValue;
+                            const nextModelOptions = getStructureModelOptions(
+                              current,
+                              metadata,
+                              nextGroupName,
+                            );
                             const nextModelName = nextModelOptions.some(
-                              (option) => option.name === current.selectedModelName,
+                              (option) =>
+                                option.name === current.selectedModelName,
                             )
                               ? current.selectedModelName
-                              : (nextModelOptions[0]?.name || current.selectedModelName);
-                            const nextGroupExists = isExistingStructureGroup(current, metadata, nextGroupName);
+                              : nextModelOptions[0]?.name ||
+                                current.selectedModelName;
+                            const nextGroupExists = isExistingStructureGroup(
+                              current,
+                              metadata,
+                              nextGroupName,
+                            );
                             return {
                               ...current,
                               selectedGroupName: nextGroupName,
                               selectedModelName: nextModelName,
-                              createGroupApproved: nextGroupExists ? false : current.createGroupApproved,
+                              createGroupApproved: nextGroupExists
+                                ? false
+                                : current.createGroupApproved,
                               createModelApproved: nextModelOptions.some(
-                                (option) => option.existing && option.name === nextModelName,
+                                (option) =>
+                                  option.existing &&
+                                  option.name === nextModelName,
                               )
                                 ? false
                                 : current.createModelApproved,
-                              modelDraft: current.modelDraft?.name === nextModelName
-                                ? current.modelDraft
-                                : undefined,
+                              modelDraft:
+                                current.modelDraft?.name === nextModelName
+                                  ? current.modelDraft
+                                  : undefined,
                             };
                           });
                         }}
@@ -3008,7 +3556,9 @@ function StructureStage({
                             {option.name}
                           </option>
                         ))}
-                        <option value={CUSTOM_STRUCTURE_OPTION_VALUE}>自定义新分组...</option>
+                        <option value={CUSTOM_STRUCTURE_OPTION_VALUE}>
+                          自定义新分组...
+                        </option>
                       </select>
                       {groupSelectValue === CUSTOM_STRUCTURE_OPTION_VALUE ? (
                         <input
@@ -3017,26 +3567,40 @@ function StructureStage({
                           onChange={(event) => {
                             const nextGroupName = event.target.value;
                             updateItem(item.key, (current) => {
-                              const nextModelOptions = getStructureModelOptions(current, metadata, nextGroupName);
+                              const nextModelOptions = getStructureModelOptions(
+                                current,
+                                metadata,
+                                nextGroupName,
+                              );
                               const nextModelName = nextModelOptions.some(
-                                (option) => option.name === current.selectedModelName,
+                                (option) =>
+                                  option.name === current.selectedModelName,
                               )
                                 ? current.selectedModelName
                                 : "";
-                              const nextGroupExists = isExistingStructureGroup(current, metadata, nextGroupName);
+                              const nextGroupExists = isExistingStructureGroup(
+                                current,
+                                metadata,
+                                nextGroupName,
+                              );
                               return {
                                 ...current,
                                 selectedGroupName: nextGroupName,
                                 selectedModelName: nextModelName,
-                                createGroupApproved: nextGroupExists ? false : current.createGroupApproved,
+                                createGroupApproved: nextGroupExists
+                                  ? false
+                                  : current.createGroupApproved,
                                 createModelApproved: nextModelOptions.some(
-                                  (option) => option.existing && option.name === nextModelName,
+                                  (option) =>
+                                    option.existing &&
+                                    option.name === nextModelName,
                                 )
                                   ? false
                                   : current.createModelApproved,
-                                modelDraft: current.modelDraft?.name === nextModelName
-                                  ? current.modelDraft
-                                  : undefined,
+                                modelDraft:
+                                  current.modelDraft?.name === nextModelName
+                                    ? current.modelDraft
+                                    : undefined,
                               };
                             });
                           }}
@@ -3052,23 +3616,34 @@ function StructureStage({
                         onChange={(event) =>
                           updateItem(item.key, (current) => ({
                             ...current,
-                            selectedModelName: event.target.value === CUSTOM_STRUCTURE_OPTION_VALUE
-                              ? (isExistingStructureModel(current, metadata)
-                                ? ""
-                                : String(current.selectedModelName || "").trim())
-                              : event.target.value,
-                            createModelApproved: event.target.value === CUSTOM_STRUCTURE_OPTION_VALUE
-                              ? current.createModelApproved
-                              : false,
+                            selectedModelName:
+                              event.target.value ===
+                              CUSTOM_STRUCTURE_OPTION_VALUE
+                                ? isExistingStructureModel(current, metadata)
+                                  ? ""
+                                  : String(
+                                      current.selectedModelName || "",
+                                    ).trim()
+                                : event.target.value,
+                            createModelApproved:
+                              event.target.value ===
+                              CUSTOM_STRUCTURE_OPTION_VALUE
+                                ? current.createModelApproved
+                                : false,
                             modelDraft: undefined,
-                          }))}
+                          }))
+                        }
                       >
                         {modelOptions.map((option) => (
                           <option key={option.name} value={option.name}>
-                            {option.alias ? `${option.alias} (${option.name})` : option.name}
+                            {option.alias
+                              ? `${option.alias} (${option.name})`
+                              : option.name}
                           </option>
                         ))}
-                        <option value={CUSTOM_STRUCTURE_OPTION_VALUE}>自定义新模型...</option>
+                        <option value={CUSTOM_STRUCTURE_OPTION_VALUE}>
+                          自定义新模型...
+                        </option>
                       </select>
                       {modelSelectValue === CUSTOM_STRUCTURE_OPTION_VALUE ? (
                         <input
@@ -3080,7 +3655,8 @@ function StructureStage({
                               selectedModelName: event.target.value,
                               createModelApproved: false,
                               modelDraft: undefined,
-                            }))}
+                            }))
+                          }
                           placeholder="输入新模型名称"
                         />
                       ) : null}
@@ -3091,15 +3667,24 @@ function StructureStage({
                     <label className="resource-import-structure-check">
                       <input
                         type="checkbox"
-                        checked={existingGroupSelected ? false : Boolean(item.createGroupApproved)}
+                        checked={
+                          existingGroupSelected
+                            ? false
+                            : Boolean(item.createGroupApproved)
+                        }
                         disabled={existingGroupSelected}
                         onChange={(event) =>
                           updateItem(item.key, (current) => ({
                             ...current,
                             createGroupApproved: event.target.checked,
-                          }))}
+                          }))
+                        }
                       />
-                      <span>{existingGroupSelected ? "当前已选择现有分组，无需创建" : "若当前分组不存在，确认后续创建该分组"}</span>
+                      <span>
+                        {existingGroupSelected
+                          ? "当前已选择现有分组，无需创建"
+                          : "若当前分组不存在，确认后续创建该分组"}
+                      </span>
                     </label>
                   ) : null}
 
@@ -3112,7 +3697,8 @@ function StructureStage({
                           updateItem(item.key, (current) => ({
                             ...current,
                             createModelApproved: event.target.checked,
-                          }))}
+                          }))
+                        }
                       />
                       <span>确认后续创建该模型，并补齐模型必填参数</span>
                     </label>
@@ -3122,12 +3708,15 @@ function StructureStage({
                     <div className="resource-import-structure-draft">
                       <div>
                         <strong>
-                          {item.modelDraft?.alias || item.modelDraft?.name || "尚未配置新模型"}
+                          {item.modelDraft?.alias ||
+                            item.modelDraft?.name ||
+                            "尚未配置新模型"}
                         </strong>
                         <small>
                           模型名: {item.modelDraft?.name || "未填写"}
                           {" · "}继承: {item.modelDraft?.inheritFrom || "无"}
-                          {" · "}唯一标识: {item.modelDraft?.uniqueKey || "未选择"}
+                          {" · "}唯一标识:{" "}
+                          {item.modelDraft?.uniqueKey || "未选择"}
                         </small>
                       </div>
                       <button
@@ -3157,7 +3746,8 @@ function StructureStage({
               onReturnToUpload({
                 flowId: flow.flowId,
                 sourceMessageId: messageId,
-              })}
+              })
+            }
           >
             结束本次导入
           </button>
@@ -3166,7 +3756,10 @@ function StructureStage({
             className="primary"
             disabled={Boolean(validationError)}
             onClick={() => {
-              const next = applyStructureSelectionsToPreview(flow.preview, items);
+              const next = applyStructureSelectionsToPreview(
+                flow.preview,
+                items,
+              );
               onConfirmStructure({
                 messageId,
                 flowId: flow.flowId,
@@ -3182,16 +3775,27 @@ function StructureStage({
       </div>
 
       {editingItem ? (
-        <div className="resource-import-modal-backdrop" onClick={() => setEditingItemKey(null)}>
-          <div className="resource-import-modal" onClick={(event) => event.stopPropagation()}>
+        <div
+          className="resource-import-modal-backdrop"
+          onClick={() => setEditingItemKey(null)}
+        >
+          <div
+            className="resource-import-modal"
+            onClick={(event) => event.stopPropagation()}
+          >
             <div className="resource-import-modal-header">
               <div>
                 <h3>配置新模型</h3>
                 <p>
-                  为 {editingItem.resourceLabel} 补充模型创建参数。这里只采集参数，真正创建动作仍需用户确认。
+                  为 {editingItem.resourceLabel}{" "}
+                  补充模型创建参数。这里只采集参数，真正创建动作仍需用户确认。
                 </p>
               </div>
-              <button type="button" className="secondary" onClick={() => setEditingItemKey(null)}>
+              <button
+                type="button"
+                className="secondary"
+                onClick={() => setEditingItemKey(null)}
+              >
                 关闭
               </button>
             </div>
@@ -3203,13 +3807,22 @@ function StructureStage({
                   value={editingGroupSelectValue}
                   onChange={(event) =>
                     setModelDraft((current) => {
-                      const nextGroupName = event.target.value === CUSTOM_STRUCTURE_OPTION_VALUE
-                        ? (editingGroupExists ? "" : String(current.groupName || "").trim())
-                        : event.target.value;
+                      const nextGroupName =
+                        event.target.value === CUSTOM_STRUCTURE_OPTION_VALUE
+                          ? editingGroupExists
+                            ? ""
+                            : String(current.groupName || "").trim()
+                          : event.target.value;
                       const nextModelOptions = editingItem
-                        ? getStructureModelOptions(editingItem, metadata, nextGroupName)
+                        ? getStructureModelOptions(
+                            editingItem,
+                            metadata,
+                            nextGroupName,
+                          )
                         : [];
-                      const nextModelName = nextModelOptions.some((option) => option.name === current.name)
+                      const nextModelName = nextModelOptions.some(
+                        (option) => option.name === current.name,
+                      )
                         ? current.name
                         : "";
                       return {
@@ -3217,14 +3830,17 @@ function StructureStage({
                         groupName: nextGroupName,
                         name: nextModelName,
                       };
-                    })}
+                    })
+                  }
                 >
                   {editingGroupOptions.map((option) => (
                     <option key={option.name} value={option.name}>
                       {option.name}
                     </option>
                   ))}
-                  <option value={CUSTOM_STRUCTURE_OPTION_VALUE}>自定义新分组...</option>
+                  <option value={CUSTOM_STRUCTURE_OPTION_VALUE}>
+                    自定义新分组...
+                  </option>
                 </select>
                 {editingGroupSelectValue === CUSTOM_STRUCTURE_OPTION_VALUE ? (
                   <input
@@ -3235,7 +3851,8 @@ function StructureStage({
                         ...current,
                         groupName: event.target.value,
                         name: "",
-                      }))}
+                      }))
+                    }
                     placeholder="输入新分组名称"
                   />
                 ) : null}
@@ -3248,17 +3865,25 @@ function StructureStage({
                   onChange={(event) =>
                     setModelDraft((current) => ({
                       ...current,
-                      name: event.target.value === CUSTOM_STRUCTURE_OPTION_VALUE
-                        ? (editingModelExists ? "" : String(current.name || "").trim())
-                        : event.target.value,
-                    }))}
+                      name:
+                        event.target.value === CUSTOM_STRUCTURE_OPTION_VALUE
+                          ? editingModelExists
+                            ? ""
+                            : String(current.name || "").trim()
+                          : event.target.value,
+                    }))
+                  }
                 >
                   {editingModelOptions.map((option) => (
                     <option key={option.name} value={option.name}>
-                      {option.alias ? `${option.alias} (${option.name})` : option.name}
+                      {option.alias
+                        ? `${option.alias} (${option.name})`
+                        : option.name}
                     </option>
                   ))}
-                  <option value={CUSTOM_STRUCTURE_OPTION_VALUE}>自定义新模型...</option>
+                  <option value={CUSTOM_STRUCTURE_OPTION_VALUE}>
+                    自定义新模型...
+                  </option>
                 </select>
                 {editingModelSelectValue === CUSTOM_STRUCTURE_OPTION_VALUE ? (
                   <input
@@ -3267,7 +3892,8 @@ function StructureStage({
                       setModelDraft((current) => ({
                         ...current,
                         name: event.target.value,
-                      }))}
+                      }))
+                    }
                     placeholder="输入新模型名称"
                   />
                 ) : null}
@@ -3281,7 +3907,8 @@ function StructureStage({
                     setModelDraft((current) => ({
                       ...current,
                       alias: event.target.value,
-                    }))}
+                    }))
+                  }
                   placeholder="例如 网络设备扩展模型"
                 />
               </label>
@@ -3304,18 +3931,25 @@ function StructureStage({
                       );
                       return {
                         ...nextDraft,
-                        uniqueKey: nextOptions.some((option) => option.name === nextDraft.uniqueKey)
+                        uniqueKey: nextOptions.some(
+                          (option) => option.name === nextDraft.uniqueKey,
+                        )
                           ? nextDraft.uniqueKey
-                          : (nextOptions[0]?.name || ""),
+                          : nextOptions[0]?.name || "",
                       };
-                    })}
+                    })
+                  }
                 >
                   <option value="">不继承</option>
-                  {getStructureInheritanceOptions(metadata, editingItem).map((option) => (
-                    <option key={option.name} value={option.name}>
-                      {option.alias ? `${option.alias} (${option.name})` : option.name}
-                    </option>
-                  ))}
+                  {getStructureInheritanceOptions(metadata, editingItem).map(
+                    (option) => (
+                      <option key={option.name} value={option.name}>
+                        {option.alias
+                          ? `${option.alias} (${option.name})`
+                          : option.name}
+                      </option>
+                    ),
+                  )}
                 </select>
               </label>
 
@@ -3327,12 +3961,19 @@ function StructureStage({
                     setModelDraft((current) => ({
                       ...current,
                       uniqueKey: event.target.value,
-                    }))}
+                    }))
+                  }
                 >
                   <option value="">请选择唯一标识字段</option>
-                  {getStructureUniqueKeyOptions(flow.preview, editingItem, metadata, modelDraft).map((option) => (
+                  {getStructureUniqueKeyOptions(
+                    flow.preview,
+                    editingItem,
+                    metadata,
+                    modelDraft,
+                  ).map((option) => (
                     <option key={option.name} value={option.name}>
-                      {option.label} ({option.name}) {option.coverage ? `· 覆盖 ${option.coverage}%` : ""}
+                      {option.label} ({option.name}){" "}
+                      {option.coverage ? `· 覆盖 ${option.coverage}%` : ""}
                     </option>
                   ))}
                 </select>
@@ -3340,19 +3981,29 @@ function StructureStage({
             </div>
 
             <div className="resource-import-modal-footer">
-              <button type="button" className="secondary" onClick={() => setEditingItemKey(null)}>
+              <button
+                type="button"
+                className="secondary"
+                onClick={() => setEditingItemKey(null)}
+              >
                 取消
               </button>
               <button
                 type="button"
                 className="primary"
-                disabled={!modelDraft.groupName || !modelDraft.name || (!editingModelExists && !modelDraft.uniqueKey)}
+                disabled={
+                  !modelDraft.groupName ||
+                  !modelDraft.name ||
+                  (!editingModelExists && !modelDraft.uniqueKey)
+                }
                 onClick={() => {
                   updateItem(editingItem.key, (current) => ({
                     ...current,
                     selectedGroupName: modelDraft.groupName,
                     selectedModelName: modelDraft.name,
-                    createGroupApproved: editingGroupExists ? false : current.createGroupApproved,
+                    createGroupApproved: editingGroupExists
+                      ? false
+                      : current.createGroupApproved,
                     createModelApproved: editingModelExists ? false : true,
                     modelDraft: {
                       name: modelDraft.name,
@@ -3385,20 +4036,30 @@ function ConfirmStage({
   onReturnToUpload: ResourceImportConversationCardProps["onReturnToUpload"];
   onBuildTopology: ResourceImportConversationCardProps["onBuildTopology"];
 }) {
-  const [resourceGroups, setResourceGroups] = useState<ResourceImportGroup[]>(flow.resourceGroups || []);
-  const [relations, setRelations] = useState<ResourceImportRelation[]>(flow.relations || []);
+  const [resourceGroups, setResourceGroups] = useState<ResourceImportGroup[]>(
+    flow.resourceGroups || [],
+  );
+  const [relations, setRelations] = useState<ResourceImportRelation[]>(
+    flow.relations || [],
+  );
   const [editorOpen, setEditorOpen] = useState(false);
-  const [editorFocusPreviewKey, setEditorFocusPreviewKey] = useState<string | null>(null);
-  const [uniqueKeySelections, setUniqueKeySelections] = useState<Record<string, string>>({});
-  const [autoResolvedUniqueKeys, setAutoResolvedUniqueKeys] = useState<Array<{
-    ciType: string;
-    label: string;
-    uniqueKey: string;
-    uniqueKeyLabel: string;
-    uniqueKeyDisplay: string;
-    sourceField: string;
-    sourceLabel: string;
-  }>>([]);
+  const [editorFocusPreviewKey, setEditorFocusPreviewKey] = useState<
+    string | null
+  >(null);
+  const [uniqueKeySelections, setUniqueKeySelections] = useState<
+    Record<string, string>
+  >({});
+  const [autoResolvedUniqueKeys, setAutoResolvedUniqueKeys] = useState<
+    Array<{
+      ciType: string;
+      label: string;
+      uniqueKey: string;
+      uniqueKeyLabel: string;
+      uniqueKeyDisplay: string;
+      sourceField: string;
+      sourceLabel: string;
+    }>
+  >([]);
   const [batchEditorScrollWidth, setBatchEditorScrollWidth] = useState(0);
   const [batchEditorViewportWidth, setBatchEditorViewportWidth] = useState(0);
   const batchEditorWrapRef = useRef<HTMLDivElement | null>(null);
@@ -3431,7 +4092,11 @@ function ConfirmStage({
     [resourceGroups],
   );
   const ambiguousMappings = useMemo(
-    () => (flow.preview?.mappingSummary || []).filter((item) => item.status === "needs_confirmation" || item.needsConfirmation),
+    () =>
+      (flow.preview?.mappingSummary || []).filter(
+        (item) =>
+          item.status === "needs_confirmation" || item.needsConfirmation,
+      ),
     [flow.preview],
   );
   const aggregatedAmbiguousMappings = useMemo(
@@ -3439,7 +4104,10 @@ function ConfirmStage({
     [flow.preview],
   );
   const ciTypeOptions = useMemo(
-    () => Array.from(new Set(resourceGroups.map((group) => group.ciType).filter(Boolean))),
+    () =>
+      Array.from(
+        new Set(resourceGroups.map((group) => group.ciType).filter(Boolean)),
+      ),
     [resourceGroups],
   );
   const batchEditorColumns = useMemo(
@@ -3450,8 +4118,11 @@ function ConfirmStage({
     const entries = batchEditorColumns.map((column) => {
       const needsAttention = resourceGroups.some((group) =>
         group.records.some((record) => {
-          const definition = getVisibleAttributeDefinitions(flow.preview || null, record.ciType, record)
-            .find((item) => item.name === column.key);
+          const definition = getVisibleAttributeDefinitions(
+            flow.preview || null,
+            record.ciType,
+            record,
+          ).find((item) => item.name === column.key);
           return fieldNeedsAttention(record, column.key, definition);
         }),
       );
@@ -3463,9 +4134,14 @@ function ConfirmStage({
     const entries = batchEditorColumns.map((column) => {
       const usesDefault = resourceGroups.some((group) =>
         group.records.some((record) => {
-          const definition = getVisibleAttributeDefinitions(flow.preview || null, record.ciType, record)
-            .find((item) => item.name === column.key);
-          return Boolean(getRequiredDefaultMessage(record, column.key, definition));
+          const definition = getVisibleAttributeDefinitions(
+            flow.preview || null,
+            record.ciType,
+            record,
+          ).find((item) => item.name === column.key);
+          return Boolean(
+            getRequiredDefaultMessage(record, column.key, definition),
+          );
         }),
       );
       return [column.key, usesDefault] as const;
@@ -3477,7 +4153,8 @@ function ConfirmStage({
     [flow.preview, resourceGroups],
   );
   const systemGeneratedUniqueKeyPlans = useMemo(
-    () => getSystemGeneratedUniqueKeyPlans(flow.preview || null, resourceGroups),
+    () =>
+      getSystemGeneratedUniqueKeyPlans(flow.preview || null, resourceGroups),
     [flow.preview, resourceGroups],
   );
   const unresolvedUniqueKeyCount = useMemo(
@@ -3491,13 +4168,18 @@ function ConfirmStage({
     () => getRequiredModelIssues(flow.preview || null, resourceGroups),
     [flow.preview, resourceGroups],
   );
-  const requiredModelBlockingMessage = getRequiredModelBlockingMessage(requiredModelIssues);
+  const requiredModelBlockingMessage =
+    getRequiredModelBlockingMessage(requiredModelIssues);
   const defaultedRequiredIssues = useMemo(
     () => getDefaultedRequiredModelIssues(flow.preview || null, resourceGroups),
     [flow.preview, resourceGroups],
   );
-  const defaultedRequiredMessage = getDefaultedRequiredModelMessage(defaultedRequiredIssues);
-  const metadataBlockingMessage = getMetadataBlockingMessage(flow.preview || null);
+  const defaultedRequiredMessage = getDefaultedRequiredModelMessage(
+    defaultedRequiredIssues,
+  );
+  const metadataBlockingMessage = getMetadataBlockingMessage(
+    flow.preview || null,
+  );
 
   useEffect(() => {
     if (!editorOpen || !editorFocusPreviewKey) {
@@ -3506,7 +4188,11 @@ function ConfirmStage({
     const rafId = window.requestAnimationFrame(() => {
       document
         .querySelector(`[data-editor-preview-key="${editorFocusPreviewKey}"]`)
-        ?.scrollIntoView({ behavior: "smooth", block: "center", inline: "center" });
+        ?.scrollIntoView({
+          behavior: "smooth",
+          block: "center",
+          inline: "center",
+        });
     });
     return () => window.cancelAnimationFrame(rafId);
   }, [editorFocusPreviewKey, editorOpen]);
@@ -3532,8 +4218,12 @@ function ConfirmStage({
       uniqueKeyPlans.forEach((item) => {
         const key = `${item.ciType}::${item.uniqueKey}`;
         const currentValue = current[key];
-        const recommendedField = item.candidates.find((candidate) => candidate.recommended)?.field || "";
-        next[key] = item.candidates.some((candidate) => candidate.field === currentValue)
+        const recommendedField =
+          item.candidates.find((candidate) => candidate.recommended)?.field ||
+          "";
+        next[key] = item.candidates.some(
+          (candidate) => candidate.field === currentValue,
+        )
           ? currentValue
           : recommendedField;
       });
@@ -3571,9 +4261,10 @@ function ConfirmStage({
     wrap.addEventListener("scroll", syncFromWrap);
     topScrollbar.addEventListener("scroll", syncFromTop);
     window.addEventListener("resize", syncDimensions);
-    const resizeObserver = typeof ResizeObserver !== "undefined"
-      ? new ResizeObserver(() => syncDimensions())
-      : null;
+    const resizeObserver =
+      typeof ResizeObserver !== "undefined"
+        ? new ResizeObserver(() => syncDimensions())
+        : null;
     resizeObserver?.observe(wrap);
     const table = wrap.querySelector("table");
     if (table) {
@@ -3590,8 +4281,14 @@ function ConfirmStage({
     };
   }, [batchEditorColumns.length, editorOpen, resourceGroups]);
 
-  const applyUniqueKeySelection = (ciType: string, uniqueKey: string, sourceField: string) => {
-    const uniqueKeyLabel = getUniqueKeyLabel(flow.preview || null, ciType) || getAttributeLabel(uniqueKey);
+  const applyUniqueKeySelection = (
+    ciType: string,
+    uniqueKey: string,
+    sourceField: string,
+  ) => {
+    const uniqueKeyLabel =
+      getUniqueKeyLabel(flow.preview || null, ciType) ||
+      getAttributeLabel(uniqueKey);
     const sourceLabel = getAttributeLabel(sourceField);
     setResourceGroups((current) =>
       current.map((group) => {
@@ -3623,10 +4320,12 @@ function ConfirmStage({
               attentionFields: remainingIssues
                 .map((issue) => normalizeIssueFieldName(issue.field))
                 .filter(Boolean),
-              autoFilledHints: Array.from(new Set([
-                ...(record.autoFilledHints || []),
-                `${uniqueKeyLabel}已按${sourceLabel}批量补全`,
-              ])),
+              autoFilledHints: Array.from(
+                new Set([
+                  ...(record.autoFilledHints || []),
+                  `${uniqueKeyLabel}已按${sourceLabel}批量补全`,
+                ]),
+              ),
             };
           }),
         };
@@ -3635,7 +4334,9 @@ function ConfirmStage({
   };
 
   useEffect(() => {
-    const plansToApply = uniqueKeyPlans.filter((item) => shouldAutoApplyUniqueKeyPlan(item));
+    const plansToApply = uniqueKeyPlans.filter((item) =>
+      shouldAutoApplyUniqueKeyPlan(item),
+    );
     if (!plansToApply.length) {
       return;
     }
@@ -3652,11 +4353,15 @@ function ConfirmStage({
       if (!sourceField) {
         return;
       }
-      autoAppliedUniqueKeyPlansRef.current.add(`${item.ciType}::${item.uniqueKey}`);
+      autoAppliedUniqueKeyPlansRef.current.add(
+        `${item.ciType}::${item.uniqueKey}`,
+      );
       applyUniqueKeySelection(item.ciType, item.uniqueKey, sourceField);
       setAutoResolvedUniqueKeys((current) => {
         const key = `${item.ciType}::${item.uniqueKey}`;
-        if (current.some((entry) => `${entry.ciType}::${entry.uniqueKey}` === key)) {
+        if (
+          current.some((entry) => `${entry.ciType}::${entry.uniqueKey}` === key)
+        ) {
           return current;
         }
         return [
@@ -3666,26 +4371,60 @@ function ConfirmStage({
             label: item.label,
             uniqueKey: item.uniqueKey,
             uniqueKeyLabel: item.uniqueKeyLabel || item.uniqueKey,
-            uniqueKeyDisplay: item.uniqueKeyDisplay || item.uniqueKeyLabel || item.uniqueKey,
+            uniqueKeyDisplay:
+              item.uniqueKeyDisplay || item.uniqueKeyLabel || item.uniqueKey,
             sourceField,
-            sourceLabel: item.candidates[0]?.label || getAttributeLabel(sourceField),
+            sourceLabel:
+              item.candidates[0]?.label || getAttributeLabel(sourceField),
           },
         ];
       });
     });
   }, [uniqueKeyPlans]);
 
+  // Live "import confirmation" summary — recomputed from the editable
+  // resourceGroups so counts stay accurate as the user edits/deselects.
+  const summaryAllRecords = resourceGroups.flatMap(
+    (group) => group.records || [],
+  );
+  const summarySelectedRecords = summaryAllRecords.filter(
+    (record) => record.selected !== false && record.importAction !== "skip",
+  );
+  const summaryCreateCount = summarySelectedRecords.filter(
+    (record) => record.importAction !== "update",
+  ).length;
+  const summaryUpdateCount = summarySelectedRecords.filter(
+    (record) => record.importAction === "update",
+  ).length;
+  const summarySkipCount = summaryAllRecords.filter(
+    (record) => record.selected === false || record.importAction === "skip",
+  ).length;
+  // "Needs attention" mirrors the live, value-based gate (requiredModelIssues
+  // + unresolved unique keys) so the count clears as the user edits and stays
+  // consistent with whether the import button is enabled.
+  const summaryAttentionCount =
+    new Set(requiredModelIssues.map((issue) => issue.previewKey)).size +
+    unresolvedUniqueKeyCount;
+  const summaryPendingGroups = flow.preview?.importSummary?.pendingGroups || [];
+  const summaryPendingModels = flow.preview?.importSummary?.pendingModels || [];
+
   return (
     <div className="resource-import-conversation-card">
       <FlowSteps stage="confirm" />
 
-      {flow.error ? <div className="resource-import-inline-error">{flow.error}</div> : null}
+      {flow.error ? (
+        <div className="resource-import-inline-error">{flow.error}</div>
+      ) : null}
       {blockingAnalysisIssues.length ? (
         <div className="resource-import-inline-error">
           <strong>{blockingAnalysisMessage}</strong>
           <ul className="resource-import-issue-list">
             {blockingAnalysisIssues.map((issue, index) => (
-              <li key={`${issue.fileName || issue.sheetName || "issue"}-${index}`}>{issue.message}</li>
+              <li
+                key={`${issue.fileName || issue.sheetName || "issue"}-${index}`}
+              >
+                {issue.message}
+              </li>
             ))}
           </ul>
         </div>
@@ -3701,7 +4440,10 @@ function ConfirmStage({
             ))}
           </ul>
           {requiredModelIssues.length > 10 ? (
-            <div>还有 {requiredModelIssues.length - 10} 个字段问题，请在“统一编辑全部数据”中补齐或修正。</div>
+            <div>
+              还有 {requiredModelIssues.length - 10}{" "}
+              个字段问题，请在“统一编辑全部数据”中补齐或修正。
+            </div>
           ) : null}
         </div>
       ) : null}
@@ -3711,19 +4453,25 @@ function ConfirmStage({
           <ul className="resource-import-issue-list">
             {defaultedRequiredIssues.slice(0, 5).map((issue, index) => (
               <li key={`${issue.previewKey}-${issue.field}-default-${index}`}>
-                {issue.sourceLabel} / {issue.recordName}：{getAttributeLabel(issue.field)} {issue.message}
+                {issue.sourceLabel} / {issue.recordName}：
+                {getAttributeLabel(issue.field)} {issue.message}
               </li>
             ))}
           </ul>
           {defaultedRequiredIssues.length > 5 ? (
-            <div>还有 {defaultedRequiredIssues.length - 5} 个默认值字段已在“统一编辑全部数据”中标注。</div>
+            <div>
+              还有 {defaultedRequiredIssues.length - 5}{" "}
+              个默认值字段已在“统一编辑全部数据”中标注。
+            </div>
           ) : null}
         </div>
       ) : null}
       {metadataBlockingMessage ? (
         <div className="resource-import-inline-error">
           <strong>{metadataBlockingMessage}</strong>
-          {flow.preview?.metadataMessage ? <div>{flow.preview.metadataMessage}</div> : null}
+          {flow.preview?.metadataMessage ? (
+            <div>{flow.preview.metadataMessage}</div>
+          ) : null}
         </div>
       ) : null}
 
@@ -3748,6 +4496,66 @@ function ConfirmStage({
         </div>
 
         <section className="resource-import-section">
+          <div className="resource-import-section-title">📋 导入确认清单</div>
+          <div className="resource-import-stat-grid">
+            <div className="resource-import-stat-card success">
+              <strong>{summaryCreateCount}</strong>
+              <span>新建</span>
+            </div>
+            <div className="resource-import-stat-card">
+              <strong>{summaryUpdateCount}</strong>
+              <span>更新（已存在）</span>
+            </div>
+            <div className="resource-import-stat-card">
+              <strong>{summarySkipCount}</strong>
+              <span>跳过</span>
+            </div>
+            <div
+              className={`resource-import-stat-card ${
+                summaryAttentionCount ? "warning" : "success"
+              }`}
+            >
+              <strong>{summaryAttentionCount}</strong>
+              <span>需处理</span>
+            </div>
+          </div>
+          {summaryPendingGroups.length || summaryPendingModels.length ? (
+            <div className="resource-import-inline-notice">
+              {summaryPendingGroups.length ? (
+                <div>
+                  将新建分组：
+                  {summaryPendingGroups
+                    .map((group) => group.name)
+                    .filter(Boolean)
+                    .join("、")}
+                </div>
+              ) : null}
+              {summaryPendingModels.length ? (
+                <div>
+                  将新建模型：
+                  {summaryPendingModels
+                    .map((model) => model.name)
+                    .filter(Boolean)
+                    .join("、")}
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+          {summaryAttentionCount ? (
+            <div className="resource-import-inline-notice">
+              <strong>
+                {summaryAttentionCount}{" "}
+                条记录需补齐必填或确认唯一标识后才能导入；详见下方提示，或点击「统一编辑全部数据」逐条修正。
+              </strong>
+            </div>
+          ) : (
+            <div className="resource-import-inline-notice resource-import-inline-notice-default">
+              <strong>校验通过，预览结果即为导入结果，可以继续。</strong>
+            </div>
+          )}
+        </section>
+
+        <section className="resource-import-section">
           <div className="resource-import-section-title">🔗 智能字段映射</div>
           {ambiguousMappings.length ? (
             <div className="resource-import-mapping-alert">
@@ -3757,24 +4565,32 @@ function ConfirmStage({
               <div className="resource-import-ambiguous-list">
                 {aggregatedAmbiguousMappings.map((item, index) => (
                   <div
-                    key={`${item.sourceField}-${item.candidates.map((candidate) => candidate.targetField).join("-")}-${index}`}
+                    key={`${item.sourceField}-${item.candidates
+                      .map((candidate) => candidate.targetField)
+                      .join("-")}-${index}`}
                     className="resource-import-ambiguous-item"
                   >
                     <div className="resource-import-ambiguous-header">
                       <strong>{item.sourceField}</strong>
                       <span>{item.scopes.length} 个位置</span>
                     </div>
-                    <p>{item.message || "该字段存在多语义候选，需人工确认。"}</p>
+                    <p>
+                      {item.message || "该字段存在多语义候选，需人工确认。"}
+                    </p>
                     <div className="resource-import-ambiguous-scopes">
                       {item.scopes.map((scope) => (
                         <span key={`${scope.fileName}-${scope.sheetName}`}>
-                          {scope.fileName ? `${scope.fileName} / ${scope.sheetName}` : scope.sheetName}
+                          {scope.fileName
+                            ? `${scope.fileName} / ${scope.sheetName}`
+                            : scope.sheetName}
                         </span>
                       ))}
                     </div>
                     <div className="resource-import-ambiguous-candidates">
                       {(item.candidates || []).map((candidate) => (
-                        <span key={`${item.sourceField}-${candidate.targetField}`}>
+                        <span
+                          key={`${item.sourceField}-${candidate.targetField}`}
+                        >
                           {candidate.targetField} · {candidate.confidence}
                         </span>
                       ))}
@@ -3799,11 +4615,25 @@ function ConfirmStage({
           <div className="resource-import-mapping-grid">
             {(flow.preview?.mappingSummary || []).slice(0, 8).map((item) => (
               <div
-                key={`${item.fileName || "file"}-${item.sheetName || "sheet"}-${item.sourceField}-${item.targetField || item.suggestedTargetField || "unknown"}`}
-                className={`resource-import-mapping-item ${item.status || "mapped"}`.trim()}
+                key={`${item.fileName || "file"}-${item.sheetName || "sheet"}-${
+                  item.sourceField
+                }-${
+                  item.targetField || item.suggestedTargetField || "unknown"
+                }`}
+                className={`resource-import-mapping-item ${
+                  item.status || "mapped"
+                }`.trim()}
               >
-                <span>{item.fileName ? `${item.sheetName || "Sheet1"} / ${item.sourceField}` : item.sourceField}</span>
-                <strong>{item.status === "needs_confirmation" ? (item.suggestedTargetField || "待确认") : item.targetField}</strong>
+                <span>
+                  {item.fileName
+                    ? `${item.sheetName || "Sheet1"} / ${item.sourceField}`
+                    : item.sourceField}
+                </span>
+                <strong>
+                  {item.status === "needs_confirmation"
+                    ? item.suggestedTargetField || "待确认"
+                    : item.targetField}
+                </strong>
                 <small>
                   {getMappingStatusLabel(item.status)}
                   {item.resolvedBy ? ` · ${item.resolvedBy}` : ""}
@@ -3816,24 +4646,35 @@ function ConfirmStage({
 
         {uniqueKeyPlans.length || systemGeneratedUniqueKeyPlans.length ? (
           <section className="resource-import-section">
-            <div className="resource-import-section-title">🔑 模型唯一标识处理</div>
+            <div className="resource-import-section-title">
+              🔑 模型唯一标识处理
+            </div>
             <div className="resource-import-inline-notice">
-              CMDB 按模型定义唯一标识字段。业务主键会在这里按模型一次性补全；如果当前模型使用系统自增主键，会直接说明，无需你从源文件里选择来源列。
+              CMDB
+              按模型定义唯一标识字段。业务主键会在这里按模型一次性补全；如果当前模型使用系统自增主键，会直接说明，无需你从源文件里选择来源列。
             </div>
             {autoResolvedUniqueKeys.length ? (
               <div className="resource-import-inline-notice">
                 已自动识别并补全：
-                {autoResolvedUniqueKeys.map((item) => (
-                  ` ${item.label} 使用 ${item.sourceLabel}(${item.sourceField}) -> ${item.uniqueKeyDisplay}`
-                )).join("；")}
+                {autoResolvedUniqueKeys
+                  .map(
+                    (item) =>
+                      ` ${item.label} 使用 ${item.sourceLabel}(${item.sourceField}) -> ${item.uniqueKeyDisplay}`,
+                  )
+                  .join("；")}
               </div>
             ) : null}
             {unresolvedUniqueKeyMessage ? (
-              <div className="resource-import-inline-error">{unresolvedUniqueKeyMessage}</div>
+              <div className="resource-import-inline-error">
+                {unresolvedUniqueKeyMessage}
+              </div>
             ) : null}
             <div className="resource-import-unique-key-list">
               {systemGeneratedUniqueKeyPlans.map((item) => (
-                <div key={`${item.ciType}::${item.uniqueKey}::system`} className="resource-import-unique-key-card">
+                <div
+                  key={`${item.ciType}::${item.uniqueKey}::system`}
+                  className="resource-import-unique-key-card"
+                >
                   <div className="resource-import-unique-key-header">
                     <div>
                       <strong>{item.label}</strong>
@@ -3844,34 +4685,51 @@ function ConfirmStage({
                     </div>
                   </div>
                   <div className="resource-import-inline-notice">
-                    该字段属于 CMDB 系统自增主键，本次导入不会从 Excel 补它；新建资源时会由 CMDB 自动生成。
+                    该字段属于 CMDB 系统自增主键，本次导入不会从 Excel
+                    补它；新建资源时会由 CMDB 自动生成。
                   </div>
                 </div>
               ))}
               {uniqueKeyPlans.map((item) => {
                 const selectionKey = `${item.ciType}::${item.uniqueKey}`;
-                const selectedSourceField = uniqueKeySelections[selectionKey] || "";
+                const selectedSourceField =
+                  uniqueKeySelections[selectionKey] || "";
                 return (
-                  <div key={selectionKey} className="resource-import-unique-key-card">
+                  <div
+                    key={selectionKey}
+                    className="resource-import-unique-key-card"
+                  >
                     <div className="resource-import-unique-key-header">
                       <div>
                         <strong>{item.label}</strong>
                         <small>
-                          当前模型唯一标识：{item.uniqueKeyDisplay || item.uniqueKeyLabel || item.uniqueKey}
+                          当前模型唯一标识：
+                          {item.uniqueKeyDisplay ||
+                            item.uniqueKeyLabel ||
+                            item.uniqueKey}
                           {" · "}待补全 {item.missingCount}/{item.totalCount} 条
                         </small>
                       </div>
                     </div>
-                    {item.candidates.length === 1 && item.candidates[0]?.recommended ? (
+                    {item.candidates.length === 1 &&
+                    item.candidates[0]?.recommended ? (
                       <div className="resource-import-inline-notice">
-                        已自动识别最合理来源：{item.candidates[0].label} ({item.candidates[0].field})，
-                        将用于补全 {item.uniqueKeyDisplay || item.uniqueKeyLabel || item.uniqueKey}。
+                        已自动识别最合理来源：{item.candidates[0].label} (
+                        {item.candidates[0].field})， 将用于补全{" "}
+                        {item.uniqueKeyDisplay ||
+                          item.uniqueKeyLabel ||
+                          item.uniqueKey}
+                        。
                       </div>
                     ) : null}
                     <div className="resource-import-unique-key-row">
-                      {item.candidates.length === 1 && item.candidates[0]?.recommended ? (
+                      {item.candidates.length === 1 &&
+                      item.candidates[0]?.recommended ? (
                         <div className="resource-import-unique-key-auto">
-                          <strong>{item.candidates[0].label} ({item.candidates[0].field})</strong>
+                          <strong>
+                            {item.candidates[0].label} (
+                            {item.candidates[0].field})
+                          </strong>
                           <span>{`覆盖 ${item.candidates[0].coverage}% · 唯一 ${item.candidates[0].distinctCoverage}%`}</span>
                         </div>
                       ) : (
@@ -3882,11 +4740,15 @@ function ConfirmStage({
                               setUniqueKeySelections((current) => ({
                                 ...current,
                                 [selectionKey]: event.target.value,
-                              }))}
+                              }))
+                            }
                           >
                             <option value="">请选择来源列</option>
                             {item.candidates.map((candidate) => (
-                              <option key={`${selectionKey}-${candidate.field}`} value={candidate.field}>
+                              <option
+                                key={`${selectionKey}-${candidate.field}`}
+                                value={candidate.field}
+                              >
                                 {candidate.recommended ? "推荐 · " : ""}
                                 {candidate.label} ({candidate.field})
                                 {` · 覆盖 ${candidate.coverage}% · 唯一 ${candidate.distinctCoverage}%`}
@@ -3897,7 +4759,13 @@ function ConfirmStage({
                             type="button"
                             className="secondary"
                             disabled={!selectedSourceField}
-                            onClick={() => applyUniqueKeySelection(item.ciType, item.uniqueKey, selectedSourceField)}
+                            onClick={() =>
+                              applyUniqueKeySelection(
+                                item.ciType,
+                                item.uniqueKey,
+                                selectedSourceField,
+                              )
+                            }
                           >
                             一键补全本模型
                           </button>
@@ -3909,19 +4777,29 @@ function ConfirmStage({
                         {item.candidates.slice(0, 3).map((candidate) => (
                           <span
                             key={`${selectionKey}-${candidate.field}-hint`}
-                            className={candidate.recommended ? "recommended" : ""}
+                            className={
+                              candidate.recommended ? "recommended" : ""
+                            }
                           >
                             {candidate.recommended ? "推荐 · " : ""}
                             {candidate.label}
                             {` · 覆盖 ${candidate.coverage}% · 唯一 ${candidate.distinctCoverage}%`}
-                            {candidate.duplicateCount > 0 ? ` · 重复 ${candidate.duplicateCount} 条` : ""}
-                            {candidate.examples[0] ? ` · 例如 ${candidate.examples[0]}` : ""}
+                            {candidate.duplicateCount > 0
+                              ? ` · 重复 ${candidate.duplicateCount} 条`
+                              : ""}
+                            {candidate.examples[0]
+                              ? ` · 例如 ${candidate.examples[0]}`
+                              : ""}
                           </span>
                         ))}
                       </div>
                     ) : (
                       <div className="resource-import-inline-error">
-                        当前模型唯一标识是 {item.uniqueKeyDisplay || item.uniqueKeyLabel || item.uniqueKey}。
+                        当前模型唯一标识是{" "}
+                        {item.uniqueKeyDisplay ||
+                          item.uniqueKeyLabel ||
+                          item.uniqueKey}
+                        。
                         系统未找到足够高置信的来源列，请手动选择最接近的来源。
                       </div>
                     )}
@@ -3933,7 +4811,9 @@ function ConfirmStage({
         ) : null}
 
         <section className="resource-import-section cleaning">
-          <div className="resource-import-section-title">✅ 数据清洗与标准化报告</div>
+          <div className="resource-import-section-title">
+            ✅ 数据清洗与标准化报告
+          </div>
           <div className="resource-import-cleaning-list">
             {(flow.preview?.cleaningSummary || []).map((item) => (
               <div key={item.label} className="resource-import-cleaning-item">
@@ -3947,7 +4827,9 @@ function ConfirmStage({
         <section className="resource-import-section">
           <div className="resource-import-section-header">
             <div className="resource-import-section-title">📦 当前纳管范围</div>
-            <span className="resource-import-section-subtitle">{selectedCount} 条已勾选</span>
+            <span className="resource-import-section-subtitle">
+              {selectedCount} 条已勾选
+            </span>
           </div>
           <div className="resource-import-inline-notice">
             这里先看摘要，红色表示记录仍不完整。点击编辑后会进入统一的大表格页面，一次性核对全部字段。
@@ -3956,7 +4838,9 @@ function ConfirmStage({
             <button
               type="button"
               className="secondary"
-              onClick={() => downloadConfirmationData(flow.preview || null, resourceGroups)}
+              onClick={() =>
+                downloadConfirmationData(flow.preview || null, resourceGroups)
+              }
             >
               导出标准Excel
             </button>
@@ -3976,7 +4860,9 @@ function ConfirmStage({
               <div className="resource-import-section-title">
                 {getGroupIcon(group)} {group.label}（{group.records.length}条）
               </div>
-              <span className="resource-import-section-subtitle">{group.ciType}</span>
+              <span className="resource-import-section-subtitle">
+                {group.ciType}
+              </span>
             </div>
             <div className="resource-import-table-wrap">
               <table className="resource-import-table">
@@ -3994,15 +4880,23 @@ function ConfirmStage({
                 </thead>
                 <tbody>
                   {group.records.map((record) => {
-                    const recordIssues = getRecordIssues(record, flow.preview || null);
-                    const recordDefaultedIssues = getDefaultedRequiredModelIssues(flow.preview || null, [{
-                      ...group,
-                      records: [record],
-                    }]);
+                    const recordIssues = getRecordIssues(
+                      record,
+                      flow.preview || null,
+                    );
+                    const recordDefaultedIssues =
+                      getDefaultedRequiredModelIssues(flow.preview || null, [
+                        {
+                          ...group,
+                          records: [record],
+                        },
+                      ]);
                     return (
                       <tr
                         key={record.previewKey}
-                        className={`${record.selected ? "" : "muted"} ${recordIssues.length ? "needs-attention" : ""}`.trim()}
+                        className={`${record.selected ? "" : "muted"} ${
+                          recordIssues.length ? "needs-attention" : ""
+                        }`.trim()}
                       >
                         <td>
                           <input
@@ -4039,7 +4933,8 @@ function ConfirmStage({
                             </div>
                             {recordIssues.length ? (
                               <small className="resource-import-inline-issue">
-                                {recordIssues[0]?.message || "字段待确认，请点编辑补齐"}
+                                {recordIssues[0]?.message ||
+                                  "字段待确认，请点编辑补齐"}
                               </small>
                             ) : null}
                             {record.autoFilledHints?.length ? (
@@ -4049,7 +4944,8 @@ function ConfirmStage({
                             ) : null}
                             {recordDefaultedIssues.length ? (
                               <small className="resource-import-inline-default">
-                                {recordDefaultedIssues[0]?.field} {recordDefaultedIssues[0]?.message}
+                                {recordDefaultedIssues[0]?.field}{" "}
+                                {recordDefaultedIssues[0]?.message}
                               </small>
                             ) : null}
                           </div>
@@ -4057,12 +4953,27 @@ function ConfirmStage({
                         <td>{getRecordAddress(record)}</td>
                         <td>{record.ciType}</td>
                         <td>
-                          <span className={`resource-import-status-pill ${hasAttentionField(record, "status") || hasAttentionField(record, "alarm_status") ? "attention" : ""}`.trim()}>
+                          <span
+                            className={`resource-import-status-pill ${
+                              hasAttentionField(record, "status") ||
+                              hasAttentionField(record, "alarm_status")
+                                ? "attention"
+                                : ""
+                            }`.trim()}
+                          >
                             {getDisplayStatus(record)}
                           </span>
                         </td>
                         <td>
-                          <span className={`resource-import-action-pill ${(record.importAction || "create") === "skip" ? "muted" : record.existingCi?.ciId !== undefined ? "warning" : "success"}`.trim()}>
+                          <span
+                            className={`resource-import-action-pill ${
+                              (record.importAction || "create") === "skip"
+                                ? "muted"
+                                : record.existingCi?.ciId !== undefined
+                                ? "warning"
+                                : "success"
+                            }`.trim()}
+                          >
                             {getImportActionLabel(record)}
                           </span>
                         </td>
@@ -4101,16 +5012,31 @@ function ConfirmStage({
           <button
             type="button"
             className="secondary"
-            onClick={() => onReturnToUpload({ flowId: flow.flowId, sourceMessageId: messageId })}
+            onClick={() =>
+              onReturnToUpload({
+                flowId: flow.flowId,
+                sourceMessageId: messageId,
+              })
+            }
           >
             返回上传
           </button>
           <button
             type="button"
             className="primary"
-            disabled={flow.locked || Boolean(blockingAnalysisMessage) || Boolean(unresolvedUniqueKeyMessage) || Boolean(requiredModelBlockingMessage) || Boolean(metadataBlockingMessage)}
+            disabled={
+              flow.locked ||
+              Boolean(blockingAnalysisMessage) ||
+              Boolean(unresolvedUniqueKeyMessage) ||
+              Boolean(requiredModelBlockingMessage) ||
+              Boolean(metadataBlockingMessage)
+            }
             onClick={() => {
-              const nextPreview = syncPreviewWithCurrentData(flow.preview || null, resourceGroups, relations);
+              const nextPreview = syncPreviewWithCurrentData(
+                flow.preview || null,
+                resourceGroups,
+                relations,
+              );
               onBuildTopology({
                 messageId,
                 flowId: flow.flowId,
@@ -4123,27 +5049,39 @@ function ConfirmStage({
             {flow.locked
               ? "已生成关系卡片"
               : blockingAnalysisMessage
-                ? "当前解析不完整，禁止继续"
-                : unresolvedUniqueKeyMessage
-                  ? "请先补全唯一标识"
-                  : requiredModelBlockingMessage
-                    ? "请先补齐必填字段"
-                    : metadataBlockingMessage
-                      ? "请先连接 CMDB 模型"
-                      : "确认数据，建立关系 →"}
+              ? "当前解析不完整，禁止继续"
+              : unresolvedUniqueKeyMessage
+              ? "请先补全唯一标识"
+              : requiredModelBlockingMessage
+              ? "请先补齐必填字段"
+              : metadataBlockingMessage
+              ? "请先连接 CMDB 模型"
+              : "确认数据，建立关系 →"}
           </button>
         </div>
       </div>
 
       {editorOpen ? (
-        <div className="resource-import-modal-backdrop" onClick={closeBatchEditor}>
-          <div className="resource-import-modal wide" onClick={(event) => event.stopPropagation()}>
+        <div
+          className="resource-import-modal-backdrop"
+          onClick={closeBatchEditor}
+        >
+          <div
+            className="resource-import-modal wide"
+            onClick={(event) => event.stopPropagation()}
+          >
             <div className="resource-import-modal-header">
               <div>
                 <h3>批量编辑导入数据</h3>
-                <p>按 Excel 表格方式统一核对全部记录，横向滚动可查看更多字段。</p>
+                <p>
+                  按 Excel 表格方式统一核对全部记录，横向滚动可查看更多字段。
+                </p>
               </div>
-              <button type="button" className="secondary" onClick={closeBatchEditor}>
+              <button
+                type="button"
+                className="secondary"
+                onClick={closeBatchEditor}
+              >
                 关闭
               </button>
             </div>
@@ -4154,13 +5092,19 @@ function ConfirmStage({
                   <strong>{requiredModelBlockingMessage}</strong>
                   <ul className="resource-import-issue-list">
                     {requiredModelIssues.slice(0, 5).map((issue, index) => (
-                      <li key={`editor-${issue.previewKey}-${issue.field}-${index}`}>
-                        {issue.sourceLabel} / {issue.recordName}：{issue.message}
+                      <li
+                        key={`editor-${issue.previewKey}-${issue.field}-${index}`}
+                      >
+                        {issue.sourceLabel} / {issue.recordName}：
+                        {issue.message}
                       </li>
                     ))}
                   </ul>
                   {requiredModelIssues.length > 5 ? (
-                    <div>还有 {requiredModelIssues.length - 5} 个字段已在下方红色单元格标出。</div>
+                    <div>
+                      还有 {requiredModelIssues.length - 5}{" "}
+                      个字段已在下方红色单元格标出。
+                    </div>
                   ) : null}
                 </div>
               ) : null}
@@ -4169,8 +5113,11 @@ function ConfirmStage({
                   <strong>{defaultedRequiredMessage}</strong>
                   <ul className="resource-import-issue-list">
                     {defaultedRequiredIssues.slice(0, 5).map((issue, index) => (
-                      <li key={`editor-${issue.previewKey}-${issue.field}-default-${index}`}>
-                        {issue.sourceLabel} / {issue.recordName}：{getAttributeLabel(issue.field)} {issue.message}
+                      <li
+                        key={`editor-${issue.previewKey}-${issue.field}-default-${index}`}
+                      >
+                        {issue.sourceLabel} / {issue.recordName}：
+                        {getAttributeLabel(issue.field)} {issue.message}
                       </li>
                     ))}
                   </ul>
@@ -4193,7 +5140,10 @@ function ConfirmStage({
                   />
                 </div>
               ) : null}
-              <div ref={batchEditorWrapRef} className="resource-import-batch-editor-wrap">
+              <div
+                ref={batchEditorWrapRef}
+                className="resource-import-batch-editor-wrap"
+              >
                 <table className="resource-import-batch-editor-table">
                   <thead>
                     <tr>
@@ -4201,16 +5151,34 @@ function ConfirmStage({
                       <th>分组</th>
                       <th>资源类型</th>
                       <th>导入策略</th>
-                      <th className={batchColumnAttentionMap.get("name") ? "attention-head" : batchColumnDefaultMap.get("name") ? "default-head" : ""}>名称</th>
+                      <th
+                        className={
+                          batchColumnAttentionMap.get("name")
+                            ? "attention-head"
+                            : batchColumnDefaultMap.get("name")
+                            ? "default-head"
+                            : ""
+                        }
+                      >
+                        名称
+                      </th>
                       {batchEditorColumns
                         .filter((column) => column.key !== "name")
                         .map((column) => (
                           <th
                             key={column.key}
-                            className={batchColumnAttentionMap.get(column.key) ? "attention-head" : batchColumnDefaultMap.get(column.key) ? "default-head" : ""}
+                            className={
+                              batchColumnAttentionMap.get(column.key)
+                                ? "attention-head"
+                                : batchColumnDefaultMap.get(column.key)
+                                ? "default-head"
+                                : ""
+                            }
                           >
                             {column.label}
-                            {batchColumnDefaultMap.get(column.key) ? <span>默认</span> : null}
+                            {batchColumnDefaultMap.get(column.key) ? (
+                              <span>默认</span>
+                            ) : null}
                           </th>
                         ))}
                     </tr>
@@ -4218,28 +5186,43 @@ function ConfirmStage({
                   <tbody>
                     {resourceGroups.flatMap((group) =>
                       group.records.map((record) => {
-                        const attributeDefinitions = getVisibleAttributeDefinitions(
-                          flow.preview || null,
-                          record.ciType,
-                          record,
+                        const attributeDefinitions =
+                          getVisibleAttributeDefinitions(
+                            flow.preview || null,
+                            record.ciType,
+                            record,
+                          );
+                        const definitionMap = new Map(
+                          attributeDefinitions.map((item) => [item.name, item]),
                         );
-                        const definitionMap = new Map(attributeDefinitions.map((item) => [item.name, item]));
-                        const recordIssues = getRecordIssues(record, flow.preview || null);
+                        const recordIssues = getRecordIssues(
+                          record,
+                          flow.preview || null,
+                        );
                         return (
                           <tr
                             key={`editor-${record.previewKey}`}
                             data-editor-preview-key={record.previewKey}
-                            className={`${record.selected ? "" : "muted"} ${recordIssues.length ? "needs-attention" : ""} ${editorFocusPreviewKey === record.previewKey ? "focused" : ""}`.trim()}
+                            className={`${record.selected ? "" : "muted"} ${
+                              recordIssues.length ? "needs-attention" : ""
+                            } ${
+                              editorFocusPreviewKey === record.previewKey
+                                ? "focused"
+                                : ""
+                            }`.trim()}
                           >
                             <td>
                               <input
                                 type="checkbox"
                                 checked={record.selected}
                                 onChange={(event) =>
-                                  updateRecord(record.previewKey, (current) => ({
-                                    ...current,
-                                    selected: event.target.checked,
-                                  }))
+                                  updateRecord(
+                                    record.previewKey,
+                                    (current) => ({
+                                      ...current,
+                                      selected: event.target.checked,
+                                    }),
+                                  )
                                 }
                               />
                             </td>
@@ -4248,13 +5231,18 @@ function ConfirmStage({
                               <select
                                 value={record.ciType}
                                 onChange={(event) =>
-                                  updateRecord(record.previewKey, (current) => ({
-                                    ...current,
-                                    ciType: event.target.value,
-                                  }))
+                                  updateRecord(
+                                    record.previewKey,
+                                    (current) => ({
+                                      ...current,
+                                      ciType: event.target.value,
+                                    }),
+                                  )
                                 }
                               >
-                                {Array.from(new Set([...ciTypeOptions, record.ciType])).map((ciType) => (
+                                {Array.from(
+                                  new Set([...ciTypeOptions, record.ciType]),
+                                ).map((ciType) => (
                                   <option key={ciType} value={ciType}>
                                     {ciType}
                                   </option>
@@ -4263,64 +5251,127 @@ function ConfirmStage({
                             </td>
                             <td>
                               <select
-                                value={record.importAction || (record.existingCi?.ciId !== undefined ? "update" : "create")}
+                                value={
+                                  record.importAction ||
+                                  (record.existingCi?.ciId !== undefined
+                                    ? "update"
+                                    : "create")
+                                }
                                 onChange={(event) =>
-                                  updateRecord(record.previewKey, (current) => ({
-                                    ...current,
-                                    importAction: event.target.value as "create" | "update" | "skip",
-                                  }))
+                                  updateRecord(
+                                    record.previewKey,
+                                    (current) => ({
+                                      ...current,
+                                      importAction: event.target.value as
+                                        | "create"
+                                        | "update"
+                                        | "skip",
+                                    }),
+                                  )
                                 }
                               >
-                                {getImportActionOptions(record).map((option) => (
-                                  <option key={option.value} value={option.value}>
-                                    {option.label}
-                                  </option>
-                                ))}
+                                {getImportActionOptions(record).map(
+                                  (option) => (
+                                    <option
+                                      key={option.value}
+                                      value={option.value}
+                                    >
+                                      {option.label}
+                                    </option>
+                                  ),
+                                )}
                               </select>
                             </td>
-                            <td className={fieldNeedsAttention(record, "name") ? "attention-cell" : ""}>
+                            <td
+                              className={
+                                fieldNeedsAttention(record, "name")
+                                  ? "attention-cell"
+                                  : ""
+                              }
+                            >
                               <input
                                 value={record.name || ""}
                                 title={getFieldAttentionMessage(record, "name")}
                                 onChange={(event) =>
-                                  updateRecord(record.previewKey, (current) => ({
-                                    ...current,
-                                    name: event.target.value,
-                                  }))
+                                  updateRecord(
+                                    record.previewKey,
+                                    (current) => ({
+                                      ...current,
+                                      name: event.target.value,
+                                    }),
+                                  )
                                 }
                               />
                               {getFieldAttentionMessage(record, "name") ? (
-                                <div className="resource-import-cell-issue">{getFieldAttentionMessage(record, "name")}</div>
+                                <div className="resource-import-cell-issue">
+                                  {getFieldAttentionMessage(record, "name")}
+                                </div>
                               ) : null}
                             </td>
                             {batchEditorColumns
                               .filter((column) => column.key !== "name")
                               .map((column) => {
-                                const definition = definitionMap.get(column.key);
-                                const choiceOptions = getChoiceOptions(definition);
-                                const currentValue = record.attributes[column.key] || "";
-                                const isAttention = fieldNeedsAttention(record, column.key, definition);
-                                const attentionMessage = getFieldAttentionMessage(record, column.key, definition);
-                                const defaultMessage = getRequiredDefaultMessage(record, column.key, definition);
+                                const definition = definitionMap.get(
+                                  column.key,
+                                );
+                                const choiceOptions =
+                                  getChoiceOptions(definition);
+                                const currentValue =
+                                  record.attributes[column.key] || "";
+                                const isAttention = fieldNeedsAttention(
+                                  record,
+                                  column.key,
+                                  definition,
+                                );
+                                const attentionMessage =
+                                  getFieldAttentionMessage(
+                                    record,
+                                    column.key,
+                                    definition,
+                                  );
+                                const defaultMessage =
+                                  getRequiredDefaultMessage(
+                                    record,
+                                    column.key,
+                                    definition,
+                                  );
                                 return (
-                                  <td key={`${record.previewKey}-${column.key}`} className={isAttention ? "attention-cell" : defaultMessage ? "default-cell" : ""}>
+                                  <td
+                                    key={`${record.previewKey}-${column.key}`}
+                                    className={
+                                      isAttention
+                                        ? "attention-cell"
+                                        : defaultMessage
+                                        ? "default-cell"
+                                        : ""
+                                    }
+                                  >
                                     {choiceOptions.length ? (
                                       <select
                                         value={currentValue}
-                                        title={attentionMessage || defaultMessage}
+                                        title={
+                                          attentionMessage || defaultMessage
+                                        }
                                         onChange={(event) =>
-                                          updateRecord(record.previewKey, (current) => ({
-                                            ...current,
-                                            attributes: {
-                                              ...current.attributes,
-                                              [column.key]: event.target.value,
-                                            },
-                                          }))
+                                          updateRecord(
+                                            record.previewKey,
+                                            (current) => ({
+                                              ...current,
+                                              attributes: {
+                                                ...current.attributes,
+                                                [column.key]:
+                                                  event.target.value,
+                                              },
+                                            }),
+                                          )
                                         }
                                       >
                                         <option value="">请选择</option>
                                         {choiceOptions.map((option) => (
-                                          <option key={`${column.key}-${option.value}`} value={option.value}>
+                                          <option
+                                            key={`${column.key}-${option.value}`}
+                                            value={option.value}
+                                          >
                                             {option.label || option.value}
                                           </option>
                                         ))}
@@ -4328,23 +5379,33 @@ function ConfirmStage({
                                     ) : (
                                       <input
                                         value={currentValue}
-                                        title={attentionMessage || defaultMessage}
+                                        title={
+                                          attentionMessage || defaultMessage
+                                        }
                                         onChange={(event) =>
-                                          updateRecord(record.previewKey, (current) => ({
-                                            ...current,
-                                            attributes: {
-                                              ...current.attributes,
-                                              [column.key]: event.target.value,
-                                            },
-                                          }))
+                                          updateRecord(
+                                            record.previewKey,
+                                            (current) => ({
+                                              ...current,
+                                              attributes: {
+                                                ...current.attributes,
+                                                [column.key]:
+                                                  event.target.value,
+                                              },
+                                            }),
+                                          )
                                         }
                                       />
                                     )}
                                     {attentionMessage ? (
-                                      <div className="resource-import-cell-issue">{attentionMessage}</div>
+                                      <div className="resource-import-cell-issue">
+                                        {attentionMessage}
+                                      </div>
                                     ) : null}
                                     {!attentionMessage && defaultMessage ? (
-                                      <div className="resource-import-cell-default">{defaultMessage}</div>
+                                      <div className="resource-import-cell-default">
+                                        {defaultMessage}
+                                      </div>
                                     ) : null}
                                   </td>
                                 );
@@ -4362,7 +5423,11 @@ function ConfirmStage({
               <div className="resource-import-inline-notice">
                 红色单元格表示当前字段仍需确认。顶部滚动条可直接横向查看表头；若缺少主键，请优先在上方“模型唯一标识补全”里一次性处理。
               </div>
-              <button type="button" className="primary" onClick={closeBatchEditor}>
+              <button
+                type="button"
+                className="primary"
+                onClick={closeBatchEditor}
+              >
                 完成编辑
               </button>
             </div>
@@ -4384,15 +5449,21 @@ function TopologyStage({
   onBackToConfirm: ResourceImportConversationCardProps["onBackToConfirm"];
   onSubmitImport: ResourceImportConversationCardProps["onSubmitImport"];
 }) {
-  const [relations, setRelations] = useState<ResourceImportRelation[]>(flow.relations || []);
+  const [relations, setRelations] = useState<ResourceImportRelation[]>(
+    flow.relations || [],
+  );
   const blockingAnalysisIssues = getBlockingAnalysisIssues(flow.preview);
   const blockingAnalysisMessage = getBlockingAnalysisMessage(flow.preview);
   const requiredModelIssues = useMemo(
-    () => getRequiredModelIssues(flow.preview || null, flow.resourceGroups || []),
+    () =>
+      getRequiredModelIssues(flow.preview || null, flow.resourceGroups || []),
     [flow.preview, flow.resourceGroups],
   );
-  const requiredModelBlockingMessage = getRequiredModelBlockingMessage(requiredModelIssues);
-  const metadataBlockingMessage = getMetadataBlockingMessage(flow.preview || null);
+  const requiredModelBlockingMessage =
+    getRequiredModelBlockingMessage(requiredModelIssues);
+  const metadataBlockingMessage = getMetadataBlockingMessage(
+    flow.preview || null,
+  );
   const [topologyFullscreen, setTopologyFullscreen] = useState(false);
 
   useEffect(() => {
@@ -4408,10 +5479,16 @@ function TopologyStage({
     [relations],
   );
   const skippedRelationHints = useMemo(
-    () => (flow.preview?.logs || []).filter((item) =>
-      String(item || "").includes("关系")
-      && (String(item || "").includes("跳过") || String(item || "").includes("未配置") || String(item || "").includes("不支持")),
-    ).slice(-4),
+    () =>
+      (flow.preview?.logs || [])
+        .filter(
+          (item) =>
+            String(item || "").includes("关系") &&
+            (String(item || "").includes("跳过") ||
+              String(item || "").includes("未配置") ||
+              String(item || "").includes("不支持")),
+        )
+        .slice(-4),
     [flow.preview?.logs],
   );
 
@@ -4430,19 +5507,25 @@ function TopologyStage({
         relation.confidence === "high"
           ? "高"
           : relation.confidence === "medium"
-            ? "中"
-            : "低";
+          ? "中"
+          : "低";
       return {
         key: `${relation.sourceKey}-${relation.targetKey}-${relation.relationType}-${index}`,
-        text: `${relation.reason || `${relation.sourceKey} → ${relation.targetKey}`}（${confidenceLabel}置信度）`,
+        text: `${
+          relation.reason || `${relation.sourceKey} → ${relation.targetKey}`
+        }（${confidenceLabel}置信度）`,
       };
     });
   }, [relations]);
 
   const chartOption = useMemo(() => {
-    const { chartData, rootChildren } = buildTopologyTreeData(flow.resourceGroups || [], relations, {
-      collapsedDepth: 1,
-    });
+    const { chartData, rootChildren } = buildTopologyTreeData(
+      flow.resourceGroups || [],
+      relations,
+      {
+        collapsedDepth: 1,
+      },
+    );
 
     return {
       backgroundColor: "transparent",
@@ -4455,7 +5538,9 @@ function TopologyStage({
           const descendantText = params?.data?.descendantCount
             ? `<br/>下游资源: ${params.data.descendantCount}`
             : "";
-          return `${params.data.name}<br/>${params.data.value || ""}${relationText}${descendantText}`;
+          return `${params.data.name}<br/>${
+            params.data.value || ""
+          }${relationText}${descendantText}`;
         },
       },
       series: [
@@ -4499,25 +5584,31 @@ function TopologyStage({
           },
         },
       ],
-      graphic: !rootChildren.length ? [
-        {
-          type: "text",
-          left: "center",
-          top: "middle",
-          style: {
-            text: "暂无可展示的拓扑树",
-            fill: "#64748b",
-            fontSize: 14,
-          },
-        },
-      ] : [],
+      graphic: !rootChildren.length
+        ? [
+            {
+              type: "text",
+              left: "center",
+              top: "middle",
+              style: {
+                text: "暂无可展示的拓扑树",
+                fill: "#64748b",
+                fontSize: 14,
+              },
+            },
+          ]
+        : [],
     };
   }, [flow.resourceGroups, relations]);
 
   const fullscreenChartOption = useMemo(() => {
-    const { chartData, rootChildren } = buildTopologyTreeData(flow.resourceGroups || [], relations, {
-      collapsedDepth: 2,
-    });
+    const { chartData, rootChildren } = buildTopologyTreeData(
+      flow.resourceGroups || [],
+      relations,
+      {
+        collapsedDepth: 2,
+      },
+    );
 
     return {
       backgroundColor: "transparent",
@@ -4530,7 +5621,9 @@ function TopologyStage({
           const descendantText = params?.data?.descendantCount
             ? `<br/>下游资源: ${params.data.descendantCount}`
             : "";
-          return `${params.data.name}<br/>${params.data.value || ""}${relationText}${descendantText}`;
+          return `${params.data.name}<br/>${
+            params.data.value || ""
+          }${relationText}${descendantText}`;
         },
       },
       series: [
@@ -4574,18 +5667,20 @@ function TopologyStage({
           },
         },
       ],
-      graphic: !rootChildren.length ? [
-        {
-          type: "text",
-          left: "center",
-          top: "middle",
-          style: {
-            text: "暂无可展示的拓扑树",
-            fill: "#64748b",
-            fontSize: 14,
-          },
-        },
-      ] : [],
+      graphic: !rootChildren.length
+        ? [
+            {
+              type: "text",
+              left: "center",
+              top: "middle",
+              style: {
+                text: "暂无可展示的拓扑树",
+                fill: "#64748b",
+                fontSize: 14,
+              },
+            },
+          ]
+        : [],
     };
   }, [flow.resourceGroups, relations]);
 
@@ -4599,7 +5694,13 @@ function TopologyStage({
             <strong>{blockingAnalysisMessage}</strong>
             <ul className="resource-import-issue-list">
               {blockingAnalysisIssues.map((issue, index) => (
-                <li key={`${issue.fileName || issue.sheetName || "issue"}-${index}`}>{issue.message}</li>
+                <li
+                  key={`${
+                    issue.fileName || issue.sheetName || "issue"
+                  }-${index}`}
+                >
+                  {issue.message}
+                </li>
               ))}
             </ul>
           </div>
@@ -4619,7 +5720,9 @@ function TopologyStage({
         {metadataBlockingMessage ? (
           <div className="resource-import-inline-error">
             <strong>{metadataBlockingMessage}</strong>
-            {flow.preview?.metadataMessage ? <div>{flow.preview.metadataMessage}</div> : null}
+            {flow.preview?.metadataMessage ? (
+              <div>{flow.preview.metadataMessage}</div>
+            ) : null}
           </div>
         ) : null}
         <section className="resource-import-section topology">
@@ -4639,10 +5742,14 @@ function TopologyStage({
         <section className="resource-import-section">
           <div className="resource-import-section-header">
             <div className="resource-import-section-title">🔗 资源拓扑关系</div>
-            <span className="resource-import-section-subtitle">{selectedRelationCount} 条关系</span>
+            <span className="resource-import-section-subtitle">
+              {selectedRelationCount} 条关系
+            </span>
           </div>
           <div className="resource-import-action-row">
-            <span className="resource-import-section-subtitle">默认仅展开主干，点击节点可继续展开分支</span>
+            <span className="resource-import-section-subtitle">
+              默认仅展开主干，点击节点可继续展开分支
+            </span>
             <button
               type="button"
               className="secondary"
@@ -4652,7 +5759,12 @@ function TopologyStage({
             </button>
           </div>
           <div className="resource-import-topology-chart">
-            <ReactECharts option={chartOption} style={{ height: "100%", width: "100%" }} notMerge lazyUpdate />
+            <ReactECharts
+              option={chartOption}
+              style={{ height: "100%", width: "100%" }}
+              notMerge
+              lazyUpdate
+            />
           </div>
         </section>
 
@@ -4661,7 +5773,9 @@ function TopologyStage({
           {!relations.length ? (
             <div className="resource-import-inline-notice">
               当前没有生成可展示的关系。
-              {skippedRelationHints.length ? ` 可能原因：${skippedRelationHints.join("；")}` : " 可能是本次数据缺少足够的关联线索，或相关模型关系在 CMDB 中尚未配置。"}
+              {skippedRelationHints.length
+                ? ` 可能原因：${skippedRelationHints.join("；")}`
+                : " 可能是本次数据缺少足够的关联线索，或相关模型关系在 CMDB 中尚未配置。"}
             </div>
           ) : null}
           <div className="resource-import-relation-list">
@@ -4677,9 +5791,9 @@ function TopologyStage({
                   onChange={(event) =>
                     setRelations((current) =>
                       current.map((item) =>
-                        item.sourceKey === relation.sourceKey
-                        && item.targetKey === relation.targetKey
-                        && item.relationType === relation.relationType
+                        item.sourceKey === relation.sourceKey &&
+                        item.targetKey === relation.targetKey &&
+                        item.relationType === relation.relationType
                           ? {
                               ...item,
                               selected: event.target.checked,
@@ -4695,7 +5809,9 @@ function TopologyStage({
                   </strong>
                   <p>
                     {relation.relationType}
-                    {relation.requiresModelRelation ? " · 需先创建模型关系" : ""}
+                    {relation.requiresModelRelation
+                      ? " · 需先创建模型关系"
+                      : ""}
                     {" · "}
                     {relation.reason || "AI 自动推断"}
                   </p>
@@ -4706,7 +5822,9 @@ function TopologyStage({
         </section>
 
         {flow.readonly ? (
-          <div className="resource-import-inline-notice">这是已导入任务的拓扑快照，仅用于回看。</div>
+          <div className="resource-import-inline-notice">
+            这是已导入任务的拓扑快照，仅用于回看。
+          </div>
         ) : null}
 
         <div className="resource-import-action-row">
@@ -4728,9 +5846,18 @@ function TopologyStage({
             <button
               type="button"
               className="primary"
-              disabled={flow.locked || Boolean(blockingAnalysisMessage) || Boolean(requiredModelBlockingMessage) || Boolean(metadataBlockingMessage)}
+              disabled={
+                flow.locked ||
+                Boolean(blockingAnalysisMessage) ||
+                Boolean(requiredModelBlockingMessage) ||
+                Boolean(metadataBlockingMessage)
+              }
               onClick={() => {
-                const nextPreview = syncPreviewWithCurrentData(flow.preview || null, flow.resourceGroups || [], relations);
+                const nextPreview = syncPreviewWithCurrentData(
+                  flow.preview || null,
+                  flow.resourceGroups || [],
+                  relations,
+                );
                 onSubmitImport({
                   messageId,
                   flowId: flow.flowId,
@@ -4743,31 +5870,46 @@ function TopologyStage({
               {flow.locked
                 ? "导入任务已启动"
                 : blockingAnalysisMessage
-                  ? "当前解析不完整，禁止导入"
-                  : requiredModelBlockingMessage
-                    ? "请先补齐必填字段"
-                    : metadataBlockingMessage
-                      ? "请先连接 CMDB 模型"
-                      : "确认导入CMDB"}
+                ? "当前解析不完整，禁止导入"
+                : requiredModelBlockingMessage
+                ? "请先补齐必填字段"
+                : metadataBlockingMessage
+                ? "请先连接 CMDB 模型"
+                : "确认导入CMDB"}
             </button>
           ) : null}
         </div>
       </div>
 
       {topologyFullscreen ? (
-        <div className="resource-import-modal-backdrop" onClick={() => setTopologyFullscreen(false)}>
-          <div className="resource-import-modal wide resource-import-topology-modal" onClick={(event) => event.stopPropagation()}>
+        <div
+          className="resource-import-modal-backdrop"
+          onClick={() => setTopologyFullscreen(false)}
+        >
+          <div
+            className="resource-import-modal wide resource-import-topology-modal"
+            onClick={(event) => event.stopPropagation()}
+          >
             <div className="resource-import-modal-header">
               <div>
                 <h3>树状资源拓扑</h3>
                 <p>可拖拽、缩放查看完整层级关系。</p>
               </div>
-              <button type="button" className="secondary" onClick={() => setTopologyFullscreen(false)}>
+              <button
+                type="button"
+                className="secondary"
+                onClick={() => setTopologyFullscreen(false)}
+              >
                 关闭
               </button>
             </div>
             <div className="resource-import-topology-chart fullscreen">
-              <ReactECharts option={fullscreenChartOption} style={{ height: "100%", width: "100%" }} notMerge lazyUpdate />
+              <ReactECharts
+                option={fullscreenChartOption}
+                style={{ height: "100%", width: "100%" }}
+                notMerge
+                lazyUpdate
+              />
             </div>
           </div>
         </div>
@@ -4776,20 +5918,20 @@ function TopologyStage({
   );
 }
 
-function ImportingStage({
-  flow,
-}: {
-  flow: ResourceImportFlowPayload;
-}) {
+function ImportingStage({ flow }: { flow: ResourceImportFlowPayload }) {
   return (
     <div className="resource-import-conversation-card">
       <FlowSteps stage="importing" />
 
-      {flow.error ? <div className="resource-import-inline-error">{flow.error}</div> : null}
+      {flow.error ? (
+        <div className="resource-import-inline-error">{flow.error}</div>
+      ) : null}
 
       <div className="resource-import-section resource-import-importing-card">
         <div className="resource-import-result-icon">⏳</div>
-        <div className="resource-import-importing-title">正在将资源写入 CMDB 系统，请稍候...</div>
+        <div className="resource-import-importing-title">
+          正在将资源写入 CMDB 系统，请稍候...
+        </div>
         <div className="resource-import-parse-bar">
           <div className="resource-import-parse-bar-fill resource-import-importing-fill" />
         </div>
@@ -4816,11 +5958,12 @@ function ResultStage({
   const resourceResults = flow.result?.resourceResults || [];
   const relationResults = flow.result?.relationResults || [];
   const recordMap = useMemo(
-    () => new Map(
-      (flow.resourceGroups || [])
-        .flatMap((group) => group.records || [])
-        .map((record) => [String(record.previewKey || ""), record] as const),
-    ),
+    () =>
+      new Map(
+        (flow.resourceGroups || [])
+          .flatMap((group) => group.records || [])
+          .map((record) => [String(record.previewKey || ""), record] as const),
+      ),
     [flow.resourceGroups],
   );
 
@@ -4828,14 +5971,18 @@ function ResultStage({
     <div className="resource-import-conversation-card">
       <FlowSteps stage="result" />
 
-      {flow.error ? <div className="resource-import-inline-error">{flow.error}</div> : null}
+      {flow.error ? (
+        <div className="resource-import-inline-error">{flow.error}</div>
+      ) : null}
 
       <div className="resource-import-stage">
         <div className="resource-import-result">
           <div className="resource-import-result-icon">
             {flow.result?.status === "success" ? "✅" : "⚠️"}
           </div>
-          <h3>{flow.result?.status === "success" ? "导入成功！" : "导入完成"}</h3>
+          <h3>
+            {flow.result?.status === "success" ? "导入成功！" : "导入完成"}
+          </h3>
           <p>
             {flow.result?.status === "success"
               ? "资源已成功录入 CMDB，后续可继续追加新的清单。"
@@ -4872,25 +6019,40 @@ function ResultStage({
           <section className="resource-import-section">
             <div className="resource-import-section-header">
               <div className="resource-import-section-title">结构处理结果</div>
-              <span className="resource-import-section-subtitle">{structureResults.length} 条</span>
+              <span className="resource-import-section-subtitle">
+                {structureResults.length} 条
+              </span>
             </div>
             <div className="resource-import-result-list">
               {structureResults.map((item, index) => (
                 <div
-                  key={`${item.kind}-${item.sourceType || item.groupName || item.modelName || item.name || index}`}
-                  className={`resource-import-result-item ${item.status || "success"}`.trim()}
+                  key={`${item.kind}-${
+                    item.sourceType ||
+                    item.groupName ||
+                    item.modelName ||
+                    item.name ||
+                    index
+                  }`}
+                  className={`resource-import-result-item ${
+                    item.status || "success"
+                  }`.trim()}
                 >
                   <div>
                     <strong>
                       {item.kind === "relation-config"
                         ? `${item.sourceType} → ${item.relationType} → ${item.targetType}`
-                        : item.groupName || item.modelName || item.name || item.kind}
+                        : item.groupName ||
+                          item.modelName ||
+                          item.name ||
+                          item.kind}
                     </strong>
                     <p>{item.message}</p>
                   </div>
                   <div className="resource-import-result-meta">
                     <span>{item.status || "success"}</span>
-                    {item.ctrId !== undefined ? <code>CTR ID: {item.ctrId}</code> : null}
+                    {item.ctrId !== undefined ? (
+                      <code>CTR ID: {item.ctrId}</code>
+                    ) : null}
                   </div>
                 </div>
               ))}
@@ -4902,18 +6064,25 @@ function ResultStage({
           <section className="resource-import-section">
             <div className="resource-import-section-header">
               <div className="resource-import-section-title">资源导入结果</div>
-              <span className="resource-import-section-subtitle">{resourceResults.length} 条</span>
+              <span className="resource-import-section-subtitle">
+                {resourceResults.length} 条
+              </span>
             </div>
             <div className="resource-import-result-list">
               {resourceResults.map((item) => (
-                <div key={item.previewKey} className={`resource-import-result-item ${item.status}`.trim()}>
+                <div
+                  key={item.previewKey}
+                  className={`resource-import-result-item ${item.status}`.trim()}
+                >
                   <div>
                     <strong>{getResultItemTitle(item, recordMap)}</strong>
                     <p>{item.message}</p>
                   </div>
                   <div className="resource-import-result-meta">
                     <span>{item.status}</span>
-                    {item.ciId !== undefined ? <code>CI ID: {item.ciId}</code> : null}
+                    {item.ciId !== undefined ? (
+                      <code>CI ID: {item.ciId}</code>
+                    ) : null}
                   </div>
                 </div>
               ))}
@@ -4925,7 +6094,9 @@ function ResultStage({
           <section className="resource-import-section">
             <div className="resource-import-section-header">
               <div className="resource-import-section-title">关系导入结果</div>
-              <span className="resource-import-section-subtitle">{relationResults.length} 条</span>
+              <span className="resource-import-section-subtitle">
+                {relationResults.length} 条
+              </span>
             </div>
             <div className="resource-import-result-list">
               {relationResults.map((item, index) => (
@@ -4934,7 +6105,9 @@ function ResultStage({
                   className={`resource-import-result-item ${item.status}`.trim()}
                 >
                   <div>
-                    <strong>{item.sourceKey} → {item.targetKey}</strong>
+                    <strong>
+                      {item.sourceKey} → {item.targetKey}
+                    </strong>
                     <p>{item.message}</p>
                   </div>
                   <div className="resource-import-result-meta">

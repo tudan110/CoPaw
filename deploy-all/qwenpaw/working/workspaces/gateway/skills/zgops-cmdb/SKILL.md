@@ -7,7 +7,7 @@ description: 用于查询当前 `.env` 配置所指向的 CMDB 环境。当用�
 
 仅面向凭证（共享 `secrets/zgops-cmdb.env` 或本技能 `.env`）所配置的当前 CMDB 环境。
 凭证优先从共享 `secrets/zgops-cmdb.env` 读取，未配置时回退本技能目录 `.env`（`.env.example` 仅模板）。
-凭证解析顺序统一为 `$VEOPS_ENV_FILE` → 共享 `secrets/zgops-cmdb.env` → 本技能目录 `.env`（旧版回退）；不读取其他 skill 的 `.env`。
+凭证解析顺序统一为 `$ZGOPS_ENV_FILE` → 共享 `secrets/zgops-cmdb.env` → 本技能目录 `.env`（旧版回退）；不读取其他 skill 的 `.env`。
 
 不要在对外描述里写死某个固定地址、某套“测试环境”或特定站点；环境信息应完全来自上述凭证文件。
 
@@ -33,7 +33,7 @@ description: 用于查询当前 `.env` 配置所指向的 CMDB 环境。当用�
 
 | 网关 | 环境变量 | 职责 |
 |------|----------|------|
-| veops 网关 | `VEOPS_BASE_URL` | CI 类型查询、CI 实例搜索、关系拓扑（`list-models`、`fetch`） |
+| zgops 网关 | `ZGOPS_BASE_URL` | CI 类型查询、CI 实例搜索、关系拓扑（`list-models`、`fetch`） |
 | INOE 网关 | `INOE_API_BASE_URL` | 统计类接口（`inoe-stat`） |
 
 **重要：** 查 CI 类型和实例统一用 `list-models` + `fetch`，不要手动拼 INOE 网关路径（INOE 网关的 `/cmdb/v0.1/ci_types` 不可用）。
@@ -149,7 +149,7 @@ scripts/zgops-cmdb.sh inoe-stat types --output markdown
 - 若用户没有提供应用名，只问“简易拓扑 / 全局拓扑 / 监控拓扑 / 系统拓扑”，这不是 CMDB 应用拓扑，改用 `monitoring-overview-query`。
 - 若当前存在多个应用而用户没有给出明确应用名，先回复候选应用名让用户选择，不要默认返回任意一个应用的拓扑。
 - 若用户只说“画图 / 渲染图表 / 可视化”，默认返回 Markdown + ```echarts，而不是 HTML 文件路径。
-- 面向最终用户的回复、标题、摘要、图表标题中，不要出现 `VEOPS`、`veops`、`OneOps` 等产品字样，除非用户明确要求保留这些名称。
+- 面向最终用户的回复、标题、摘要、图表标题中，不要出现 `ZGOPS`、`zgops`、`OneOps` 等产品字样，除非用户明确要求保留这些名称。
 
 ## 备注
 

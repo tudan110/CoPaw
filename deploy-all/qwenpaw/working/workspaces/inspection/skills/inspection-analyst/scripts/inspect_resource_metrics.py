@@ -137,21 +137,21 @@ def _resolve_metric_type_from_id(
 ) -> str:
     """将 CMDB 的数字 _type ID 转换为模型名称（如 78 → PostgreSQL）。
 
-    优先使用 VeOps CMDB 接口 /api/v0.1/ci_types 查询，
-    如果 VeOps 环境不可用则使用 INOE 接口。
+    优先使用 Zgops CMDB 接口 /api/v0.1/ci_types 查询，
+    如果 Zgops 环境不可用则使用 INOE 接口。
     """
-    veops_base = os.getenv("VEOPS_BASE_URL", "").strip().rstrip("/")
+    zgops_base = os.getenv("ZGOPS_BASE_URL", "").strip().rstrip("/")
     resolved_timeout = _get_timeout(timeout_seconds)
 
-    if veops_base:
-        url = f"{veops_base}/api/v0.1/ci_types?per_page=200"
+    if zgops_base:
+        url = f"{zgops_base}/api/v0.1/ci_types?per_page=200"
         headers = {
             "Accept": "application/json",
             "Accept-Language": "zh",
         }
-        veops_secret = os.getenv("VEOPS_SECRET", "").strip()
-        if veops_secret:
-            headers["App-Secret"] = veops_secret
+        zgops_secret = os.getenv("ZGOPS_SECRET", "").strip()
+        if zgops_secret:
+            headers["App-Secret"] = zgops_secret
         try:
             payload, _ = _get_json_with_fallback(
                 url=url,

@@ -4,9 +4,9 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SKILL_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
-# VEOPS env resolution order (first existing file wins). Shared secrets
+# ZGOPS env resolution order (first existing file wins). Shared secrets
 # are preferred; per-skill .env is only a legacy fallback:
-#   1. $VEOPS_ENV_FILE (explicit override)
+#   1. $ZGOPS_ENV_FILE (explicit override)
 #   2. $QWENPAW_WORKING_DIR/secrets/zgops-cmdb.env (or COPAW)
 #   3. deploy-all/qwenpaw/working/secrets/zgops-cmdb.env (checkout fallback)
 #   4. ~/.qwenpaw/secrets/zgops-cmdb.env (shared secrets)
@@ -15,7 +15,7 @@ WORKING_DIR_GUESS="${QWENPAW_WORKING_DIR:-${COPAW_WORKING_DIR:-}}"
 CHECKOUT_WORKING_DIR="$(cd "${SKILL_ROOT}/../../../.." && pwd)"
 ENV_FILE=""
 for _cand in \
-  "${VEOPS_ENV_FILE:-}" \
+  "${ZGOPS_ENV_FILE:-}" \
   "${WORKING_DIR_GUESS:+${WORKING_DIR_GUESS%/}/secrets/zgops-cmdb.env}" \
   "${CHECKOUT_WORKING_DIR%/}/secrets/zgops-cmdb.env" \
   "${HOME}/.qwenpaw/secrets/zgops-cmdb.env" \
@@ -36,8 +36,8 @@ set -a
 source "${ENV_FILE}"
 set +a
 
-: "${VEOPS_BASE_URL:?必须配置 VEOPS_BASE_URL}"
+: "${ZGOPS_BASE_URL:?必须配置 ZGOPS_BASE_URL}"
 
-VEOPS_CMDB_URL="${VEOPS_BASE_URL%/}/cmdb/"
-VEOPS_API_BASE_URL="${VEOPS_BASE_URL%/}/api"
-VEOPS_PYTHON_BIN="${VEOPS_PYTHON_BIN:-python3}"
+ZGOPS_CMDB_URL="${ZGOPS_BASE_URL%/}/cmdb/"
+ZGOPS_API_BASE_URL="${ZGOPS_BASE_URL%/}/api"
+ZGOPS_PYTHON_BIN="${ZGOPS_PYTHON_BIN:-python3}"

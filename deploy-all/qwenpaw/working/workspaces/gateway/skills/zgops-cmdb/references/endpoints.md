@@ -2,7 +2,7 @@
 
 ## 基础信息
 
-- 基础地址：来自 `.env` 中的 `VEOPS_BASE_URL`
+- 基础地址：来自 `.env` 中的 `ZGOPS_BASE_URL`
 - CMDB 入口：`/cmdb/`
 - 登录页跳转：`/user/login?redirect=%2Fcmdb%2F`
 

@@ -15,7 +15,7 @@ from find_project import (
     _clean_text,
     _match_projects,
     _project_name,
-    _resolve_veops_env,
+    _resolve_zgops_env,
 )
 
 
@@ -298,11 +298,11 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    env = _resolve_veops_env()
+    env = _resolve_zgops_env()
     client = CmdbHttpClient(
-        base_url=env.get("VEOPS_BASE_URL", ""),
-        username=env.get("VEOPS_USERNAME", ""),
-        password=env.get("VEOPS_PASSWORD", ""),
+        base_url=env.get("ZGOPS_BASE_URL", ""),
+        username=env.get("ZGOPS_USERNAME", ""),
+        password=env.get("ZGOPS_PASSWORD", ""),
     )
     client.try_login()
 

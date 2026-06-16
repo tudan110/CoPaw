@@ -28,7 +28,7 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
-from veops_http import build_url, create_session, request_with_fallback, try_login  # noqa: E402
+from zgops_http import build_url, create_session, request_with_fallback, try_login  # noqa: E402
 
 ALLOWED_MODES = {"summary", "model-groups", "relation-types", "app-relations"}
 ALLOWED_OUTPUTS = {"json", "markdown", "markdown-echarts-only"}
@@ -411,13 +411,13 @@ def analyze(mode: str, skill_root: Path, env: Dict[str, str]) -> Dict[str, Any]:
     session = create_session()
     try_login(
         session,
-        env["VEOPS_BASE_URL"],
-        env.get("VEOPS_USERNAME", ""),
-        env.get("VEOPS_PASSWORD", ""),
+        env["ZGOPS_BASE_URL"],
+        env.get("ZGOPS_USERNAME", ""),
+        env.get("ZGOPS_PASSWORD", ""),
     )
-    models = load_models(session, env["VEOPS_BASE_URL"])
-    relations = load_all_relations(session, env["VEOPS_BASE_URL"])
-    relation_types = load_relation_types(session, env["VEOPS_BASE_URL"])
+    models = load_models(session, env["ZGOPS_BASE_URL"])
+    relations = load_all_relations(session, env["ZGOPS_BASE_URL"])
+    relation_types = load_relation_types(session, env["ZGOPS_BASE_URL"])
 
     if mode == "summary":
         return {"code": 200, "mode": mode, "summary": build_summary(models, relations, relation_types)}

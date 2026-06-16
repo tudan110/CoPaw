@@ -67,7 +67,7 @@ def _real_alarm_script_path() -> Path:
     )
 
 
-def _veops_find_project_path() -> Path:
+def _zgops_find_project_path() -> Path:
     return (
         _workspace_root()
         / "query"
@@ -143,7 +143,7 @@ def _build_alarm_query_windows(
 
 
 def _load_cmdb_client():
-    find_project = _load_module("veops_find_project", _veops_find_project_path())
+    find_project = _load_module("zgops_find_project", _zgops_find_project_path())
     env_path = (
         _workspace_root()
         / "query"
@@ -155,12 +155,12 @@ def _load_cmdb_client():
         raise ValueError(f"未找到 zgops-cmdb 的环境文件：{env_path}")
 
     env = find_project._load_env_file(env_path)  # noqa: SLF001
-    base_url = _safe_str(env.get("VEOPS_BASE_URL"))
+    base_url = _safe_str(env.get("ZGOPS_BASE_URL"))
     if not base_url:
-        raise ValueError(f"zgops-cmdb 的环境文件缺少 VEOPS_BASE_URL：{env_path}")
+        raise ValueError(f"zgops-cmdb 的环境文件缺少 ZGOPS_BASE_URL：{env_path}")
 
-    username = _safe_str(env.get("VEOPS_USERNAME"))
-    password = _safe_str(env.get("VEOPS_PASSWORD"))
+    username = _safe_str(env.get("ZGOPS_USERNAME"))
+    password = _safe_str(env.get("ZGOPS_PASSWORD"))
     client = find_project.CmdbHttpClient(
         base_url=base_url,
         username=username,

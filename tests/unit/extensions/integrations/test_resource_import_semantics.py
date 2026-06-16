@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 from __future__ import annotations
 
 import asyncio
@@ -38,16 +39,16 @@ def test_match_field_with_metadata_uses_real_attribute_aliases() -> None:
                         },
                     ],
                     "parentTypes": [],
-                }
+                },
             ],
             "ciTypeGroups": [
                 {
                     "name": "中间件",
                     "ciTypes": [{"name": "CustomService", "alias": "自定义服务"}],
-                }
+                },
             ],
             "attributeLibrary": [],
-        }
+        },
     )
 
     target_field, confidence = resource_import._match_field_with_metadata(
@@ -65,14 +66,22 @@ def test_match_field_with_metadata_uses_real_attribute_aliases() -> None:
 
 def test_export_helper_sheets_are_classified_as_notes() -> None:
     assert resource_import._looks_like_note_sheet("导出说明", ["标题", "内容"])
-    assert resource_import._looks_like_note_sheet("缺失必填字段", ["模型", "资源", "缺失字段"])
+    assert resource_import._looks_like_note_sheet(
+        "缺失必填字段",
+        ["模型", "资源", "缺失字段"],
+    )
     assert resource_import._looks_like_note_sheet("字段字典", ["模型", "字段", "是否必填"])
 
 
 def test_note_sheet_mapping_skips_llm() -> None:
     class ExplodingLlmClient:
-        async def map_sheet_headers(self, **_kwargs: object) -> dict[str, object]:
-            raise AssertionError("system helper sheets must not call LLM mapping")
+        async def map_sheet_headers(
+            self,
+            **_kwargs: object,
+        ) -> dict[str, object]:
+            raise AssertionError(
+                "system helper sheets must not call LLM mapping",
+            )
 
     plan, mode = asyncio.run(
         resource_import._resolve_sheet_mapping_plan(
@@ -82,7 +91,7 @@ def test_note_sheet_mapping_skips_llm() -> None:
             model_templates=[],
             metadata={},
             llm_client=ExplodingLlmClient(),
-        )
+        ),
     )
 
     assert plan.sheet_kind == "note"
@@ -134,16 +143,33 @@ def test_source_header_can_autofill_name_like_unique_key() -> None:
 
 def test_default_template_can_resolve_middleware_fields() -> None:
     redis_template = next(
-        item for item in resource_import.DEFAULT_MODEL_TEMPLATES if item.get("name") == "redis"
+        item
+        for item in resource_import.DEFAULT_MODEL_TEMPLATES
+        if item.get("name") == "redis"
     )
     redis_template = {
         **redis_template,
         "attributes": resource_import.DEFAULT_ATTRIBUTE_FIELDS["redis"],
     }
 
-    assert resource_import._resolve_cmdb_attribute_name(redis_template, "name") == "middleware_name"
-    assert resource_import._resolve_cmdb_attribute_name(redis_template, "private_ip") == "middleware_ip"
-    assert resource_import._resolve_cmdb_attribute_name(redis_template, "service_port") == "middleware_port"
+    assert (
+        resource_import._resolve_cmdb_attribute_name(redis_template, "name")
+        == "middleware_name"
+    )
+    assert (
+        resource_import._resolve_cmdb_attribute_name(
+            redis_template,
+            "private_ip",
+        )
+        == "middleware_ip"
+    )
+    assert (
+        resource_import._resolve_cmdb_attribute_name(
+            redis_template,
+            "service_port",
+        )
+        == "middleware_port"
+    )
 
 
 def test_ci_types_from_preview_snapshot_preserves_runtime_metadata() -> None:
@@ -155,15 +181,20 @@ def test_ci_types_from_preview_snapshot_preserves_runtime_metadata() -> None:
                     "name": "redis",
                     "alias": "Redis",
                     "unique_key": "middleware_name",
-                    "attributes": ["middleware_name", "middleware_ip", "middleware_port", "platform"],
+                    "attributes": [
+                        "middleware_name",
+                        "middleware_ip",
+                        "middleware_port",
+                        "platform",
+                    ],
                     "attributeDefinitions": [
                         {"name": "middleware_name", "alias": "实例名"},
                         {"name": "middleware_ip", "alias": "IP"},
                         {"name": "middleware_port", "alias": "端口"},
                     ],
-                }
-            }
-        }
+                },
+            },
+        },
     )
 
     assert len(ci_types) == 1
@@ -176,11 +207,19 @@ def test_ci_types_from_preview_snapshot_preserves_runtime_metadata() -> None:
     ]
 
 
-def test_import_preflight_reports_required_fields_before_cmdb_login(monkeypatch) -> None:
+def test_import_preflight_reports_required_fields_before_cmdb_login(
+    monkeypatch,
+) -> None:
     def fail_if_called(cls):  # noqa: ANN001
-        raise AssertionError("CMDB client should not be opened when offline preflight fails")
+        raise AssertionError(
+            "CMDB client should not be opened when offline preflight fails",
+        )
 
-    monkeypatch.setattr(resource_import.VeopsCmdbClient, "from_skill_env", classmethod(fail_if_called))
+    monkeypatch.setattr(
+        resource_import.ZgopsCmdbClient,
+        "from_skill_env",
+        classmethod(fail_if_called),
+    )
 
     result = resource_import.import_preview_to_cmdb(
         {
@@ -193,10 +232,18 @@ def test_import_preflight_reports_required_fields_before_cmdb_login(monkeypatch)
                         "unique_key": "dev_no",
                         "attributes": ["dev_no", "dev_name"],
                         "attributeDefinitions": [
-                            {"name": "dev_no", "alias": "设备编码", "required": True},
-                            {"name": "dev_name", "alias": "设备名称", "required": False},
+                            {
+                                "name": "dev_no",
+                                "alias": "设备编码",
+                                "required": True,
+                            },
+                            {
+                                "name": "dev_name",
+                                "alias": "设备名称",
+                                "required": False,
+                            },
                         ],
-                    }
+                    },
                 },
             },
             "resourceGroups": [
@@ -211,12 +258,12 @@ def test_import_preflight_reports_required_fields_before_cmdb_login(monkeypatch)
                             "attributes": {"dev_name": "device-a"},
                             "analysisAttributes": {},
                             "sourceAttributes": {},
-                        }
+                        },
                     ],
-                }
+                },
             ],
             "relations": [],
-        }
+        },
     )
 
     assert result["status"] == "failed"
@@ -224,11 +271,19 @@ def test_import_preflight_reports_required_fields_before_cmdb_login(monkeypatch)
     assert "设备编码" in result["resourceResults"][0]["message"]
 
 
-def test_import_preflight_blocks_disconnected_metadata_before_cmdb_login(monkeypatch) -> None:
+def test_import_preflight_blocks_disconnected_metadata_before_cmdb_login(
+    monkeypatch,
+) -> None:
     def fail_if_called(cls):  # noqa: ANN001
-        raise AssertionError("CMDB client should not be opened when metadata is disconnected")
+        raise AssertionError(
+            "CMDB client should not be opened when metadata is disconnected",
+        )
 
-    monkeypatch.setattr(resource_import.VeopsCmdbClient, "from_skill_env", classmethod(fail_if_called))
+    monkeypatch.setattr(
+        resource_import.ZgopsCmdbClient,
+        "from_skill_env",
+        classmethod(fail_if_called),
+    )
 
     result = resource_import.import_preview_to_cmdb(
         {
@@ -247,12 +302,12 @@ def test_import_preflight_blocks_disconnected_metadata_before_cmdb_login(monkeyp
                             "name": "device-a",
                             "selected": True,
                             "attributes": {"name": "device-a"},
-                        }
+                        },
                     ],
-                }
+                },
             ],
             "relations": [],
-        }
+        },
     )
 
     assert result["status"] == "failed"
@@ -260,7 +315,9 @@ def test_import_preflight_blocks_disconnected_metadata_before_cmdb_login(monkeyp
     assert "未连接实时 CMDB 模型" in result["resourceResults"][0]["message"]
 
 
-def test_import_preflight_metadata_uses_cache_without_structure_changes(monkeypatch) -> None:
+def test_import_preflight_metadata_uses_cache_without_structure_changes(
+    monkeypatch,
+) -> None:
     cached = {
         "connected": True,
         "ciTypes": [{"name": "networkdevice", "unique_key": "dev_no"}],
@@ -268,21 +325,41 @@ def test_import_preflight_metadata_uses_cache_without_structure_changes(monkeypa
         "semanticFieldCatalog": {},
     }
 
-    monkeypatch.setattr(resource_import, "_resource_import_metadata_env_signature", lambda: "env")
-    monkeypatch.setattr(resource_import, "_read_resource_import_metadata_cache", lambda env: cached)
+    # Import preflight defaults to live metadata; opt into cache mode to
+    # exercise the cache path this test covers.
+    monkeypatch.setenv("RESOURCE_IMPORT_IMPORT_METADATA_SOURCE", "cache")
+    monkeypatch.setattr(
+        resource_import,
+        "_resource_import_metadata_env_signature",
+        lambda: "env",
+    )
+    monkeypatch.setattr(
+        resource_import,
+        "_read_resource_import_metadata_cache",
+        lambda env: cached,
+    )
 
     def fail_live_load(_client):  # noqa: ANN001
         raise AssertionError("warm import preflight should use metadata cache")
 
-    monkeypatch.setattr(resource_import, "_load_resource_import_metadata_from_client", fail_live_load)
+    monkeypatch.setattr(
+        resource_import,
+        "_load_resource_import_metadata_from_client",
+        fail_live_load,
+    )
 
-    metadata, source = resource_import._load_import_preflight_metadata(object(), [])
+    metadata, source = resource_import._load_import_preflight_metadata(
+        object(),
+        [],
+    )
 
     assert source == "cache"
     assert metadata is cached
 
 
-def test_import_preflight_metadata_refreshes_after_model_creation(monkeypatch) -> None:
+def test_import_preflight_metadata_refreshes_after_model_creation(
+    monkeypatch,
+) -> None:
     cached = {
         "connected": True,
         "ciTypes": [{"name": "old", "unique_key": "name"}],
@@ -297,9 +374,21 @@ def test_import_preflight_metadata_refreshes_after_model_creation(monkeypatch) -
     }
     writes = []
 
-    monkeypatch.setattr(resource_import, "_resource_import_metadata_env_signature", lambda: "env")
-    monkeypatch.setattr(resource_import, "_read_resource_import_metadata_cache", lambda env: cached)
-    monkeypatch.setattr(resource_import, "_load_resource_import_metadata_from_client", lambda _client: live)
+    monkeypatch.setattr(
+        resource_import,
+        "_resource_import_metadata_env_signature",
+        lambda: "env",
+    )
+    monkeypatch.setattr(
+        resource_import,
+        "_read_resource_import_metadata_cache",
+        lambda env: cached,
+    )
+    monkeypatch.setattr(
+        resource_import,
+        "_load_resource_import_metadata_from_client",
+        lambda _client: live,
+    )
     monkeypatch.setattr(
         resource_import,
         "_write_resource_import_metadata_cache",
@@ -316,11 +405,18 @@ def test_import_preflight_metadata_refreshes_after_model_creation(monkeypatch) -
     assert writes == [("env", live)]
 
 
-def test_build_confirmed_cmdb_attributes_only_keeps_allowed_model_fields() -> None:
+def test_build_confirmed_cmdb_attributes_only_keeps_allowed_model_fields() -> (
+    None
+):
     type_template = {
         "name": "redis",
         "unique_key": "middleware_name",
-        "attributes": ["middleware_name", "middleware_ip", "middleware_port", "platform"],
+        "attributes": [
+            "middleware_name",
+            "middleware_ip",
+            "middleware_port",
+            "platform",
+        ],
     }
     record = {
         "name": "redis-01-testzg",
@@ -345,9 +441,13 @@ def test_build_confirmed_cmdb_attributes_only_keeps_allowed_model_fields() -> No
     }
 
 
-def test_model_aware_mapping_detail_collapses_generic_and_model_specific_candidates() -> None:
+def test_model_aware_mapping_detail_collapses_generic_and_model_specific_candidates() -> (
+    None
+):
     redis_template = next(
-        item for item in resource_import.DEFAULT_MODEL_TEMPLATES if item.get("name") == "redis"
+        item
+        for item in resource_import.DEFAULT_MODEL_TEMPLATES
+        if item.get("name") == "redis"
     )
     redis_template = {
         **redis_template,
@@ -371,9 +471,13 @@ def test_model_aware_mapping_detail_collapses_generic_and_model_specific_candida
     } == {"middleware_name"}
 
 
-def test_collect_confirmation_issues_accepts_model_specific_name_and_port_fields() -> None:
+def test_collect_confirmation_issues_accepts_model_specific_name_and_port_fields() -> (
+    None
+):
     redis_template = next(
-        item for item in resource_import.DEFAULT_MODEL_TEMPLATES if item.get("name") == "redis"
+        item
+        for item in resource_import.DEFAULT_MODEL_TEMPLATES
+        if item.get("name") == "redis"
     )
     redis_template = {
         **redis_template,
@@ -423,7 +527,7 @@ def test_server_default_macro_is_not_filled_into_create_payload() -> None:
     assert not resource_import._is_server_default_macro("0")
     assert (
         resource_import._extract_attribute_default_value(
-            docker_template["attributeDefinitions"][0]
+            docker_template["attributeDefinitions"][0],
         )
         == ""
     )
@@ -438,11 +542,14 @@ def test_server_default_macro_is_not_filled_into_create_payload() -> None:
     # while a genuine literal default is still applied.
     assert "p_id" not in filled
     assert filled["alarm_status"] == "0"
-    assert resource_import._validate_required_cmdb_attributes(
-        type_template=docker_template,
-        source_attributes={"name": "10.253.0.1"},
-        cmdb_attributes=filled,
-    ) == []
+    assert (
+        resource_import._validate_required_cmdb_attributes(
+            type_template=docker_template,
+            source_attributes={"name": "10.253.0.1"},
+            cmdb_attributes=filled,
+        )
+        == []
+    )
 
 
 def test_required_status_with_model_default_does_not_block_import() -> None:
@@ -468,17 +575,24 @@ def test_required_status_with_model_default_does_not_block_import() -> None:
     }
 
     filled = resource_import._autofill_deterministic_cmdb_attributes(
-        canonical_attributes={"dev_no": "TESTZG-BJ-BJ-WLKJC-A-1.MCN.MX.ATN980C"},
+        canonical_attributes={
+            "dev_no": "TESTZG-BJ-BJ-WLKJC-A-1.MCN.MX.ATN980C",
+        },
         type_template=network_template,
         cmdb_attributes={"dev_no": "TESTZG-BJ-BJ-WLKJC-A-1.MCN.MX.ATN980C"},
     )
 
     assert filled["status"] == "在线"
-    assert resource_import._validate_required_cmdb_attributes(
-        type_template=network_template,
-        source_attributes={"dev_no": "TESTZG-BJ-BJ-WLKJC-A-1.MCN.MX.ATN980C"},
-        cmdb_attributes=filled,
-    ) == []
+    assert (
+        resource_import._validate_required_cmdb_attributes(
+            type_template=network_template,
+            source_attributes={
+                "dev_no": "TESTZG-BJ-BJ-WLKJC-A-1.MCN.MX.ATN980C",
+            },
+            cmdb_attributes=filled,
+        )
+        == []
+    )
 
 
 def _choices(*values: str) -> list:
@@ -502,7 +616,12 @@ def _project_template_with_choices() -> dict:
                 "alias": "应用类型",
                 "is_choice": True,
                 "choices": _choices(
-                    "IQ", "web", "service", "job", "mq", "api"
+                    "IQ",
+                    "web",
+                    "service",
+                    "job",
+                    "mq",
+                    "api",
                 ),
             },
             {
@@ -540,10 +659,18 @@ def test_value_choice_candidate_marks_ambiguous_match() -> None:
     tmpl = {
         "name": "x",
         "attributeDefinitions": [
-            {"name": "attr_a", "alias": "甲", "is_choice": True,
-             "choices": _choices("shared", "a")},
-            {"name": "attr_b", "alias": "乙", "is_choice": True,
-             "choices": _choices("shared", "b")},
+            {
+                "name": "attr_a",
+                "alias": "甲",
+                "is_choice": True,
+                "choices": _choices("shared", "a"),
+            },
+            {
+                "name": "attr_b",
+                "alias": "乙",
+                "is_choice": True,
+                "choices": _choices("shared", "b"),
+            },
         ],
     }
     cands = resource_import._collect_value_choice_candidates(["shared"], tmpl)
@@ -580,13 +707,16 @@ def test_metadata_catalog_exposes_model_attribute_as_direct_target() -> None:
                         },
                     ],
                     "parentTypes": [],
-                }
+                },
             ],
             "ciTypeGroups": [
-                {"name": "应用", "ciTypes": [{"name": "project", "alias": "应用"}]}
+                {
+                    "name": "应用",
+                    "ciTypes": [{"name": "project", "alias": "应用"}],
+                },
             ],
             "attributeLibrary": [],
-        }
+        },
     )
     catalog = metadata["semanticFieldCatalog"]
     # The model attribute is directly targetable, not collapsed into a
@@ -595,7 +725,8 @@ def test_metadata_catalog_exposes_model_attribute_as_direct_target() -> None:
     assert "应用类型" in catalog["project_type"]["attributeAliases"]
     # And a header equal to the attribute alias resolves straight to it.
     target_field, _ = resource_import._match_field_with_metadata(
-        "应用类型", metadata
+        "应用类型",
+        metadata,
     )
     assert target_field == "project_type"
 
@@ -645,22 +776,23 @@ def test_direct_attribute_wins_over_canonical_bucket_shadow() -> None:
                         },
                     ],
                     "parentTypes": [],
-                }
+                },
             ],
             "ciTypeGroups": [
                 {
                     "name": "数据库",
                     "ciTypes": [{"name": "database", "alias": "数据库"}],
-                }
+                },
             ],
             "attributeLibrary": [],
-        }
+        },
     )
     db_template = metadata["ciTypes"][0]
     detail = resource_import._build_sheet_mapping_detail(
         header="数据库类别",
         heuristic_mapping=resource_import._match_field_with_metadata(
-            "数据库类别", metadata
+            "数据库类别",
+            metadata,
         ),
         llm_mapping=("unknown", "low"),
         metadata=metadata,
@@ -675,7 +807,8 @@ def test_direct_attribute_wins_over_canonical_bucket_shadow() -> None:
     detail_llm_agrees = resource_import._build_sheet_mapping_detail(
         header="数据库类别",
         heuristic_mapping=resource_import._match_field_with_metadata(
-            "数据库类别", metadata
+            "数据库类别",
+            metadata,
         ),
         llm_mapping=("db_type", "high"),
         metadata=metadata,

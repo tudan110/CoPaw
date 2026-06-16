@@ -16,12 +16,12 @@ def _load_module(module_name: str, path: Path):
 
 SCRIPT_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(SCRIPT_DIR))
-FIND_PROJECT = _load_module("veops_find_project_test", SCRIPT_DIR / "find_project.py")
-APP_TOPOLOGY = _load_module("veops_app_topology_test", SCRIPT_DIR / "app_topology.py")
-VEOPS_HTTP = _load_module("veops_http_test", SCRIPT_DIR / "veops_http.py")
+FIND_PROJECT = _load_module("zgops_find_project_test", SCRIPT_DIR / "find_project.py")
+APP_TOPOLOGY = _load_module("zgops_app_topology_test", SCRIPT_DIR / "app_topology.py")
+ZGOPS_HTTP = _load_module("zgops_http_test", SCRIPT_DIR / "zgops_http.py")
 
 
-class VeopsCmdbEnvResolutionTests(unittest.TestCase):
+class ZgopsCmdbEnvResolutionTests(unittest.TestCase):
     def test_find_project_prefers_shared_secret_before_skill_local_env(self):
         with (
             patch.dict("os.environ", {}, clear=True),
@@ -43,7 +43,7 @@ class VeopsCmdbEnvResolutionTests(unittest.TestCase):
             patch.dict(
                 "os.environ",
                 {
-                    "VEOPS_ENV_FILE": "/tmp/custom.env",
+                    "ZGOPS_ENV_FILE": "/tmp/custom.env",
                     "QWENPAW_WORKING_DIR": "/work/qwenpaw",
                 },
                 clear=True,
@@ -67,8 +67,8 @@ class VeopsCmdbEnvResolutionTests(unittest.TestCase):
         with (
             patch.object(
                 APP_TOPOLOGY,
-                "_resolve_veops_env",
-                return_value={"VEOPS_BASE_URL": "http://cmdb.example.com"},
+                "_resolve_zgops_env",
+                return_value={"ZGOPS_BASE_URL": "http://cmdb.example.com"},
             ) as resolve_env,
             patch.object(APP_TOPOLOGY, "CmdbHttpClient") as client_cls,
             patch.object(APP_TOPOLOGY, "_fetch_relations", return_value=[]),
@@ -93,12 +93,12 @@ class VeopsCmdbEnvResolutionTests(unittest.TestCase):
     def test_try_login_returns_none_when_credentials_missing(self):
         session = object()
 
-        self.assertIsNone(VEOPS_HTTP.try_login(session, "http://cmdb.example.com", "", ""))
+        self.assertIsNone(ZGOPS_HTTP.try_login(session, "http://cmdb.example.com", "", ""))
 
     def test_try_login_returns_none_when_login_fails(self):
         session = object()
-        with patch.object(VEOPS_HTTP, "login", side_effect=RuntimeError("boom")):
-            result = VEOPS_HTTP.try_login(session, "http://cmdb.example.com", "user", "pass")
+        with patch.object(ZGOPS_HTTP, "login", side_effect=RuntimeError("boom")):
+            result = ZGOPS_HTTP.try_login(session, "http://cmdb.example.com", "user", "pass")
 
         self.assertIsNone(result)
 

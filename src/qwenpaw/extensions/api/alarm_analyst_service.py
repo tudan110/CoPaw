@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 import json
 import os
 import re
@@ -9,10 +10,16 @@ from typing import Any
 
 
 ALARM_ANALYST_SCRIPT_TIMEOUT_SECONDS = 180
-RES_ID_RE = re.compile(r"(?:资源\s*ID(?:（CI\s*ID）|\(CI\s*ID\))?|CI\s*ID)[:：]\s*([0-9]+)")
-DATETIME_RE = re.compile(r"([0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2})")
+RES_ID_RE = re.compile(
+    r"(?:资源\s*ID(?:（CI\s*ID）|\(CI\s*ID\))?|CI\s*ID)[:：]\s*([0-9]+)",
+)
+DATETIME_RE = re.compile(
+    r"([0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2})",
+)
 IP_RE = re.compile(r"\b(?:[0-9]{1,3}\.){3}[0-9]{1,3}\b")
-APP_NAME_LABEL_RE = re.compile(r"(?:应用名|应用)[:：]\s*([A-Za-z0-9_.\-\u4e00-\u9fa5]+)")
+APP_NAME_LABEL_RE = re.compile(
+    r"(?:应用名|应用)[:：]\s*([A-Za-z0-9_.\-\u4e00-\u9fa5]+)",
+)
 APP_NAME_SUFFIX_RE = re.compile(r"([A-Za-z0-9_.\-\u4e00-\u9fa5]+)\s*应用")
 DATABASE_HINT_KEYWORDS = ("mysql", "死锁", "锁异常", "插入数据失败", "新增数据失败", "数据库")
 
@@ -41,10 +48,14 @@ def _alarm_analyst_context_script() -> Path:
 
 
 def _workspace_root() -> Path:
-    return _fault_skill_root().parents[2]
+    # _fault_skill_root() = .../working/workspaces/fault/skills, so the
+    # workspaces root is two levels up (skills -> fault -> workspaces),
+    # i.e. parents[1]. parents[2] wrongly dropped the "workspaces" segment,
+    # breaking the zgops find_project / app_topology module load paths.
+    return _fault_skill_root().parents[1]
 
 
-def _veops_find_project_path() -> Path:
+def _zgops_find_project_path() -> Path:
     return (
         _workspace_root()
         / "query"
@@ -55,7 +66,7 @@ def _veops_find_project_path() -> Path:
     )
 
 
-def _veops_app_topology_path() -> Path:
+def _zgops_app_topology_path() -> Path:
     return (
         _workspace_root()
         / "query"
@@ -81,7 +92,9 @@ def parse_alarm_dispatch_context(content: str | None) -> dict[str, str]:
     res_id_match = RES_ID_RE.search(text)
     event_time_match = DATETIME_RE.search(text)
     manage_ip_match = IP_RE.search(text)
-    app_name_match = APP_NAME_LABEL_RE.search(text) or APP_NAME_SUFFIX_RE.search(text)
+    app_name_match = APP_NAME_LABEL_RE.search(
+        text,
+    ) or APP_NAME_SUFFIX_RE.search(text)
 
     title = ""
     device_name = ""
@@ -95,7 +108,9 @@ def parse_alarm_dispatch_context(content: str | None) -> dict[str, str]:
                 if parts:
                     device_name = parts[0].strip()
         elif "·" in headline:
-            parts = [part.strip() for part in headline.split("·") if part.strip()]
+            parts = [
+                part.strip() for part in headline.split("·") if part.strip()
+            ]
             if parts:
                 title = parts[0]
             if len(parts) > 1:
@@ -117,7 +132,10 @@ def parse_alarm_dispatch_context(content: str | None) -> dict[str, str]:
     }
 
 
-def _build_alarm_analyst_result(context: dict[str, Any], dispatch_context: dict[str, str]) -> dict[str, Any]:
+def _build_alarm_analyst_result(
+    context: dict[str, Any],
+    dispatch_context: dict[str, str],
+) -> dict[str, Any]:
     topology = context.get("topology") or {}
     recent = (context.get("relatedAlarms") or {}).get("recent") or {}
     previous = (context.get("relatedAlarms") or {}).get("previous") or {}
@@ -134,13 +152,24 @@ def _build_alarm_analyst_result(context: dict[str, Any], dispatch_context: dict[
 
     summary = findings[0] if findings else "已完成告警拓扑、关联告警和指标的联合分析。"
     root_cause = {
-        "type": str(metric_analysis.get("metricType") or root_resource.get("ciTypeAlias") or root_resource.get("ciType") or "待分析"),
-        "object": str(root_resource.get("name") or dispatch_context.get("res_id") or "cmdb_resource"),
+        "type": str(
+            metric_analysis.get("metricType")
+            or root_resource.get("ciTypeAlias")
+            or root_resource.get("ciType")
+            or "待分析",
+        ),
+        "object": str(
+            root_resource.get("name")
+            or dispatch_context.get("res_id")
+            or "cmdb_resource",
+        ),
     }
 
     root_status = "success" if execution_root.get("resolved") else "blocked"
     topology_expected = int(execution_topology.get("resourceIdsExpected") or 0)
-    topology_collected = int(execution_topology.get("resourceIdsCollected") or 0)
+    topology_collected = int(
+        execution_topology.get("resourceIdsCollected") or 0,
+    )
     if topology_collected <= 0:
         topology_status = "blocked"
     elif topology_expected > topology_collected:
@@ -224,16 +253,30 @@ def _build_alarm_analyst_result(context: dict[str, Any], dispatch_context: dict[
             {
                 "type": "alarm-analyst-context",
                 "context": context,
-            }
+            },
         ],
     }
 
 
-def _build_partial_alarm_analyst_result(dispatch_context: dict[str, str], content: str | None) -> dict[str, Any]:
+def _build_partial_alarm_analyst_result(
+    dispatch_context: dict[str, str],
+    content: str | None,
+) -> dict[str, Any]:
     text = str(content or "").strip()
     normalized = text.lower()
-    inferred_type = "mysql" if any(keyword in normalized for keyword in ("mysql", "死锁", "锁异常", "插入数据失败", "新增数据失败")) else "待分析"
-    inferred_object = dispatch_context.get("device_name") or dispatch_context.get("manage_ip") or "目标应用/资源"
+    inferred_type = (
+        "mysql"
+        if any(
+            keyword in normalized
+            for keyword in ("mysql", "死锁", "锁异常", "插入数据失败", "新增数据失败")
+        )
+        else "待分析"
+    )
+    inferred_object = (
+        dispatch_context.get("device_name")
+        or dispatch_context.get("manage_ip")
+        or "目标应用/资源"
+    )
 
     summary = (
         "已进入 alarm-analyst 分析流程，但当前消息缺少可直接执行的资源 ID，"
@@ -270,8 +313,13 @@ def _build_partial_alarm_analyst_result(dispatch_context: dict[str, str], conten
             {
                 "type": "alarm-analyst-context-missing-res-id",
                 "requiredFields": ["resId"],
-                "optionalFields": ["manageIp", "deviceName", "alarmTitle", "eventTime"],
-            }
+                "optionalFields": [
+                    "manageIp",
+                    "deviceName",
+                    "alarmTitle",
+                    "eventTime",
+                ],
+            },
         ],
     }
 
@@ -286,15 +334,19 @@ def _build_application_partial_result(
     candidate_lines = []
     for item in candidates[:10]:
         candidate_lines.append(
-            f"{item.get('name') or '-'}（ID: {item.get('id') or '-'}）"
+            f"{item.get('name') or '-'}（ID: {item.get('id') or '-'}）",
         )
-    candidate_summary = "、".join(candidate_lines) if candidate_lines else "无可用候选"
+    candidate_summary = (
+        "、".join(candidate_lines) if candidate_lines else "无可用候选"
+    )
 
     return {
         "summary": reason,
         "rootCause": {
             "type": "待分析",
-            "object": dispatch_context.get("app_keyword") or dispatch_context.get("device_name") or "应用",
+            "object": dispatch_context.get("app_keyword")
+            or dispatch_context.get("device_name")
+            or "应用",
         },
         "steps": [
             {"id": "parse-input", "status": "success"},
@@ -307,36 +359,50 @@ def _build_application_partial_result(
             {
                 "stage": "match-application",
                 "summary": f"当前应用关键字：`{app_keyword or '-'}`；候选应用：{candidate_summary}",
-            }
+            },
         ],
         "actions": [
             {
                 "type": "alarm-analyst-application-candidates",
                 "appKeyword": app_keyword,
                 "candidates": candidates,
-            }
+            },
         ],
     }
 
 
-def _load_veops_modules():
-    find_project = _load_module("veops_find_project_runtime", _veops_find_project_path())
-    app_topology = _load_module("veops_app_topology_runtime", _veops_app_topology_path())
+def _load_zgops_modules():
+    # app_topology.py does a sibling `from find_project import ...`, so the
+    # scripts dir must be importable before loading it.
+    scripts_dir = str(_zgops_find_project_path().parent)
+    if scripts_dir not in sys.path:
+        sys.path.insert(0, scripts_dir)
+    find_project = _load_module(
+        "zgops_find_project_runtime",
+        _zgops_find_project_path(),
+    )
+    app_topology = _load_module(
+        "zgops_app_topology_runtime",
+        _zgops_app_topology_path(),
+    )
     return find_project, app_topology
 
 
-def _load_veops_client(find_project_module: Any):
-    env = find_project_module._resolve_veops_env()  # noqa: SLF001
+def _load_zgops_client(find_project_module: Any):
+    env = find_project_module._resolve_zgops_env()  # noqa: SLF001
     client = find_project_module.CmdbHttpClient(
-        base_url=env.get("VEOPS_BASE_URL", ""),
-        username=env.get("VEOPS_USERNAME", ""),
-        password=env.get("VEOPS_PASSWORD", ""),
+        base_url=env.get("ZGOPS_BASE_URL", ""),
+        username=env.get("ZGOPS_USERNAME", ""),
+        password=env.get("ZGOPS_PASSWORD", ""),
     )
     client.try_login()
     return client
 
 
-def _select_root_resource_candidate(content: str, relation_rows: list[dict[str, Any]]) -> dict[str, Any] | None:
+def _select_root_resource_candidate(
+    content: str,
+    relation_rows: list[dict[str, Any]],
+) -> dict[str, Any] | None:
     normalized = str(content or "").lower()
     candidates = []
     for item in relation_rows:
@@ -365,24 +431,34 @@ def _select_root_resource_candidate(content: str, relation_rows: list[dict[str, 
     top_items = [item for score, item in candidates if score == top_score]
     if len(top_items) == 1:
         return top_items[0]
-    mysql_items = [item for item in top_items if str(item.get("ci_type")) == "mysql"]
+    mysql_items = [
+        item for item in top_items if str(item.get("ci_type")) == "mysql"
+    ]
     if len(mysql_items) == 1:
         return mysql_items[0]
     return top_items[0]
 
 
-def _run_alarm_analyst_context_from_application(payload: dict, dispatch_context: dict[str, str]) -> dict:
+def _run_alarm_analyst_context_from_application(
+    payload: dict,
+    dispatch_context: dict[str, str],
+) -> dict:
     app_keyword = dispatch_context.get("app_keyword", "")
-    find_project, app_topology = _load_veops_modules()
-    client = _load_veops_client(find_project)
+    find_project, app_topology = _load_zgops_modules()
+    client = _load_zgops_client(find_project)
     projects = client.list_projects()
-    matched_projects, mode = find_project._match_projects(projects, app_keyword)  # noqa: SLF001
+    matched_projects, mode = find_project._match_projects(
+        projects,
+        app_keyword,
+    )  # noqa: SLF001
 
     if not app_keyword:
         if len(projects) == 1:
             matched_projects = [projects[0]]
         else:
-            candidates = [find_project._project_summary(item) for item in projects[:10]]  # noqa: SLF001
+            candidates = [
+                find_project._project_summary(item) for item in projects[:10]
+            ]  # noqa: SLF001
             return _build_application_partial_result(
                 dispatch_context=dispatch_context,
                 app_keyword=app_keyword,
@@ -399,7 +475,10 @@ def _run_alarm_analyst_context_from_application(payload: dict, dispatch_context:
         )
 
     if len(matched_projects) > 1:
-        candidates = [find_project._project_summary(item) for item in matched_projects[:10]]  # noqa: SLF001
+        candidates = [
+            find_project._project_summary(item)
+            for item in matched_projects[:10]
+        ]  # noqa: SLF001
         return _build_application_partial_result(
             dispatch_context=dispatch_context,
             app_keyword=app_keyword,
@@ -408,12 +487,23 @@ def _run_alarm_analyst_context_from_application(payload: dict, dispatch_context:
         )
 
     project = matched_projects[0]
-    project_name = find_project._project_name(project) or app_keyword  # noqa: SLF001
-    relation_rows = app_topology._fetch_relations(client, project.get("_id") or project.get("id"))  # noqa: SLF001
+    project_name = (
+        find_project._project_name(project) or app_keyword
+    )  # noqa: SLF001
+    relation_rows = app_topology._fetch_relations(
+        client,
+        project.get("_id") or project.get("id"),
+    )  # noqa: SLF001
     tree = app_topology._build_tree(project, relation_rows)  # noqa: SLF001
-    option = app_topology._build_option(tree, f"{project_name} 应用关系拓扑")  # noqa: SLF001
+    option = app_topology._build_option(
+        tree,
+        f"{project_name} 应用关系拓扑",
+    )  # noqa: SLF001
 
-    root_candidate = _select_root_resource_candidate(str(payload.get("content") or ""), relation_rows)
+    root_candidate = _select_root_resource_candidate(
+        str(payload.get("content") or ""),
+        relation_rows,
+    )
     if not root_candidate:
         return {
             "summary": f"已匹配应用 `{project_name}` 并查询到拓扑，但暂未能自动选出合适的根资源继续做指标分析。",
@@ -424,32 +514,60 @@ def _run_alarm_analyst_context_from_application(payload: dict, dispatch_context:
                 {"id": "resolve-root-resource", "status": "blocked"},
             ],
             "logEntries": [
-                {"stage": "app-topology", "summary": f"应用 `{project_name}` 的拓扑已获取，共 {len(relation_rows)} 条关系记录。"}
+                {
+                    "stage": "app-topology",
+                    "summary": f"应用 `{project_name}` 的拓扑已获取，共 {len(relation_rows)} 条关系记录。",
+                },
             ],
             "actions": [
                 {
                     "type": "alarm-analyst-application-topology",
-                    "project": {"id": project.get("_id") or project.get("id"), "name": project_name},
+                    "project": {
+                        "id": project.get("_id") or project.get("id"),
+                        "name": project_name,
+                    },
                     "option": option,
-                }
+                },
             ],
         }
 
     dispatch_context = {
         **dispatch_context,
-        "res_id": str(root_candidate.get("_id") or root_candidate.get("id") or ""),
-        "device_name": dispatch_context.get("device_name") or str(root_candidate.get("name") or root_candidate.get("db_instance") or ""),
-        "manage_ip": dispatch_context.get("manage_ip") or str(root_candidate.get("manage_ip") or root_candidate.get("db_ip") or ""),
-        "alarm_title": dispatch_context.get("alarm_title") or str(payload.get("content") or "").strip(),
+        "res_id": str(
+            root_candidate.get("_id") or root_candidate.get("id") or "",
+        ),
+        "device_name": dispatch_context.get("device_name")
+        or str(
+            root_candidate.get("name")
+            or root_candidate.get("db_instance")
+            or "",
+        ),
+        "manage_ip": dispatch_context.get("manage_ip")
+        or str(
+            root_candidate.get("manage_ip")
+            or root_candidate.get("db_ip")
+            or "",
+        ),
+        "alarm_title": dispatch_context.get("alarm_title")
+        or str(payload.get("content") or "").strip(),
     }
 
-    context = _run_alarm_analyst_context({**payload, "content": payload.get("content", "") + f"\n资源 ID（CI ID）：{dispatch_context['res_id']}"})
+    context = _run_alarm_analyst_context(
+        {
+            **payload,
+            "content": payload.get("content", "")
+            + f"\n资源 ID（CI ID）：{dispatch_context['res_id']}",
+        },
+    )
     context.setdefault("actions", []).append(
         {
             "type": "alarm-analyst-application-topology",
-            "project": {"id": project.get("_id") or project.get("id"), "name": project_name},
+            "project": {
+                "id": project.get("_id") or project.get("id"),
+                "name": project_name,
+            },
             "option": option,
-        }
+        },
     )
     context.setdefault("logEntries", []).insert(
         0,
@@ -464,12 +582,17 @@ def _run_alarm_analyst_context_from_application(payload: dict, dispatch_context:
 def _run_alarm_analyst_context(payload: dict) -> dict:
     script_path = _alarm_analyst_context_script()
     if not script_path.exists():
-        raise FileNotFoundError(f"alarm-analyst context script not found: {script_path}")
+        raise FileNotFoundError(
+            f"alarm-analyst context script not found: {script_path}",
+        )
 
     dispatch_context = parse_alarm_dispatch_context(payload.get("content"))
     res_id = dispatch_context.get("res_id", "")
     if not res_id:
-        return _run_alarm_analyst_context_from_application(payload, dispatch_context)
+        return _run_alarm_analyst_context_from_application(
+            payload,
+            dispatch_context,
+        )
 
     command_args = [
         sys.executable,
@@ -506,7 +629,9 @@ def _run_alarm_analyst_context(payload: dict) -> dict:
 
     context = json.loads(stdout_text)
     if context.get("code") != 200:
-        raise RuntimeError(str(context.get("msg") or "alarm-analyst context query failed"))
+        raise RuntimeError(
+            str(context.get("msg") or "alarm-analyst context query failed"),
+        )
     return _build_alarm_analyst_result(context, dispatch_context)
 
 

@@ -151,6 +151,14 @@ COPY deploy-all/qwenpaw/data/qwenpaw/ /app/.working.backup/
 # Copy secret directory data to backup
 COPY deploy-all/qwenpaw/data/qwenpaw.secret/ /app/.working.secret.backup/
 
+# The data/ seed above is git-untracked and hand-maintained, so its skill code
+# can drift behind the git-tracked source and re-introduce parsing bugs (e.g.
+# xlsx/docx mojibake). Overlay the tracked knowledge-base skill source so the
+# image ALWAYS seeds the current parser, regardless of data/ drift. working/
+# has no runtime data/ subdir, so this refreshes code only — never a DB.
+COPY deploy-all/qwenpaw/working/workspaces/knowledge/skills/knowledge-base/ \
+     /app/.working.backup/workspaces/knowledge/skills/knowledge-base/
+
 # Bake all skill-declared Python deps into the image so OFFLINE deployments
 # can parse every knowledge-base format (doc/docx/pptx/pdf/xls/xlsx/csv/
 # images) out of the box. Never pip-install inside a running container:

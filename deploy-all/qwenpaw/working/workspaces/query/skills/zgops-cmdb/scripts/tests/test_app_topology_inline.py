@@ -1,6 +1,6 @@
 """Tests for the inline-attribute fallback in app_topology.py.
 
-Some VEOPS deployments express a project's relationships not as `ci_relations`
+Some ZGOPS deployments express a project's relationships not as `ci_relations`
 rows but as inline string attributes on the project CI itself (e.g. a `Kafka`
 field whose value is `"kafka-web01, kafka-web02"`). These tests guarantee that
 `app_topology` resolves those values into real CI items even when

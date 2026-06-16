@@ -157,7 +157,12 @@ export interface ResourceImportPreview {
       resourceCiType: string;
       resourceLabel: string;
       recordCount: number;
-      status: "matched" | "ambiguous_model" | "missing_group" | "missing_model" | "unknown";
+      status:
+        | "matched"
+        | "ambiguous_model"
+        | "missing_group"
+        | "missing_model"
+        | "unknown";
       reason?: string;
       originalTypeText?: string;
       rawTypeHints?: string[];
@@ -188,6 +193,20 @@ export interface ResourceImportPreview {
         uniqueKey?: string;
       };
     }>;
+  };
+  importSummary?: {
+    createCount: number;
+    updateCount: number;
+    skipCount: number;
+    pendingGroups: Array<{ name: string; ciTypes: string[] }>;
+    pendingModels: Array<{ name: string; group: string }>;
+    attentionRecords: Array<{
+      previewKey: string;
+      name: string;
+      ciType: string;
+      issues: Array<{ field: string; level: string; message: string }>;
+    }>;
+    blockingCount: number;
   };
   analysisStatus?: "ok" | "blocking";
   analysisIssues?: Array<{
