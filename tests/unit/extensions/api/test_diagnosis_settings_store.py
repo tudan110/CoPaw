@@ -111,37 +111,8 @@ def test_resolve_int_clamps_override_to_min(tmp_path: Path) -> None:
     )
 
 
-def test_build_payload_masks_token(tmp_path: Path) -> None:
-    db = _db(tmp_path)
-    store.set_overrides({"inoe_api_token": "super-secret-9876"}, db_path=db)
-    payload = store.build_settings_payload(db_path=db)
-    token = payload["effective"]["inoe_api_token"]
-    assert token == {"is_set": True, "masked": "****9876"}
-    # Raw secret must never appear anywhere in the payload.
-    assert "super-secret-9876" not in str(payload)
-    assert payload["overrides"]["inoe_api_token"] is True
-
-
-def test_apply_update_empty_token_keeps_secret(tmp_path: Path) -> None:
-    db = _db(tmp_path)
-    store.set_overrides({"inoe_api_token": "keep-me-1234"}, db_path=db)
-    # Empty string = no change.
-    store.apply_settings_update({"inoe_api_token": ""}, db_path=db)
-    assert (
-        store.resolve_str(
-            "inoe_api_token",
-            "INOE_API_TOKEN",
-            "",
-            db_path=db,
-        )
-        == "keep-me-1234"
-    )
-    # Sentinel clears it.
-    store.apply_settings_update(
-        {"inoe_api_token": store.CLEAR_SENTINEL},
-        db_path=db,
-    )
-    assert store.has_override("inoe_api_token", db_path=db) is False
+# NOTE: INOE gateway fields (base URL / token / timeout) moved out of the
+# diagnosis namespace into their own store — see test_inoe_settings_store.py.
 
 
 def test_apply_update_rejects_unknown_key(tmp_path: Path) -> None:

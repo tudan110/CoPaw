@@ -43,6 +43,12 @@ const CHANNEL_LABELS: Record<string, string> = {
   xiaoyi: "小艺",
 };
 
+// Channels surfaced in the portal UI, in display order. The rest stay fully
+// configured on the backend — they are only hidden here for now (not
+// removed). To show more, add their keys to this list; the order here is the
+// order shown.
+const PORTAL_VISIBLE_CHANNELS = ["console", "feishu", "dingtalk"];
+
 // Channels that have streaming_enabled option
 const STREAMING_CHANNELS = ["wecom", "telegram", "dingtalk", "feishu"];
 
@@ -597,31 +603,11 @@ export function ChannelsPanel() {
     fetchChannels();
   }, [fetchChannels]);
 
-  // Sort: enabled first
+  // Visibility AND display order both come from PORTAL_VISIBLE_CHANNELS; the
+  // remaining channels stay configured on the backend, just hidden here.
   const sortedKeys = useMemo(() => {
-    // Fixed order matching Console's builtinOrder
-    const builtinOrder = [
-      "console",
-      "dingtalk",
-      "feishu",
-      "imessage",
-      "discord",
-      "telegram",
-      "qq",
-      "matrix",
-      "sip",
-      "xiaoyi",
-      "wecom",
-      "wechat",
-      "mattermost",
-      "mqtt",
-      "voice",
-      "onebot",
-    ];
     const keys = Object.keys(channels);
-    const ordered = builtinOrder.filter((k) => keys.includes(k));
-    const custom = keys.filter((k) => !builtinOrder.includes(k));
-    return [...ordered, ...custom];
+    return PORTAL_VISIBLE_CHANNELS.filter((k) => keys.includes(k));
   }, [channels]);
 
   const openDrawer = (key: string) => {

@@ -57,10 +57,27 @@ export interface TopologyData {
   }>;
 }
 
+export interface WorkorderStatsData {
+  inProgressCount?: number;
+  finishedCount?: number;
+  todoCount?: number;
+}
+
+export interface SeverityTrendPoint {
+  formatDate?: string;
+  data?: number;
+}
+
+// Keyed by severity level ("1"=紧急 / "2"=严重 / "3"=普通 / "4"=预警),
+// each value a per-day series (the gateway only offers daily buckets).
+export type SeverityTrendData = Record<string, SeverityTrendPoint[]>;
+
 export interface MonitoringOverviewDashboardResponse {
   assetOverview: MonitoringEnvelope<AssetOverviewData>;
   alarmTop5: MonitoringEnvelope<AlarmTop5Item[]>;
   topology: MonitoringEnvelope<TopologyData>;
+  workorderStats: MonitoringEnvelope<WorkorderStatsData>;
+  severityTrend: MonitoringEnvelope<SeverityTrendData>;
   activeAlarmTotal: number;
 }
 

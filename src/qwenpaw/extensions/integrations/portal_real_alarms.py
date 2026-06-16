@@ -7,11 +7,11 @@ import subprocess
 import tempfile
 from datetime import datetime, timedelta, timezone
 from typing import Any
-from urllib.parse import urljoin
 
 import requests
 
 from qwenpaw.extensions.api import diagnosis_settings_store
+from qwenpaw.extensions.api import inoe_settings_store
 
 DEFAULT_INOE_API_BASE_URL = "http://gateway:30080"
 REAL_ALARM_LIST_ENDPOINT = "/resource/realalarm/list"
@@ -49,44 +49,17 @@ CLASS_TO_NAME = {
 
 
 def _get_gateway_real_alarm_url() -> str:
-    configured = diagnosis_settings_store.resolve_str(
-        "inoe_api_base_url",
-        "INOE_API_BASE_URL",
-        DEFAULT_INOE_API_BASE_URL,
-    ).strip()
-    base_url = configured or DEFAULT_INOE_API_BASE_URL
-    return urljoin(
-        f"{base_url.rstrip('/')}/",
-        REAL_ALARM_LIST_ENDPOINT.lstrip("/"),
-    )
+    # INOE connection is resolved by the shared accessor (page override >
+    # legacy override > env > default). See :mod:`inoe_settings_store`.
+    return inoe_settings_store.build_url(REAL_ALARM_LIST_ENDPOINT)
 
 
 def _get_real_alarm_timeout_seconds() -> float:
-    return diagnosis_settings_store.resolve_float(
-        "inoe_api_timeout_seconds",
-        "INOE_API_TIMEOUT",
-        REAL_ALARM_TIMEOUT_SECONDS,
-        min_value=0.1,
-    )
+    return inoe_settings_store.get_timeout_seconds()
 
 
 def _build_real_alarm_headers() -> dict[str, str]:
-    headers = {
-        "Accept": "application/json, text/plain, */*",
-        "Content-Type": "application/json;charset=UTF-8",
-    }
-    bearer_token = diagnosis_settings_store.resolve_str(
-        "inoe_api_token",
-        "INOE_API_TOKEN",
-        "",
-    ).strip()
-    if bearer_token:
-        headers["Authorization"] = (
-            bearer_token
-            if bearer_token.lower().startswith("bearer ")
-            else f"Bearer {bearer_token}"
-        )
-    return headers
+    return inoe_settings_store.build_headers()
 
 
 DEFAULT_REAL_ALARM_TIMEZONE_OFFSET = 8

@@ -11,6 +11,7 @@ import {
 import {
   settingsApi,
   diagnosisSettingsApi,
+  inoeSettingsApi,
   DIAGNOSIS_TOKEN_CLEAR,
   type NotificationChannelScopeConfig,
   type NotificationChannelSettings,
@@ -22,7 +23,7 @@ import {
 type DiagnosisNumberField = {
   key: string;
   label: string;
-  group: "polling" | "inoe" | "query_window" | "recovery";
+  group: "polling" | "query_window" | "recovery";
   min?: number;
   max?: number;
   step?: number;
@@ -64,14 +65,6 @@ const DIAGNOSIS_NUMBER_FIELDS: DiagnosisNumberField[] = [
     hint:
       "开启实时分析后，查询起点 = 开启时刻往前回溯 N 小时；" +
       "0 = 仅分析开启后新产生的告警。重新开关会重新锚定起点。",
-  },
-  {
-    key: "inoe_api_timeout_seconds",
-    label: "INOE 接口超时（秒）",
-    group: "inoe",
-    min: 1,
-    step: 1,
-    hint: "调用告警平台网关的请求超时。",
   },
   {
     key: "timezone_offset_hours",
@@ -141,24 +134,8 @@ const DIAGNOSIS_NUMBER_FIELDS: DiagnosisNumberField[] = [
   },
 ];
 
-const DIAGNOSIS_TEXT_FIELDS: {
-  key: string;
-  label: string;
-  group: "inoe";
-  placeholder: string;
-  hint: string;
-}[] = [
-  {
-    key: "inoe_api_base_url",
-    label: "INOE 网关地址",
-    group: "inoe",
-    placeholder: "http://gateway:30080",
-    hint: "告警平台网关 base URL。",
-  },
-];
-
 const DIAGNOSIS_GROUP_META: {
-  id: "polling" | "inoe" | "query_window" | "recovery";
+  id: "polling" | "query_window" | "recovery";
   title: string;
   description: string;
 }[] = [
@@ -166,11 +143,6 @@ const DIAGNOSIS_GROUP_META: {
     id: "polling",
     title: "轮询与并发",
     description: "控制自动接管的频率、批量与并发，直接影响 token 消耗。",
-  },
-  {
-    id: "inoe",
-    title: "告警平台连接（INOE）",
-    description: "告警网关地址、令牌与超时。",
   },
   {
     id: "query_window",
@@ -184,6 +156,24 @@ const DIAGNOSIS_GROUP_META: {
       "INOE 推送告警清除通知后，自动复核活动列表并验证关键指标是否真正恢复。",
   },
 ];
+
+// INOE gateway connection lives in its own settings tab (see inoeSettingsApi).
+// It is shared infrastructure (monitoring overview, real-alarm list,
+// workorders), not a diagnosis-only knob.
+const INOE_TEXT_FIELD = {
+  key: "inoe_api_base_url",
+  label: "INOE 网关地址",
+  placeholder: "http://gateway:30080",
+  hint: "平台网关 base URL。",
+};
+const INOE_NUMBER_FIELD = {
+  key: "inoe_api_timeout_seconds",
+  label: "INOE 接口超时（秒）",
+  min: 1,
+  step: 1,
+  hint: "调用平台网关的请求超时。",
+};
+const INOE_TOKEN_KEY = "inoe_api_token";
 
 function isMaskedSecret(value: unknown): value is MaskedSecret {
   return (
@@ -200,6 +190,12 @@ const SETTINGS_TABS = [
     label: "对话",
     iconClass: "fa-comments",
     description: "过程记录、回复体验等对话偏好设置",
+  },
+  {
+    id: "inoe",
+    label: "平台",
+    iconClass: "fa-tower-broadcast",
+    description: "INOE 平台网关地址、令牌与超时",
   },
   {
     id: "diagnosis",
@@ -407,7 +403,6 @@ export function SettingsPanel() {
   const [diagnosisDraft, setDiagnosisDraft] = useState<Record<string, string>>(
     {},
   );
-  const [diagnosisTokenDraft, setDiagnosisTokenDraft] = useState("");
   const [diagnosisLoading, setDiagnosisLoading] = useState(true);
   const [diagnosisSaving, setDiagnosisSaving] = useState(false);
   const [diagnosisTogglePending, setDiagnosisTogglePending] = useState(false);
@@ -418,7 +413,7 @@ export function SettingsPanel() {
 
   const buildDiagnosisDraft = (payload: DiagnosisSettingsPayload) => {
     const draft: Record<string, string> = {};
-    [...DIAGNOSIS_NUMBER_FIELDS, ...DIAGNOSIS_TEXT_FIELDS].forEach((field) => {
+    DIAGNOSIS_NUMBER_FIELDS.forEach((field) => {
       const value = payload.effective[field.key];
       draft[field.key] =
         value === undefined || value === null || isMaskedSecret(value)
@@ -431,7 +426,6 @@ export function SettingsPanel() {
   const applyDiagnosisPayload = (payload: DiagnosisSettingsPayload) => {
     setDiagnosisPayload(payload);
     setDiagnosisDraft(buildDiagnosisDraft(payload));
-    setDiagnosisTokenDraft("");
   };
 
   useEffect(() => {
@@ -543,9 +537,6 @@ export function SettingsPanel() {
     if (!diagnosisPayload) {
       return false;
     }
-    if (diagnosisTokenDraft.trim() !== "") {
-      return true;
-    }
     for (const field of DIAGNOSIS_NUMBER_FIELDS) {
       const raw = (diagnosisDraft[field.key] ?? "").trim();
       if (raw === "") {
@@ -559,14 +550,8 @@ export function SettingsPanel() {
         return true;
       }
     }
-    for (const field of DIAGNOSIS_TEXT_FIELDS) {
-      const raw = (diagnosisDraft[field.key] ?? "").trim();
-      if (raw !== String(diagnosisPayload.effective[field.key] ?? "")) {
-        return true;
-      }
-    }
     return false;
-  }, [diagnosisPayload, diagnosisDraft, diagnosisTokenDraft]);
+  }, [diagnosisPayload, diagnosisDraft]);
 
   const handleSaveDiagnosisSettings = async () => {
     if (!diagnosisPayload || diagnosisSaving) {
@@ -587,16 +572,6 @@ export function SettingsPanel() {
       if (String(effective) !== String(num)) {
         body[field.key] = num;
       }
-    }
-    for (const field of DIAGNOSIS_TEXT_FIELDS) {
-      const raw = (diagnosisDraft[field.key] ?? "").trim();
-      const effective = diagnosisPayload.effective[field.key];
-      if (raw !== String(effective ?? "")) {
-        body[field.key] = raw;
-      }
-    }
-    if (diagnosisTokenDraft.trim() !== "") {
-      body.inoe_api_token = diagnosisTokenDraft.trim();
     }
     if (Object.keys(body).length === 0) {
       setDiagnosisNotice({ type: "success", text: "没有需要保存的改动" });
@@ -624,16 +599,167 @@ export function SettingsPanel() {
     }
     setDiagnosisNotice(null);
     try {
-      const payload =
-        key === "inoe_api_token"
-          ? await diagnosisSettingsApi.update({
-              inoe_api_token: DIAGNOSIS_TOKEN_CLEAR,
-            })
-          : await diagnosisSettingsApi.reset(key);
+      const payload = await diagnosisSettingsApi.reset(key);
       applyDiagnosisPayload(payload);
       setDiagnosisNotice({ type: "success", text: "已恢复为环境默认值" });
     } catch (error) {
       setDiagnosisNotice({
+        type: "error",
+        text: error instanceof Error ? error.message : "恢复默认失败",
+      });
+    }
+  };
+
+  // --- INOE gateway settings (standalone, backend-persisted) ---
+  const [inoePayload, setInoePayload] =
+    useState<DiagnosisSettingsPayload | null>(null);
+  const [inoeDraft, setInoeDraft] = useState<Record<string, string>>({});
+  const [inoeTokenDraft, setInoeTokenDraft] = useState("");
+  const [inoeLoading, setInoeLoading] = useState(true);
+  const [inoeSaving, setInoeSaving] = useState(false);
+  const [inoeNotice, setInoeNotice] = useState<{
+    type: "success" | "error";
+    text: string;
+  } | null>(null);
+
+  const buildInoeDraft = (payload: DiagnosisSettingsPayload) => {
+    const draft: Record<string, string> = {};
+    [INOE_TEXT_FIELD.key, INOE_NUMBER_FIELD.key].forEach((key) => {
+      const value = payload.effective[key];
+      draft[key] =
+        value === undefined || value === null || isMaskedSecret(value)
+          ? ""
+          : String(value);
+    });
+    return draft;
+  };
+
+  const applyInoePayload = (payload: DiagnosisSettingsPayload) => {
+    setInoePayload(payload);
+    setInoeDraft(buildInoeDraft(payload));
+    setInoeTokenDraft("");
+  };
+
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      setInoeLoading(true);
+      try {
+        const payload = await inoeSettingsApi.get();
+        if (!cancelled) {
+          applyInoePayload(payload);
+          setInoeNotice(null);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setInoeNotice({
+            type: "error",
+            text:
+              error instanceof Error ? error.message : "平台设置加载失败",
+          });
+        }
+      } finally {
+        if (!cancelled) {
+          setInoeLoading(false);
+        }
+      }
+    };
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const handleInoeFieldChange = (key: string, value: string) => {
+    setInoeDraft((current) => ({ ...current, [key]: value }));
+  };
+
+  const inoeDirty = useMemo(() => {
+    if (!inoePayload) {
+      return false;
+    }
+    if (inoeTokenDraft.trim() !== "") {
+      return true;
+    }
+    const rawNum = (inoeDraft[INOE_NUMBER_FIELD.key] ?? "").trim();
+    if (rawNum !== "") {
+      const num = Number(rawNum);
+      if (Number.isNaN(num)) {
+        return true;
+      }
+      if (String(inoePayload.effective[INOE_NUMBER_FIELD.key]) !== String(num)) {
+        return true;
+      }
+    }
+    const rawText = (inoeDraft[INOE_TEXT_FIELD.key] ?? "").trim();
+    if (rawText !== String(inoePayload.effective[INOE_TEXT_FIELD.key] ?? "")) {
+      return true;
+    }
+    return false;
+  }, [inoePayload, inoeDraft, inoeTokenDraft]);
+
+  const handleSaveInoeSettings = async () => {
+    if (!inoePayload || inoeSaving) {
+      return;
+    }
+    const body: Record<string, number | string> = {};
+    const rawNum = (inoeDraft[INOE_NUMBER_FIELD.key] ?? "").trim();
+    if (rawNum !== "") {
+      const num = Number(rawNum);
+      if (Number.isNaN(num)) {
+        setInoeNotice({
+          type: "error",
+          text: `${INOE_NUMBER_FIELD.label} 必须是数字`,
+        });
+        return;
+      }
+      if (String(inoePayload.effective[INOE_NUMBER_FIELD.key]) !== String(num)) {
+        body[INOE_NUMBER_FIELD.key] = num;
+      }
+    }
+    const rawText = (inoeDraft[INOE_TEXT_FIELD.key] ?? "").trim();
+    if (rawText !== String(inoePayload.effective[INOE_TEXT_FIELD.key] ?? "")) {
+      body[INOE_TEXT_FIELD.key] = rawText;
+    }
+    if (inoeTokenDraft.trim() !== "") {
+      body[INOE_TOKEN_KEY] = inoeTokenDraft.trim();
+    }
+    if (Object.keys(body).length === 0) {
+      setInoeNotice({ type: "success", text: "没有需要保存的改动" });
+      return;
+    }
+    setInoeSaving(true);
+    setInoeNotice(null);
+    try {
+      const payload = await inoeSettingsApi.update(body);
+      applyInoePayload(payload);
+      setInoeNotice({ type: "success", text: "平台设置已保存" });
+    } catch (error) {
+      setInoeNotice({
+        type: "error",
+        text: error instanceof Error ? error.message : "保存失败",
+      });
+    } finally {
+      setInoeSaving(false);
+    }
+  };
+
+  const handleResetInoeField = async (key: string) => {
+    if (inoeSaving) {
+      return;
+    }
+    setInoeNotice(null);
+    try {
+      const payload =
+        key === INOE_TOKEN_KEY
+          ? await inoeSettingsApi.update({
+              [INOE_TOKEN_KEY]: DIAGNOSIS_TOKEN_CLEAR,
+            })
+          : await inoeSettingsApi.reset(key);
+      applyInoePayload(payload);
+      setInoeNotice({ type: "success", text: "已恢复为环境默认值" });
+    } catch (error) {
+      setInoeNotice({
         type: "error",
         text: error instanceof Error ? error.message : "恢复默认失败",
       });
@@ -1003,9 +1129,6 @@ export function SettingsPanel() {
                     const numberFields = DIAGNOSIS_NUMBER_FIELDS.filter(
                       (field) => field.group === group.id,
                     );
-                    const textFields = DIAGNOSIS_TEXT_FIELDS.filter(
-                      (field) => field.group === group.id,
-                    );
                     return (
                       <section key={group.id} className="settings-section">
                         <div className="portal-model-block-head">
@@ -1047,57 +1170,6 @@ export function SettingsPanel() {
                         ) : null}
 
                         <div className="settings-form-grid">
-                          {textFields.map((field) => {
-                            const isOverridden = Boolean(
-                              diagnosisPayload?.overrides[field.key],
-                            );
-                            const envValue = diagnosisPayload?.env[field.key];
-                            return (
-                              <div
-                                key={field.key}
-                                className="portal-form-group settings-field"
-                              >
-                                <label htmlFor={`diag-${field.key}`}>
-                                  {field.label}
-                                </label>
-                                <input
-                                  id={`diag-${field.key}`}
-                                  type="text"
-                                  value={diagnosisDraft[field.key] ?? ""}
-                                  disabled={diagnosisLoading || diagnosisSaving}
-                                  placeholder={field.placeholder}
-                                  onChange={(event) =>
-                                    handleDiagnosisFieldChange(
-                                      field.key,
-                                      event.target.value,
-                                    )
-                                  }
-                                />
-                                <small>
-                                  {field.hint}
-                                  {!isMaskedSecret(envValue)
-                                    ? `　环境默认：${String(envValue ?? "")}`
-                                    : ""}
-                                  {isOverridden ? (
-                                    <>
-                                      {"　"}
-                                      <button
-                                        type="button"
-                                        className="settings-link-btn"
-                                        disabled={diagnosisSaving}
-                                        onClick={() =>
-                                          handleResetDiagnosisField(field.key)
-                                        }
-                                      >
-                                        恢复默认
-                                      </button>
-                                    </>
-                                  ) : null}
-                                </small>
-                              </div>
-                            );
-                          })}
-
                           {numberFields.map((field) => {
                             const isOverridden = Boolean(
                               diagnosisPayload?.overrides[field.key],
@@ -1150,58 +1222,6 @@ export function SettingsPanel() {
                               </div>
                             );
                           })}
-
-                          {group.id === "inoe" ? (
-                            <div className="portal-form-group settings-field">
-                              <label htmlFor="diag-inoe-token">
-                                INOE 访问令牌
-                              </label>
-                              <input
-                                id="diag-inoe-token"
-                                type="password"
-                                autoComplete="new-password"
-                                value={diagnosisTokenDraft}
-                                disabled={diagnosisLoading || diagnosisSaving}
-                                placeholder={
-                                  isMaskedSecret(
-                                    diagnosisPayload?.effective.inoe_api_token,
-                                  ) &&
-                                  diagnosisPayload?.effective.inoe_api_token
-                                    .is_set
-                                    ? `已设置（${
-                                        (
-                                          diagnosisPayload.effective
-                                            .inoe_api_token as MaskedSecret
-                                        ).masked
-                                      }），留空则不修改`
-                                    : "未设置，留空则不修改"
-                                }
-                                onChange={(event) =>
-                                  setDiagnosisTokenDraft(event.target.value)
-                                }
-                              />
-                              <small>
-                                Bearer 令牌；出于安全不会回显原文。
-                                {diagnosisPayload?.overrides.inoe_api_token ? (
-                                  <>
-                                    {"　"}
-                                    <button
-                                      type="button"
-                                      className="settings-link-btn"
-                                      disabled={diagnosisSaving}
-                                      onClick={() =>
-                                        handleResetDiagnosisField(
-                                          "inoe_api_token",
-                                        )
-                                      }
-                                    >
-                                      清除并恢复默认
-                                    </button>
-                                  </>
-                                ) : null}
-                              </small>
-                            </div>
-                          ) : null}
                         </div>
                       </section>
                     );
@@ -1220,6 +1240,180 @@ export function SettingsPanel() {
                       {diagnosisSaving ? "保存中…" : "保存"}
                     </button>
                   </div>
+                </div>
+              ) : null}
+
+              {activeTab === "inoe" ? (
+                <div className="portal-model-shell">
+                  <section className="settings-section">
+                    <div className="portal-model-block-head">
+                      <div>
+                        <h4>平台连接（INOE）</h4>
+                        <p>
+                          平台网关地址、访问令牌与请求超时。监控总览、实时告警、工单桥接等都通过这里的网关访问
+                          INOE；修改即时生效，无需重启。未在此设置的项会回退到 `.env`
+                          / 部署环境变量。
+                        </p>
+                      </div>
+                    </div>
+
+                    {inoeNotice ? (
+                      <div className={`settings-notice ${inoeNotice.type}`}>
+                        {inoeNotice.text}
+                      </div>
+                    ) : null}
+
+                    <div className="settings-form-grid">
+                      <div className="portal-form-group settings-field">
+                        <label htmlFor="inoe-base-url">
+                          {INOE_TEXT_FIELD.label}
+                        </label>
+                        <input
+                          id="inoe-base-url"
+                          type="text"
+                          value={inoeDraft[INOE_TEXT_FIELD.key] ?? ""}
+                          disabled={inoeLoading || inoeSaving}
+                          placeholder={INOE_TEXT_FIELD.placeholder}
+                          onChange={(event) =>
+                            handleInoeFieldChange(
+                              INOE_TEXT_FIELD.key,
+                              event.target.value,
+                            )
+                          }
+                        />
+                        <small>
+                          {INOE_TEXT_FIELD.hint}
+                          {!isMaskedSecret(inoePayload?.env[INOE_TEXT_FIELD.key])
+                            ? `　环境默认：${String(
+                                inoePayload?.env[INOE_TEXT_FIELD.key] ?? "",
+                              )}`
+                            : ""}
+                          {inoePayload?.overrides[INOE_TEXT_FIELD.key] ? (
+                            <>
+                              {"　"}
+                              <button
+                                type="button"
+                                className="settings-link-btn"
+                                disabled={inoeSaving}
+                                onClick={() =>
+                                  handleResetInoeField(INOE_TEXT_FIELD.key)
+                                }
+                              >
+                                恢复默认
+                              </button>
+                            </>
+                          ) : null}
+                        </small>
+                      </div>
+
+                      <div className="portal-form-group settings-field">
+                        <label htmlFor="inoe-token">INOE 访问令牌</label>
+                        <input
+                          id="inoe-token"
+                          type="password"
+                          autoComplete="new-password"
+                          value={inoeTokenDraft}
+                          disabled={inoeLoading || inoeSaving}
+                          placeholder={
+                            isMaskedSecret(
+                              inoePayload?.effective[INOE_TOKEN_KEY],
+                            ) &&
+                            (
+                              inoePayload?.effective[
+                                INOE_TOKEN_KEY
+                              ] as MaskedSecret
+                            ).is_set
+                              ? `已设置（${
+                                  (
+                                    inoePayload?.effective[
+                                      INOE_TOKEN_KEY
+                                    ] as MaskedSecret
+                                  ).masked
+                                }），留空则不修改`
+                              : "未设置，留空则不修改"
+                          }
+                          onChange={(event) =>
+                            setInoeTokenDraft(event.target.value)
+                          }
+                        />
+                        <small>
+                          Bearer 令牌；出于安全不会回显原文。
+                          {inoePayload?.overrides[INOE_TOKEN_KEY] ? (
+                            <>
+                              {"　"}
+                              <button
+                                type="button"
+                                className="settings-link-btn"
+                                disabled={inoeSaving}
+                                onClick={() =>
+                                  handleResetInoeField(INOE_TOKEN_KEY)
+                                }
+                              >
+                                清除并恢复默认
+                              </button>
+                            </>
+                          ) : null}
+                        </small>
+                      </div>
+
+                      <div className="portal-form-group settings-field">
+                        <label htmlFor="inoe-timeout">
+                          {INOE_NUMBER_FIELD.label}
+                        </label>
+                        <input
+                          id="inoe-timeout"
+                          type="number"
+                          min={INOE_NUMBER_FIELD.min}
+                          step={INOE_NUMBER_FIELD.step}
+                          value={inoeDraft[INOE_NUMBER_FIELD.key] ?? ""}
+                          disabled={inoeLoading || inoeSaving}
+                          onChange={(event) =>
+                            handleInoeFieldChange(
+                              INOE_NUMBER_FIELD.key,
+                              event.target.value,
+                            )
+                          }
+                        />
+                        <small>
+                          {INOE_NUMBER_FIELD.hint}
+                          {!isMaskedSecret(
+                            inoePayload?.env[INOE_NUMBER_FIELD.key],
+                          )
+                            ? `　环境默认：${String(
+                                inoePayload?.env[INOE_NUMBER_FIELD.key] ?? "",
+                              )}`
+                            : ""}
+                          {inoePayload?.overrides[INOE_NUMBER_FIELD.key] ? (
+                            <>
+                              {"　"}
+                              <button
+                                type="button"
+                                className="settings-link-btn"
+                                disabled={inoeSaving}
+                                onClick={() =>
+                                  handleResetInoeField(INOE_NUMBER_FIELD.key)
+                                }
+                              >
+                                恢复默认
+                              </button>
+                            </>
+                          ) : null}
+                        </small>
+                      </div>
+                    </div>
+
+                    <div className="portal-model-form-actions compact-row">
+                      <button
+                        type="button"
+                        className="portal-model-btn compact"
+                        disabled={inoeLoading || inoeSaving || !inoeDirty}
+                        onClick={handleSaveInoeSettings}
+                      >
+                        <i className="fas fa-floppy-disk" />
+                        {inoeSaving ? "保存中…" : "保存"}
+                      </button>
+                    </div>
+                  </section>
                 </div>
               ) : null}
 

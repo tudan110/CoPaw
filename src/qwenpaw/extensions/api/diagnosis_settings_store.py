@@ -376,30 +376,12 @@ FIELD_SPECS: dict[str, FieldSpec] = {
             min_value=0,
             max_value=720,
         ),
-        # --- B. INOE gateway connection ---
-        FieldSpec(
-            "inoe_api_base_url",
-            "INOE_API_BASE_URL",
-            "http://gateway:30080",
-            "str",
-            "inoe",
-        ),
-        FieldSpec(
-            "inoe_api_token",
-            "INOE_API_TOKEN",
-            "",
-            "str",
-            "inoe",
-            sensitive=True,
-        ),
-        FieldSpec(
-            "inoe_api_timeout_seconds",
-            "INOE_API_TIMEOUT",
-            30,
-            "float",
-            "inoe",
-            min_value=0.1,
-        ),
+        # NOTE: INOE gateway connection (base URL / token / timeout) used to
+        # live here under the "inoe" group. It has been promoted to its own
+        # settings concern — see :mod:`inoe_settings_store` (namespace
+        # "inoe", endpoint ``/inoe-settings``) — because the gateway is
+        # shared infrastructure consumed well beyond diagnosis (monitoring
+        # overview, real alarms, workorders).
         # --- C. Query window ---
         FieldSpec(
             "timezone_offset_hours",
@@ -490,6 +472,12 @@ def _mask_token(value: str) -> str:
     return f"****{value[-4:]}"
 
 
+# Public aliases: these two helpers are namespace-agnostic and are reused by
+# the sibling :mod:`inoe_settings_store`. ``coerce_value`` is aliased after
+# its definition below.
+mask_token = _mask_token
+
+
 def build_settings_payload(
     *,
     db_path: Path = DEFAULT_DB_PATH,
@@ -566,6 +554,10 @@ def _coerce_value(spec: FieldSpec, raw: Any) -> Any:
     if not isinstance(raw, str):
         raise ValueError(f"{spec.key} must be a string")
     return raw.strip()
+
+
+# Public alias for reuse by the sibling :mod:`inoe_settings_store`.
+coerce_value = _coerce_value
 
 
 def apply_settings_update(

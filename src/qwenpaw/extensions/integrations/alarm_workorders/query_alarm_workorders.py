@@ -339,19 +339,14 @@ REAL_ALARM_TIMEOUT_SECONDS = float(
 
 
 def _real_alarm_timeout_seconds() -> float:
-    """Resolve the INOE timeout: page (DB) override > env > default 8s.
+    """Resolve the INOE timeout via the shared accessor (page > env > default).
 
-    Lazily imports the override store so this module stays loadable as a
-    standalone script (it is sometimes executed via importlib/subprocess).
+    Lazily imports the store so this module stays loadable as a standalone
+    script (it is sometimes executed via importlib/subprocess).
     """
     try:
-        from qwenpaw.extensions.api import diagnosis_settings_store
+        from qwenpaw.extensions.api import inoe_settings_store
 
-        return diagnosis_settings_store.resolve_float(
-            "inoe_api_timeout_seconds",
-            "INOE_API_TIMEOUT",
-            REAL_ALARM_TIMEOUT_SECONDS,
-            min_value=0.1,
-        )
+        return inoe_settings_store.get_timeout_seconds()
     except Exception:
         return REAL_ALARM_TIMEOUT_SECONDS

@@ -10,6 +10,8 @@ import {
   type AssetOverviewData,
   type MonitoringOverviewDashboardResponse,
   type ResourceTypeStat,
+  type SeverityTrendData,
+  type WorkorderStatsData,
 } from "../../api/monitoringOverview";
 
 type OverviewEmployee = (typeof digitalEmployees)[number] & {
@@ -95,16 +97,77 @@ const RESOURCE_TYPE_ICONS: Array<{ keywords: string[]; icon: string; color: stri
   { keywords: ["容器", "kubernetes", "k8s", "pod"], icon: "fa-cubes", color: "#14b8a6" },
 ];
 
-const TICKETS: OverviewTicket[] = [
-  { label: "待处理", value: 8, color: "#f59e0b" },
-  { label: "进行中", value: 6, color: "#3b82f6" },
-  { label: "已完成", value: 18, color: "#22c55e" },
-  { label: "完成率", value: "75%", color: "#6366f1" },
-];
+// 今日工单卡配色。中文映射沿用 order-workflow skill 的既有约定:
+// 待处理=inProgressCount、进行中=todoCount、已完成=finishedCount。
+const TICKET_COLORS = {
+  pending: "#f59e0b",
+  inProgress: "#3b82f6",
+  done: "#22c55e",
+  rate: "#6366f1",
+} as const;
 
-const ALERT_TREND_HOURS = Array.from({ length: 24 }, (_, index) => `${String(index).padStart(2, "0")}:00`);
-const ALERT_TREND_SERIES_CRITICAL = [2, 1, 1, 0, 1, 0, 0, 1, 3, 5, 8, 6, 4, 3, 5, 7, 4, 3, 2, 3, 4, 2, 1, 1];
-const ALERT_TREND_SERIES_WARNING = [5, 4, 3, 2, 3, 2, 1, 4, 6, 9, 12, 10, 8, 7, 9, 11, 8, 6, 5, 6, 7, 5, 4, 3];
+function buildTickets(stats: WorkorderStatsData | null): OverviewTicket[] {
+  const pending = Number(stats?.inProgressCount ?? 0);
+  const inProgress = Number(stats?.todoCount ?? 0);
+  const done = Number(stats?.finishedCount ?? 0);
+  const total = pending + inProgress + done;
+  const rate = total > 0 ? Math.round((done / total) * 100) : 0;
+  return [
+    { label: "待处理", value: pending, color: TICKET_COLORS.pending },
+    { label: "进行中", value: inProgress, color: TICKET_COLORS.inProgress },
+    { label: "已完成", value: done, color: TICKET_COLORS.done },
+    {
+      label: "完成率",
+      value: total > 0 ? `${rate}%` : "—",
+      color: TICKET_COLORS.rate,
+    },
+  ];
+}
+
+// Severity-trend levels, aligned with the gateway's statSeverityTrend keys.
+const SEVERITY_TREND_META = [
+  { key: "1", name: "紧急", color: "#ef4444" },
+  { key: "2", name: "严重", color: "#f97316" },
+  { key: "3", name: "普通", color: "#f59e0b" },
+  { key: "4", name: "预警", color: "#22d3ee" },
+] as const;
+
+type SeverityTrendModel = {
+  dates: string[];
+  series: Array<{ name: string; color: string; data: number[] }>;
+};
+
+function formatTrendDate(raw: string | undefined): string {
+  const match = String(raw || "").match(/\d{4}-(\d{2})-(\d{2})/);
+  return match ? `${match[1]}-${match[2]}` : String(raw || "");
+}
+
+function buildSeverityTrend(trend: SeverityTrendData | null): SeverityTrendModel {
+  if (!trend) return { dates: [], series: [] };
+  // Date axis from any non-empty level (levels share the same days), ascending.
+  const sample =
+    SEVERITY_TREND_META.map((meta) => trend[meta.key]).find(
+      (arr) => Array.isArray(arr) && arr.length > 0,
+    ) || [];
+  const dateKeys = [...sample]
+    .map((point) => String(point.formatDate || ""))
+    .sort((a, b) => a.localeCompare(b));
+  if (dateKeys.length === 0) return { dates: [], series: [] };
+  const series = SEVERITY_TREND_META.map((meta) => {
+    const byDate = new Map(
+      (trend[meta.key] || []).map((point) => [
+        String(point.formatDate || ""),
+        Number(point.data || 0),
+      ]),
+    );
+    return {
+      name: meta.name,
+      color: meta.color,
+      data: dateKeys.map((key) => byDate.get(key) ?? 0),
+    };
+  });
+  return { dates: dateKeys.map(formatTrendDate), series };
+}
 
 const EMPTY_KPI: OverviewKpi = {
   label: "—",
@@ -139,6 +202,7 @@ function buildKpiCards(
   asset: AssetOverviewData | null,
   employees: OverviewEmployee[],
   activeAlarmTotal: number,
+  workorderStats: WorkorderStatsData | null,
 ): OverviewKpi[] {
   const totalResources = Number(asset?.totalResources ?? 0);
   const healthRate = Number(asset?.healthRate ?? 0);
@@ -146,6 +210,16 @@ function buildKpiCards(
   const onlineEmployees = employees.filter(
     (employee) => employee.status === "running" || employee.urgent,
   ).length;
+  const workorderTotal = workorderStats
+    ? Number(workorderStats.inProgressCount ?? 0) +
+      Number(workorderStats.todoCount ?? 0) +
+      Number(workorderStats.finishedCount ?? 0)
+    : null;
+  const workorderDone = Number(workorderStats?.finishedCount ?? 0);
+  const workorderRate =
+    workorderTotal && workorderTotal > 0
+      ? (workorderDone / workorderTotal) * 100
+      : 0;
 
   const baseCards: OverviewKpi[] = [
     {
@@ -168,11 +242,11 @@ function buildKpiCards(
     },
     {
       label: "今日工单",
-      value: "—",
+      value: workorderTotal !== null ? String(workorderTotal) : "—",
       trend: "flat",
-      trendValue: "待接入",
+      trendValue: workorderTotal !== null ? "实时" : "待接入",
       color: "#6366f1",
-      barPct: 0,
+      barPct: Math.max(0, Math.min(100, workorderRate)),
       iconClass: "fa-square-check",
     },
     {
@@ -325,6 +399,8 @@ export function OverviewPanel({ pageTheme, onOpenEmployeeChat, employees }: Over
 
   const assetOverview = envelopeData<AssetOverviewData>(dashboard?.assetOverview);
   const alarmTop5 = envelopeData<AlarmTop5Item[]>(dashboard?.alarmTop5);
+  const workorderStats = envelopeData<WorkorderStatsData>(dashboard?.workorderStats);
+  const severityTrend = envelopeData<SeverityTrendData>(dashboard?.severityTrend);
   const activeAlarmTotal = Number(dashboard?.activeAlarmTotal ?? 0);
 
   const assetOverviewError = dashboard?.assetOverview && dashboard.assetOverview.code !== 200
@@ -349,9 +425,10 @@ export function OverviewPanel({ pageTheme, onOpenEmployeeChat, employees }: Over
   );
 
   const kpiCards = useMemo(
-    () => buildKpiCards(assetOverview, employees, activeAlarmTotal),
-    [assetOverview, employees, activeAlarmTotal],
+    () => buildKpiCards(assetOverview, employees, activeAlarmTotal, workorderStats),
+    [assetOverview, employees, activeAlarmTotal, workorderStats],
   );
+  const tickets = useMemo(() => buildTickets(workorderStats), [workorderStats]);
   const alerts = useMemo(() => buildAlerts(alarmTop5), [alarmTop5]);
   const services = useMemo(
     () => buildServices(assetOverview?.applicationHealthList),
@@ -359,16 +436,33 @@ export function OverviewPanel({ pageTheme, onOpenEmployeeChat, employees }: Over
   );
   const events = useMemo(() => buildEvents(alarmTop5), [alarmTop5]);
 
+  const trend = useMemo(
+    () => buildSeverityTrend(severityTrend),
+    [severityTrend],
+  );
+
   const chartOption = useMemo<EChartsOption>(
     () => ({
-      grid: { top: 10, right: 10, bottom: 24, left: 32 },
+      grid: { top: 26, right: 10, bottom: 24, left: 32 },
+      legend: {
+        top: 0,
+        icon: "roundRect",
+        itemWidth: 8,
+        itemHeight: 8,
+        itemGap: 10,
+        textStyle: {
+          fontSize: 9,
+          color: isDark ? "#94a3b8" : "#64748b",
+        },
+        data: trend.series.map((item) => item.name),
+      },
       xAxis: {
         type: "category",
-        data: ALERT_TREND_HOURS,
+        data: trend.dates,
         axisLabel: {
           fontSize: 9,
           color: isDark ? "#64748b" : "#94a3b8",
-          interval: 3,
+          interval: 0,
         },
         axisLine: {
           lineStyle: {
@@ -379,6 +473,7 @@ export function OverviewPanel({ pageTheme, onOpenEmployeeChat, employees }: Over
       },
       yAxis: {
         type: "value",
+        minInterval: 1,
         splitLine: {
           lineStyle: {
             color: isDark ? "rgba(255,255,255,.05)" : "rgba(0,0,0,.05)",
@@ -398,50 +493,17 @@ export function OverviewPanel({ pageTheme, onOpenEmployeeChat, employees }: Over
           color: isDark ? "#e2e8f0" : "#1e293b",
         },
       },
-      series: [
-        {
-          type: "line",
-          smooth: true,
-          symbol: "none",
-          lineStyle: { width: 2, color: "#ef4444" },
-          areaStyle: {
-            color: {
-              type: "linear",
-              x: 0,
-              y: 0,
-              x2: 0,
-              y2: 1,
-              colorStops: [
-                { offset: 0, color: "rgba(239,68,68,.25)" },
-                { offset: 1, color: "rgba(239,68,68,0)" },
-              ],
-            },
-          },
-          data: ALERT_TREND_SERIES_CRITICAL,
-        },
-        {
-          type: "line",
-          smooth: true,
-          symbol: "none",
-          lineStyle: { width: 2, color: "#f59e0b" },
-          areaStyle: {
-            color: {
-              type: "linear",
-              x: 0,
-              y: 0,
-              x2: 0,
-              y2: 1,
-              colorStops: [
-                { offset: 0, color: "rgba(245,158,11,.15)" },
-                { offset: 1, color: "rgba(245,158,11,0)" },
-              ],
-            },
-          },
-          data: ALERT_TREND_SERIES_WARNING,
-        },
-      ],
+      series: trend.series.map((item) => ({
+        name: item.name,
+        type: "line",
+        smooth: true,
+        symbol: "none",
+        lineStyle: { width: 2, color: item.color },
+        itemStyle: { color: item.color },
+        data: item.data,
+      })),
     }),
-    [isDark],
+    [isDark, trend],
   );
 
   const statusHint = loading
@@ -515,7 +577,7 @@ export function OverviewPanel({ pageTheme, onOpenEmployeeChat, employees }: Over
             今日工单
           </div>
           <div className="overview-ref-ticket-grid">
-            {TICKETS.map((ticket) => (
+            {tickets.map((ticket) => (
               <div key={ticket.label} className="overview-ref-ticket-item">
                 <div className="overview-ref-ticket-value" style={{ color: ticket.color }}>
                   {ticket.value}
@@ -529,15 +591,23 @@ export function OverviewPanel({ pageTheme, onOpenEmployeeChat, employees }: Over
         <article className="overview-ref-card">
           <div className="overview-ref-card-title">
             <i className="fas fa-chart-line" />
-            24h告警趋势
+            近7天告警趋势
           </div>
           <div className="overview-ref-chart">
-            <ReactECharts
-              option={chartOption}
-              style={{ height: 186, width: "100%" }}
-              notMerge
-              lazyUpdate
-            />
+            {trend.dates.length === 0 ? (
+              <div className="overview-ref-service-row">
+                <div className="overview-ref-service-name">
+                  {loading ? "加载中…" : "暂无告警趋势数据"}
+                </div>
+              </div>
+            ) : (
+              <ReactECharts
+                option={chartOption}
+                style={{ height: 186, width: "100%" }}
+                notMerge
+                lazyUpdate
+              />
+            )}
           </div>
         </article>
       </section>
