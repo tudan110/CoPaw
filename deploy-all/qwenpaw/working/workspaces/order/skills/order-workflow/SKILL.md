@@ -26,7 +26,7 @@ description: 传统工单系统中的处置类工单技能。适用于查看今�
 接口配置优先从共享 `secrets/`（ZGOPS/INOE）读取，未配置时回退本技能目录 `.env` 或同名环境变量；通知推送配置优先从 Portal「高级功能 → 设置 → 通知」读取，未设置时再回退到 `.env` 或同名环境变量：
 
 ```bash
-ORDER_API_BASE_URL=http://192.168.134.96:30081
+ORDER_API_BASE_URL=http://82.156.83.38:30081
 ORDER_AUTHORIZATION=your_authorization_token
 ORDER_COOKIE=
 ORDER_SERIAL_NO=

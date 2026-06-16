@@ -1,6 +1,6 @@
 import { Layout, Menu, Button, Modal, Input, Form, Tooltip, Badge } from "antd";
 import { useState, useEffect, useMemo } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { useAppMessage } from "../hooks/useAppMessage";
 import AgentSelector from "../components/AgentSelector";
@@ -16,6 +16,7 @@ import { clearAuthToken } from "../api/config";
 import { authApi } from "../api/modules/auth";
 import api from "../api";
 import { useCodingMode } from "../stores/codingModeStore";
+import { buildSessionPath, getSessionIdFromPath } from "../utils/sessionRoute";
 import styles from "./index.module.less";
 import { useTheme } from "../contexts/ThemeContext";
 import { useMenuItems, useRoutes } from "../plugins/registry/hooks";
@@ -28,6 +29,7 @@ import {
   routeIdToPath,
   toAntdItems,
 } from "./registry/adapter";
+import type { FlatMenuEntry } from "./registry/adapter";
 import type { MenuItem } from "../plugins/registry/types";
 import type { ReactNode } from "react";
 
@@ -56,13 +58,18 @@ interface SidebarProps {
 
 export default function Sidebar({ selectedKey }: SidebarProps) {
   const navigate = useNavigate();
+  const location = useLocation();
   const { t } = useTranslation();
   const { message } = useAppMessage();
   const { isDark } = useTheme();
   // When coding mode is on, the sidebar "Chat" entry should land on /coding
   // (FileTree + Editor + Chat panel) rather than the bare Chat page.
   const { codingMode } = useCodingMode();
-  const chatPath = codingMode ? "/coding" : "/chat";
+  const currentSessionId = getSessionIdFromPath(location.pathname);
+  const chatPath = buildSessionPath(
+    codingMode ? "coding" : "chat",
+    currentSessionId,
+  );
   const [authEnabled, setAuthEnabled] = useState(false);
   const [accountModalOpen, setAccountModalOpen] = useState(false);
   const [accountLoading, setAccountLoading] = useState(false);
@@ -164,7 +171,7 @@ export default function Sidebar({ selectedKey }: SidebarProps) {
 
   const collapsedNavItems = useMemo(() => {
     // Sticky chat is its own carve-out (lives outside menu data — see builtinMenu.ts).
-    const stickyChat = {
+    const stickyChat: FlatMenuEntry = {
       key: "core.chat",
       icon: <SparkChatTabFill size={18} />,
       path: chatPath,
@@ -206,6 +213,10 @@ export default function Sidebar({ selectedKey }: SidebarProps) {
 
   const handleMenuClick = (key: string, allItems: MenuItem[]) => {
     const item = findMenuItem(allItems, key);
+    if (item?.href) {
+      window.open(item.href, "_blank", "noopener,noreferrer");
+      return;
+    }
     const path = routeIdToPath(item?.route, routes);
     if (path) navigate(path);
   };
@@ -300,7 +311,11 @@ export default function Sidebar({ selectedKey }: SidebarProps) {
                   className={`${styles.collapsedNavItem} ${
                     isActive ? styles.collapsedNavItemActive : ""
                   }`}
-                  onClick={() => navigate(item.path)}
+                  onClick={() =>
+                    item.href
+                      ? window.open(item.href, "_blank", "noopener,noreferrer")
+                      : navigate(item.path)
+                  }
                 >
                   {item.icon}
                 </button>

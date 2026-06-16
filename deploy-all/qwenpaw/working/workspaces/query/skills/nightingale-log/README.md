@@ -26,7 +26,7 @@ nightingale-log/
 
 复制 `.env.example` 为 `.env` 并填入：
 
-- `N9E_API_BASE_URL`：夜莺前端地址，如 `http://192.168.134.96:17001`
+- `N9E_API_BASE_URL`：夜莺前端地址，如 `http://82.156.83.38:17001`
 - `N9E_USER_TOKEN`：在夜莺「个人中心 -> Token 管理」创建
 - `N9E_LOG_DATASOURCE_ID`：默认日志 ES 数据源 ID（页面 URL 里的那个数字）
 - `N9E_LOG_INDEX`：默认索引模式（最好显式指定）

@@ -7,7 +7,7 @@ description: 查询“专线业务监控”页面中的专线与割接数据。�
 
 这是 gateway 本地的 **专线业务监控演示页查询** 技能，对应页面：
 
-`http://192.168.134.96:30081/circuit/zhunneng-private-line-monitor.html`
+`http://82.156.83.38:30081/circuit/zhunneng-private-line-monitor.html`
 
 ## 边界
 
