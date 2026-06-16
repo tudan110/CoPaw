@@ -171,6 +171,48 @@ function isIngestFailure(status?: string | null) {
   );
 }
 
+const INGEST_STATUS_LABELS: Record<string, string> = {
+  queued: "排队中",
+  pending: "排队中",
+  running: "处理中",
+  processing: "处理中",
+  success: "成功",
+  succeeded: "成功",
+  completed: "成功",
+  complete: "成功",
+  done: "成功",
+  failed: "失败",
+  failure: "失败",
+  error: "失败",
+  errored: "失败",
+};
+
+const INGEST_STAGE_LABELS: Record<string, string> = {
+  queued: "排队中",
+  extracting: "解析提取",
+  chunking: "切片分块",
+  embedding: "向量化",
+  indexing: "建立索引",
+  success: "完成",
+  failed: "失败",
+};
+
+function ingestStatusLabel(status?: string | null) {
+  const key = normalizeIngestStatus(status);
+  if (!key) {
+    return "-";
+  }
+  return INGEST_STATUS_LABELS[key] || status || "-";
+}
+
+function ingestStageLabel(stage?: string | null) {
+  const key = normalizeIngestStatus(stage);
+  if (!key) {
+    return "";
+  }
+  return INGEST_STAGE_LABELS[key] || stage || "";
+}
+
 export function KnowledgeBasePanel() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const queryResultRef = useRef<HTMLDivElement | null>(null);
@@ -725,7 +767,7 @@ export function KnowledgeBasePanel() {
               {job ? (
                 <div className="kb-job">
                   <strong>{job.filename}</strong>
-                  <span>{job.status || "-"} · {job.progress_pct ?? 0}% · {job.note || job.current_stage}</span>
+                  <span>{ingestStatusLabel(job.status)} · {job.progress_pct ?? 0}% · {job.note || ingestStageLabel(job.current_stage)}</span>
                 </div>
               ) : null}
             </div>
@@ -875,10 +917,10 @@ export function KnowledgeBasePanel() {
                       <td>
                         <strong>{compactText(item.filename || item.id || item.job_id, 48)}</strong>
                       </td>
-                      <td>{item.status || "-"}</td>
+                      <td>{ingestStatusLabel(item.status)}</td>
                       <td>{item.progress_pct ?? 0}%</td>
                       <td>{formatDate(item.created_at)}</td>
-                      <td>{compactText(item.current_stage || item.note || "-", 64)}</td>
+                      <td>{compactText(ingestStageLabel(item.current_stage) || item.note || "-", 64)}</td>
                     </tr>
                   ))}
                 </tbody>
