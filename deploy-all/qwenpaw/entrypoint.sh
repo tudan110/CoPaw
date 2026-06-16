@@ -27,7 +27,7 @@ KB_SRC="${WORKING_BACKUP}/${KB_REL}"
 KB_DST="${WORKING_DIR}/${KB_REL}"
 if [ -d "$KB_SRC" ] && [ -d "$KB_DST" ]; then
   echo "Refreshing knowledge-base skill code from backup..."
-  for item in api core domain providers retrieval builtin_kb server.py SKILL.md requirements.txt; do
+  for item in api core domain providers retrieval server.py SKILL.md requirements.txt; do
     if [ -e "$KB_SRC/$item" ]; then
       rm -rf "$KB_DST/$item" 2>/dev/null || true
       cp -r "$KB_SRC/$item" "$KB_DST/" 2>/dev/null || true
