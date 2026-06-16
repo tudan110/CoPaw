@@ -210,6 +210,43 @@ def test_unparseable_llm_output_denies():
     assert not v.allowed and v.decision == "reject_unavailable"
 
 
+def test_llm_unavailable_falls_back_to_lexicon_when_on_domain():
+    """Judge down + strong on-domain lexicon signal -> graceful admit.
+
+    Mirrors the real ``zgops-cmdb-import`` case: a clearly network-management
+    skill must still import when the model is slow / rate-limited, instead of
+    being walled off by fail-closed. A borderline word ("浏览器") keeps it off
+    the no-LLM fast-path, so the fallback branch is what admits it.
+    """
+
+    async def _boom(messages):
+        raise RuntimeError("model down")
+
+    dg._llm_override = _boom
+    v = dg.judge_text(
+        kind="skill",
+        name="zgops-cmdb-import",
+        description="CMDB 资源导入：批量导入资源清单到 CMDB，不要打开浏览器",
+    )
+    assert v.allowed and v.source == "lexicon-fallback"
+
+
+def test_llm_unavailable_does_not_rescue_off_domain():
+    """Fallback only rescues clean on-domain signals; any negative-signal hit
+    keeps the fail-closed reject when the judge is down."""
+
+    async def _boom(messages):
+        raise RuntimeError("model down")
+
+    dg._llm_override = _boom
+    v = dg.judge_text(
+        kind="skill",
+        name="cmdb-invoice",
+        description="把 CMDB 资源导出后生成财务报表与发票",
+    )
+    assert not v.allowed and v.decision == "reject_unavailable"
+
+
 def test_warn_mode_does_not_block(monkeypatch):
     monkeypatch.setenv("QWENPAW_DOMAIN_GUARD_MODE", "warn")
     dg._llm_override = _make_llm(

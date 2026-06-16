@@ -11,7 +11,7 @@
     L1.5 命中多个正向词且无负向 / 无通用工具词              -> 直接放行，不掏 LLM
     L2   LLM 主审（用 qwenpaw 默认模型，严格 JSON 输出）   -> relevant / confidence / category / reason
     L3  置信度分档:  通过阈值 -> 放行;  低于阈值(灰区) -> 拒绝（可联系管理员加白名单）
-    L4  LLM 不可用 / 超时 / 解析失败                      -> 拒绝（"技能审核失败，请重试"）
+    L4  LLM 不可用 / 超时 / 解析失败  -> 关键词兜底:有正向且无负向则放行,否则拒绝
 
 裁判细则与词库是数据文件（``rubric.zh.md`` / ``lexicon.yaml``），运维管理员可直接编辑，
 无需改代码；改动后哈希变化会令旧缓存失效。
@@ -611,9 +611,29 @@ async def _judge_async_impl(
         logger.warning(
             "domain_guard: LLM verdict failed for %s '%s': %s", kind, name, exc
         )
-        # L4: on-error -> deny (warn mode: pass through with a flag)
+        # L4: judge unavailable (timeout / no model / unparseable output).
+        # warn mode: pass through with a flag.
         if cfg.mode == "warn":
             return _allow("error", "", "领域审核服务不可用（warn 模式放行）")
+        # Graceful degradation: when the judge itself can't run, fall back to
+        # the keyword lexicon instead of blocking every import. Strong
+        # on-domain evidence (>=1 positive term) with no off-domain signal is
+        # enough to admit the skill — otherwise a slow / rate-limited model
+        # walls off everything, including clearly network-management skills.
+        # Not cached, so a recovered model still gets to re-judge next time.
+        if signals["positive"] and not signals["negative"]:
+            logger.info(
+                "domain_guard: judge unavailable, admitting %s '%s' by "
+                "lexicon fallback (positive=%s, no negative signal)",
+                kind,
+                name,
+                signals["positive"],
+            )
+            return _allow(
+                "lexicon-fallback",
+                "网络管理 / 运维相关",
+                "领域审核服务暂不可用，按关键词命中放行（有正向且无负向信号）",
+            )
         return DomainVerdict(
             False, 0.0, "", f"领域审核服务不可用: {exc}", "reject_unavailable", "error"
         )
