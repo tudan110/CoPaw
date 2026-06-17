@@ -107,8 +107,10 @@ fenced code block,语言标识 `qwenpaw:action`,单行 JSON。字段:`op`/`actio
 - 目录条目:`id` / `intent`(同义词)/ `name` / `menu` / `component` / `page` /
   `route`(兜底)/ `open` / `model` / `submit` / `fields[]` / `api` / `risk` /
   `permission`。
-- `route` 兜底即可;运行期 `emit_action.py --resolve-route` 可用 getRouters 按
-  `component` 反查线上真实路由,使目录对"菜单改路由"鲁棒。
+- `route` 仅作兜底:**前端执行器优先用 SPA 自己的路由表按 `page`(组件 name)
+  反解真实路径**(菜单权威、随各用户权限),目录无需硬编码每页路由(路由真值只在
+  后端菜单里)。运行期 `emit_action.py --resolve-route` 也可在后端按 component 反查。
+- 当前已登记 6 条已验证操作:流程分类 / 岗位 / 公告 / 参数配置 / 字典类型 / 租户。
 - 扩充方式:`scan_catalog.py --src <inoe-ui>/packages/inoe-ui/src` 半自动抽候选
   → **人工 review**(校 Chinese 名/意图、补 route/permission、核必填)→ 并入
   `operations.json`。扫描器是辅助工具,不是事实源。
@@ -123,13 +125,27 @@ fenced code block,语言标识 `qwenpaw:action`,单行 JSON。字段:`op`/`actio
 - agent 永不声称"已提交/已新建";措辞统一为"已为您预填,请确认提交"。
 - 不泄露接口 token / Authorization。
 
-## 7. 验证
+## 7. 自测(全部已跑通)
 
-- 后端纯逻辑单测:`tests/unit/extensions/integrations/test_page_operator.py`
-  (16 用例:意图匹配 / 必填校验 / 指令生成 / 越权字段过滤 / 路由反查)全绿。
-- CLI 手测:`find_op.py` / `emit_action.py` 命中、缺参(退出码 2)、出指令均正确。
-- 扫描器实测:162 页 → 34 候选;`workflow.category.add` 抽取结果与手写种子一致。
-- 前端:9 个改动文件经项目自带 `vue-eslint-parser` 全部成功解析(无语法错)。
+- **后端纯逻辑单测** `test_page_operator.py`(16 用例:意图匹配 / 必填校验 /
+  指令生成 / 越权字段过滤 / 路由反查)。
+- **跨仓库契约单测** `test_operation_contract.py`:真实跑 `emit_action.py`,断言其
+  指令块能被前端 `action.js` 的 fence 正则解析;并守卫 action.js 仍用同一条正则(防漂移)。
+- **目录结构单测** `test_operation_catalog_valid.py`:逐条校验 6 个操作(id 规范且
+  唯一、有意图词、page/open/model/submit 齐、可定位、字段结构良好)。
+- **匹配实测**:6 条操作的口语化 query 全部正确命中 execute,负样本(查告警)→ not_found。
+- **前端执行器自测** `verify/run.py`(无框架、最小假 DOM + 桩光标,真实跑
+  `runner.run()`):断言跳转到目标路由、`handleAdd` 开弹窗、`form` 按 params 预填、
+  **`submitForm` 不被自动调用**、定位到弹窗。9 项全过。
+- **CLI 手测**:`find_op.py` / `emit_action.py` 命中、缺参(退出码 2)、出指令正确。
+- **扫描器实测**:162 页 → 34 候选;`workflow.category.add` 抽取与手写种子一致。
+- 前端改动文件经项目自带 `vue-eslint-parser` 全部成功解析(无语法错)。
+
+**仍待真机验证(环境受限,非代码问题)**:operator 智能体的活体一轮对话——本机
+后端当时被 ctyun TPM 429 限流(fault 智能体重试循环占满单 worker → 502),不宜再
+叠加模型调用。operator 已加性注册进 `~/.qwenpaw`(config 备份在
+`config.json.bak-operator`),环境健康后即可联调。前端浏览器实操需登录态 + 已部署
+operator,留待整体联调。
 
 ## 8. 本机部署 / 联调步骤
 
@@ -148,8 +164,10 @@ fenced code block,语言标识 `qwenpaw:action`,单行 JSON。字段:`op`/`actio
 
 ## 9. 限制与下一步
 
-- 当前目录只有 1 条已验证操作(流程分类)。下一步:跑扫描器把 34 个候选 review
-  后逐步并入。
+- 当前目录有 6 条已验证操作(流程分类 / 岗位 / 公告 / 参数配置 / 字典类型 / 租户)。
+  下一步:跑扫描器把其余候选 review 后逐步并入。
+- 目录字段可能没覆盖页面全部必填项(富文本/自定义组件等);未覆盖项由页面提交校验
+  兜底、用户补全,不影响安全。
 - L3(确认后代点提交)默认关闭;需要时在 runner 接一个对话内"确认"再调
   `vm.submit`。
 - 操作模式会话与 gateway 历史分离(operator 自有会话),历史浮层暂只列 gateway。
