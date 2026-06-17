@@ -310,16 +310,41 @@ def _extract_pdf(data: bytes, filename: str) -> ExtractedDocument:
         raise IngestionError("pypdf is not installed; cannot extract PDF") from exc
 
     import io
-    reader = PdfReader(io.BytesIO(data))
+    try:
+        reader = PdfReader(io.BytesIO(data))
+    except Exception as exc:  # noqa: BLE001 - clear error, not a traceback
+        raise IngestionError(f"无法解析 PDF 文件 {filename}: {exc}") from exc
+
+    if reader.is_encrypted:
+        # Many "encrypted" PDFs only carry an empty owner password.
+        try:
+            reader.decrypt("")
+        except Exception as exc:  # noqa: BLE001
+            raise IngestionError(
+                f"PDF 文件 {filename} 已加密且需要密码，无法解析。"
+            ) from exc
+
     warnings: list[str] = []
     tables_by_page = _pdf_tables_by_page(data, warnings)
     renderer = _pdf_make_renderer(data)
     ocr_pages_used = 0
 
+    try:
+        page_list = list(enumerate(reader.pages))
+    except Exception as exc:  # noqa: BLE001
+        if renderer is not None:
+            try:
+                renderer.close()
+            except Exception:  # noqa: BLE001
+                pass
+        raise IngestionError(
+            f"无法读取 PDF 页面 {filename}（可能已加密或损坏）: {exc}"
+        ) from exc
+
     pages: list[tuple[int, str]] = []
     blocks: list[Block] = []
     try:
-        for idx, page in enumerate(reader.pages):
+        for idx, page in page_list:
             page_no = idx + 1
             try:
                 text = (page.extract_text() or "").strip()

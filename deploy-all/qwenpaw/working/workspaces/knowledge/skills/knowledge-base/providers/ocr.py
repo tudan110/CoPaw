@@ -18,6 +18,9 @@ logger = logging.getLogger(__name__)
 # Images smaller than this on either side are treated as decorative
 # (icons/logos/bullets) and skipped to keep OCR noise out of the index.
 MIN_IMAGE_SIDE_PX = 64
+# Images larger than this on the long side are downscaled before OCR — bounds
+# memory/time on huge embedded images without hurting accuracy on normal text.
+MAX_IMAGE_SIDE_PX = 4000
 
 _engine = None  # cached RapidOCR instance (None for pytesseract / unavailable)
 _engine_kind: str | None = None  # "rapidocr" | "pytesseract" | None
@@ -78,6 +81,23 @@ def _load_image(data: bytes):
     return img
 
 
+def _downscale_for_ocr(img):
+    """Downscale an oversized image so OCR memory/time stays bounded. Returns
+    the original image when it's already within MAX_IMAGE_SIDE_PX."""
+    width, height = img.size
+    longest = max(width, height)
+    if longest <= MAX_IMAGE_SIDE_PX:
+        return img
+    scale = MAX_IMAGE_SIDE_PX / longest
+    new_size = (max(1, int(width * scale)), max(1, int(height * scale)))
+    try:
+        from PIL import Image  # type: ignore
+
+        return img.resize(new_size, Image.LANCZOS)
+    except Exception:  # noqa: BLE001 - fall back to the original on any failure
+        return img
+
+
 def ocr_image_bytes(
     data: bytes, *, min_side_px: int = MIN_IMAGE_SIDE_PX
 ) -> OcrResult:
@@ -101,6 +121,8 @@ def ocr_image_bytes(
     width, height = img.size
     if min_side_px and (width < min_side_px or height < min_side_px):
         return OcrResult(skipped_reason=f"image too small ({width}x{height})")
+
+    img = _downscale_for_ocr(img)
 
     try:
         if _engine_kind == "rapidocr":

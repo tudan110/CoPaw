@@ -27,6 +27,7 @@ from core import ingestion  # noqa: E402
 import gold_docs  # noqa: E402
 
 
+_W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
 _A = "http://schemas.openxmlformats.org/drawingml/2006/main"
 _R = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
 _P = "http://schemas.openxmlformats.org/presentationml/2006/main"
@@ -93,10 +94,46 @@ def _pptx_with_table_and_image() -> bytes:
     return buf.getvalue()
 
 
+def _docx_image_no_rels() -> bytes:
+    """A .docx that references an embedded image but ships no rels/media part —
+    the image must be skipped gracefully while the text survives."""
+    doc = f"""<?xml version="1.0"?>
+<w:document xmlns:w="{_W}" xmlns:r="{_R}" xmlns:a="{_A}">
+ <w:body>
+  <w:p><w:r><w:t>没有关系文件的图片段落。</w:t></w:r></w:p>
+  <w:p><w:r><w:drawing><a:blip r:embed="rId999"/></w:drawing></w:r></w:p>
+ </w:body>
+</w:document>"""
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        zf.writestr("word/document.xml", doc)  # no _rels, no media
+    return buf.getvalue()
+
+
+def _empty_pptx() -> bytes:
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        zf.writestr("[Content_Types].xml", "<Types/>")  # no slide parts
+    return buf.getvalue()
+
+
 def _check(name: str, cond: bool, detail: str = "") -> None:
     if not cond:
         raise AssertionError(f"[{name}] FAILED {detail}")
     print(f"  ok  {name}")
+
+
+def _check_raises(name: str, fn) -> None:
+    try:
+        fn()
+    except ingestion.IngestionError:
+        print(f"  ok  {name}")
+    except Exception as exc:  # noqa: BLE001
+        raise AssertionError(
+            f"[{name}] raised {type(exc).__name__}, expected IngestionError"
+        ) from exc
+    else:
+        raise AssertionError(f"[{name}] did not raise")
 
 
 def run() -> None:
@@ -142,6 +179,28 @@ def run() -> None:
     _check("md.blocks_present", len(m.blocks) > 0)
     _check("md.has_heading_block", any(b.type == "heading" for b in m.blocks))
     _check("md.content_intact", "数据库连接池耗尽" in m.content)
+
+    # --- graceful degradation (must never crash a whole ingest) ---
+    print("degradation:")
+    # corrupt docx (not a zip) -> clear IngestionError, not a raw traceback
+    _check_raises(
+        "degrade.corrupt_docx",
+        lambda: ingestion.extract("bad.docx", b"this is definitely not a zip"),
+    )
+    # empty pptx (no slide parts) -> clear IngestionError
+    _check_raises(
+        "degrade.empty_pptx",
+        lambda: ingestion.extract("empty.pptx", _empty_pptx()),
+    )
+    # docx referencing an image with no rels/media -> image skipped, text kept
+    nr = ingestion.extract("norels.docx", _docx_image_no_rels())
+    _check("degrade.norels_text_kept", "没有关系文件的图片段落" in nr.content)
+    _check("degrade.norels_no_image_block",
+           not any(b.type == "image" for b in nr.blocks))
+    # oversized image -> downscaled, OCR returns without raising
+    big = _png(5200, 320)  # long side > MAX_IMAGE_SIDE_PX
+    res = ingestion.ocr.ocr_image_bytes(big, min_side_px=0)
+    _check("degrade.oversized_image_no_crash", hasattr(res, "skipped_reason"))
 
     print("\nEXTRACTION REGRESSION: ALL PASSED")
 
