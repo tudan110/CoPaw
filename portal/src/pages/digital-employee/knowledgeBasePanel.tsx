@@ -913,11 +913,21 @@ export function KnowledgeBasePanel() {
                 </thead>
                 <tbody>
                   {jobs.slice(0, 12).map((item) => (
-                    <tr key={item.id || item.job_id}>
+                    <tr
+                      key={item.id || item.job_id}
+                      className={item.document_deleted ? "kb-job-row-deleted" : undefined}
+                    >
                       <td>
                         <strong>{compactText(item.filename || item.id || item.job_id, 48)}</strong>
                       </td>
-                      <td>{ingestStatusLabel(item.status)}</td>
+                      <td>
+                        {ingestStatusLabel(item.status)}
+                        {item.document_deleted ? (
+                          <span className="kb-job-deleted-tag" title="该资料已从知识库删除，仅保留入库记录">
+                            资料已删除
+                          </span>
+                        ) : null}
+                      </td>
                       <td>{item.progress_pct ?? 0}%</td>
                       <td>{formatDate(item.created_at)}</td>
                       <td>{compactText(ingestStageLabel(item.current_stage) || item.note || "-", 64)}</td>

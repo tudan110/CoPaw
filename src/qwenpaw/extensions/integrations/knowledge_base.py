@@ -912,7 +912,15 @@ def ingestion_jobs(limit: int = 20) -> dict[str, Any]:
             "SELECT * FROM ingestion_job ORDER BY created_at DESC LIMIT ?",
             (int(limit),),
         ).fetchall()
-    return {"items": [_serializers.serialize_ingest_job(r) for r in rows]}
+        existing = _db.existing_document_ids(
+            conn, [r["document_id"] for r in rows]
+        )
+    return {
+        "items": [
+            _serializers.serialize_ingest_job(r, existing_doc_ids=existing)
+            for r in rows
+        ]
+    }
 
 
 def ingestion_progress(job_id: str) -> dict[str, Any]:
@@ -924,9 +932,10 @@ def ingestion_progress(job_id: str) -> dict[str, Any]:
         row = conn.execute(
             "SELECT * FROM ingestion_job WHERE id=?", (job_id,)
         ).fetchone()
-    if not row:
-        raise LookupError("job not found")
-    return _serializers.serialize_ingest_job(row)
+        if not row:
+            raise LookupError("job not found")
+        existing = _db.existing_document_ids(conn, [row["document_id"]])
+    return _serializers.serialize_ingest_job(row, existing_doc_ids=existing)
 
 
 # ---------- /source-summary | /units ----------

@@ -368,6 +368,26 @@
   background: rgba(79, 143, 247, 0.04);
 }
 
+/* Ingestion job whose source was hard-deleted: mute the row and tag it so the
+   lingering "success" record doesn't read as a still-present document. */
+.kb-job-table tbody tr.kb-job-row-deleted td {
+  opacity: 0.55;
+}
+
+.kb-job-deleted-tag {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 7px;
+  border-radius: 9px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.6;
+  color: #9aa3b2;
+  background: rgba(148, 163, 184, 0.16);
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  white-space: nowrap;
+}
+
 .kb-source-table button,
 .kb-pack-item button {
   margin-right: 6px;

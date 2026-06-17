@@ -104,6 +104,8 @@ export type KnowledgeIngestJob = {
   unit_count?: number;
   note?: string;
   poll_url?: string;
+  document_id?: number | null;
+  document_deleted?: boolean;
 };
 
 export type KnowledgeIngestJobListResponse = {

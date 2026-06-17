@@ -85,10 +85,22 @@ def serialize_unit_row(row) -> dict:
     }
 
 
-def serialize_ingest_job(row) -> dict:
+def serialize_ingest_job(row, *, existing_doc_ids: set | None = None) -> dict:
     """Map an `ingestion_job` row to KnowledgeIngestJob shape. The frontend
-    polls until status ∈ {success, failed}."""
+    polls until status ∈ {success, failed}.
+
+    When `existing_doc_ids` is provided (the set of document ids that still
+    exist), a job whose `document_id` is absent from it is flagged
+    `document_deleted=True` — its source was hard-deleted but the job row
+    remains. Without the set we can't tell, so the flag stays False.
+    """
     job_id = row["id"]
+    document_id = row["document_id"]
+    document_deleted = bool(
+        document_id is not None
+        and existing_doc_ids is not None
+        and document_id not in existing_doc_ids
+    )
     return {
         "job_id": job_id,
         "id": job_id,
@@ -98,6 +110,8 @@ def serialize_ingest_job(row) -> dict:
         "current_stage": row["current_stage"],
         "progress_pct": float(row["progress_pct"] or 0),
         "unit_count": int(row["child_count"] or 0),
+        "document_id": document_id,
+        "document_deleted": document_deleted,
         "created_at": row["created_at"],
         "updated_at": row["updated_at"],
         "finished_at": row["finished_at"],

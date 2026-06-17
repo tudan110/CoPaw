@@ -696,9 +696,12 @@ class KBHandler(BaseHTTPRequestHandler):
             row = conn.execute(
                 "SELECT * FROM ingestion_job WHERE id = ?", (job_id,)
             ).fetchone()
-        if row is None:
-            raise _ClientError(404, "not_found", f"job {job_id} not found")
-        self._write_json(serializers.serialize_ingest_job(row))
+            if row is None:
+                raise _ClientError(404, "not_found", f"job {job_id} not found")
+            existing = db.existing_document_ids(conn, [row["document_id"]])
+        self._write_json(
+            serializers.serialize_ingest_job(row, existing_doc_ids=existing)
+        )
 
     def _list_ingestion_jobs(self, parsed) -> None:
         qs = parse_qs(parsed.query)
@@ -708,7 +711,15 @@ class KBHandler(BaseHTTPRequestHandler):
                 "SELECT * FROM ingestion_job ORDER BY created_at DESC LIMIT ?",
                 (limit,),
             ).fetchall()
-        self._write_json({"items": [serializers.serialize_ingest_job(r) for r in rows]})
+            existing = db.existing_document_ids(
+                conn, [r["document_id"] for r in rows]
+            )
+        self._write_json({
+            "items": [
+                serializers.serialize_ingest_job(r, existing_doc_ids=existing)
+                for r in rows
+            ]
+        })
 
     def _manual_entry(self, parsed) -> None:
         body = self._read_json()

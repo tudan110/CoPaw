@@ -286,3 +286,19 @@ def health_check() -> dict:
             "sqlite_version": sqlite3.sqlite_version,
             "db_path": str(get_db_path()),
         }
+
+
+def existing_document_ids(conn, ids) -> set:
+    """Return the subset of *ids* that still have a row in `document`.
+
+    Used to flag ingestion jobs whose source was hard-deleted (the job row
+    survives the delete, leaving a dangling document_id)."""
+    wanted = {int(i) for i in ids if i is not None}
+    if not wanted:
+        return set()
+    placeholders = ",".join("?" * len(wanted))
+    rows = conn.execute(
+        f"SELECT id FROM document WHERE id IN ({placeholders})",
+        tuple(wanted),
+    ).fetchall()
+    return {row["id"] for row in rows}
