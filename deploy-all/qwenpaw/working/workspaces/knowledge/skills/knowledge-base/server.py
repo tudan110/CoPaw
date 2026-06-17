@@ -12,16 +12,15 @@ import logging
 import os
 import re
 import sys
+import tempfile
 import threading
 import traceback
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
-from email.parser import BytesParser
-from email.policy import default as email_policy
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, unquote, urlparse
 
 import sqlite_vec  # type: ignore
 
@@ -38,6 +37,8 @@ DEFAULT_PORT = int(os.environ.get("KNOWLEDGE_BASE_PORT", "8765"))
 MAX_UPLOAD_BYTES = int(os.environ.get(
     "KNOWLEDGE_BASE_MAX_UPLOAD_BYTES", str(200 * 1024 * 1024)
 ))
+# Streaming buffer for reading the request body / scanning multipart parts.
+_UPLOAD_CHUNK = 1 << 20  # 1 MiB
 INGEST_WORKERS = int(os.environ.get("KNOWLEDGE_BASE_INGEST_WORKERS", "2"))
 ENV_EMBEDDING_FORCED_OFF = (
     os.environ.get("KNOWLEDGE_BASE_EMBEDDING_ENABLED", "").lower() == "false"
@@ -71,8 +72,13 @@ _ingest_pool = ThreadPoolExecutor(
 
 def parse_uploaded_file(handler: BaseHTTPRequestHandler) -> dict | None:
     """Pull the first uploaded file out of a multipart/form-data POST.
-    Returns None if Content-Type doesn't match. Reuses stdlib's email parser
-    rather than depending on a third-party multipart library."""
+
+    Streams the request body to a temp file and reads back only the first file
+    part's payload, so peak memory is ~one copy of that file rather than the
+    3-4 copies the stdlib email parser held (the previous OOM cause on large
+    uploads). Returns None if the Content-Type isn't multipart or no file part
+    is present.
+    """
     content_type = handler.headers.get("Content-Type", "")
     if "multipart/form-data" not in content_type:
         return None
@@ -85,28 +91,126 @@ def parse_uploaded_file(handler: BaseHTTPRequestHandler) -> dict | None:
             f"upload exceeds max size {MAX_UPLOAD_BYTES} bytes (got {length})"
         )
 
-    raw = handler.rfile.read(length)
-    if not raw:
+    boundary = _multipart_boundary(content_type)
+    if not boundary:
         return None
 
-    pseudo_message = (
-        f"Content-Type: {content_type}\r\nMIME-Version: 1.0\r\n\r\n".encode("utf-8")
-        + raw
-    )
-    message = BytesParser(policy=email_policy).parsebytes(pseudo_message)
+    with tempfile.NamedTemporaryFile(prefix="kb-upload-", delete=False) as tmp:
+        tmp_path = tmp.name
+        remaining = length
+        while remaining > 0:
+            chunk = handler.rfile.read(min(remaining, _UPLOAD_CHUNK))
+            if not chunk:
+                break
+            tmp.write(chunk)
+            remaining -= len(chunk)
+    try:
+        return _read_first_file_part(tmp_path, boundary)
+    finally:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
 
-    for part in message.iter_parts():
-        if part.get_param("name", header="content-disposition") != "file":
-            continue
-        filename = part.get_filename()
-        if not filename:
-            continue
-        return {
-            "filename": filename,
-            "mime_type": part.get_content_type(),
-            "raw": part.get_payload(decode=True) or b"",
-        }
+
+def _multipart_boundary(content_type: str) -> bytes | None:
+    for part in content_type.split(";"):
+        part = part.strip()
+        if part.lower().startswith("boundary="):
+            value = part[len("boundary="):].strip().strip('"')
+            return value.encode("latin-1") if value else None
     return None
+
+
+_MULTIPART_HEADER_SEP = b"\r\n\r\n"
+
+
+def _scan_file(fh, needle: bytes, start: int) -> int:
+    """Find `needle` in an open binary file from offset `start`, reading in
+    bounded chunks (so memory stays flat for huge bodies). Returns the absolute
+    offset, or -1 if not found."""
+    overlap = len(needle) - 1
+    fh.seek(start)
+    buf = b""
+    base = start
+    while True:
+        chunk = fh.read(_UPLOAD_CHUNK)
+        if not chunk:
+            return -1
+        buf += chunk
+        idx = buf.find(needle)
+        if idx != -1:
+            return base + idx
+        if overlap > 0 and len(buf) > overlap:
+            base += len(buf) - overlap
+            buf = buf[-overlap:]
+        elif overlap <= 0:
+            base += len(buf)
+            buf = b""
+
+
+def _read_at(fh, offset: int, size: int) -> bytes:
+    fh.seek(offset)
+    return fh.read(size)
+
+
+def _read_first_file_part(path: str, boundary: bytes) -> dict | None:
+    """Walk the multipart parts in the temp file and return the first one that
+    carries a filename, reading only its payload bytes into memory."""
+    delim = b"--" + boundary
+    with open(path, "rb") as fh:
+        pos = _scan_file(fh, delim, 0)
+        while pos != -1:
+            after = pos + len(delim)
+            marker = _read_at(fh, after, 2)
+            if marker == b"--":
+                break  # closing boundary "--boundary--"
+            header_start = after + 2  # skip the CRLF after the delimiter
+            sep = _scan_file(fh, _MULTIPART_HEADER_SEP, header_start)
+            if sep == -1:
+                break
+            headers = _read_at(fh, header_start, sep - header_start)
+            payload_start = sep + len(_MULTIPART_HEADER_SEP)
+            nxt = _scan_file(fh, b"\r\n" + delim, payload_start)
+            if nxt == -1:
+                break
+            filename = _multipart_filename(headers)
+            if filename:
+                return {
+                    "filename": filename,
+                    "mime_type": _multipart_content_type(headers),
+                    "raw": _read_at(fh, payload_start, nxt - payload_start),
+                }
+            pos = _scan_file(fh, delim, nxt)
+    return None
+
+
+def _multipart_filename(headers: bytes) -> str | None:
+    """Extract the filename from a part's Content-Disposition header. Browsers
+    send UTF-8; RFC 5987 `filename*=UTF-8''...` is also handled. Any path
+    components are stripped for safety."""
+    text = headers.decode("utf-8", "replace")
+    m = re.search(r"filename\*\s*=\s*([^;\r\n]+)", text)
+    if m:
+        value = m.group(1).strip()
+        if "''" in value:
+            value = value.split("''", 1)[1]
+        name = unquote(value)
+        if name:
+            return Path(name).name
+    m = re.search(r'filename\s*=\s*"([^"]*)"', text)
+    if m and m.group(1).strip():
+        return Path(m.group(1)).name
+    m = re.search(r"filename\s*=\s*([^;\r\n]+)", text)
+    if m and m.group(1).strip():
+        return Path(m.group(1).strip().strip('"')).name
+    return None
+
+
+def _multipart_content_type(headers: bytes) -> str:
+    text = headers.decode("utf-8", "replace")
+    m = re.search(r"(?im)^Content-Type:\s*([^\r\n;]+)", text)
+    return m.group(1).strip() if m else "application/octet-stream"
 
 
 # ----------------------------- Background ingestion -----------------------
