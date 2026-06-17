@@ -7,6 +7,17 @@ tiktoken>=0.7.0
 pypdf>=4.0.0
 python-docx>=1.1.0
 Pillow>=10.0.0
-pytesseract>=0.3.10
 openpyxl>=3.1.2
 xlrd>=2.0.1
+
+# Complex-PDF layout extraction (P2, optional — graceful degrade if missing):
+# pypdfium2 renders scanned pages for OCR (BSD/Apache, offline, no system deps);
+# pdfplumber extracts tables (MIT). Deliberately NOT PyMuPDF (AGPL).
+pypdfium2>=4.20.0
+pdfplumber>=0.11.0
+
+# OCR (optional, graceful degrade): RapidOCR is the preferred engine — offline
+# ONNX, strong Chinese, CPU-friendly, no system binary. pytesseract is kept as
+# a fallback but needs a system `tesseract` install. See providers/ocr.py.
+rapidocr-onnxruntime>=1.3.0
+pytesseract>=0.3.10
