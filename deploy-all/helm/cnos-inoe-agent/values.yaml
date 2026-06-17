@@ -99,8 +99,8 @@ qwenpaw:
     QWENPAW_PORTAL_REAL_ALARM_LOOKBACK_HOURS: "0"
     # 告警平台接口时区偏移（小时），默认东八区
     QWENPAW_PORTAL_REAL_ALARM_TIMEZONE_OFFSET: "8"
-    # 前台告警列表与角标计数的最大条数（1-200），页面「设置-诊断」配置优先
-    QWENPAW_PORTAL_REAL_ALARM_LIST_LIMIT: "20"
+    # 前台告警列表与角标计数的最大条数（1-200），页面「设置-告警」配置优先
+    QWENPAW_PORTAL_REAL_ALARM_LIST_LIMIT: "100"
 
 
     # 启明大模型 OpenAI 风格适配层（测试时请使用本地覆盖文件或 Secret 注入真实密钥）

@@ -82,8 +82,6 @@ RUN set -eux; \
       tesseract-ocr \
       tesseract-ocr-eng \
       tesseract-ocr-chi-sim \
-      xfce4 \
-      xfce4-terminal \
       xvfb \
       dbus-x11 \
       fonts-wqy-zenhei \

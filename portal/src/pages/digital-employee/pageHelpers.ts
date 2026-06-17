@@ -935,6 +935,7 @@ export type PortalOpsAlert = {
   level: PortalOpsAlertLevel;
   message: string;
   timeLabel: string;
+  eventTime?: string;
   routeEntry?: string | null;
   dispatchContent?: string;
   visibleContent?: string;

@@ -19,6 +19,7 @@ type PortalBellAlert = {
   level: "critical" | "urgent" | "warning" | "info";
   message: string;
   timeLabel: string;
+  eventTime?: string;
   routeEntry?: string | null;
   dispatchContent?: string;
   visibleContent?: string;
@@ -49,6 +50,7 @@ export function normalizePortalBellAlerts(
       level: item.level,
       message: toAlertMessage(item),
       timeLabel: item.timeLabel || item.eventTime,
+      eventTime: item.eventTime,
       routeEntry: null,
       dispatchContent: item.dispatchContent,
       visibleContent: item.visibleContent,

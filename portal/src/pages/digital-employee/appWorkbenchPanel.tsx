@@ -5,14 +5,24 @@ import {
   useRef,
   useState,
   type KeyboardEvent,
+  type MouseEvent as ReactMouseEvent,
 } from "react";
-import { createChat, stopChat, streamChat } from "../../api/copawChat";
+import {
+  createChat,
+  deleteChat,
+  getChatHistory,
+  listChats,
+  stopChat,
+  streamChat,
+  updateChat,
+} from "../../api/copawChat";
 import { toFriendlyChatError } from "../../lib/chatErrorMessage";
 import {
   buildThinkingBlock,
   buildToolBlock,
   createRemoteSessionId,
   extractCopawMessageText,
+  getPortalSessionPrefix,
   isCopawReasoningMessage,
   mergeStreamingText,
 } from "./helpers";
@@ -37,6 +47,10 @@ type ChatMessage = {
 const AGENT_ID = "gateway";
 const COPAW_USER_ID = "default";
 const COPAW_CHANNEL = "console";
+
+/** Seed used to build workbench session ids; its prefix scopes history. */
+const WORKBENCH_SESSION_SEED = "app-workbench";
+const WORKBENCH_SESSION_PREFIX = getPortalSessionPrefix(WORKBENCH_SESSION_SEED);
 
 const WORKBENCH_SYSTEM_PREFIX_HEAD = `你现在处于「AI 应用开发工作台」模式。用户会描述想要的应用、图表或页面，你需要生成**完整的、可独立运行的 HTML 文件**。
 
@@ -108,6 +122,73 @@ function buildDatasourceCatalogText(items: WorkbenchDatasourceSummary[]): string
 
 function uid() {
   return `wb-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+/* ---- history session types ---- */
+type WorkbenchSession = {
+  id: string;
+  sessionId: string;
+  title: string;
+  updatedAt: string;
+  status: string;
+};
+
+/**
+ * Strip the workbench system prefix from a stored user message so the history
+ * view shows only what the user actually typed. The prefix always ends with
+ * "用户需求：", so we keep everything after the last occurrence — but only when
+ * the workbench marker is present, to avoid clobbering normal user text.
+ */
+function stripWorkbenchPrefix(text: string): string {
+  const marker = "用户需求：";
+  if (!text.includes("AI 应用开发工作台") || !text.includes(marker)) {
+    return text;
+  }
+  const idx = text.lastIndexOf(marker);
+  return text.slice(idx + marker.length).trim();
+}
+
+/** Format an ISO timestamp as a compact local date-time for the history list. */
+function formatSessionTime(value: string): string {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(
+    date.getDate(),
+  )} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+/** Map backend chat history messages into the workbench ChatMessage shape. */
+function mapHistoryToMessages(historyMessages: any[]): ChatMessage[] {
+  const out: ChatMessage[] = [];
+  (Array.isArray(historyMessages) ? historyMessages : []).forEach((m, i) => {
+    const id = `hist-${i}-${String(m?.id || "")}`;
+
+    if (m?.role === "user" && (!m.type || m.type === "message")) {
+      const text = stripWorkbenchPrefix(extractCopawMessageText(m));
+      if (text) out.push({ id, role: "user", content: text });
+      return;
+    }
+
+    if (isCopawReasoningMessage(m)) {
+      const content = buildThinkingBlock(m).content;
+      if (content) out.push({ id, role: "thinking", content });
+      return;
+    }
+
+    if (m?.type === "plugin_call" || m?.type === "plugin_call_output") {
+      const content = buildToolBlock(m).content;
+      if (content) out.push({ id, role: "tool", content });
+      return;
+    }
+
+    if (m?.role === "assistant" && (!m.type || m.type === "message")) {
+      const text = extractCopawMessageText(m);
+      if (text) out.push({ id, role: "assistant", content: text });
+    }
+  });
+  return out;
 }
 
 /** Extract the last ```html ... ``` code block from markdown content. */
@@ -215,6 +296,20 @@ export function AppWorkbenchPanel({
   const chatIdRef = useRef("");
   const sessionIdRef = useRef("");
   const streamAbortRef = useRef<AbortController | null>(null);
+  // App scoping: the app being edited and that app's origin (draft) session.
+  const editAppIdRef = useRef(editAppId || "");
+  editAppIdRef.current = editAppId || "";
+  const editingOriginSessionRef = useRef("");
+
+  /* ---- history sessions ---- */
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [historySessions, setHistorySessions] = useState<WorkbenchSession[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyError, setHistoryError] = useState("");
+  const [historyBusyId, setHistoryBusyId] = useState("");
+  const [historyEditingId, setHistoryEditingId] = useState("");
+  const [historyDraft, setHistoryDraft] = useState("");
+  const historyLoadedRef = useRef(false);
 
   /* ---- streaming bookkeeping ---- */
   const assistantMapRef = useRef(new Map<string, string>());
@@ -260,6 +355,8 @@ export function AppWorkbenchPanel({
           type: meta.type || "app",
           tags: meta.tags || [],
         });
+        // Remember the app's origin session so history can include it
+        editingOriginSessionRef.current = String(meta.session_id || "");
         setPublishTitle(meta.title || "");
         setPublishDesc(meta.description || "");
         setPublishType(meta.type || "app");
@@ -487,9 +584,13 @@ export function AppWorkbenchPanel({
       if (!chatIdRef.current) {
         const chat = await createChat(AGENT_ID, {
           name: content.slice(0, 60),
-          session_id: createRemoteSessionId("app-workbench"),
+          session_id: createRemoteSessionId(WORKBENCH_SESSION_SEED),
           user_id: COPAW_USER_ID,
           channel: COPAW_CHANNEL,
+          // Scope this session to the app being edited (empty = unpublished draft)
+          meta: {
+            appId: editingAppRef.current?.id || editAppIdRef.current || "",
+          },
         });
         chatIdRef.current = chat.id;
         sessionIdRef.current = chat.session_id;
@@ -632,6 +733,7 @@ export function AppWorkbenchPanel({
             html_content: previewHtml,
             type: publishType,
             tags,
+            session_id: sessionIdRef.current || undefined,
           }),
         });
       }
@@ -640,6 +742,9 @@ export function AppWorkbenchPanel({
       setPublishResult({ url: data.url || `/portal-api/app-artifacts/${data.id}/preview`, title: data.title });
       if (!editingApp) {
         setEditingApp({ id: data.id, title: data.title, description: data.description || "", type: data.type, tags: data.tags || [] });
+        // The draft session is now this app's origin session — remember it so
+        // history scopes to it (the backend also stored it on the artifact).
+        editingOriginSessionRef.current = sessionIdRef.current;
       }
     } catch (error: any) {
       alert(`发布失败：${error.message}`);
@@ -664,6 +769,184 @@ export function AppWorkbenchPanel({
     setPublishOpen(false);
     setPublishResult(null);
   }, []);
+
+  /* ================================================================ */
+  /*  History sessions                                                 */
+  /* ================================================================ */
+
+  const loadSessions = useCallback(async (background = false) => {
+    // background = true: refresh silently without the blocking spinner,
+    // so opening the drawer with a warm cache feels instant.
+    if (!background) setHistoryLoading(true);
+    setHistoryError("");
+    try {
+      const chats = await listChats(AGENT_ID, {
+        user_id: COPAW_USER_ID,
+        channel: COPAW_CHANNEL,
+      });
+      const currentAppId = editingAppRef.current?.id || editAppIdRef.current || "";
+      const originSessionId = editingOriginSessionRef.current || "";
+
+      // Editing an app → only its sessions (bound via meta.appId, plus the
+      // app's origin draft session). New/draft entry → only unbound drafts.
+      // Legacy sessions created before app-scoping have no binding, so they
+      // surface only under the new/draft entry, never under an app — by design.
+      const list: WorkbenchSession[] = (Array.isArray(chats) ? chats : [])
+        .filter((c: any) =>
+          String(c?.session_id || "").startsWith(WORKBENCH_SESSION_PREFIX),
+        )
+        .filter((c: any) => {
+          const appId = String(c?.meta?.appId || "");
+          const sessionId = String(c?.session_id || "");
+          return currentAppId
+            ? appId === currentAppId ||
+                (Boolean(originSessionId) && sessionId === originSessionId)
+            : !appId;
+        })
+        .map((c: any) => ({
+          id: c.id,
+          sessionId: c.session_id,
+          title: String(c.name || "").trim() || "未命名应用",
+          updatedAt: c.updated_at || c.created_at || "",
+          status: c.status || "idle",
+        }))
+        .sort(
+          (a, b) =>
+            new Date(b.updatedAt || 0).getTime() -
+            new Date(a.updatedAt || 0).getTime(),
+        );
+      setHistorySessions(list);
+      historyLoadedRef.current = true;
+    } catch (error: any) {
+      if (!background) {
+        setHistoryError(error?.message || "获取历史会话失败");
+      }
+    } finally {
+      if (!background) setHistoryLoading(false);
+    }
+  }, []);
+
+  // Warm the cache (and the lazily-loaded agent) once on mount so the first
+  // history open doesn't pay the cold round-trip.
+  useEffect(() => {
+    void loadSessions(true);
+  }, [loadSessions]);
+
+  const handleOpenHistory = useCallback(() => {
+    setHistoryOpen(true);
+    setHistoryEditingId("");
+    // Have a cached list → refresh quietly; otherwise show the spinner.
+    void loadSessions(historyLoadedRef.current);
+  }, [loadSessions]);
+
+  const handleSelectSession = useCallback(
+    async (session: WorkbenchSession) => {
+      if (isStreaming) return;
+      setHistoryBusyId(session.id);
+      setHistoryError("");
+      try {
+        const history: any = await getChatHistory(AGENT_ID, session.id);
+        const mapped = mapHistoryToMessages(history?.messages);
+
+        // Restore session refs so the next message continues this conversation
+        chatIdRef.current = session.id;
+        sessionIdRef.current = String(
+          history?.session_id || history?.sessionId || session.sessionId || "",
+        );
+        isFirstMessageRef.current = false;
+
+        // Reset streaming bookkeeping
+        assistantMapRef.current = new Map();
+        contentMapRef.current = new Map();
+        streamMetaRef.current = new Map();
+        pendingTextRef.current = new Map();
+
+        setMessages(mapped);
+        setViewSource(false);
+        setPublishOpen(false);
+        setPublishResult(null);
+
+        // Restore preview from the last assistant message that carries HTML
+        let restored = false;
+        for (let i = mapped.length - 1; i >= 0; i--) {
+          if (mapped[i].role === "assistant" && mapped[i].content) {
+            const html = extractHtmlBlock(mapped[i].content);
+            if (html) {
+              setPreviewHtml(html);
+              setPreviewUrl(buildPreviewUrl(html));
+              restored = true;
+              break;
+            }
+          }
+        }
+        if (!restored) {
+          setPreviewHtml("");
+          setPreviewUrl("");
+        }
+
+        setHistoryOpen(false);
+      } catch (error: any) {
+        setHistoryError(error?.message || "加载会话历史失败");
+      } finally {
+        setHistoryBusyId("");
+      }
+    },
+    [isStreaming],
+  );
+
+  const handleDeleteSession = useCallback(
+    async (session: WorkbenchSession, e?: ReactMouseEvent) => {
+      e?.stopPropagation();
+      if (!window.confirm(`确认删除「${session.title}」吗？`)) return;
+      setHistoryBusyId(session.id);
+      setHistoryError("");
+      try {
+        await deleteChat(AGENT_ID, session.id);
+        setHistorySessions((prev) => prev.filter((s) => s.id !== session.id));
+        if (chatIdRef.current === session.id) {
+          handleNewSession();
+        }
+      } catch (error: any) {
+        setHistoryError(error?.message || "删除会话失败");
+      } finally {
+        setHistoryBusyId("");
+      }
+    },
+    [handleNewSession],
+  );
+
+  const handleStartRename = useCallback(
+    (session: WorkbenchSession, e?: ReactMouseEvent) => {
+      e?.stopPropagation();
+      setHistoryError("");
+      setHistoryEditingId(session.id);
+      setHistoryDraft(session.title);
+    },
+    [],
+  );
+
+  const handleSubmitRename = useCallback(
+    async (session: WorkbenchSession) => {
+      const nextTitle = historyDraft.trim();
+      if (!nextTitle || nextTitle === session.title) {
+        setHistoryEditingId("");
+        return;
+      }
+      setHistoryBusyId(session.id);
+      try {
+        await updateChat(AGENT_ID, session.id, { name: nextTitle });
+        setHistorySessions((prev) =>
+          prev.map((s) => (s.id === session.id ? { ...s, title: nextTitle } : s)),
+        );
+        setHistoryEditingId("");
+      } catch (error: any) {
+        setHistoryError(error?.message || "重命名失败");
+      } finally {
+        setHistoryBusyId("");
+      }
+    },
+    [historyDraft],
+  );
 
   /* ================================================================ */
   /*  Render                                                           */
@@ -691,6 +974,13 @@ export function AppWorkbenchPanel({
           </h2>
         </div>
         <div className="app-workbench__header-right">
+          <button
+            className="app-workbench__action-btn"
+            onClick={handleOpenHistory}
+            title="历史会话"
+          >
+            <i className="fas fa-clock-rotate-left" /> 历史
+          </button>
           <button className="app-workbench__action-btn" onClick={handleNewSession} title="新建会话">
             <i className="fas fa-plus" /> 新建
           </button>
@@ -863,6 +1153,125 @@ export function AppWorkbenchPanel({
           </div>
         </section>
       </div>
+
+      {/* ---- History drawer ---- */}
+      {historyOpen && (
+        <div
+          className="app-workbench__history-overlay"
+          onClick={() => setHistoryOpen(false)}
+        >
+          <aside
+            className="app-workbench__history-drawer"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="app-workbench__history-header">
+              <div className="app-workbench__history-heading">
+                <h3>
+                  <i className="fas fa-clock-rotate-left" /> 历史会话
+                </h3>
+                <span className="app-workbench__history-scope">
+                  {editingApp ? `当前应用 · ${editingApp.title}` : "未发布草稿"}
+                </span>
+              </div>
+              <button
+                className="app-workbench__history-close"
+                onClick={() => setHistoryOpen(false)}
+                title="关闭"
+              >
+                ✕
+              </button>
+            </div>
+
+            {historyError && (
+              <div className="app-workbench__history-error">{historyError}</div>
+            )}
+
+            <div className="app-workbench__history-list">
+              {historyLoading ? (
+                <div className="app-workbench__history-empty">
+                  <i className="fas fa-spinner fa-spin" /> 加载中...
+                </div>
+              ) : historySessions.length === 0 ? (
+                <div className="app-workbench__history-empty">暂无历史会话</div>
+              ) : (
+                historySessions.map((session) => {
+                  const busy = historyBusyId === session.id;
+                  const editing = historyEditingId === session.id;
+                  return (
+                    <div
+                      key={session.id}
+                      className={`app-workbench__history-item ${
+                        chatIdRef.current === session.id ? "active" : ""
+                      }`}
+                      onClick={() => {
+                        if (!editing) void handleSelectSession(session);
+                      }}
+                    >
+                      {editing ? (
+                        <input
+                          className="app-workbench__history-rename"
+                          value={historyDraft}
+                          autoFocus
+                          onClick={(e) => e.stopPropagation()}
+                          onChange={(e) => setHistoryDraft(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") {
+                              e.preventDefault();
+                              void handleSubmitRename(session);
+                            } else if (e.key === "Escape") {
+                              setHistoryEditingId("");
+                            }
+                          }}
+                          onBlur={() => void handleSubmitRename(session)}
+                        />
+                      ) : (
+                        <div className="app-workbench__history-main">
+                          <div className="app-workbench__history-title">
+                            {session.status === "running" && (
+                              <span className="app-workbench__history-badge">
+                                进行中
+                              </span>
+                            )}
+                            {session.title}
+                          </div>
+                          <div className="app-workbench__history-time">
+                            {formatSessionTime(session.updatedAt)}
+                          </div>
+                        </div>
+                      )}
+
+                      {!editing && (
+                        <div className="app-workbench__history-actions">
+                          {busy ? (
+                            <i className="fas fa-spinner fa-spin" />
+                          ) : (
+                            <>
+                              <button
+                                className="app-workbench__history-action"
+                                title="重命名"
+                                onClick={(e) => handleStartRename(session, e)}
+                              >
+                                <i className="fas fa-pen" />
+                              </button>
+                              <button
+                                className="app-workbench__history-action app-workbench__history-action--danger"
+                                title="删除"
+                                onClick={(e) => void handleDeleteSession(session, e)}
+                              >
+                                <i className="fas fa-trash" />
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </aside>
+        </div>
+      )}
 
       {/* ---- Publish Modal ---- */}
       {publishOpen && (

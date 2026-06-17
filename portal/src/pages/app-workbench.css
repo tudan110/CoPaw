@@ -584,7 +584,8 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  backdrop-filter: blur(4px);
+  /* No backdrop-filter — full-screen blur over the preview iframe is a known
+     jank source; a plain translucent overlay composites cheaply. */
 }
 
 .app-workbench__modal {
@@ -764,4 +765,243 @@
   .app-workbench__preview {
     height: 50%;
   }
+}
+
+/* ------------------------------------------------------------------ */
+/*  History drawer                                                     */
+/* ------------------------------------------------------------------ */
+
+.app-workbench__history-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  z-index: 10000;
+  display: flex;
+  justify-content: flex-start;
+  /* No backdrop-filter: blurring the full-screen backdrop (which contains the
+     preview <iframe>) forces continuous re-rasterization and causes severe
+     jank when opening. A plain translucent layer composites cheaply. */
+}
+
+.app-workbench__history-drawer {
+  width: 360px;
+  max-width: 86vw;
+  height: 100%;
+  background: #fff;
+  box-shadow: 4px 0 24px rgba(0, 0, 0, 0.12);
+  display: flex;
+  flex-direction: column;
+  animation: app-workbench__history-slide 0.18s ease;
+}
+
+@keyframes app-workbench__history-slide {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+:is(.theme-dark) .app-workbench__history-drawer {
+  background: #0f172a;
+  box-shadow: 4px 0 24px rgba(0, 0, 0, 0.4);
+}
+
+.app-workbench__history-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 18px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.12);
+}
+
+.app-workbench__history-heading {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.app-workbench__history-header h3 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: #1e293b;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.app-workbench__history-scope {
+  font-size: 11px;
+  color: #8b5cf6;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 280px;
+}
+
+.app-workbench__history-header h3 i {
+  color: #8b5cf6;
+}
+
+:is(.theme-dark) .app-workbench__history-header h3 {
+  color: #e2e8f0;
+}
+
+.app-workbench__history-close {
+  border: none;
+  background: transparent;
+  color: #94a3b8;
+  font-size: 16px;
+  cursor: pointer;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  transition: all 0.15s;
+}
+
+.app-workbench__history-close:hover {
+  background: rgba(148, 163, 184, 0.12);
+  color: #475569;
+}
+
+.app-workbench__history-error {
+  margin: 12px 16px 0;
+  padding: 8px 12px;
+  font-size: 12px;
+  color: #b91c1c;
+  background: rgba(239, 68, 68, 0.1);
+  border-radius: 8px;
+}
+
+.app-workbench__history-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.app-workbench__history-empty {
+  text-align: center;
+  color: #94a3b8;
+  font-size: 13px;
+  padding: 40px 16px;
+}
+
+.app-workbench__history-empty i {
+  margin-right: 6px;
+}
+
+.app-workbench__history-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.app-workbench__history-item:hover {
+  background: rgba(139, 92, 246, 0.06);
+  border-color: rgba(139, 92, 246, 0.18);
+}
+
+.app-workbench__history-item.active {
+  background: rgba(139, 92, 246, 0.1);
+  border-color: rgba(139, 92, 246, 0.35);
+}
+
+:is(.theme-dark) .app-workbench__history-item:hover,
+:is(.theme-dark) .app-workbench__history-item.active {
+  background: rgba(139, 92, 246, 0.14);
+}
+
+.app-workbench__history-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.app-workbench__history-title {
+  font-size: 13px;
+  font-weight: 500;
+  color: #334155;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+:is(.theme-dark) .app-workbench__history-title {
+  color: #e2e8f0;
+}
+
+.app-workbench__history-badge {
+  flex-shrink: 0;
+  font-size: 10px;
+  font-weight: 600;
+  color: #fff;
+  background: #10b981;
+  padding: 1px 6px;
+  border-radius: 6px;
+}
+
+.app-workbench__history-time {
+  font-size: 11px;
+  color: #94a3b8;
+  margin-top: 3px;
+}
+
+.app-workbench__history-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  color: #94a3b8;
+}
+
+.app-workbench__history-action {
+  border: none;
+  background: transparent;
+  color: #94a3b8;
+  cursor: pointer;
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
+  font-size: 12px;
+  transition: all 0.15s;
+}
+
+.app-workbench__history-action:hover {
+  background: rgba(139, 92, 246, 0.12);
+  color: #8b5cf6;
+}
+
+.app-workbench__history-action--danger:hover {
+  background: rgba(239, 68, 68, 0.12);
+  color: #ef4444;
+}
+
+.app-workbench__history-rename {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 10px;
+  font-size: 13px;
+  border: 1px solid rgba(139, 92, 246, 0.5);
+  border-radius: 8px;
+  background: #fff;
+  color: #1e293b;
+  outline: none;
+}
+
+:is(.theme-dark) .app-workbench__history-rename {
+  background: #1e293b;
+  color: #e2e8f0;
 }

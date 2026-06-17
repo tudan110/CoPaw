@@ -766,6 +766,7 @@ async def _ensure_portal_real_alarm_sessions(
                     )
                     has_history = _portal_real_alarm_has_history(state)
                     if has_history:
+                        _portal_real_alarm_last_sent.pop(session_id, None)
                         should_start = False
                     else:
                         # No AI reply yet – check dedup window to decide

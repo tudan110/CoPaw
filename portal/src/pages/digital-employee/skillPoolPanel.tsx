@@ -19,6 +19,8 @@ import "../skill-pool.css";
 
 const ERKAI_TAG = "二开";
 
+const HIDDEN_SKILL_NAMES = new Set(["cron"]);
+
 type NoticeState =
   | { type: "success" | "error"; message: string }
   | null;
@@ -343,7 +345,7 @@ export function SkillPoolPanel() {
         _foreignAgentName: string;
       });
     }
-    return [...skills, ...adapted];
+    return [...skills, ...adapted].filter((s) => !HIDDEN_SKILL_NAMES.has(s.name));
   }, [skills, erkaiElsewhere, foreignDetailsByAgent]);
 
   const erkaiCount = useMemo(

@@ -354,7 +354,7 @@ export function AdvancedModelEntry({
               ⚡
             </span>
           </div>
-          <div className="sidebar-advanced-item-name">技能池</div>
+          <div className="sidebar-advanced-item-name">技能</div>
           <div className="sidebar-advanced-item-desc">全局运维技能库</div>
           <div className="sidebar-advanced-item-meta">搜索 / 新增 / 编辑 / 删除</div>
         </button>

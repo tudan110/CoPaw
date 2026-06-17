@@ -2,7 +2,7 @@
 name: alarm-analyst
 category: root-cause
 tags: [fault, alarm, diagnosis, cmdb, mysql, metrics, deadlock, analysis-report, collaboration, portal, topology, application]
-triggers: [告警分析, 故障分析, 数据库锁异常, 数据库死锁分析, 告警处置分析, 告警根因分析, 活动告警处置, 告警闭环, 应用新增数据失败, CMDB 插入失败]
+triggers: [告警分析, 故障分析, 数据库锁异常, 数据库死锁分析, 告警处置分析, 告警根因分析, 活动告警处置, 告警闭环, 应用新增数据失败, CMDB 插入失败, 机房动环告警, 动环告警分析, 供配电告警, 精密空调告警, UPS告警]
 description: 面向单条活动告警或单个应用故障现象驱动的故障分析与闭环处置技能。适用于 Portal 中用户点击右上角铃铛告警后，或直接描述"某应用新增数据失败 / CMDB 插入数据失败"等现象后，由故障分析专家数字员工接管，并向用户展示从智观活动告警、CMDB 资源确认、应用拓扑拆解、指标分析、影响范围判断、处置建议、恢复验证到清除告警/推送分析报告的完整过程。若当前工作区已具备 shell、跨智能体和指标接口能力，应优先执行真实查询，不要只复述流程模板。
 ---
 
@@ -250,11 +250,13 @@ ALARM_ANALYST_METRIC_PAGE_SIZE=20
 
 | 文件 | 何时读取 |
 |------|---------|
-| `rca-network.md` | 告警涉及网络层（链路/设备/性能劣化/配置错误/安全事件） |
-| `rca-iaas.md` | 告警涉及 IaaS 层（硬件/虚拟化/存储/操作系统/资源耗尽） |
-| `rca-paas.md` | 告警涉及 PaaS 层（容器编排/中间件/服务网格/数据库缓存/配置证书） |
-| `rca-application.md` | 告警涉及应用层（代码缺陷/业务逻辑/依赖服务/API接口） |
-| `rca-cross-layer.md` | 告警涉及跨层复合（级联故障/网络-应用联合/IaaS-PaaS联合/全链路退化） |
+| `rca-facility.md` | 告警来自机房动环（供配电/UPS/制冷空调/温湿度漏水烟感/消防/安防门禁/动环采集器），物理底座层 |
+| `rca-network.md` | 告警涉及网络层（链路/设备/性能劣化/配置错误/路由震荡/二层环路/IP地址冲突/DHCP/安全攻击） |
+| `rca-ipran-ip.md` | 告警涉及 IP 专业设备（BRAS/CR/路由器：NodeDown/中继质差/LinkDown/端口翻转/板卡/风扇/电源，含 API 清单与光功率阈值） |
+| `rca-iaas.md` | 告警涉及 IaaS 层（硬件/虚拟化/存储/操作系统/资源耗尽/时钟同步/进程与服务） |
+| `rca-paas.md` | 告警涉及 PaaS 层（容器K8s/中间件/服务网格/数据库缓存/云主机计算/负载均衡网关/配置证书） |
+| `rca-application.md` | 告警涉及应用层（拨测不可用/响应劣化/部分功能/业务逻辑/第三方依赖/前端用户侧/流量并发/代码/API） |
+| `rca-cross-layer.md` | 告警涉及跨层复合（级联/网络-应用/IaaS-PaaS/全链路退化），含跨专业故障传播链速查 |
 | `portal-card-protocol.md` | 输出需要 Portal 渲染卡片时 |
 | `notification-protocol.md` | 处理通知推送逻辑时 |
 
