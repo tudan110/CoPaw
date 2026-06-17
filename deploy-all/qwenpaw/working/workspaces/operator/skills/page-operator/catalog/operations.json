@@ -1,0 +1,55 @@
+{
+  "version": 1,
+  "updated_at": "2026-06-17",
+  "note": "操作目录:每条描述一个可在传统门户页面执行的写操作(当前聚焦新增类)。route 为兜底,运行期可由 getRouters 按 component 反查覆盖。可用 scripts/scan_catalog.py 从 inoe-ui 半自动扩充,人工 review。",
+  "operations": [
+    {
+      "id": "workflow.category.add",
+      "name": "新建流程分类",
+      "intent": [
+        "新建流程分类",
+        "添加流程分类",
+        "创建流程分类",
+        "新增流程分类",
+        "加一个流程分类",
+        "建一个流程分类",
+        "新增一个流程分类",
+        "新建一个流程分类"
+      ],
+      "menu": "工单中心 / 流程管理 / 流程分类",
+      "component": "workflow/category/index",
+      "page": "Category",
+      "route": "/workflow/category",
+      "action": "create",
+      "open": "handleAdd",
+      "model": "form",
+      "submit": "submitForm",
+      "fields": [
+        {
+          "prop": "categoryName",
+          "label": "分类名称",
+          "type": "input",
+          "required": true,
+          "placeholder": "请输入分类名称"
+        },
+        {
+          "prop": "code",
+          "label": "分类编码",
+          "type": "input",
+          "required": true,
+          "placeholder": "请输入分类编码"
+        },
+        {
+          "prop": "remark",
+          "label": "备注",
+          "type": "textarea",
+          "required": false,
+          "placeholder": "请输入内容"
+        }
+      ],
+      "api": { "method": "POST", "url": "/flowable/workflow/category" },
+      "risk": "create",
+      "permission": "workflow:category:add"
+    }
+  ]
+}
