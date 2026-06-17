@@ -9082,6 +9082,14 @@
   min-width: 0;
 }
 
+.portal-digital-employee .settings-tab-panel {
+  position: sticky;
+  top: 0;
+  align-self: start;
+  max-height: 100vh;
+  overflow-y: auto;
+}
+
 .portal-digital-employee .settings-tab-panel-title {
   font-size: 13px;
   font-weight: 700;
