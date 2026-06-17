@@ -49,14 +49,13 @@ export function usePortalAlerts({
   const knownAlertIdsRef = useRef<string[]>([]);
 
   const sortedOpsAlerts = useMemo(() => {
-    const order: Record<string, number> = {
-      critical: 0,
-      urgent: 1,
-      warning: 2,
-      info: 3,
-    };
-
-    return [...opsAlerts].sort((left, right) => order[left.level] - order[right.level]);
+    return [...opsAlerts].sort((left, right) => {
+      const lt = left.eventTime ?? "";
+      const rt = right.eventTime ?? "";
+      if (lt > rt) return -1;
+      if (lt < rt) return 1;
+      return 0;
+    });
   }, [opsAlerts]);
 
   const loadOpsAlerts = useCallback(async () => {
