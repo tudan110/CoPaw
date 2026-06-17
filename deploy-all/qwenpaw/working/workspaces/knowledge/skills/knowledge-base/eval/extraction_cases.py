@@ -41,6 +41,31 @@ def _png(w: int = 120, h: int = 120) -> bytes:
     return buf.getvalue()
 
 
+def _scanned_pdf_bytes() -> bytes:
+    """An image-only ("scanned") PDF: a white page with high-contrast text and
+    no text layer, so extraction must go through render + OCR."""
+    from PIL import Image, ImageDraw, ImageFont  # type: ignore
+
+    try:
+        font = ImageFont.load_default(size=64)  # Pillow >= 10
+    except TypeError:
+        font = ImageFont.load_default()
+    img = Image.new("RGB", (1000, 300), (255, 255, 255))
+    draw = ImageDraw.Draw(img)
+    draw.text((40, 90), "OCR TEST 400 8443", font=font, fill=(0, 0, 0))
+    buf = io.BytesIO()
+    img.save(buf, format="PDF")
+    return buf.getvalue()
+
+
+def _pdf_ocr_available() -> bool:
+    try:
+        import pypdfium2  # type: ignore  # noqa: F401
+    except ImportError:
+        return False
+    return ingestion.ocr.is_available()
+
+
 def _pptx_with_table_and_image() -> bytes:
     slide = f"""<?xml version="1.0"?>
 <p:sld xmlns:p="{_P}" xmlns:a="{_A}" xmlns:r="{_R}">
@@ -99,6 +124,17 @@ def run() -> None:
     _check("pptx.table_markdown", "| 组件 | 状态 |" in p.content, p.content)
     _check("pptx.table_cell", "消息队列" in p.content and "运行中" in p.content)
     _check("pptx.warnings_is_list", isinstance(p.warnings, list))
+
+    # --- scanned PDF: render + OCR (P2) — exercised only when deps present ---
+    print("scanned PDF (render + OCR):")
+    pdf = ingestion.extract("scan.pdf", _scanned_pdf_bytes())
+    _check("pdf.no_crash", isinstance(pdf.content, str))
+    _check("pdf.warnings_is_list", isinstance(pdf.warnings, list))
+    if _pdf_ocr_available():
+        _check("pdf.scanned_ocr_text", "400" in pdf.content,
+               f"OCR content={pdf.content!r}")
+    else:
+        print("  skip pdf.scanned_ocr_text (pypdfium2/OCR engine not installed)")
 
     # --- markdown: IR fallback still yields blocks ---
     print("markdown (IR fallback):")

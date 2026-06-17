@@ -286,7 +286,24 @@ def _extract_text(data: bytes, *, source_format: str) -> ExtractedDocument:
     return ExtractedDocument(content=text, source_format=source_format)
 
 
+# PDF tuning. Scanned-page OCR and table extraction are optional (graceful
+# degrade when pypdfium2 / pdfplumber are absent) and capped to bound cost.
+_PDF_SCANNED_MIN_CHARS = 12  # page text shorter than this => maybe a scan
+_PDF_RENDER_SCALE = 2.0  # ~144 DPI render for scanned-page OCR
+_PDF_MAX_OCR_PAGES = 60  # cap rendered-page OCR per document
+_PDF_MAX_IMAGES_PER_PAGE = 12  # cap embedded-image OCR per page
+_PDF_MAX_TABLE_PAGES = 100  # cap pdfplumber table scan to first N pages
+
+
 def _extract_pdf(data: bytes, filename: str) -> ExtractedDocument:
+    """Layout-aware PDF extraction (P2).
+
+    Born-digital text via pypdf (unchanged). On top, when the optional deps are
+    present and the unified OCR engine is available: scanned pages (no text
+    layer) are rendered (pypdfium2) and OCR'd, embedded images are OCR'd, and
+    tables are extracted (pdfplumber) as Markdown. Each enrichment degrades
+    independently — a missing dep or a bad page never aborts the document.
+    """
     try:
         from pypdf import PdfReader  # type: ignore
     except ImportError as exc:
@@ -294,24 +311,194 @@ def _extract_pdf(data: bytes, filename: str) -> ExtractedDocument:
 
     import io
     reader = PdfReader(io.BytesIO(data))
+    warnings: list[str] = []
+    tables_by_page = _pdf_tables_by_page(data, warnings)
+    renderer = _pdf_make_renderer(data)
+    ocr_pages_used = 0
+
     pages: list[tuple[int, str]] = []
-    parts: list[str] = []
-    for idx, page in enumerate(reader.pages):
-        try:
-            page_text = page.extract_text() or ""
-        except Exception as exc:
-            logger.warning("pdf page %d extract failed: %s", idx + 1, exc)
-            page_text = ""
-        page_text = page_text.strip()
-        if page_text:
-            pages.append((idx + 1, page_text))
-            parts.append(page_text)
+    blocks: list[Block] = []
+    try:
+        for idx, page in enumerate(reader.pages):
+            page_no = idx + 1
+            try:
+                text = (page.extract_text() or "").strip()
+            except Exception as exc:
+                warnings.append(f"第 {page_no} 页文本抽取失败：{exc}")
+                text = ""
+
+            did_page_ocr = False
+            if (
+                len(text) < _PDF_SCANNED_MIN_CHARS
+                and renderer is not None
+                and ocr.is_available()
+            ):
+                if ocr_pages_used < _PDF_MAX_OCR_PAGES:
+                    ocr_text = _pdf_ocr_page(renderer, idx, page_no, warnings)
+                    if ocr_text:
+                        text = ocr_text
+                        did_page_ocr = True
+                        ocr_pages_used += 1
+                else:
+                    warnings.append(
+                        f"扫描页 OCR 达到上限 {_PDF_MAX_OCR_PAGES}，"
+                        f"第 {page_no} 页未 OCR"
+                    )
+
+            page_blocks: list[Block] = []
+            page_parts: list[str] = []
+            if text:
+                page_blocks.append(
+                    Block(type="heading", text=f"第 {page_no} 页",
+                          level=2, page=page_no)
+                )
+                page_blocks.append(
+                    Block(type="paragraph", text=text, page=page_no)
+                )
+                page_parts.append(text)
+            for md in tables_by_page.get(page_no, []):
+                page_blocks.append(Block(type="table", text=md, page=page_no))
+                page_parts.append(md)
+            # A scanned page IS one big image: if we already OCR'd the rendered
+            # page, don't re-OCR its embedded image(s) and double the text.
+            if not did_page_ocr:
+                for img_block in _pdf_image_blocks(page, page_no):
+                    page_blocks.append(img_block)
+                    page_parts.append(img_block.text)
+
+            if page_parts:
+                # `pages` drives per-page chunking (page locators in citations);
+                # include tables + image OCR so they get chunked too.
+                pages.append((page_no, "\n\n".join(page_parts)))
+                blocks.extend(page_blocks)
+    finally:
+        if renderer is not None:
+            try:
+                renderer.close()
+            except Exception:  # noqa: BLE001
+                pass
 
     return ExtractedDocument(
-        content="\n\n".join(parts),
-        source_format="pdf",
-        pages=pages,
+        content=blocks_to_markdown(blocks),
+        source_format="markdown",
+        pages=pages or None,
+        warnings=warnings,
+        blocks=blocks,
     )
+
+
+def _pdf_make_renderer(data: bytes):
+    """Open a pypdfium2 document for scanned-page rendering, or None if the
+    optional dep is missing / the file can't be opened by it."""
+    try:
+        import pypdfium2 as pdfium  # type: ignore
+    except ImportError:
+        return None
+    try:
+        return pdfium.PdfDocument(data)
+    except Exception as exc:  # noqa: BLE001
+        logger.info("pypdfium2 could not open PDF for OCR rendering: %s", exc)
+        return None
+
+
+def _pdf_ocr_page(renderer, idx: int, page_no: int, warnings: list[str]) -> str:
+    """Render one page to an image and OCR it. Best-effort; returns "" on any
+    failure (with a warning)."""
+    import io
+
+    page = None
+    bitmap = None
+    try:
+        page = renderer[idx]
+        bitmap = page.render(scale=_PDF_RENDER_SCALE)
+        pil = bitmap.to_pil()
+        buf = io.BytesIO()
+        pil.save(buf, format="PNG")
+        result = ocr.ocr_image_bytes(buf.getvalue(), min_side_px=0)
+        if not result.text and result.skipped_reason:
+            warnings.append(
+                f"第 {page_no} 页扫描 OCR 无文字（{result.skipped_reason}）"
+            )
+        return result.text
+    except Exception as exc:  # noqa: BLE001
+        warnings.append(f"第 {page_no} 页渲染 OCR 失败：{exc}")
+        return ""
+    finally:
+        for obj in (bitmap, page):
+            try:
+                if obj is not None:
+                    obj.close()
+            except Exception:  # noqa: BLE001
+                pass
+
+
+def _pdf_image_blocks(page, page_no: int) -> list[Block]:
+    """OCR images embedded in a PDF page (best-effort, capped)."""
+    if not ocr.is_available():
+        return []
+    out: list[Block] = []
+    try:
+        images = list(getattr(page, "images", []) or [])
+    except Exception:  # noqa: BLE001
+        return out
+    for img in images[:_PDF_MAX_IMAGES_PER_PAGE]:
+        try:
+            img_data = img.data
+        except Exception:  # noqa: BLE001
+            continue
+        result = ocr.ocr_image_bytes(img_data)
+        if result.text:
+            out.append(
+                Block(
+                    type="image", text=result.text, page=page_no,
+                    origin=getattr(img, "name", None),
+                    meta={"label": "PDF图片", "ocr_engine": result.engine},
+                )
+            )
+    return out
+
+
+def _pdf_tables_by_page(data: bytes, warnings: list[str]) -> dict[int, list[str]]:
+    """Extract tables per page as Markdown via pdfplumber, when available.
+    Returns {} (graceful) if pdfplumber is missing or parsing fails."""
+    try:
+        import pdfplumber  # type: ignore
+    except ImportError:
+        return {}
+    import io
+
+    out: dict[int, list[str]] = {}
+    try:
+        with pdfplumber.open(io.BytesIO(data)) as pdf:
+            for idx, page in enumerate(pdf.pages):
+                if idx >= _PDF_MAX_TABLE_PAGES:
+                    warnings.append(
+                        f"表格扫描达到上限 {_PDF_MAX_TABLE_PAGES} 页，其后未抽表"
+                    )
+                    break
+                try:
+                    tables = page.extract_tables() or []
+                except Exception as exc:  # noqa: BLE001
+                    warnings.append(f"第 {idx + 1} 页表格抽取失败：{exc}")
+                    continue
+                mds: list[str] = []
+                for tbl in tables:
+                    rows = [[_pdf_clean_cell(c) for c in row] for row in tbl]
+                    md = _rows_to_markdown_table(rows)
+                    if md:
+                        mds.append(md)
+                if mds:
+                    out[idx + 1] = mds
+    except Exception as exc:  # noqa: BLE001
+        warnings.append(f"pdfplumber 解析失败：{exc}")
+        return {}
+    return out
+
+
+def _pdf_clean_cell(value: object) -> str:
+    if value is None:
+        return ""
+    return str(value).replace("\n", " ").replace("|", "\\|").strip()
 
 
 class _OleCompoundFile:

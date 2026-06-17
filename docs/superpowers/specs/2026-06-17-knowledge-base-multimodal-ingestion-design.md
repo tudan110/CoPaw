@@ -2,13 +2,14 @@
 
 > Spec · 2026-06-17 · 分支 `dev`（知识库技能源码唯一源头在 `deploy-all/qwenpaw/working/workspaces/knowledge/skills/knowledge-base/`）
 > 作者：与操作员共同敲定，Opus 4.8
-> 状态：**P0 + P1 已落地**（分支 `feat/kb-multimodal-ingestion`）；P2/P3 待做
+> 状态：**P0 + P1 + P2 已落地**（分支 `feat/kb-multimodal-ingestion`）；P3 待做
 >
 > 落地进度：
 > - ✅ **P0**：IR（`Block`/`blocks_to_markdown`）、各 extractor 输出 IR、multipart 流式落盘（治 OOM）、最小评测闭环（`eval/`）。
 > - ✅ **P1**：统一 OCR provider（`providers/ocr.py`，RapidOCR+pytesseract 兜底）、docx/pptx 内嵌图 OCR、Word/PPT 表格结构化。
-> - ⏳ **运维（仓库外）**：拆 ingestion worker 成独立高内存部署（§6.1）、打通 prod embedding（§6.4）。
-> - ⏳ **P2/P3**：复杂 PDF 版面解析、图表 VLM caption、检索元数据过滤。
+> - ✅ **P2**：复杂 PDF——pypdf 文本 + pypdfium2 扫描页渲染 OCR + 内嵌图 OCR + pdfplumber 表格，逐页 IR、保留页码 locator，全部可选可降级（避开 AGPL 的 PyMuPDF）。自测：数字 PDF 文本+表格、扫描 PDF 真实 OCR、PDF 表格值可检索均通过。
+> - ⏳ **运维（仓库外）**：拆 ingestion worker 成独立高内存部署（§6.1）、打通 prod embedding（§6.4，操作员将在打包时改配置）。
+> - ⏳ **P3**：图表 VLM caption（需 Qwen2.5-VL）、检索元数据过滤 / query routing。
 
 ## 1. 背景与目标
 
