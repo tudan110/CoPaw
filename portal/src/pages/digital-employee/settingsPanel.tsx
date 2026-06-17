@@ -199,9 +199,9 @@ const SETTINGS_TABS = [
   },
   {
     id: "diagnosis",
-    label: "诊断",
+    label: "告警",
     iconClass: "fa-stethoscope",
-    description: "根因分析、诊断卡片等结果展示偏好",
+    description: "实时告警分析、根因卡片等结果展示偏好",
   },
   {
     id: "notifications",
@@ -442,7 +442,7 @@ export function SettingsPanel() {
         if (!cancelled) {
           setDiagnosisNotice({
             type: "error",
-            text: error instanceof Error ? error.message : "诊断设置加载失败",
+            text: error instanceof Error ? error.message : "告警设置加载失败",
           });
         }
       } finally {
@@ -582,7 +582,7 @@ export function SettingsPanel() {
     try {
       const payload = await diagnosisSettingsApi.update(body);
       applyDiagnosisPayload(payload);
-      setDiagnosisNotice({ type: "success", text: "诊断设置已保存" });
+      setDiagnosisNotice({ type: "success", text: "告警设置已保存" });
     } catch (error) {
       setDiagnosisNotice({
         type: "error",
@@ -1112,7 +1112,7 @@ export function SettingsPanel() {
 
                     <div className="portal-managed-config-hint settings-inline-hint">
                       {diagnosisLoading
-                        ? "正在加载诊断设置…"
+                        ? "正在加载告警设置…"
                         : `当前：${diagnosisEnabled ? "实时分析进行中" : "实时分析已暂停"}` +
                           `（${
                             diagnosisPayload?.overrides.auto_takeover_enabled
