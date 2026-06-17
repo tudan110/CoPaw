@@ -97,6 +97,8 @@ RUN set -eux; \
       libxtst6 \
       libnss3 \
       libglib2.0-0 \
+      libgl1 \
+      libgomp1 \
       libdrm2 \
       libgbm1 \
       libasound2 \
@@ -176,6 +178,9 @@ RUN set -eux; \
 # "No module named 'jieba'" / "cannot import name 'serializers'".
 RUN set -eux; \
     /app/venv/bin/python -c "import jieba, sqlite_vec, tiktoken, pypdf, openpyxl, xlrd, pytesseract; from PIL import Image; print('knowledge-base python deps OK')"; \
+    /app/venv/bin/python -c "import pypdfium2, pdfplumber, rapidocr_onnxruntime; print('multimodal deps OK')"; \
+    ( cd /app/.working.backup/workspaces/knowledge/skills/knowledge-base \
+      && /app/venv/bin/python -c "import sys; sys.path.insert(0, '.'); from providers import ocr; e = ocr.engine_name(); print('resolved OCR engine:', e); assert e != 'none', 'no OCR engine available (rapidocr + pytesseract both failed to load)'" ); \
     command -v tesseract; \
     tesseract --list-langs 2>&1 | grep -qx chi_sim; \
     { command -v soffice || command -v libreoffice; }; \
