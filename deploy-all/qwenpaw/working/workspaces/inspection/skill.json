@@ -1,6 +1,6 @@
 {
   "schema_version": "workspace-skill-manifest.v1",
-  "version": 1781147406178,
+  "version": 1781602338321,
   "skills": {
     "inspection-analyst": {
       "enabled": true,
@@ -201,6 +201,31 @@
         "require_envs": []
       },
       "updated_at": "2026-06-11T03:05:37.863508Z"
+    },
+    "web-availability-monitor": {
+      "enabled": true,
+      "channels": [
+        "all"
+      ],
+      "source": "customized",
+      "metadata": {
+        "name": "web-availability-monitor",
+        "description": "查询和编排 Web 可用性监测任务。适用于查看监测看板、查询网站监测任务、查看执行详情、手工触发执行、为页面动作生成 locator 建议，以及创建/更新网站监测任务。",
+        "version_text": "",
+        "commit_text": "",
+        "source": "customized",
+        "protected": false,
+        "requirements": {
+          "require_bins": [],
+          "require_envs": []
+        },
+        "updated_at": "2026-06-16T00:00:00.000000Z"
+      },
+      "requirements": {
+        "require_bins": [],
+        "require_envs": []
+      },
+      "updated_at": "2026-06-16T00:00:00.000000Z"
     }
   }
 }
