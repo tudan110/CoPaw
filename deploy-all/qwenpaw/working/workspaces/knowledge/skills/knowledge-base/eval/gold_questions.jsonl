@@ -1,0 +1,6 @@
+{"q": "网关默认监听哪个端口？", "expect_any": ["8443"], "doc": "gateway_runbook.md"}
+{"q": "数据库连接池耗尽告警怎么处置？", "expect_any": ["连接池", "扩容", "400"], "doc": "gateway_runbook.md"}
+{"q": "P0 告警的响应时限是多少？", "expect_any": ["15 分钟", "15分钟"], "doc": "gateway_runbook.md"}
+{"q": "本季度工单总数是多少？", "expect_any": ["2299"], "doc": "metrics_report.docx"}
+{"q": "平均处理时长是多久？", "expect_any": ["3.7"], "doc": "metrics_report.docx"}
+{"q": "怎么申请 VPN？", "expect_any": ["工单", "网络接入", "IT 服务台"], "doc": "onboarding_faq.md"}
