@@ -48,11 +48,8 @@ def _emit_hint(op: dict) -> str:
     required = [
         f.get("prop") for f in op.get("fields", []) if f.get("required")
     ]
-    sample = ",".join(f'"{p}":"…"' for p in required) or '"…":"…"'
-    return (
-        "python3 scripts/emit_action.py "
-        f"{op.get('id')} --params '{{{sample}}}'"
-    )
+    sets = " ".join(f"--set {p}=<值>" for p in required) or "--set <字段>=<值>"
+    return f"uv run scripts/emit_action.py {op.get('id')} {sets}"
 
 
 def _format_agent(result: dict) -> str:

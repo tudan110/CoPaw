@@ -21,7 +21,7 @@ operator 负责"代填"。两者都只产出指令,真正的动作在前端执�
 
 ```bash
 cd skills/page-operator
-python3 scripts/find_op.py "<用户原话>"
+uv run scripts/find_op.py "<用户原话>"
 ```
 
 - **命中单个操作**:脚本会列出该操作需要收集的字段(哪些必填),并给出
@@ -35,10 +35,13 @@ python3 scripts/find_op.py "<用户原话>"
 
 ```bash
 # 推荐:逐项 key=value,免 JSON 转义
-python3 scripts/emit_action.py <op_id> --set 字段=值 --set 字段=值
+uv run scripts/emit_action.py <op_id> --set 字段=值 --set 字段=值
 # 或内联 JSON
-python3 scripts/emit_action.py <op_id> --params '{"字段":"值"}'
+uv run scripts/emit_action.py <op_id> --params '{"字段":"值"}'
 ```
+
+> 本工作区脚本统一用 `uv run`(与 real-alarm 等技能一致);若环境无 uv,可退回
+> `python3`(或运行时的 python 解释器)。
 
 - 必填参数没齐:脚本会告诉你还缺哪些(退出码 2),回去继续向用户收集。
 - 参数齐了:脚本输出一段"已为您预填…请核对后点确定"的话术 **以及** 一段
