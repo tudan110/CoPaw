@@ -77,11 +77,11 @@ const DIAGNOSIS_NUMBER_FIELDS: DiagnosisNumberField[] = [
   },
   {
     key: "cache_ttl_seconds",
-    label: "告警缓存有效期（秒）",
+    label: "告警列表刷新间隔（秒）",
     group: "query_window",
     min: 0,
     step: 5,
-    hint: "前台告警列表缓存的有效期。",
+    hint: "前台告警列表多久向平台重新拉取一次数据，默认 30 秒。",
   },
   {
     key: "alarm_list_limit",

@@ -405,7 +405,7 @@ FIELD_SPECS: dict[str, FieldSpec] = {
         FieldSpec(
             "alarm_list_limit",
             "QWENPAW_PORTAL_REAL_ALARM_LIST_LIMIT",
-            20,
+            100,
             "int",
             "query_window",
             min_value=1,
