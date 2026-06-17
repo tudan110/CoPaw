@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import logging
+import posixpath
 import re
 import shutil
 import subprocess
@@ -26,7 +27,7 @@ import sqlite_vec  # type: ignore
 
 from core import db
 from core.chunking import ParentPiece, chunk_document
-from providers import embedding
+from providers import embedding, ocr
 from retrieval.recall_dense import normalize as _normalize_vec
 
 
@@ -38,6 +39,10 @@ _DOCX_W = f"{{{_DOCX_NS}}}"
 _PPTX_A_NS = "http://schemas.openxmlformats.org/drawingml/2006/main"
 _PPTX_A = f"{{{_PPTX_A_NS}}}"
 _PPTX_SLIDE_RE = re.compile(r"^ppt/slides/slide(\d+)\.xml$")
+# Relationship namespaces shared by docx/pptx for resolving embedded images.
+_REL_NS = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+_REL_R = f"{{{_REL_NS}}}"
+_VML_NS = "urn:schemas-microsoft-com:vml"
 _OLE_MAGIC = b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"
 _OLE_FREE_SECT = 0xFFFFFFFF
 _OLE_END_OF_CHAIN = 0xFFFFFFFE
@@ -47,12 +52,78 @@ class IngestionError(Exception):
     """Wraps any ingestion failure; HTTP layer maps to 4xx/5xx as appropriate."""
 
 
+_MD_HEADING_RE = re.compile(r"^(#{1,6})\s+(.+?)\s*$")
+
+
+@dataclass
+class Block:
+    """A unit of the normalized intermediate representation (IR).
+
+    Extractors emit an ordered list of these; `blocks_to_markdown` renders them
+    into the Markdown the existing chunker already consumes, so introducing IR
+    needs no chunker change. `blocks` is additive — `content` stays the field
+    every downstream consumer reads.
+    """
+
+    type: str  # heading|paragraph|list|table|image|code|formula
+    text: str = ""
+    level: int | None = None  # heading level (1-6), for type=="heading"
+    page: int | None = None  # source page / slide number
+    heading_path: list[str] = field(default_factory=list)
+    origin: str | None = None  # provenance, e.g. "word/media/image5.png"
+    meta: dict = field(default_factory=dict)
+
+
 @dataclass
 class ExtractedDocument:
     content: str
     source_format: str  # "markdown" | "plain" | "pdf" | "docx" | "image" | "email"
     pages: list[tuple[int, str]] | None = None  # populated for PDFs only
     warnings: list[str] = field(default_factory=list)
+    blocks: list[Block] = field(default_factory=list)  # normalized IR
+
+
+def blocks_to_markdown(blocks: list[Block]) -> str:
+    """Render an IR block list into Markdown for the chunker.
+
+    Headings become `#` lines (so the chunker recovers section paths); tables
+    and lists pass through their pre-rendered Markdown text; images contribute
+    their OCR/caption text only when non-empty (a bare image marker would be
+    retrieval noise).
+    """
+    out: list[str] = []
+    for b in blocks:
+        text = (b.text or "").strip()
+        if b.type == "heading" and text:
+            level = max(1, min(6, b.level or 2))
+            out.append(f"{'#' * level} {text}")
+        elif b.type == "image":
+            if text:
+                label = b.meta.get("label") or "图片"
+                out.append(f"[{label}]\n{text}")
+        elif text:
+            out.append(text)
+    return "\n\n".join(out)
+
+
+def _blocks_from_text(content: str, source_format: str) -> list[Block]:
+    """Fallback IR for extractors that still emit a flat string: split on blank
+    lines into paragraph blocks, recognizing Markdown headings. Keeps every
+    ExtractedDocument carrying IR without rewriting every extractor at once."""
+    blocks: list[Block] = []
+    for para in (content or "").split("\n\n"):
+        para = para.strip()
+        if not para:
+            continue
+        heading = _MD_HEADING_RE.match(para) if source_format == "markdown" else None
+        if heading and "\n" not in para:
+            blocks.append(
+                Block(type="heading", text=heading.group(2),
+                      level=len(heading.group(1)))
+            )
+        else:
+            blocks.append(Block(type="paragraph", text=para))
+    return blocks
 
 
 @dataclass
@@ -129,6 +200,16 @@ def ingest_manual(
 # ---------- Extraction ----------
 
 def extract(filename: str, content_bytes: bytes) -> ExtractedDocument:
+    """Public dispatcher. Ensures every result carries IR blocks: extractors
+    that already build blocks keep them; the rest get a fallback IR derived
+    from their rendered content."""
+    doc = _dispatch_extract(filename, content_bytes)
+    if not doc.blocks and doc.content:
+        doc.blocks = _blocks_from_text(doc.content, doc.source_format)
+    return doc
+
+
+def _dispatch_extract(filename: str, content_bytes: bytes) -> ExtractedDocument:
     ext = Path(filename).suffix.lower().lstrip(".")
     if ext in ("md", "markdown"):
         return _extract_text(content_bytes, source_format="markdown")
@@ -587,94 +668,295 @@ def _is_readable_doc_text(text: str) -> bool:
     return useful / max(1, len(text)) >= 0.55
 
 
-def _extract_docx(data: bytes, filename: str) -> ExtractedDocument:
-    """Extract text from .docx by reading word/document.xml directly. Avoids
-    depending on python-docx (works even if pip install missed it)."""
-    import io
-    paragraphs: list[str] = []
+# ---------- Shared OPC (Office zip) helpers: relationships, images, tables ----
+
+def _opc_resolve(base_dir: str, target: str) -> str:
+    """Resolve a relationship Target (relative to *base_dir*) to a zip path."""
+    target = (target or "").lstrip("/")
+    return posixpath.normpath(posixpath.join(base_dir, target))
+
+
+def _opc_load_rels(zf, rels_path: str, base_dir: str) -> dict[str, str]:
+    """Map relationship id -> zip path for the (internal) parts of a package.
+
+    `base_dir` is the directory the Targets are relative to (e.g. "word" for
+    word/_rels/document.xml.rels). External relationships are skipped.
+    """
     try:
-        with zipfile.ZipFile(io.BytesIO(data)) as zf:
-            with zf.open("word/document.xml") as fh:
-                xml_bytes = fh.read()
-    except (zipfile.BadZipFile, KeyError) as exc:
+        raw = zf.read(rels_path)
+    except KeyError:
+        return {}
+    rels: dict[str, str] = {}
+    try:
+        root = ET.fromstring(raw)
+    except ET.ParseError:
+        return rels
+    for rel in root:
+        rid = rel.get("Id")
+        target = rel.get("Target")
+        if not rid or not target:
+            continue
+        if (rel.get("TargetMode") or "").lower() == "external":
+            continue
+        rels[rid] = _opc_resolve(base_dir, target)
+    return rels
+
+
+def _collect_image_rids(elem: ET.Element) -> list[str]:
+    """Relationship ids of images referenced under *elem*, in document order
+    (DrawingML <a:blip> plus legacy VML <v:imagedata>)."""
+    rids: list[str] = []
+    for blip in elem.iter(f"{_PPTX_A}blip"):
+        rid = blip.get(f"{_REL_R}embed") or blip.get(f"{_REL_R}link")
+        if rid:
+            rids.append(rid)
+    for imagedata in elem.iter(f"{{{_VML_NS}}}imagedata"):
+        rid = imagedata.get(f"{_REL_R}id")
+        if rid:
+            rids.append(rid)
+    return rids
+
+
+def _image_block_from_zip(
+    zf, media_path: str, warnings: list[str], *, label: str
+) -> Block | None:
+    """OCR one embedded image part. Returns an image Block when text is found,
+    else None (best-effort: a failed/blank image never aborts the document)."""
+    try:
+        img_bytes = zf.read(media_path)
+    except KeyError:
+        return None
+    result = ocr.ocr_image_bytes(img_bytes)
+    if not result.text:
+        # Decorative/too-small images are expected noise — don't warn on those.
+        if result.skipped_reason and "too small" not in result.skipped_reason:
+            warnings.append(
+                f"内嵌图 {posixpath.basename(media_path)} 未识别出文字"
+                f"（{result.skipped_reason}）"
+            )
+        return None
+    return Block(
+        type="image", text=result.text, origin=media_path,
+        meta={"label": label, "ocr_engine": result.engine},
+    )
+
+
+def _rows_to_markdown_table(rows: list[list[str]]) -> str:
+    """Render a row matrix as a GitHub-flavored Markdown table. The first row is
+    treated as the header. Returns "" when there is no content."""
+    rows = [r for r in rows if any((c or "").strip() for c in r)]
+    if not rows:
+        return ""
+    width = max(len(r) for r in rows)
+    norm = [list(r) + [""] * (width - len(r)) for r in rows]
+    lines = ["| " + " | ".join(norm[0]) + " |",
+             "| " + " | ".join(["---"] * width) + " |"]
+    for r in norm[1:]:
+        lines.append("| " + " | ".join(r) + " |")
+    return "\n".join(lines)
+
+
+def _docx_cell_text(tc: ET.Element) -> str:
+    paras = []
+    for p in tc.iter(f"{_DOCX_W}p"):
+        text = "".join(t.text or "" for t in p.iter(f"{_DOCX_W}t")).strip()
+        if text:
+            paras.append(text)
+    return " ".join(paras).replace("|", "\\|")
+
+
+def _docx_table_to_markdown(tbl: ET.Element) -> str:
+    rows: list[list[str]] = []
+    for tr in tbl.findall(f"{_DOCX_W}tr"):
+        cells = [_docx_cell_text(tc) for tc in tr.findall(f"{_DOCX_W}tc")]
+        if cells:
+            rows.append(cells)
+    return _rows_to_markdown_table(rows)
+
+
+def _docx_paragraph_blocks(
+    para: ET.Element, zf, rels: dict[str, str], warnings: list[str]
+) -> list[Block]:
+    """Text block (heading/paragraph) for a <w:p>, followed by an image block
+    for each embedded image it references, in document order."""
+    out: list[Block] = []
+    line = "".join(t.text or "" for t in para.iter(f"{_DOCX_W}t")).strip()
+    if line:
+        level = _docx_heading_level_from_style(_docx_paragraph_style(para))
+        if level is not None:
+            out.append(Block(type="heading", text=line, level=level))
+        else:
+            out.append(Block(type="paragraph", text=line))
+    for rid in _collect_image_rids(para):
+        media = rels.get(rid)
+        if not media:
+            continue
+        block = _image_block_from_zip(zf, media, warnings, label="内嵌图片")
+        if block is not None:
+            out.append(block)
+    return out
+
+
+def _docx_walk_blocks(
+    parent: ET.Element, zf, rels: dict[str, str],
+    warnings: list[str], blocks: list[Block], *, depth: int = 0,
+) -> None:
+    """Walk a docx body in document order, dispatching paragraphs, tables and
+    structured-document-tag wrappers. Tables are emitted as Markdown so their
+    cell text stays searchable (previously dropped entirely)."""
+    for child in list(parent):
+        tag = child.tag
+        if tag == f"{_DOCX_W}p":
+            blocks.extend(_docx_paragraph_blocks(child, zf, rels, warnings))
+        elif tag == f"{_DOCX_W}tbl":
+            md = _docx_table_to_markdown(child)
+            if md:
+                blocks.append(Block(type="table", text=md))
+        elif tag == f"{_DOCX_W}sdt" and depth < 5:
+            sdt_content = child.find(f"{_DOCX_W}sdtContent")
+            if sdt_content is not None:
+                _docx_walk_blocks(
+                    sdt_content, zf, rels, warnings, blocks, depth=depth + 1
+                )
+
+
+def _extract_docx(data: bytes, filename: str) -> ExtractedDocument:
+    """Extract a .docx into IR blocks by reading the package directly (no
+    python-docx dependency). Captures heading hierarchy, tables and embedded
+    images (OCR'd via the unified OCR provider) — not just <w:t> text."""
+    import io
+
+    try:
+        zf = zipfile.ZipFile(io.BytesIO(data))
+    except zipfile.BadZipFile as exc:
         raise IngestionError(f"invalid docx file: {exc}") from exc
 
-    root = ET.fromstring(xml_bytes)
-    body = root.find(f"{_DOCX_W}body")
-    if body is None:
-        return ExtractedDocument(content="", source_format="docx")
-
-    for para in body.iter(f"{_DOCX_W}p"):
-        texts = [t.text or "" for t in para.iter(f"{_DOCX_W}t")]
-        line = "".join(texts).strip()
-        if line:
-            style = _docx_paragraph_style(para)
-            level = _docx_heading_level_from_style(style)
-            if level is not None:
-                paragraphs.append(f"{'#' * level} {line}")
-            else:
-                paragraphs.append(line)
+    blocks: list[Block] = []
+    warnings: list[str] = []
+    with zf:
+        try:
+            xml_bytes = zf.read("word/document.xml")
+        except KeyError as exc:
+            raise IngestionError(f"invalid docx file: {exc}") from exc
+        rels = _opc_load_rels(zf, "word/_rels/document.xml.rels", "word")
+        try:
+            root = ET.fromstring(xml_bytes)
+        except ET.ParseError as exc:
+            raise IngestionError(f"invalid docx file: {exc}") from exc
+        body = root.find(f"{_DOCX_W}body")
+        if body is None:
+            return ExtractedDocument(content="", source_format="docx")
+        _docx_walk_blocks(body, zf, rels, warnings, blocks)
 
     return ExtractedDocument(
-        content="\n\n".join(paragraphs),
+        content=blocks_to_markdown(blocks),
         source_format="markdown",
+        warnings=warnings,
+        blocks=blocks,
     )
+
+
+def _pptx_cell_text(tc: ET.Element) -> str:
+    paras = []
+    for p in tc.iter(f"{_PPTX_A}p"):
+        text = "".join(t.text or "" for t in p.iter(f"{_PPTX_A}t")).strip()
+        if text:
+            paras.append(text)
+    return " ".join(paras).replace("|", "\\|")
+
+
+def _pptx_table_to_markdown(tbl: ET.Element) -> str:
+    rows: list[list[str]] = []
+    for tr in tbl.findall(f"{_PPTX_A}tr"):
+        cells = [_pptx_cell_text(tc) for tc in tr.findall(f"{_PPTX_A}tc")]
+        if cells:
+            rows.append(cells)
+    return _rows_to_markdown_table(rows)
+
+
+def _pptx_slide_blocks(
+    root: ET.Element, zf, rels: dict[str, str],
+    slide_no: int, warnings: list[str],
+) -> list[Block]:
+    """Blocks for one slide: text paragraphs (excluding table cells), tables,
+    then embedded images. Slide reading order is unreliable, so within-slide
+    ordering is text → tables → images rather than strict layout order."""
+    # a:t elements inside tables, so the paragraph scan can skip them and not
+    # double-count cell text both as a paragraph line and inside the table.
+    table_t_ids = {
+        id(t) for tbl in root.iter(f"{_PPTX_A}tbl") for t in tbl.iter(f"{_PPTX_A}t")
+    }
+    body: list[Block] = []
+    for para in root.iter(f"{_PPTX_A}p"):
+        line = "".join(
+            (t.text or "")
+            for t in para.iter(f"{_PPTX_A}t")
+            if id(t) not in table_t_ids
+        ).strip()
+        if line:
+            body.append(Block(type="paragraph", text=line))
+    for tbl in root.iter(f"{_PPTX_A}tbl"):
+        md = _pptx_table_to_markdown(tbl)
+        if md:
+            body.append(Block(type="table", text=md))
+    for rid in _collect_image_rids(root):
+        media = rels.get(rid)
+        if not media:
+            continue
+        block = _image_block_from_zip(zf, media, warnings, label="幻灯片图片")
+        if block is not None:
+            body.append(block)
+    if not body:
+        return []
+    heading = Block(type="heading", text=f"幻灯片 {slide_no}", level=1)
+    return [heading] + body
 
 
 def _extract_pptx(data: bytes, filename: str) -> ExtractedDocument:
-    """Extract text from .pptx slides by reading slide XML directly.
-
-    PowerPoint files are ZIP packages. Treating them as plain text yields the
-    PK header and package XML names, so this extractor only reads slide parts.
-    """
+    """Extract a .pptx into IR blocks by reading slide parts directly. Captures
+    slide text, tables and embedded images (OCR'd) — PowerPoint files are ZIP
+    packages, so only the slide XML parts are read (never the raw bytes)."""
     import io
 
-    slides: list[tuple[int, str]] = []
-    warnings: list[str] = []
     try:
-        with zipfile.ZipFile(io.BytesIO(data)) as zf:
-            slide_names = sorted(
-                (
-                    (int(match.group(1)), name)
-                    for name in zf.namelist()
-                    if (match := _PPTX_SLIDE_RE.match(name))
-                ),
-                key=lambda item: item[0],
-            )
-            if not slide_names:
-                raise IngestionError("invalid pptx file: no slide XML parts found")
-
-            for slide_no, name in slide_names:
-                try:
-                    paragraphs = _pptx_paragraphs_from_xml(zf.read(name))
-                except ET.ParseError as exc:
-                    warnings.append(f"slide {slide_no} XML parse failed: {exc}")
-                    continue
-                if paragraphs:
-                    slides.append((slide_no, "\n".join(paragraphs)))
+        zf = zipfile.ZipFile(io.BytesIO(data))
     except zipfile.BadZipFile as exc:
         raise IngestionError(f"invalid pptx file: {exc}") from exc
 
-    parts: list[str] = []
-    for slide_no, text in slides:
-        parts.append(f"# 幻灯片 {slide_no}\n\n{text}")
+    blocks: list[Block] = []
+    warnings: list[str] = []
+    with zf:
+        slide_names = sorted(
+            (
+                (int(match.group(1)), name)
+                for name in zf.namelist()
+                if (match := _PPTX_SLIDE_RE.match(name))
+            ),
+            key=lambda item: item[0],
+        )
+        if not slide_names:
+            raise IngestionError("invalid pptx file: no slide XML parts found")
+        for slide_no, name in slide_names:
+            try:
+                root = ET.fromstring(zf.read(name))
+            except ET.ParseError as exc:
+                warnings.append(f"slide {slide_no} XML parse failed: {exc}")
+                continue
+            rels_path = posixpath.join(
+                posixpath.dirname(name), "_rels",
+                posixpath.basename(name) + ".rels",
+            )
+            rels = _opc_load_rels(zf, rels_path, posixpath.dirname(name))
+            blocks.extend(
+                _pptx_slide_blocks(root, zf, rels, slide_no, warnings)
+            )
 
     return ExtractedDocument(
-        content="\n\n".join(parts),
+        content=blocks_to_markdown(blocks),
         source_format="markdown",
         warnings=warnings,
+        blocks=blocks,
     )
-
-
-def _pptx_paragraphs_from_xml(xml_bytes: bytes) -> list[str]:
-    root = ET.fromstring(xml_bytes)
-    paragraphs: list[str] = []
-    for para in root.iter(f"{_PPTX_A}p"):
-        texts = [t.text or "" for t in para.iter(f"{_PPTX_A}t")]
-        line = "".join(texts).strip()
-        if line:
-            paragraphs.append(line)
-    return paragraphs
 
 
 def _docx_paragraph_style(para: ET.Element) -> str:
@@ -825,22 +1107,31 @@ def _extract_csv(data: bytes, *, delimiter: str | None = None) -> ExtractedDocum
 
 
 def _extract_image(data: bytes) -> ExtractedDocument:
-    try:
-        from PIL import Image  # type: ignore
-        import pytesseract  # type: ignore
-    except ImportError as exc:
+    if not ocr.is_available():
         raise IngestionError(
-            "PIL/pytesseract not installed; cannot OCR images"
-        ) from exc
-
-    import io
-    try:
-        img = Image.open(io.BytesIO(data))
-        text = pytesseract.image_to_string(img, lang="chi_sim+eng")
-    except Exception as exc:
-        raise IngestionError(f"OCR failed: {exc}") from exc
-
-    return ExtractedDocument(content=text.strip(), source_format="plain")
+            "未安装 OCR 引擎（RapidOCR 或 pytesseract），无法识别图片文字；"
+            "请在运行环境安装 rapidocr-onnxruntime 或 pytesseract 后重试。"
+        )
+    # Explicit upload: the user chose this image, so don't size-filter it.
+    result = ocr.ocr_image_bytes(data, min_side_px=0)
+    text = result.text
+    warnings: list[str] = []
+    blocks: list[Block] = []
+    if text:
+        blocks.append(
+            Block(
+                type="image", text=text, origin="upload",
+                meta={"label": "图片", "ocr_engine": result.engine},
+            )
+        )
+    else:
+        warnings.append(
+            f"图片未识别出文字（{result.skipped_reason or 'no text'}）"
+        )
+    return ExtractedDocument(
+        content=text, source_format="plain",
+        warnings=warnings, blocks=blocks,
+    )
 
 
 def _extract_email(data: bytes) -> ExtractedDocument:
