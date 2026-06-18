@@ -1,0 +1,148 @@
+{
+  "version": 1,
+  "updated_at": "2026-06-17",
+  "note": "操作目录:每条描述一个可在传统门户页面执行的写操作(当前聚焦新增类)。route 仅作兜底,前端执行器优先按 page(组件name)从 SPA 路由表反解真实路径。可用 scripts/scan_catalog.py 从 inoe-ui 半自动扩充,人工 review 后并入。字段 required 来自页面 el-form rules;页面若还有富文本等未登记的必填项,提交时由页面校验兜底,用户补全即可。",
+  "operations": [
+    {
+      "id": "workflow.category.add",
+      "name": "新建流程分类",
+      "intent": [
+        "新建流程分类",
+        "添加流程分类",
+        "创建流程分类",
+        "新增流程分类",
+        "加一个流程分类",
+        "建一个流程分类",
+        "新增一个流程分类",
+        "新建一个流程分类"
+      ],
+      "menu": "工单中心 / 流程管理 / 流程分类",
+      "component": "workflow/category/index",
+      "page": "Category",
+      "route": "/workflow/category",
+      "action": "create",
+      "open": "handleAdd",
+      "model": "form",
+      "submit": "submitForm",
+      "fields": [
+        { "prop": "categoryName", "label": "分类名称", "type": "input", "required": true, "placeholder": "请输入分类名称" },
+        { "prop": "code", "label": "分类编码", "type": "input", "required": true, "placeholder": "请输入分类编码" },
+        { "prop": "remark", "label": "备注", "type": "textarea", "required": false, "placeholder": "请输入内容" }
+      ],
+      "api": { "method": "post", "url": "/flowable/workflow/category" },
+      "risk": "create",
+      "permission": "workflow:category:add"
+    },
+    {
+      "id": "system.post.add",
+      "name": "新建岗位",
+      "intent": ["新建岗位", "添加岗位", "创建岗位", "新增岗位", "加一个岗位", "新建一个岗位"],
+      "menu": "系统管理 / 岗位管理",
+      "component": "system/post/index",
+      "page": "Post",
+      "route": "/system/post",
+      "action": "create",
+      "open": "handleAdd",
+      "model": "form",
+      "submit": "submitForm",
+      "fields": [
+        { "prop": "postName", "label": "岗位名称", "type": "input", "required": true },
+        { "prop": "postCode", "label": "岗位编码", "type": "input", "required": true },
+        { "prop": "postSort", "label": "岗位顺序", "type": "input", "required": true },
+        { "prop": "status", "label": "岗位状态", "type": "radio", "required": false },
+        { "prop": "remark", "label": "备注", "type": "textarea", "required": false }
+      ],
+      "api": { "method": "post", "url": "/admin/post" },
+      "risk": "create",
+      "permission": "system:post:add"
+    },
+    {
+      "id": "system.notice.add",
+      "name": "新建公告",
+      "intent": ["新建公告", "发布公告", "添加公告", "创建公告", "新增公告", "发个公告"],
+      "menu": "系统管理 / 通知公告",
+      "component": "system/notice/index",
+      "page": "Notice",
+      "route": "/system/notice",
+      "action": "create",
+      "open": "handleAdd",
+      "model": "form",
+      "submit": "submitForm",
+      "fields": [
+        { "prop": "noticeTitle", "label": "公告标题", "type": "input", "required": true },
+        { "prop": "noticeType", "label": "公告类型", "type": "select", "required": true },
+        { "prop": "deptIds", "label": "通知对象", "type": "input", "required": true }
+      ],
+      "api": { "method": "post", "url": "/admin/notice" },
+      "risk": "create",
+      "permission": "system:notice:add"
+    },
+    {
+      "id": "system.config.add",
+      "name": "新建参数配置",
+      "intent": ["新建参数", "添加参数配置", "新增参数配置", "创建参数", "加一个参数配置", "新建参数配置"],
+      "menu": "系统管理 / 参数设置",
+      "component": "system/config/index",
+      "page": "Config",
+      "route": "/system/config",
+      "action": "create",
+      "open": "handleAdd",
+      "model": "form",
+      "submit": "submitForm",
+      "fields": [
+        { "prop": "configName", "label": "参数名称", "type": "input", "required": true },
+        { "prop": "configKey", "label": "参数键名", "type": "input", "required": true },
+        { "prop": "configValue", "label": "参数键值", "type": "input", "required": true },
+        { "prop": "configType", "label": "系统内置", "type": "radio", "required": false },
+        { "prop": "remark", "label": "备注", "type": "textarea", "required": false }
+      ],
+      "api": { "method": "post", "url": "/admin/config" },
+      "risk": "create",
+      "permission": "system:config:add"
+    },
+    {
+      "id": "system.dict.add",
+      "name": "新建字典类型",
+      "intent": ["新建字典", "添加字典类型", "新增字典", "创建字典类型", "加一个字典", "新建字典类型"],
+      "menu": "系统管理 / 字典管理",
+      "component": "system/dict/index",
+      "page": "Dict",
+      "route": "/system/dict",
+      "action": "create",
+      "open": "handleAdd",
+      "model": "form",
+      "submit": "submitForm",
+      "fields": [
+        { "prop": "dictName", "label": "字典名称", "type": "input", "required": true },
+        { "prop": "dictType", "label": "字典类型", "type": "input", "required": true },
+        { "prop": "parentType", "label": "上级类型", "type": "input", "required": false },
+        { "prop": "status", "label": "状态", "type": "radio", "required": false },
+        { "prop": "remark", "label": "备注", "type": "textarea", "required": false }
+      ],
+      "api": { "method": "post", "url": "/admin/dict/type" },
+      "risk": "create",
+      "permission": "system:dict:add"
+    },
+    {
+      "id": "res.tenant.add",
+      "name": "新建租户",
+      "intent": ["新建租户", "添加租户", "创建租户", "新增租户", "加一个租户", "新建一个租户"],
+      "menu": "资源中心 / 租户管理",
+      "component": "res/tenant/index",
+      "page": "Tenant",
+      "route": "/res/tenant",
+      "action": "create",
+      "open": "handleAdd",
+      "model": "form",
+      "submit": "submitForm",
+      "fields": [
+        { "prop": "tenantName", "label": "租户名称", "type": "input", "required": true },
+        { "prop": "contactPerson", "label": "联系人", "type": "input", "required": false },
+        { "prop": "contactPhone", "label": "联系电话", "type": "input", "required": false }
+      ],
+      "api": { "method": "post", "url": "" },
+      "risk": "create",
+      "permission": ""
+    }
+  ]
+}
