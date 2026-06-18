@@ -163,6 +163,11 @@ function assert(cond, msg) {
     params: {},
     risk: 'export'
   }
+  // 触发指令 route 为空,extractAction 也应能解析(防 route-required 回归)
+  const exportBlock = '```qwenpaw:action\n' + JSON.stringify(exportPayload) + '\n```'
+  const ex2 = extractAction('好的。\n' + exportBlock)
+  assert(ex2 && ex2.payload && ex2.payload.op === 'workflow.process.export', '导出: extractAction 解析空 route 指令')
+
   const res2 = await runner.run(exportPayload, { router })
   assert(res2 && res2.ok === true && res2.kind === 'trigger', '导出: runner 返回 ok(trigger)')
   assert(res2.buttonFound === true, '导出: 定位到「导出」按钮')

@@ -78,9 +78,9 @@ def main(argv=None) -> int:
         default="agent",
     )
     parser.add_argument(
-        "--resolve-route",
+        "--no-resolve-route",
         action="store_true",
-        help="尝试用 getRouters 按 component 反查真实路由(失败回退目录 route)",
+        help="跳过 getRouters 真实路由反查,直接用目录里的 route(默认会反查)",
     )
     parser.add_argument("--catalog", default=None)
     args = parser.parse_args(argv)
@@ -120,8 +120,10 @@ def main(argv=None) -> int:
             print("\n".join(lines))
         return 2
 
+    # 默认就近用 getRouters 按 component 反查线上真实路由(与 page-navigator
+    # 同机制,最可靠),使指令带上真实 route;拉不到/未配置时回退目录里的 route。
     route = None
-    if args.resolve_route:
+    if not args.no_resolve_route:
         route = menu_mod.resolve_live_route(
             component=op.component, name=op.page
         )

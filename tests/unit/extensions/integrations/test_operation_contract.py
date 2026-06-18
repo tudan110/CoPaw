@@ -40,7 +40,8 @@ CONTRACT_FENCE_RE = r"```qwenpaw:action\s*([\s\S]*?)```"
 
 def _run_emit(*args: str) -> tuple[int, str]:
     proc = subprocess.run(
-        [sys.executable, str(_EMIT), *args],
+        # 契约测试不依赖 getRouters 网络反查,显式跳过
+        [sys.executable, str(_EMIT), *args, "--no-resolve-route"],
         capture_output=True,
         text=True,
         encoding="utf-8",
