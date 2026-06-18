@@ -199,7 +199,9 @@ def _build_real_alarm_payload(
         min(int(limit or DEFAULT_REAL_ALARM_LIMIT), MAX_REAL_ALARM_LIMIT),
     )
     items = [_normalize_alarm_row(row) for row in rows[:safe_limit]]
-    items.sort(key=lambda a: a.get("eventTime") or "")
+    # Preserve the gateway's sortType=1 order (latest alarm time desc);
+    # the frontend no longer re-sorts. eventTime stays available for the
+    # analysis-lookback filter (which keys on first-seen time).
     try:
         resolved_total = int(total) if total is not None else len(items)
     except (TypeError, ValueError):
@@ -462,7 +464,7 @@ def _normalize_alarm_row(row: dict[str, Any]) -> dict[str, Any]:
         "level": SEVERITY_TO_LEVEL.get(severity, "info"),
         "status": "active",
         "eventTime": event_time,
-        "timeLabel": event_time,
+        "timeLabel": event_last_time or event_time,
         "deviceName": device_name,
         "manageIp": manage_ip,
         "employeeId": "fault",

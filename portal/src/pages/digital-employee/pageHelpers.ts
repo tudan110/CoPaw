@@ -958,8 +958,8 @@ export type ChatSidebarActivityItem = {
 export const PORTAL_ALERT_LEVEL_LABELS: Record<PortalOpsAlertLevel, string> = {
   critical: "紧急",
   urgent: "严重",
-  warning: "警告",
-  info: "通知",
+  warning: "普通",
+  info: "预警",
 };
 
 export const PORTAL_ALERT_LEVEL_COLORS: Record<PortalOpsAlertLevel, string> = {

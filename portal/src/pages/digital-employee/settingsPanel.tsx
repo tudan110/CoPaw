@@ -98,7 +98,7 @@ const DIAGNOSIS_NUMBER_FIELDS: DiagnosisNumberField[] = [
     group: "query_window",
     min: 1,
     step: 1,
-    hint: "只影响从平台拉取多久以内的活动告警。太小会漏掉很久仍未恢复的老告警；默认 24。",
+    hint: "按最新告警时间拉取：只取最近这么多小时内仍在更新的活动告警。默认 24；调小会漏掉一段时间没再上报但仍未恢复的告警。",
   },
   {
     key: "recovery_verify_delay_seconds",

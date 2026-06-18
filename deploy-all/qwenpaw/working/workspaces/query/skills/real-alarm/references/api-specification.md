@@ -151,7 +151,7 @@ INOE_API_TOKEN=your_jwt_token_here
 - 告警类别统计请求方式：`POST`
 - 告警类别统计接口地址：`{INOE_API_BASE_URL}/resource/alarmQuery/queryAlarmClassCount`
 - 鉴权方式：`Authorization: Bearer <token>`
-- 实时列表查询参数（GET query）：`alarmSeverity`（逗号分隔，如 `1,2,3,4`）、`isClear`（`0`=活动/`1`=已恢复，由脚本参数 `alarm_status` 转换：`1`→`isClear=0`）、`beginTime`/`endTime`（**强制必填**，格式 `YYYY-MM-DD HH:MM:SS`，按告警首次发生时间过滤；脚本未传时默认回溯 `QWENPAW_PORTAL_REAL_ALARM_QUERY_WINDOW_HOURS` 小时，默认 24）、`pageNum`/`pageSize`、`sortType=1`；可选 `neIp`（精确网元 IP，由脚本参数 `manage_ip` 提供）、`queryKey`（模糊匹配资源名/IP/标题）、`alarmuniqueid`、`alarmClassType`（由资源分类 `ne_alias` 映射）
+- 实时列表查询参数（GET query）：`alarmSeverity`（逗号分隔，如 `1,2,3,4`）、`isClear`（`0`=活动/`1`=已恢复，由脚本参数 `alarm_status` 转换：`1`→`isClear=0`）、`beginTime`/`endTime`（**强制必填**，格式 `YYYY-MM-DD HH:MM:SS`，按告警最新时间 `eventlasttime` 过滤（不是首次发生时间）；脚本未传时默认回溯 `QWENPAW_PORTAL_REAL_ALARM_QUERY_WINDOW_HOURS` 小时，默认 24）、`pageNum`/`pageSize`、`sortType=1`；可选 `neIp`（精确网元 IP，由脚本参数 `manage_ip` 提供）、`queryKey`（模糊匹配资源名/IP/标题）、`alarmuniqueid`、`alarmClassType`（由资源分类 `ne_alias` 映射）
 - 注意：新接口**无 `neId` 参数**，无法按 CI/网元 ID 直接过滤；脚本 `ci_id` 仅在形似文本时回退为 `queryKey`，按资源过滤请优先用 `manage_ip`(neIp)
 - 告警类别统计请求体：页面确认字段为 `startTime`、`endTime`、`alarmClass`、`alarmstatus`、`neAlias`；脚本只传明确给出的字段，不指定时查询全部
 - 告警类别统计返回：当前接口会直接返回数组，例如元素包含 `alarmSeverity`、`count`；脚本会规范化为 `{"code": 200, "msg": "操作成功", "data": [...]}` 便于 Agent 统一处理
