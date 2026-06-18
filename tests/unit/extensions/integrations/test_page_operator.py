@@ -149,7 +149,7 @@ def test_directive_parses_with_frontend_contract():
     assert match, "指令块应能被前端契约正则解析"
     payload = json.loads(match.group(1).strip())
     assert payload["op"] == "workflow.category.add"
-    assert payload["route"] == "/workflow/category"
+    assert payload["route"] == op.route  # 用目录实际 route,不写死
     assert payload["page"] == "Category"
     assert payload["open"] == "handleAdd"
     assert payload["model"] == "form"
