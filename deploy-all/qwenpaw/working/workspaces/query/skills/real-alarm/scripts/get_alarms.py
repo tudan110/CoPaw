@@ -17,7 +17,7 @@ import os
 import subprocess
 import sys
 import tempfile
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -309,6 +309,150 @@ def _normalize_ci_id(ci_id: Optional[str]) -> Optional[Any]:
     return normalized
 
 
+def _alarm_status_to_is_clear(alarm_status: Optional[str]) -> str:
+    """旧 alarmstatus → 新 isClear（语义反转）。
+
+    "1"=活跃 → isClear "0"；缺省默认查活跃；
+    明确传非活跃状态时查已恢复（"1"）。
+    """
+    status = str(alarm_status).strip() if alarm_status else "1"
+    return "0" if status == "1" else "1"
+
+
+def _build_his_alarm_params(
+    *,
+    page_num: int,
+    page_size: int,
+    begin_time: str,
+    end_time: str,
+    alarm_severity: Optional[str] = None,
+    alarm_severitys: Optional[List[str]] = None,
+    alarm_status: Optional[str] = None,
+    dev_name: Optional[str] = None,
+    manage_ip: Optional[str] = None,
+    alarm_title: Optional[str] = None,
+    ci_id: Optional[str] = None,
+    ne_alias: Optional[str] = None,
+) -> Dict[str, Any]:
+    """构建 hisAlarmList GET 查询参数。
+
+    级别列表转逗号串；alarmstatus→isClear；资源过滤优先精确网元 IP
+    (neIp)，否则模糊 queryKey。新接口无 neId，纯数字 ci_id 无法按
+    资源 ID 过滤，仅当 ci_id 形似文本时才回退到 queryKey。
+    """
+    if alarm_severitys:
+        severity = ",".join(str(s).strip() for s in alarm_severitys if s)
+    elif alarm_severity:
+        severity = str(alarm_severity).strip()
+    else:
+        severity = "1,2,3,4"
+
+    params: Dict[str, Any] = {
+        "alarmSeverity": severity or "1,2,3,4",
+        "isClear": _alarm_status_to_is_clear(alarm_status),
+        "beginTime": begin_time,
+        "endTime": end_time,
+        "pageNum": page_num,
+        "pageSize": page_size,
+        "sortType": 1,
+    }
+
+    if manage_ip:
+        params["neIp"] = str(manage_ip).strip()
+        params["isLike"] = "0"
+
+    query_key = (dev_name or alarm_title or "").strip()
+    if not manage_ip and not query_key and ci_id:
+        ci_text = str(ci_id).strip()
+        if ci_text and not ci_text.isdigit():
+            query_key = ci_text
+    if query_key and "neIp" not in params:
+        params["queryKey"] = query_key
+
+    if ne_alias:
+        params["alarmClassType"] = ne_alias
+
+    return params
+
+
+def _curl_get_json(
+    *,
+    url: str,
+    headers: Dict[str, str],
+    params: Dict[str, Any],
+    timeout_seconds: int = 30,
+    allow_array: bool = False,
+) -> Dict[str, Any]:
+    """使用系统 curl 作为 requests 的网络兼容性回退（GET）。"""
+    with tempfile.NamedTemporaryFile(delete=False) as body_file:
+        body_path = body_file.name
+
+    args = [
+        "curl",
+        "-sS",
+        "--get",
+        "--connect-timeout",
+        str(int(timeout_seconds)),
+        "--max-time",
+        str(int(timeout_seconds)),
+        "-o",
+        body_path,
+        "-w",
+        "%{http_code}",
+    ]
+    for key, value in headers.items():
+        args.extend(["-H", f"{key}: {value}"])
+    for key, value in params.items():
+        if value is None:
+            continue
+        args.extend(["--data-urlencode", f"{key}={value}"])
+    args.append(url)
+
+    try:
+        completed = subprocess.run(
+            args,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            timeout=max(int(timeout_seconds) + 5, 10),
+            check=False,
+        )
+        if completed.returncode != 0:
+            error_text = (
+                completed.stderr or completed.stdout or "curl 请求失败"
+            ).strip()
+            if "timed out" in error_text.lower():
+                return _make_error(408, "请求超时，请检查网络连接或稍后重试")
+            return _make_error(500, f"curl 请求失败: {error_text}")
+
+        status_code = int((completed.stdout or "").strip() or "0")
+        with open(
+            body_path, "r", encoding="utf-8", errors="replace"
+        ) as handle:
+            response_text = handle.read()
+        if status_code >= 400:
+            return _build_http_error(status_code, response_text)
+        if not response_text.strip():
+            return _make_error(500, "接口返回空响应")
+        result = json.loads(response_text)
+        if allow_array and isinstance(result, list):
+            return {"code": 200, "msg": "操作成功", "data": result}
+        if not isinstance(result, dict):
+            return _make_error(500, "接口返回格式异常：预期为 JSON 对象")
+        return result
+    except json.JSONDecodeError as error:
+        return _make_error(500, f"curl 响应解析失败: {str(error)}")
+    except subprocess.TimeoutExpired:
+        return _make_error(408, "请求超时，请检查网络连接或稍后重试")
+    except Exception as error:  # noqa: BLE001
+        return _make_error(500, f"curl 回退失败: {str(error)}")
+    finally:
+        try:
+            os.unlink(body_path)
+        except OSError:
+            pass
+
+
 def execute(
     page_num: int = 1,
     page_size: int = 10,
@@ -370,58 +514,50 @@ def execute(
     base_url = _normalize_base_url(api_base_url)
     if not base_url:
         return _make_error(400, "未设置 INOE_API_BASE_URL，请检查 .env 或 --api_base_url 参数")
-    url = f"{base_url}/resource/realalarm/list"
+    url = f"{base_url}/resource/alarm/statistics/hisAlarmList"
     headers = {
         "Authorization": f"Bearer {normalized_token}",
         "Content-Type": "application/json;charset=UTF-8",
     }
 
-    normalized_ne_alias = _normalize_ne_alias(ne_alias, resource_type)
+    # hisAlarmList 强制要 begin/end 时间窗，未传则用默认窗口（小时）。
+    # skill 读不到设置页 DB，只能取环境变量/共享 secrets。
+    if not begin_time or not end_time:
+        try:
+            window_h = float(
+                os.getenv(
+                    "QWENPAW_PORTAL_REAL_ALARM_QUERY_WINDOW_HOURS", "24"
+                )
+                or "24"
+            )
+        except ValueError:
+            window_h = 24.0
+        now = datetime.now()
+        begin_time = (now - timedelta(hours=window_h)).strftime(
+            "%Y-%m-%d %H:%M:%S"
+        )
+        end_time = now.strftime("%Y-%m-%d %H:%M:%S")
 
-    # 构建请求参数
-    data = {
-        "pageNum": page_num,
-        "pageSize": page_size,
-        "alarmuniqueid": None,
-        "alarmclass": None,
-        "devName": dev_name if dev_name else None,
-        "manageIp": manage_ip if manage_ip else None,
-        "neId": _normalize_ci_id(ci_id),
-        "locatenename": None,
-        "onuId": None,
-        "locatenestatus": None,
-        "eventtime": None,
-        "daltime": None,
-        "eventlasttime": None,
-        "canceltime": None,
-        "alarmseverity": "",
-        "alarmseveritys": alarm_severitys if alarm_severitys else [],
-        "vendorserialno": None,
-        "alarmstatus": alarm_status if alarm_status else None,
-        "speciality": None,
-        "addInfo9": None,
-        "clearuser": None,
-        "ackflag": None,
-        "acktime": None,
-        "ackuser": None,
-        "alarmtitle": alarm_title if alarm_title else None,
-        "alarmtext": None,
-        "alarmregion": None,
-        "alarmcounty": None,
-        "cityList": _build_city_list(cities) if cities else [],
-        "countyList": [],
-        "circName": "",
-        "linkName": "",
-        "circId": "",
-        "linkId": "",
-        "params": {"beginEventtime": begin_time, "endEventtime": end_time},
-    }
-    if normalized_ne_alias:
-        data["neAlias"] = normalized_ne_alias
+    params = _build_his_alarm_params(
+        page_num=page_num,
+        page_size=page_size,
+        begin_time=begin_time,
+        end_time=end_time,
+        alarm_severity=alarm_severity,
+        alarm_severitys=alarm_severitys,
+        alarm_status=alarm_status,
+        dev_name=dev_name,
+        manage_ip=manage_ip,
+        alarm_title=alarm_title,
+        ci_id=ci_id,
+        ne_alias=_normalize_ne_alias(ne_alias, resource_type),
+    )
 
     try:
-        # 发送 POST 请求
-        response = requests.post(url, headers=headers, json=data, timeout=30)
+        # 发送 GET 请求
+        response = requests.get(
+            url, headers=headers, params=params, timeout=30
+        )
 
         # 检查响应状态码
         response.raise_for_status()
@@ -436,7 +572,9 @@ def execute(
         return _make_error(408, "请求超时，请检查网络连接或稍后重试")
 
     except requests.exceptions.ConnectionError:
-        return _curl_post_json(url=url, headers=headers, data=data, timeout_seconds=30)
+        return _curl_get_json(
+            url=url, headers=headers, params=params, timeout_seconds=30
+        )
 
     except requests.exceptions.HTTPError as e:
         return _handle_http_error(e)

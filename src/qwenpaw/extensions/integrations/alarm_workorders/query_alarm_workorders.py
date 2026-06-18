@@ -268,7 +268,11 @@ def _format_speciality(value: Any) -> str:
 
 
 def _build_description(row: dict[str, Any]) -> str:
-    alarm_text = _safe_text(row.get("alarmtext"), "")
+    # New hisAlarmList API carries the alarm text in ``additionalText``;
+    # fall back to the legacy ``alarmtext`` for older payloads.
+    alarm_text = _safe_text(
+        row.get("additionalText") or row.get("alarmtext"), ""
+    )
     if alarm_text:
         return alarm_text
 
@@ -301,7 +305,9 @@ def _normalize_workorder(row: dict[str, Any], index: int) -> dict[str, Any]:
         "speciality": _format_speciality(row.get("speciality")),
         "region": _safe_text(row.get("alarmregion")),
         "actionCount": int(row.get("alarmactcount") or 0),
-        "alarmText": _safe_text(row.get("alarmtext"), ""),
+        "alarmText": _safe_text(
+            row.get("additionalText") or row.get("alarmtext"), ""
+        ),
     }
 
 

@@ -93,6 +93,14 @@ const DIAGNOSIS_NUMBER_FIELDS: DiagnosisNumberField[] = [
     hint: "前台告警列表与告警角标计数最多展示多少条，上限 200。",
   },
   {
+    key: "alarm_query_window_hours",
+    label: "告警查询时间窗（小时）",
+    group: "query_window",
+    min: 1,
+    step: 1,
+    hint: "只影响从平台拉取多久以内的活动告警。太小会漏掉很久仍未恢复的老告警；默认 24。",
+  },
+  {
     key: "recovery_verify_delay_seconds",
     label: "首次验证延迟（秒）",
     group: "recovery",

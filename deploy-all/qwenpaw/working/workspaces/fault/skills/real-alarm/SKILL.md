@@ -226,7 +226,7 @@ uv run scripts/get_alarms.py --page_num 2 --page_size 100
 - 单告警查询：用列表或表格展示关键字段；字段很多时分组展示
 - 搜索/严重/活跃告警明细在聊天窗口默认只展示前 20 条，并说明总数
 - 如果用户按 `ci id`/`neId` 查询，优先在结果里展示 `CI ID` 列，便于确认筛选命中
-- `/resource/realalarm/list` 返回里的 `devId` 现在也视为 `resId/CI ID`；当 `neId` 缺失时，优先用 `devId` 回填 `CI ID` 列和本地筛选
+- `/resource/alarm/statistics/hisAlarmList` 返回里的 `devId` 视为 `resId/CI ID`；当 `neId` 缺失时，优先用 `devId` 回填 `CI ID` 列和本地筛选
 
 图表规则：
 
