@@ -167,17 +167,21 @@ def filter_alarms_started_after(
     payload: dict[str, Any],
     cutoff: datetime,
 ) -> dict[str, Any]:
-    """Keep only alarms whose event time is at or after ``cutoff``.
+    """Keep only alarms whose latest alarm time is at or after ``cutoff``.
 
-    Alarms with a missing/unparsable event time are kept (fail-open) so a
-    real incident never gets silently dropped by the analysis window.
+    Keys on ``eventLastTime`` (latest alarm time), so a long-running but
+    still-active alarm is analyzed — consistent with how the list filters
+    and displays time. Falls back to ``eventTime`` when the latest time is
+    missing. Alarms with a missing/unparsable time are kept (fail-open) so
+    a real incident never gets silently dropped by the analysis window.
     """
     items = list(payload.get("items") or [])
     kept = []
     for item in items:
         if not isinstance(item, dict):
             continue
-        event_time = parse_alarm_event_time(str(item.get("eventTime") or ""))
+        raw = str(item.get("eventLastTime") or item.get("eventTime") or "")
+        event_time = parse_alarm_event_time(raw)
         if event_time is None or event_time >= cutoff:
             kept.append(item)
     return {

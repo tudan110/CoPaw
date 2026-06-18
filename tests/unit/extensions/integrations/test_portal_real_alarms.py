@@ -465,11 +465,18 @@ def test_filter_alarms_started_after_keeps_new_and_unparsable(
     # Cutoff = 2026-06-11 10:00 in the alarm platform's +08 timezone.
     cutoff = datetime(2026, 6, 11, 2, 0, 0, tzinfo=timezone.utc)
     payload = {
-        "total": 3,
+        "total": 4,
         "items": [
-            {"alarmId": "old", "eventTime": "2026-06-11 09:59:59"},
-            {"alarmId": "new", "eventTime": "2026-06-11 10:00:00"},
-            {"alarmId": "weird", "eventTime": "no-time"},
+            {"alarmId": "old", "eventLastTime": "2026-06-11 09:59:59"},
+            {"alarmId": "new", "eventLastTime": "2026-06-11 10:00:00"},
+            {"alarmId": "weird", "eventLastTime": "no-time"},
+            # First-seen long ago but still updating inside the window:
+            # kept, because filtering keys on the latest alarm time.
+            {
+                "alarmId": "active",
+                "eventTime": "2026-06-01 00:00:00",
+                "eventLastTime": "2026-06-11 10:00:01",
+            },
         ],
         "source": "live",
     }
@@ -478,12 +485,14 @@ def test_filter_alarms_started_after_keeps_new_and_unparsable(
         payload, cutoff
     )
 
-    # Older alarms drop; on-or-after stays; unparsable times fail open.
+    # Stale-latest drops; on-or-after latest stays; unparsable fails open;
+    # old-first-seen-but-still-active stays (keyed on eventLastTime).
     assert [item["alarmId"] for item in filtered["items"]] == [
         "new",
         "weird",
+        "active",
     ]
-    assert filtered["total"] == 2
+    assert filtered["total"] == 3
     assert filtered["source"] == "live"
 
 
