@@ -20,6 +20,8 @@ type PortalBellAlert = {
   message: string;
   timeLabel: string;
   eventTime?: string;
+  eventLastTime?: string;
+  actCount?: number;
   routeEntry?: string | null;
   dispatchContent?: string;
   visibleContent?: string;
@@ -51,6 +53,8 @@ export function normalizePortalBellAlerts(
       message: toAlertMessage(item),
       timeLabel: item.timeLabel || item.eventTime,
       eventTime: item.eventTime,
+      eventLastTime: item.eventLastTime,
+      actCount: item.count,
       routeEntry: null,
       dispatchContent: item.dispatchContent,
       visibleContent: item.visibleContent,

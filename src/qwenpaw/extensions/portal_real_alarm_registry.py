@@ -60,6 +60,8 @@ CREATE TABLE IF NOT EXISTS alarm_records (
     device_name TEXT NOT NULL DEFAULT '',
     manage_ip TEXT NOT NULL DEFAULT '',
     event_time TEXT NOT NULL DEFAULT '',
+    event_last_time TEXT NOT NULL DEFAULT '',
+    act_count TEXT NOT NULL DEFAULT '',
     visible_content TEXT NOT NULL DEFAULT '',
     status TEXT NOT NULL DEFAULT 'new',
     session_id TEXT NOT NULL DEFAULT '',
@@ -92,6 +94,8 @@ _KEY_TO_COL: dict[str, str] = {
     "deviceName": "device_name",
     "manageIp": "manage_ip",
     "eventTime": "event_time",
+    "eventLastTime": "event_last_time",
+    "actCount": "act_count",
     "visibleContent": "visible_content",
     "status": "status",
     "sessionId": "session_id",
@@ -139,6 +143,17 @@ def _coalesce_text(*values: Any) -> str:
     return ""
 
 
+def _coalesce_count(*values: Any) -> str:
+    """Like _coalesce_text but keeps a literal 0 (counts may be zero)."""
+    for value in values:
+        if value is None:
+            continue
+        text = str(value).strip()
+        if text:
+            return text
+    return ""
+
+
 def _alarm_id_from_payload(alarm: Mapping[str, Any] | None) -> str:
     if not isinstance(alarm, Mapping):
         return ""
@@ -167,6 +182,14 @@ def _open_db(db_path: Path) -> sqlite3.Connection:
     if "analysis_result" not in existing_cols:
         conn.execute(
             "ALTER TABLE alarm_records ADD COLUMN analysis_result TEXT NOT NULL DEFAULT ''"
+        )
+    if "event_last_time" not in existing_cols:
+        conn.execute(
+            "ALTER TABLE alarm_records ADD COLUMN event_last_time TEXT NOT NULL DEFAULT ''"
+        )
+    if "act_count" not in existing_cols:
+        conn.execute(
+            "ALTER TABLE alarm_records ADD COLUMN act_count TEXT NOT NULL DEFAULT ''"
         )
     conn.commit()
     return conn
@@ -294,6 +317,17 @@ def _merge_alarm_metadata(
         alarm.get("eventTime"),
         alarm.get("event_time"),
         existing.get("eventTime"),
+    )
+    merged["eventLastTime"] = _coalesce_text(
+        alarm.get("eventLastTime"),
+        alarm.get("event_last_time"),
+        existing.get("eventLastTime"),
+    )
+    merged["actCount"] = _coalesce_count(
+        alarm.get("actCount"),
+        alarm.get("count"),
+        alarm.get("act_count"),
+        existing.get("actCount"),
     )
     merged["visibleContent"] = _coalesce_text(
         alarm.get("visibleContent"),

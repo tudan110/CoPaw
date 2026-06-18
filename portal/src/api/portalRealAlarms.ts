@@ -7,7 +7,9 @@ export interface PortalRealAlarmItem {
   level: "critical" | "urgent" | "warning" | "info";
   status: "active";
   eventTime: string;
+  eventLastTime: string;
   timeLabel: string;
+  count?: number;
   deviceName: string;
   manageIp: string;
   employeeId: string;
