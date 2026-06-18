@@ -29,7 +29,9 @@ _CATALOG = (
     / "operations.json"
 )
 
-ID_RE = re.compile(r"^[a-z0-9]+(\.[a-z0-9]+)*\.(add|update|delete)$", re.I)
+ID_RE = re.compile(
+    r"^[a-z0-9]+(\.[a-z0-9]+)*\.(add|update|delete|export)$", re.I
+)
 VALID_TYPES = {
     "input",
     "textarea",
@@ -74,26 +76,34 @@ def test_each_operation_well_formed(op):
     ), f"{op['id']} intent 必须是非空字符串列表"
 
     assert str(op.get("page", "")).strip(), f"{op['id']} page(组件name)必填"
-    for key in ("open", "model", "submit"):
-        assert str(op.get(key, "")).strip(), f"{op['id']} {key} 必填"
-
     assert op.get("route") or op.get(
         "component"
     ), f"{op['id']} 需要 route 或 component 以定位页面"
 
-    fields = op.get("fields") or []
-    assert fields, f"{op['id']} fields 不应为空"
-    props = []
-    for f in fields:
-        assert str(f.get("prop", "")).strip(), f"{op['id']} 字段缺 prop"
-        assert str(f.get("label", "")).strip(), f"{op['id']} 字段缺 label"
-        ftype = f.get("type", "input")
-        assert ftype in VALID_TYPES, f"{op['id']} 未知字段类型 {ftype}"
-        props.append(f["prop"])
-    assert len(props) == len(set(props)), f"{op['id']} 字段 prop 重复"
+    kind = op.get("kind", "create")
+    assert kind in {"create", "trigger"}, f"{op['id']} kind 非法: {kind}"
+
+    if kind == "trigger":
+        # 触发类(如导出):靠 trigger 方法 + button 文案定位,无表单字段
+        assert str(op.get("trigger", "")).strip(), f"{op['id']} trigger 必填"
+        assert str(op.get("button", "")).strip(), f"{op['id']} button 必填"
+    else:
+        for key in ("open", "model", "submit"):
+            assert str(op.get(key, "")).strip(), f"{op['id']} {key} 必填"
+        fields = op.get("fields") or []
+        assert fields, f"{op['id']} fields 不应为空"
+        props = []
+        for f in fields:
+            assert str(f.get("prop", "")).strip(), f"{op['id']} 字段缺 prop"
+            assert str(f.get("label", "")).strip(), f"{op['id']} 字段缺 label"
+            ftype = f.get("type", "input")
+            assert ftype in VALID_TYPES, f"{op['id']} 未知字段类型 {ftype}"
+            props.append(f["prop"])
+        assert len(props) == len(set(props)), f"{op['id']} 字段 prop 重复"
 
     assert op.get("risk", "create") in {
         "create",
         "update",
         "delete",
+        "export",
     }, f"{op['id']} risk 取值非法"

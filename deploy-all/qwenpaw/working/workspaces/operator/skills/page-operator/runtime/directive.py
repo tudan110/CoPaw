@@ -48,12 +48,15 @@ def build_payload(
     }
     return {
         "op": op.id,
+        "kind": op.kind,
         "action": op.action,
         "route": route or op.route,
         "page": op.page,
         "open": op.open,
         "model": op.model,
         "submit": op.submit,
+        "trigger": op.trigger,
+        "button": op.button,
         "title": op.name,
         "breadcrumb": op.menu,
         "fields": [f.to_dict() for f in op.fields],

@@ -59,6 +59,12 @@ class Operation:
     submit: str
     fields: list[Field]
     action: str = "create"
+    # kind 区分操作类型:
+    #   create  —— 新增类:开弹窗 → 预填 model → 高亮提交(open/model/submit/fields)
+    #   trigger —— 触发类(如导出):定位单个按钮 → 高亮让用户点(trigger/button)
+    kind: str = "create"
+    trigger: str = ""  # 触发类:要点的方法名,如 handleExport
+    button: str = ""  # 触发类:按钮文案,如 导出(执行器据此定位高亮)
     menu: str = ""
     component: str = ""
     api: dict[str, Any] = field(default_factory=dict)
@@ -78,9 +84,12 @@ class Operation:
             "intent": list(self.intent),
             "route": self.route,
             "page": self.page,
+            "kind": self.kind,
             "open": self.open,
             "model": self.model,
             "submit": self.submit,
+            "trigger": self.trigger,
+            "button": self.button,
             "action": self.action,
             "menu": self.menu,
             "component": self.component,
@@ -114,6 +123,9 @@ def _op_from(raw: dict[str, Any]) -> Operation:
         submit=str(raw.get("submit") or "submitForm"),
         fields=[_field_from(f) for f in (raw.get("fields") or [])],
         action=str(raw.get("action") or "create"),
+        kind=str(raw.get("kind") or "create"),
+        trigger=str(raw.get("trigger") or ""),
+        button=str(raw.get("button") or ""),
         menu=str(raw.get("menu") or ""),
         component=str(raw.get("component") or ""),
         api=dict(raw.get("api") or {}),

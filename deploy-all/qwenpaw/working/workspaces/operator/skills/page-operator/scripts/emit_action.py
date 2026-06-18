@@ -133,6 +133,15 @@ def main(argv=None) -> int:
         print(block)
     elif args.output == "json":
         print(json.dumps(payload, ensure_ascii=False, indent=2))
+    elif op.kind == "trigger":
+        btn = op.button or "按钮"
+        lines = [
+            f"好的,正在为您打开「{op.name}」所在页面,并定位到「{btn}」按钮,"
+        ]
+        lines.append(f"点击即可{op.name}。")
+        lines.append("")
+        lines.append(block)
+        print("\n".join(lines))
     else:
         lines = [f"好的,我来帮您{op.name}。已为您预填以下内容,"]
         lines.append("请在打开的页面上核对后点击「确定」提交:")

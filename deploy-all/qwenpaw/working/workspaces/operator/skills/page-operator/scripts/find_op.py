@@ -62,14 +62,21 @@ def _format_agent(result: dict) -> str:
         if op.get("menu"):
             lines.append(f"位置:{op['menu']}")
         lines.append("")
-        lines.append("这个操作需要这些参数:")
-        lines.extend(_fields_lines(op))
-        lines.append("")
-        lines.append(
-            "请从用户原话里抽取已给出的参数,把【必填】项收集齐(可向用户追问"
-            "缺的);凑齐后执行:"
-        )
-        lines.append(f"  {_emit_hint(op)}")
+        if op.get("kind") == "trigger":
+            btn = op.get("button") or "按钮"
+            lines.append(
+                f"这是触发类操作(在页面上点「{btn}」),无需收集参数。直接执行:"
+            )
+            lines.append(f"  uv run scripts/emit_action.py {op['id']}")
+        else:
+            lines.append("这个操作需要这些参数:")
+            lines.extend(_fields_lines(op))
+            lines.append("")
+            lines.append(
+                "请从用户原话里抽取已给出的参数,把【必填】项收集齐(可向用户"
+                "追问缺的);凑齐后执行:"
+            )
+            lines.append(f"  {_emit_hint(op)}")
     elif mode == "disambiguate":
         lines.append("匹配到多个可能的操作,请用户确认要哪一个:")
         for i, c in enumerate(cands, 1):
