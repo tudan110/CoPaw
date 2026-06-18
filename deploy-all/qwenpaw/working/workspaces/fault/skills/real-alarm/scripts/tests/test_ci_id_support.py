@@ -19,41 +19,68 @@ from utils.alarm_normalizer import build_alarm_rows, normalize_alarms
 
 
 class CiIdSupportTests(unittest.TestCase):
-    @patch("get_alarms.requests.post")
-    def test_execute_includes_ne_id_in_request_payload(self, mock_post):
+    @patch("get_alarms.requests.get")
+    def test_execute_uses_get_with_query_params(self, mock_get):
         response = MagicMock()
         response.raise_for_status.return_value = None
         response.json.return_value = {"code": 200, "msg": "ok", "total": 0, "rows": []}
-        mock_post.return_value = response
+        mock_get.return_value = response
 
         result = execute(token="token", ci_id="18")
 
         self.assertEqual(result["code"], 200)
-        self.assertEqual(mock_post.call_args.kwargs["json"]["neId"], 18)
+        params = mock_get.call_args.kwargs["params"]
+        self.assertEqual(params["alarmSeverity"], "1,2,3,4")
+        self.assertEqual(params["isClear"], "0")
+        self.assertIn("beginTime", params)
+        self.assertIn("endTime", params)
+        # New API has no neId; a numeric ci_id is not pushed as a filter.
+        self.assertNotIn("neId", params)
+        self.assertNotIn("queryKey", params)
 
-    @patch("get_alarms.requests.post")
-    def test_execute_omits_ne_alias_when_resource_filter_missing(self, mock_post):
+    @patch("get_alarms.requests.get")
+    def test_execute_omits_class_type_when_resource_filter_missing(
+        self, mock_get
+    ):
         response = MagicMock()
         response.raise_for_status.return_value = None
         response.json.return_value = {"code": 200, "msg": "ok", "total": 0, "rows": []}
-        mock_post.return_value = response
+        mock_get.return_value = response
 
         result = execute(token="token")
 
         self.assertEqual(result["code"], 200)
-        self.assertNotIn("neAlias", mock_post.call_args.kwargs["json"])
+        self.assertNotIn(
+            "alarmClassType", mock_get.call_args.kwargs["params"]
+        )
 
-    @patch("get_alarms.requests.post")
-    def test_execute_maps_resource_type_to_ne_alias(self, mock_post):
+    @patch("get_alarms.requests.get")
+    def test_execute_maps_resource_type_to_class_type(self, mock_get):
         response = MagicMock()
         response.raise_for_status.return_value = None
         response.json.return_value = {"code": 200, "msg": "ok", "total": 0, "rows": []}
-        mock_post.return_value = response
+        mock_get.return_value = response
 
         result = execute(token="token", resource_type="database")
 
         self.assertEqual(result["code"], 200)
-        self.assertEqual(mock_post.call_args.kwargs["json"]["neAlias"], "数据库")
+        self.assertEqual(
+            mock_get.call_args.kwargs["params"]["alarmClassType"], "数据库"
+        )
+
+    @patch("get_alarms.requests.get")
+    def test_execute_maps_manage_ip_to_ne_ip(self, mock_get):
+        response = MagicMock()
+        response.raise_for_status.return_value = None
+        response.json.return_value = {"code": 200, "msg": "ok", "total": 0, "rows": []}
+        mock_get.return_value = response
+
+        result = execute(token="token", manage_ip="1.2.3.4")
+
+        self.assertEqual(result["code"], 200)
+        params = mock_get.call_args.kwargs["params"]
+        self.assertEqual(params["neIp"], "1.2.3.4")
+        self.assertEqual(params["isLike"], "0")
 
     def test_alarm_class_count_payload_omits_unspecified_filters(self):
         self.assertEqual(build_payload(), {})
@@ -98,24 +125,43 @@ class CiIdSupportTests(unittest.TestCase):
         self.assertEqual(result["data"], [{"alarmSeverity": "1", "count": 5}])
 
     @patch("get_alarms.subprocess.run")
-    @patch("get_alarms.requests.post", side_effect=requests.ConnectionError("No route to host"))
-    def test_execute_falls_back_to_curl_when_requests_connection_fails(self, _mock_post, mock_run):
+    @patch(
+        "get_alarms.requests.get",
+        side_effect=requests.ConnectionError("No route to host"),
+    )
+    def test_execute_falls_back_to_curl_when_requests_connection_fails(
+        self, _mock_get, mock_run
+    ):
         def _fake_run(args, capture_output, text, encoding, timeout, check):
             body_path = args[args.index("-o") + 1]
             Path(body_path).write_text(
-                json.dumps({"code": 200, "msg": "ok", "total": 1, "rows": [{"alarmtitle": "A"}]}),
+                json.dumps(
+                    {
+                        "code": 200,
+                        "msg": "ok",
+                        "total": 1,
+                        "rows": [{"alarmtitle": "A"}],
+                    }
+                ),
                 encoding="utf-8",
             )
             return SimpleNamespace(returncode=0, stdout="200", stderr="")
 
         mock_run.side_effect = _fake_run
 
-        result = execute(token="token", ci_id="18")
+        result = execute(token="token", manage_ip="1.2.3.4")
 
         self.assertEqual(result["code"], 200)
         self.assertEqual(result["total"], 1)
-        curl_payload = json.loads(mock_run.call_args.args[0][mock_run.call_args.args[0].index("--data-binary") + 1])
-        self.assertEqual(curl_payload["neId"], 18)
+        curl_args = mock_run.call_args.args[0]
+        self.assertIn("--get", curl_args)
+        pairs = {}
+        for idx, tok in enumerate(curl_args):
+            if tok == "--data-urlencode":
+                key, _, value = curl_args[idx + 1].partition("=")
+                pairs[key] = value
+        self.assertEqual(pairs["neIp"], "1.2.3.4")
+        self.assertEqual(pairs["isClear"], "0")
 
     def test_apply_filters_supports_ci_id(self):
         alarms = [

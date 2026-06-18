@@ -406,19 +406,26 @@ def _query_alarms_for_res_id(
     res_id: str,
     begin_time: str,
     end_time: str,
+    manage_ip: str = "",
     api_base_url: str | None = None,
     token: str | None = None,
 ) -> dict[str, Any]:
     execute = _load_real_alarm_execute()
-    first_page = execute(
-        page_num=1,
-        page_size=1,
-        token=token,
-        api_base_url=api_base_url,
-        begin_time=begin_time,
-        end_time=end_time,
-        ci_id=res_id,
-    )
+    # New hisAlarmList API has no neId param. Query precisely by neIp
+    # (manage_ip) when known; otherwise pull the active list and filter
+    # locally by res_id below (best-effort for resources without an IP).
+    use_ip = bool(_safe_str(manage_ip))
+    common: dict[str, Any] = {
+        "token": token,
+        "api_base_url": api_base_url,
+        "begin_time": begin_time,
+        "end_time": end_time,
+    }
+    if use_ip:
+        common["manage_ip"] = _safe_str(manage_ip)
+    else:
+        common["ci_id"] = res_id
+    first_page = execute(page_num=1, page_size=1, **common)
     if first_page.get("code") != 200:
         return {
             "resId": res_id,
@@ -444,11 +451,7 @@ def _query_alarms_for_res_id(
         result = execute(
             page_num=page_num,
             page_size=DEFAULT_REAL_ALARM_PAGE_SIZE,
-            token=token,
-            api_base_url=api_base_url,
-            begin_time=begin_time,
-            end_time=end_time,
-            ci_id=res_id,
+            **common,
         )
         page_rows = result.get("rows") or []
         if result.get("code") != 200:
@@ -465,11 +468,14 @@ def _query_alarms_for_res_id(
         if len(page_rows) < DEFAULT_REAL_ALARM_PAGE_SIZE:
             break
         page_num += 1
+    if not use_ip:
+        target = _safe_str(res_id)
+        rows = [row for row in rows if _alarm_res_id(row) == target]
     return {
         "resId": res_id,
         "code": 200,
         "msg": "查询成功",
-        "total": total,
+        "total": len(rows),
         "rows": rows,
     }
 
@@ -847,6 +853,9 @@ def analyze_alarm_context(
                 res_id=related_res_id,
                 begin_time=begin_time,
                 end_time=end_time,
+                manage_ip=(
+                    manage_ip if related_res_id == root_res_id else ""
+                ),
                 api_base_url=api_base_url,
                 token=token,
             )
@@ -858,6 +867,9 @@ def analyze_alarm_context(
                 res_id=related_res_id,
                 begin_time=previous_begin_time,
                 end_time=previous_end_time,
+                manage_ip=(
+                    manage_ip if related_res_id == root_res_id else ""
+                ),
                 api_base_url=api_base_url,
                 token=token,
             )

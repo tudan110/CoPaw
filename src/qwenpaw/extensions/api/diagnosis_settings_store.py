@@ -411,6 +411,20 @@ FIELD_SPECS: dict[str, FieldSpec] = {
             min_value=1,
             max_value=200,
         ),
+        # Time window (hours) for pulling alarms from the INOE
+        # ``hisAlarmList`` endpoint, which requires a mandatory
+        # beginTime/endTime. Filters by alarm event (first-seen) time, so
+        # too small a window drops still-active alarms that fired long ago.
+        # Default 24h; raise it if old unrecovered alarms go missing.
+        FieldSpec(
+            "alarm_query_window_hours",
+            "QWENPAW_PORTAL_REAL_ALARM_QUERY_WINDOW_HOURS",
+            24,
+            "float",
+            "query_window",
+            min_value=1,
+            max_value=8760,
+        ),
         # --- D. Recovery verification (INOE clear notifications) ---
         FieldSpec(
             "recovery_verification_enabled",

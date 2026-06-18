@@ -14,11 +14,15 @@ from qwenpaw.extensions.api import diagnosis_settings_store
 from qwenpaw.extensions.api import inoe_settings_store
 
 DEFAULT_INOE_API_BASE_URL = "http://gateway:30080"
-REAL_ALARM_LIST_ENDPOINT = "/resource/realalarm/list"
+REAL_ALARM_LIST_ENDPOINT = "/resource/alarm/statistics/hisAlarmList"
 REAL_ALARM_TIMEOUT_SECONDS = 30.0
 DEFAULT_REAL_ALARM_LIMIT = 100
 MAX_REAL_ALARM_LIMIT = 200
-DEFAULT_REAL_ALARM_LOOKBACK_HOURS = 24
+DEFAULT_REAL_ALARM_QUERY_WINDOW_HOURS = 24.0
+# Recovery verification looks up one alarm by exact alarmuniqueid; use a
+# wide window so an old-but-still-active alarm is not misread as cleared
+# just because its event time predates a narrow window.
+RECOVERY_VERIFY_WINDOW_HOURS = 24.0 * 90
 
 SEVERITY_TO_LEVEL = {
     "1": "critical",
@@ -82,6 +86,42 @@ def _format_dt(value: datetime) -> str:
     )
 
 
+def _resolve_query_window_hours() -> float:
+    """Default begin/endTime window (hours) for hisAlarmList queries.
+
+    Takes the max of the configurable query window and the analysis
+    lookback, so the auto-takeover path never queries a narrower range
+    than the analysis step needs (which would silently drop candidates).
+    """
+    window = diagnosis_settings_store.resolve_float(
+        "alarm_query_window_hours",
+        "QWENPAW_PORTAL_REAL_ALARM_QUERY_WINDOW_HOURS",
+        DEFAULT_REAL_ALARM_QUERY_WINDOW_HOURS,
+        min_value=1,
+        max_value=8760,
+    )
+    lookback = diagnosis_settings_store.resolve_float(
+        "analysis_lookback_hours",
+        "QWENPAW_PORTAL_REAL_ALARM_LOOKBACK_HOURS",
+        0.0,
+        min_value=0,
+        max_value=720,
+    )
+    return max(window, lookback)
+
+
+def _alarm_status_to_is_clear(alarm_status: str | None) -> str:
+    """Map legacy ``alarmstatus`` to the new ``isClear`` query flag.
+
+    Old API filtered by ``alarmstatus`` ("1"=active). New API uses
+    ``isClear`` ("0"=active / "1"=cleared) — note the inversion. A missing
+    status defaults to active, since every caller that omits it wants the
+    active list.
+    """
+    status = str(alarm_status).strip() if alarm_status else "1"
+    return "0" if status == "1" else "1"
+
+
 def parse_alarm_event_time(text: str) -> datetime | None:
     """Parse an alarm ``eventTime`` string into an aware datetime.
 
@@ -127,17 +167,21 @@ def filter_alarms_started_after(
     payload: dict[str, Any],
     cutoff: datetime,
 ) -> dict[str, Any]:
-    """Keep only alarms whose event time is at or after ``cutoff``.
+    """Keep only alarms whose latest alarm time is at or after ``cutoff``.
 
-    Alarms with a missing/unparsable event time are kept (fail-open) so a
-    real incident never gets silently dropped by the analysis window.
+    Keys on ``eventLastTime`` (latest alarm time), so a long-running but
+    still-active alarm is analyzed — consistent with how the list filters
+    and displays time. Falls back to ``eventTime`` when the latest time is
+    missing. Alarms with a missing/unparsable time are kept (fail-open) so
+    a real incident never gets silently dropped by the analysis window.
     """
     items = list(payload.get("items") or [])
     kept = []
     for item in items:
         if not isinstance(item, dict):
             continue
-        event_time = parse_alarm_event_time(str(item.get("eventTime") or ""))
+        raw = str(item.get("eventLastTime") or item.get("eventTime") or "")
+        event_time = parse_alarm_event_time(raw)
         if event_time is None or event_time >= cutoff:
             kept.append(item)
     return {
@@ -159,7 +203,9 @@ def _build_real_alarm_payload(
         min(int(limit or DEFAULT_REAL_ALARM_LIMIT), MAX_REAL_ALARM_LIMIT),
     )
     items = [_normalize_alarm_row(row) for row in rows[:safe_limit]]
-    items.sort(key=lambda a: a.get("eventTime") or "")
+    # Preserve the gateway's sortType=1 order (latest alarm time desc);
+    # the frontend no longer re-sorts. eventTime stays available for the
+    # analysis-lookback filter (which keys on first-seen time).
     try:
         resolved_total = int(total) if total is not None else len(items)
     except (TypeError, ValueError):
@@ -175,56 +221,38 @@ def build_empty_portal_real_alarms_payload(limit: int) -> dict[str, Any]:
     return _build_real_alarm_payload([], limit=limit, source="live")
 
 
-def build_real_alarm_list_request_body(
+def build_real_alarm_list_query_params(
     *,
     page_num: int = 1,
     page_size: int,
-    begin_time: str | None = None,
-    end_time: str | None = None,
+    begin_time: str,
+    end_time: str,
     alarm_status: str | None = None,
     alarm_unique_id: str | None = None,
 ) -> dict[str, Any]:
-    return {
+    """Build query params for the INOE ``hisAlarmList`` GET endpoint.
+
+    ``beginTime``/``endTime`` are mandatory (alarm-event-time window);
+    ``isClear`` replaces the legacy ``alarmstatus`` (inverted semantics);
+    ``sortType=1`` sorts by latest alarm time descending.
+    """
+    params: dict[str, Any] = {
+        "alarmSeverity": "1,2,3,4",
+        "isClear": _alarm_status_to_is_clear(alarm_status),
+        "beginTime": begin_time,
+        "endTime": end_time,
         "pageNum": page_num,
         "pageSize": page_size,
-        "alarmuniqueid": (
-            str(alarm_unique_id).strip() if alarm_unique_id else None
-        ),
-        "alarmclass": None,
-        "devName": None,
-        "manageIp": None,
-        "neId": None,
-        "locatenename": None,
-        "onuId": None,
-        "locatenestatus": None,
-        "eventtime": None,
-        "daltime": None,
-        "eventlasttime": None,
-        "canceltime": None,
-        "alarmseverity": "",
-        "alarmseveritys": [],
-        "vendorserialno": None,
-        "alarmstatus": str(alarm_status).strip() if alarm_status else None,
-        "speciality": None,
-        "addInfo9": None,
-        "clearuser": None,
-        "ackflag": None,
-        "acktime": None,
-        "ackuser": None,
-        "alarmtitle": None,
-        "alarmtext": None,
-        "alarmregion": None,
-        "alarmcounty": None,
-        "cityList": [],
-        "countyList": [],
-        "circName": "",
-        "linkName": "",
-        "circId": "",
-        "linkId": "",
-        "params": {"beginEventtime": begin_time, "endEventtime": end_time},
+        "sortType": 1,
     }
+    if alarm_unique_id:
+        params["alarmuniqueid"] = str(alarm_unique_id).strip()
+    return params
 
 
+# Name kept (``_post_*``) for back-compat with test mocks; the endpoint
+# is now a GET. INOE ``hisAlarmList`` requires a begin/end window, so a
+# default is filled when the caller did not compute one.
 def _post_real_alarm_list(
     *,
     limit: int,
@@ -233,7 +261,12 @@ def _post_real_alarm_list(
     alarm_status: str | None = None,
     alarm_unique_id: str | None = None,
 ) -> dict[str, Any]:
-    body = build_real_alarm_list_request_body(
+    if not begin_time or not end_time:
+        now = datetime.now(timezone.utc)
+        window = timedelta(hours=_resolve_query_window_hours())
+        begin_time = _format_dt(now - window)
+        end_time = _format_dt(now)
+    params = build_real_alarm_list_query_params(
         page_num=1,
         page_size=limit,
         begin_time=begin_time,
@@ -245,28 +278,28 @@ def _post_real_alarm_list(
     headers = _build_real_alarm_headers()
     timeout_seconds = _get_real_alarm_timeout_seconds()
     try:
-        response = requests.post(
+        response = requests.get(
             url,
-            json=body,
+            params=params,
             headers=headers,
             timeout=timeout_seconds,
         )
     except requests.exceptions.ConnectionError:
-        return _curl_post_real_alarm_json(
+        return _curl_get_real_alarm_json(
             url=url,
             headers=headers,
-            data=body,
+            params=params,
             timeout_seconds=timeout_seconds,
         )
     response.raise_for_status()
     return response.json()
 
 
-def _curl_post_real_alarm_json(
+def _curl_get_real_alarm_json(
     *,
     url: str,
     headers: dict[str, str],
-    data: dict[str, Any],
+    params: dict[str, Any],
     timeout_seconds: float,
 ) -> dict[str, Any]:
     with tempfile.NamedTemporaryFile(delete=False) as body_file:
@@ -276,8 +309,7 @@ def _curl_post_real_alarm_json(
     args = [
         "curl",
         "-sS",
-        "-X",
-        "POST",
+        "--get",
         "--connect-timeout",
         timeout_value,
         "--max-time",
@@ -289,7 +321,10 @@ def _curl_post_real_alarm_json(
     ]
     for key, value in headers.items():
         args.extend(["-H", f"{key}: {value}"])
-    args.extend(["--data-binary", json.dumps(data, ensure_ascii=False)])
+    for key, value in params.items():
+        if value is None:
+            continue
+        args.extend(["--data-urlencode", f"{key}={value}"])
     args.append(url)
 
     try:
@@ -433,7 +468,7 @@ def _normalize_alarm_row(row: dict[str, Any]) -> dict[str, Any]:
         "level": SEVERITY_TO_LEVEL.get(severity, "info"),
         "status": "active",
         "eventTime": event_time,
-        "timeLabel": event_time,
+        "timeLabel": event_last_time or event_time,
         "deviceName": device_name,
         "manageIp": manage_ip,
         "employeeId": "fault",
@@ -459,7 +494,9 @@ def _normalize_alarm_row(row: dict[str, Any]) -> dict[str, Any]:
             status_name=status_name,
         ),
     }
-    raw_count = row.get("alarmcount")
+    raw_count = row.get("alarmactcount")
+    if raw_count is None:
+        raw_count = row.get("alarmcount")
     if raw_count is None:
         raw_count = row.get("count")
     if raw_count is not None:
@@ -483,8 +520,13 @@ def query_real_alarm_active_status(alarm_id: str) -> str:
     if not normalized:
         return "unavailable"
     try:
+        now = datetime.now(timezone.utc)
         result = _post_real_alarm_list(
             limit=MAX_REAL_ALARM_LIMIT,
+            begin_time=_format_dt(
+                now - timedelta(hours=RECOVERY_VERIFY_WINDOW_HOURS)
+            ),
+            end_time=_format_dt(now),
             alarm_status="1",
             alarm_unique_id=normalized,
         )
@@ -518,12 +560,14 @@ def query_portal_real_alarms(
         min(int(limit or DEFAULT_REAL_ALARM_LIMIT), MAX_REAL_ALARM_LIMIT),
     )
     current_time = now or datetime.now(timezone.utc)
-    begin_time: str | None = None
-    end_time: str | None = None
+    # hisAlarmList requires a begin/end window. Use the explicit
+    # lookback when given, else the configured default query window.
     if lookback_minutes is not None:
-        lookback_delta = timedelta(minutes=max(1, int(lookback_minutes)))
-        begin_time = _format_dt(current_time - lookback_delta)
-        end_time = _format_dt(current_time)
+        window = timedelta(minutes=max(1, int(lookback_minutes)))
+    else:
+        window = timedelta(hours=_resolve_query_window_hours())
+    begin_time = _format_dt(current_time - window)
+    end_time = _format_dt(current_time)
 
     try:
         result = _post_real_alarm_list(

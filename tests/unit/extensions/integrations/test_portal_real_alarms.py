@@ -170,7 +170,7 @@ def test_query_portal_real_alarms_returns_empty_live_payload_when_request_failur
     assert payload == {"total": 0, "items": [], "source": "live"}
 
 
-def test_query_portal_real_alarms_defaults_to_current_active_without_time_filter(monkeypatch) -> None:
+def test_query_portal_real_alarms_applies_default_query_window(monkeypatch) -> None:
     captured = {}
 
     def _fake_post(*, limit, begin_time=None, end_time=None, alarm_status=None):
@@ -184,15 +184,23 @@ def test_query_portal_real_alarms_defaults_to_current_active_without_time_filter
         "qwenpaw.extensions.integrations.portal_real_alarms._post_real_alarm_list",
         _fake_post,
     )
-    monkeypatch.delenv("QWENPAW_PORTAL_REAL_ALARM_LOOKBACK_HOURS", raising=False)
+    monkeypatch.setattr(
+        portal_real_alarms, "_resolve_query_window_hours", lambda: 24.0
+    )
+    monkeypatch.setattr(
+        portal_real_alarms,
+        "_get_alarm_timezone",
+        lambda: timezone(timedelta(hours=8)),
+    )
     query_portal_real_alarms(
         limit=5,
         now=datetime(2026, 4, 17, 1, 0, 0, tzinfo=timezone.utc),
     )
 
+    # hisAlarmList needs a mandatory window; default 24h in +08 tz.
     assert captured["limit"] == 5
-    assert captured["begin_time"] is None
-    assert captured["end_time"] is None
+    assert captured["begin_time"] == "2026-04-16 09:00:00"
+    assert captured["end_time"] == "2026-04-17 09:00:00"
     assert captured["alarm_status"] is None
 
 
@@ -261,26 +269,38 @@ def test_query_portal_real_alarms_sends_explicit_alarm_status(monkeypatch) -> No
         "qwenpaw.extensions.integrations.portal_real_alarms._post_real_alarm_list",
         _fake_post,
     )
-    query_portal_real_alarms(limit=5, alarm_status="1")
+    monkeypatch.setattr(
+        portal_real_alarms, "_resolve_query_window_hours", lambda: 24.0
+    )
+    monkeypatch.setattr(
+        portal_real_alarms,
+        "_get_alarm_timezone",
+        lambda: timezone(timedelta(hours=8)),
+    )
+    query_portal_real_alarms(
+        limit=5,
+        alarm_status="1",
+        now=datetime(2026, 4, 17, 1, 0, 0, tzinfo=timezone.utc),
+    )
 
     assert captured == {
         "limit": 5,
-        "begin_time": None,
-        "end_time": None,
+        "begin_time": "2026-04-16 09:00:00",
+        "end_time": "2026-04-17 09:00:00",
         "alarm_status": "1",
     }
 
 
-def test_query_portal_real_alarms_posts_gateway_json_payload(monkeypatch) -> None:
+def test_query_portal_real_alarms_calls_gateway_with_query_params(monkeypatch) -> None:
     captured = {}
     monkeypatch.delenv("INOE_API_BASE_URL", raising=False)
     monkeypatch.delenv("INOE_API_TOKEN", raising=False)
+    monkeypatch.setenv("INOE_API_TIMEOUT", "30")
 
-    def _fake_post(url, *, json, headers, timeout):
-        captured["method"] = "POST"
+    def _fake_get(url, *, params, headers, timeout):
+        captured["method"] = "GET"
         captured["url"] = url
-        captured["content_type"] = headers["Content-Type"]
-        captured["json"] = json
+        captured["params"] = params
         captured["timeout"] = timeout
         return _FakeResponse(
             {
@@ -299,7 +319,15 @@ def test_query_portal_real_alarms_posts_gateway_json_payload(monkeypatch) -> Non
             },
         )
 
-    monkeypatch.setattr(portal_real_alarms.requests, "post", _fake_post)
+    monkeypatch.setattr(portal_real_alarms.requests, "get", _fake_get)
+    monkeypatch.setattr(
+        portal_real_alarms, "_resolve_query_window_hours", lambda: 24.0
+    )
+    monkeypatch.setattr(
+        portal_real_alarms,
+        "_get_alarm_timezone",
+        lambda: timezone(timedelta(hours=8)),
+    )
     payload = query_portal_real_alarms(
         limit=5,
         now=datetime(2026, 4, 17, 1, 0, 0, tzinfo=timezone.utc),
@@ -307,13 +335,19 @@ def test_query_portal_real_alarms_posts_gateway_json_payload(monkeypatch) -> Non
 
     assert payload["source"] == "live"
     assert payload["total"] == 1
-    assert captured["method"] == "POST"
-    assert captured["url"] == (
-        f"{portal_real_alarms.DEFAULT_INOE_API_BASE_URL}{portal_real_alarms.REAL_ALARM_LIST_ENDPOINT}"
+    assert captured["method"] == "GET"
+    # Base URL may be overridden by config/DB; assert the new endpoint.
+    assert captured["url"].endswith(
+        portal_real_alarms.REAL_ALARM_LIST_ENDPOINT
     )
-    assert captured["content_type"].startswith("application/json")
-    assert captured["json"]["alarmstatus"] is None
-    assert captured["json"]["params"] == {"beginEventtime": None, "endEventtime": None}
+    assert portal_real_alarms.REAL_ALARM_LIST_ENDPOINT == (
+        "/resource/alarm/statistics/hisAlarmList"
+    )
+    assert captured["params"]["alarmSeverity"] == "1,2,3,4"
+    assert captured["params"]["isClear"] == "0"
+    assert captured["params"]["beginTime"] == "2026-04-16 09:00:00"
+    assert captured["params"]["endTime"] == "2026-04-17 09:00:00"
+    assert captured["params"]["sortType"] == 1
     assert captured["timeout"] == 30.0
 
 
@@ -334,6 +368,8 @@ def test_query_portal_real_alarms_falls_back_to_curl_on_connection_error(
         stderr = ""
 
     def _fake_run(args, *, capture_output, text, encoding, timeout, check):
+        import json
+
         output_path = args[args.index("-o") + 1]
         body = {
             "code": 200,
@@ -351,15 +387,19 @@ def test_query_portal_real_alarms_falls_back_to_curl_on_connection_error(
         }
         tmp_path.joinpath("unused").write_text("", encoding="utf-8")
         with open(output_path, "w", encoding="utf-8") as handle:
-            import json
-
             json.dump(body, handle, ensure_ascii=False)
         captured["args"] = args
         captured["timeout"] = timeout
-        captured["payload"] = json.loads(args[args.index("--data-binary") + 1])
+        pairs = {}
+        for i, tok in enumerate(args):
+            if tok == "--data-urlencode":
+                key, _, value = args[i + 1].partition("=")
+                pairs[key] = value
+        captured["params"] = pairs
         return _FakeCompleted()
 
-    monkeypatch.setattr(portal_real_alarms.requests, "post", _raise_connection_error)
+    monkeypatch.setenv("INOE_API_TIMEOUT", "30")
+    monkeypatch.setattr(portal_real_alarms.requests, "get", _raise_connection_error)
     monkeypatch.setattr(portal_real_alarms.subprocess, "run", _fake_run)
 
     payload = query_portal_real_alarms(limit=3)
@@ -367,30 +407,33 @@ def test_query_portal_real_alarms_falls_back_to_curl_on_connection_error(
     assert payload["source"] == "live"
     assert payload["total"] == 5995
     assert payload["items"][0]["title"] == "CPU等待IO时间过长"
+    assert "--get" in captured["args"]
     assert "--max-time" in captured["args"]
     assert captured["args"][captured["args"].index("--max-time") + 1] == "30"
     assert captured["timeout"] == 35
-    assert captured["payload"]["alarmstatus"] is None
-    assert captured["payload"]["params"] == {"beginEventtime": None, "endEventtime": None}
+    assert captured["params"]["isClear"] == "0"
+    assert captured["params"]["alarmSeverity"] == "1,2,3,4"
 
 
-def test_query_portal_real_alarms_posts_bearer_header_from_config(monkeypatch) -> None:
+def test_query_portal_real_alarms_sends_bearer_header_from_config(monkeypatch) -> None:
     captured = {}
 
-    def _fake_post(url, *, json, headers, timeout):
+    def _fake_get(url, *, params, headers, timeout):
         captured["url"] = url
         captured["authorization"] = headers.get("Authorization")
-        captured["json"] = json
+        captured["params"] = params
         captured["timeout"] = timeout
         return _FakeResponse({"code": 200, "rows": [], "total": 0})
 
     monkeypatch.setenv("INOE_API_BASE_URL", "http://example.test")
     monkeypatch.setenv("INOE_API_TOKEN", "demo-token")
-    monkeypatch.setattr(portal_real_alarms.requests, "post", _fake_post)
+    monkeypatch.setattr(portal_real_alarms.requests, "get", _fake_get)
     payload = query_portal_real_alarms(limit=3)
 
     assert payload == {"total": 0, "items": [], "source": "live"}
-    assert captured["url"] == "http://example.test/resource/realalarm/list"
+    assert captured["url"].endswith(
+        "/resource/alarm/statistics/hisAlarmList"
+    )
     assert captured["authorization"] == "Bearer demo-token"
 
 
@@ -422,11 +465,18 @@ def test_filter_alarms_started_after_keeps_new_and_unparsable(
     # Cutoff = 2026-06-11 10:00 in the alarm platform's +08 timezone.
     cutoff = datetime(2026, 6, 11, 2, 0, 0, tzinfo=timezone.utc)
     payload = {
-        "total": 3,
+        "total": 4,
         "items": [
-            {"alarmId": "old", "eventTime": "2026-06-11 09:59:59"},
-            {"alarmId": "new", "eventTime": "2026-06-11 10:00:00"},
-            {"alarmId": "weird", "eventTime": "no-time"},
+            {"alarmId": "old", "eventLastTime": "2026-06-11 09:59:59"},
+            {"alarmId": "new", "eventLastTime": "2026-06-11 10:00:00"},
+            {"alarmId": "weird", "eventLastTime": "no-time"},
+            # First-seen long ago but still updating inside the window:
+            # kept, because filtering keys on the latest alarm time.
+            {
+                "alarmId": "active",
+                "eventTime": "2026-06-01 00:00:00",
+                "eventLastTime": "2026-06-11 10:00:01",
+            },
         ],
         "source": "live",
     }
@@ -435,10 +485,29 @@ def test_filter_alarms_started_after_keeps_new_and_unparsable(
         payload, cutoff
     )
 
-    # Older alarms drop; on-or-after stays; unparsable times fail open.
+    # Stale-latest drops; on-or-after latest stays; unparsable fails open;
+    # old-first-seen-but-still-active stays (keyed on eventLastTime).
     assert [item["alarmId"] for item in filtered["items"]] == [
         "new",
         "weird",
+        "active",
     ]
-    assert filtered["total"] == 2
+    assert filtered["total"] == 3
     assert filtered["source"] == "live"
+
+
+def test_build_query_params_maps_alarm_status_to_is_clear() -> None:
+    active = portal_real_alarms.build_real_alarm_list_query_params(
+        page_size=10, begin_time="b", end_time="e", alarm_status="1"
+    )
+    assert active["isClear"] == "0"
+    cleared = portal_real_alarms.build_real_alarm_list_query_params(
+        page_size=10, begin_time="b", end_time="e", alarm_status="0"
+    )
+    assert cleared["isClear"] == "1"
+    default = portal_real_alarms.build_real_alarm_list_query_params(
+        page_size=10, begin_time="b", end_time="e"
+    )
+    assert default["isClear"] == "0"
+    assert default["alarmSeverity"] == "1,2,3,4"
+    assert default["sortType"] == 1

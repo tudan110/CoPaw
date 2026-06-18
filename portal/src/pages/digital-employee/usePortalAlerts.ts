@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { getEmployeeById } from "../../data/portalData";
 import { listPortalRealAlarms } from "../../api/portalRealAlarms";
 import { registerAlarmRecord } from "../../api/alarmRegistry";
@@ -48,15 +48,8 @@ export function usePortalAlerts({
   const alertPollTimerRef = useRef<number | null>(null);
   const knownAlertIdsRef = useRef<string[]>([]);
 
-  const sortedOpsAlerts = useMemo(() => {
-    return [...opsAlerts].sort((left, right) => {
-      const lt = left.eventTime ?? "";
-      const rt = right.eventTime ?? "";
-      if (lt > rt) return -1;
-      if (lt < rt) return 1;
-      return 0;
-    });
-  }, [opsAlerts]);
+  // 后端按 INOE sortType=1（最新告警时间倒序）返回，前端不再排序。
+  const sortedOpsAlerts = opsAlerts;
 
   const loadOpsAlerts = useCallback(async () => {
     try {

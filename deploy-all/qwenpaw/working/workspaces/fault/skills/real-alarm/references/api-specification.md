@@ -146,16 +146,17 @@ INOE_API_TOKEN=your_jwt_token_here
 
 ## 接口信息
 
-- 实时列表请求方式：`POST`
-- 实时列表接口地址：`{INOE_API_BASE_URL}/resource/realalarm/list`
+- 实时列表请求方式：`GET`
+- 实时列表接口地址：`{INOE_API_BASE_URL}/resource/alarm/statistics/hisAlarmList`
 - 告警类别统计请求方式：`POST`
 - 告警类别统计接口地址：`{INOE_API_BASE_URL}/resource/alarmQuery/queryAlarmClassCount`
 - 鉴权方式：`Authorization: Bearer <token>`
-- 实时列表请求体：JSON 格式，包含分页参数和筛选条件；`neAlias` 只有在用户指定资源分类时才传，不指定时查询全部
+- 实时列表查询参数（GET query）：`alarmSeverity`（逗号分隔，如 `1,2,3,4`）、`isClear`（`0`=活动/`1`=已恢复，由脚本参数 `alarm_status` 转换：`1`→`isClear=0`）、`beginTime`/`endTime`（**强制必填**，格式 `YYYY-MM-DD HH:MM:SS`，按告警最新时间 `eventlasttime` 过滤（不是首次发生时间）；脚本未传时默认回溯 `QWENPAW_PORTAL_REAL_ALARM_QUERY_WINDOW_HOURS` 小时，默认 24）、`pageNum`/`pageSize`、`sortType=1`；可选 `neIp`（精确网元 IP，由脚本参数 `manage_ip` 提供）、`queryKey`（模糊匹配资源名/IP/标题）、`alarmuniqueid`、`alarmClassType`（由资源分类 `ne_alias` 映射）
+- 注意：新接口**无 `neId` 参数**，无法按 CI/网元 ID 直接过滤；脚本 `ci_id` 仅在形似文本时回退为 `queryKey`，按资源过滤请优先用 `manage_ip`(neIp)
 - 告警类别统计请求体：页面确认字段为 `startTime`、`endTime`、`alarmClass`、`alarmstatus`、`neAlias`；脚本只传明确给出的字段，不指定时查询全部
 - 告警类别统计返回：当前接口会直接返回数组，例如元素包含 `alarmSeverity`、`count`；脚本会规范化为 `{"code": 200, "msg": "操作成功", "data": [...]}` 便于 Agent 统一处理
-- 资源分类字段：`neAlias`，可用值包括 `数据库`、`网络设备`、`中间件`、`操作系统`、`计算资源`
-- 返回兼容约定：接口返回中的 `devId` 现在表示当前告警对应的 `resId/CI ID`；skill 在展示和本地筛选时会把 `devId` 作为 `CI ID` 的回退字段
+- 资源分类字段：映射到 `alarmClassType`，可用值包括 `数据库`、`网络设备`、`中间件`、`操作系统`、`计算资源`
+- 返回兼容约定：接口返回中的 `devId` 表示当前告警对应的 `resId/CI ID`；告警原文字段为 `additionalText`（旧接口为 `alarmtext`）；skill 在展示和本地筛选时会把 `devId` 作为 `CI ID` 的回退字段
 
 ## 告警级别说明
 

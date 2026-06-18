@@ -257,6 +257,45 @@ def test_alarm_list_limit_resolution_and_bounds(
         store.apply_settings_update({"alarm_list_limit": 500}, db_path=db)
 
 
+def test_alarm_query_window_hours_resolution_and_bounds(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    db = _db(tmp_path)
+    monkeypatch.delenv(
+        "QWENPAW_PORTAL_REAL_ALARM_QUERY_WINDOW_HOURS", False
+    )
+    assert (
+        store.resolve_float(
+            "alarm_query_window_hours",
+            "QWENPAW_PORTAL_REAL_ALARM_QUERY_WINDOW_HOURS",
+            24,
+            min_value=1,
+            max_value=8760,
+            db_path=db,
+        )
+        == 24
+    )
+    store.apply_settings_update(
+        {"alarm_query_window_hours": 72}, db_path=db
+    )
+    assert (
+        store.resolve_float(
+            "alarm_query_window_hours",
+            "QWENPAW_PORTAL_REAL_ALARM_QUERY_WINDOW_HOURS",
+            24,
+            min_value=1,
+            max_value=8760,
+            db_path=db,
+        )
+        == 72
+    )
+    with pytest.raises(ValueError):
+        store.apply_settings_update(
+            {"alarm_query_window_hours": 0}, db_path=db
+        )
+
+
 def test_anchor_not_exposed_as_override_nor_settable(tmp_path: Path) -> None:
     db = _db(tmp_path)
     store.set_analysis_anchor(

@@ -63,8 +63,8 @@ const DIAGNOSIS_NUMBER_FIELDS: DiagnosisNumberField[] = [
     max: 720,
     step: 1,
     hint:
-      "开启实时分析后，查询起点 = 开启时刻往前回溯 N 小时；" +
-      "0 = 仅分析开启后新产生的告警。重新开关会重新锚定起点。",
+      "开启实时分析后，分析最近 N 小时内仍在更新的活动告警（按最新告警时间）；" +
+      "0 = 仅分析开启后还在刷新的。重新开关会重新锚定起点。",
   },
   {
     key: "timezone_offset_hours",
@@ -91,6 +91,14 @@ const DIAGNOSIS_NUMBER_FIELDS: DiagnosisNumberField[] = [
     max: 200,
     step: 1,
     hint: "前台告警列表与告警角标计数最多展示多少条，上限 200。",
+  },
+  {
+    key: "alarm_query_window_hours",
+    label: "告警查询时间窗（小时）",
+    group: "query_window",
+    min: 1,
+    step: 1,
+    hint: "按最新告警时间拉取：只取最近这么多小时内仍在更新的活动告警。默认 24；调小会漏掉一段时间没再上报但仍未恢复的告警。",
   },
   {
     key: "recovery_verify_delay_seconds",
