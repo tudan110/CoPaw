@@ -89,7 +89,12 @@ const pushed = []
 const router = {
   currentRoute: { path: '/elsewhere' },
   // 模拟 SPA 路由表:按页面 name 反解真实路径
-  resolve: ({ name }) => ({ route: { name, path: name === 'Category' ? '/workflow/category' : '/' } }),
+  resolve: ({ name }) => ({
+    route: {
+      name,
+      path: name === 'Category' ? '/workflow/category' : name === 'WorkProcess' ? '/workflow/work' : '/'
+    }
+  }),
   push: async (p) => pushed.push(p)
 }
 const payload = {
@@ -134,6 +139,34 @@ function assert(cond, msg) {
   assert(vm.form.remark === undefined, 'remark 未给值则不预填')
   assert(vm._submitted !== true, 'submitForm 不被自动调用(提交交用户)')
   assert(res.dialogFound === true, '执行器定位到弹窗')
+
+  // ---- 触发类(导出)场景:定位「导出」按钮高亮,不点击、不开弹窗 ----
+  const exportBtn = new FakeEl({ text: '导出' })
+  const wpVm = {
+    $options: { name: 'WorkProcess' },
+    $el: new FakeEl({ q: { button: [exportBtn] } }),
+    handleExport() {
+      this._exported = true
+    }
+  }
+  registerPage(wpVm)
+  const exportPayload = {
+    op: 'workflow.process.export',
+    kind: 'trigger',
+    action: 'export',
+    route: '',
+    page: 'WorkProcess',
+    trigger: 'handleExport',
+    button: '导出',
+    title: '导出工单列表',
+    fields: [],
+    params: {},
+    risk: 'export'
+  }
+  const res2 = await runner.run(exportPayload, { router })
+  assert(res2 && res2.ok === true && res2.kind === 'trigger', '导出: runner 返回 ok(trigger)')
+  assert(res2.buttonFound === true, '导出: 定位到「导出」按钮')
+  assert(wpVm._exported !== true, '导出: 不自动点击(导出交用户点)')
 
   console.log(failed === 0 ? '\nFRONTEND-EXECUTOR-SELFTEST: PASS' : `\nFRONTEND-EXECUTOR-SELFTEST: FAIL (${failed})`)
   process.exitCode = failed === 0 ? 0 : 1
