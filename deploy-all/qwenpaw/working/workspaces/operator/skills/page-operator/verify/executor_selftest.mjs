@@ -140,7 +140,7 @@ function assert(cond, msg) {
   assert(vm._submitted !== true, 'submitForm 不被自动调用(提交交用户)')
   assert(res.dialogFound === true, '执行器定位到弹窗')
 
-  // ---- 触发类(导出)场景:定位「导出」按钮高亮,不点击、不开弹窗 ----
+  // ---- 触发类(导出,只读 risk=export)场景:自动点击「导出」按钮完成 ----
   const exportBtn = new FakeEl({ text: '导出' })
   const wpVm = {
     $options: { name: 'WorkProcess' },
@@ -149,6 +149,7 @@ function assert(cond, msg) {
       this._exported = true
     }
   }
+  exportBtn.click = () => wpVm.handleExport() // 模拟按钮 @click="handleExport"
   registerPage(wpVm)
   const exportPayload = {
     op: 'workflow.process.export',
@@ -170,8 +171,8 @@ function assert(cond, msg) {
 
   const res2 = await runner.run(exportPayload, { router })
   assert(res2 && res2.ok === true && res2.kind === 'trigger', '导出: runner 返回 ok(trigger)')
-  assert(res2.buttonFound === true, '导出: 定位到「导出」按钮')
-  assert(wpVm._exported !== true, '导出: 不自动点击(导出交用户点)')
+  assert(res2.clicked === true, '导出(只读): 自动点击按钮')
+  assert(wpVm._exported === true, '导出(只读): handleExport 已触发(自动完成)')
 
   console.log(failed === 0 ? '\nFRONTEND-EXECUTOR-SELFTEST: PASS' : `\nFRONTEND-EXECUTOR-SELFTEST: FAIL (${failed})`)
   process.exitCode = failed === 0 ? 0 : 1

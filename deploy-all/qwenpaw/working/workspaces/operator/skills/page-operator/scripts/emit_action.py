@@ -137,10 +137,14 @@ def main(argv=None) -> int:
         print(json.dumps(payload, ensure_ascii=False, indent=2))
     elif op.kind == "trigger":
         btn = op.button or "按钮"
-        lines = [
-            f"好的,正在为您打开「{op.name}」所在页面,并定位到「{btn}」按钮,"
-        ]
-        lines.append(f"点击即可{op.name}。")
+        is_write = op.risk in ("create", "update", "delete")
+        lines = [f"好的,正在为您打开「{op.name}」所在页面,"]
+        if is_write:
+            # 写类(删除等):只定位,交用户确认点击
+            lines.append(f"并定位到「{btn}」按钮,请您核对后点击确认。")
+        else:
+            # 只读(导出等):由虚拟光标自动点按钮完成
+            lines.append(f"并自动点击「{btn}」为您完成{op.name}(只读操作,已替您执行)。")
         lines.append("")
         lines.append(block)
         print("\n".join(lines))

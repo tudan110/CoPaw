@@ -30,7 +30,7 @@ agent 在回复里追加一个 fenced code block,语言标识为 `qwenpaw:action
 | `fields` | 是 | 字段 schema(`prop`/`label`/`type`/`required`),用于虚拟光标定位输入框与文案。 |
 | `params` | 是 | 要预填的值(只含目录声明过的字段)。 |
 | `title` / `breadcrumb` | 否 | 卡片/确认文案。 |
-| `risk` | 否 | 风险级别:`create`(普通确认)/`update`/`delete`(强确认)。 |
+| `risk` | 否 | 风险级别,决定触发类(kind=trigger)是否自动点击:`export` 等**只读/安全**操作 → 执行器虚拟光标**自动点击**按钮完成(用户已开操作模式+下指令=已确认);`create`/`update`/`delete` **写操作** → 只预填/高亮,**由用户确认点击**(不自动,防 AI 预填错值/误删)。 |
 
 `route` 不含 origin —— 助手与目标页面同源、同一个 SPA,只需相对路由。
 
