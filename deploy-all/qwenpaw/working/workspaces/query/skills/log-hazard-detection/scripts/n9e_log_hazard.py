@@ -21,9 +21,9 @@ This is the recommended entry point for an LLM agent answering "what's hazardous
 in the recent logs" — it returns a self-contained report with chart blocks.
 
 Examples:
-    uv run scripts/n9e_log_hazard.py --output markdown
-    uv run scripts/n9e_log_hazard.py --from-time now-1h --baseline 24h --output markdown
-    uv run scripts/n9e_log_hazard.py --include-drift false --output markdown
+    python3 scripts/n9e_log_hazard.py --output markdown
+    python3 scripts/n9e_log_hazard.py --from-time now-1h --baseline 24h --output markdown
+    python3 scripts/n9e_log_hazard.py --include-drift false --output markdown
 """
 
 from __future__ import annotations

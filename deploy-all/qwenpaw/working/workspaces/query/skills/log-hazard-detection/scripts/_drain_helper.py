@@ -107,8 +107,8 @@ def _build_config(max_clusters: int, sim_th: float) -> "TemplateMinerConfig":
 def make_miner(*, max_clusters: int = 2000, sim_th: float = 0.4) -> "TemplateMiner":
     if not HAS_DRAIN3:
         raise RuntimeError(
-            "drain3 未安装。请用 `uv run` 跑脚本（pyproject.toml 已声明 drain3 依赖）"
-            "，或在系统 Python 里 `pip install drain3>=0.9.11`。"
+            "drain3 未安装。请在系统 Python 里 `pip install 'drain3>=0.9.11'`"
+            "（镜像已随本技能 requirements.txt 烘焙，正常不应缺）。"
         )
     cfg = _build_config(max_clusters=max_clusters, sim_th=sim_th)
     return TemplateMiner(persistence_handler=None, config=cfg)

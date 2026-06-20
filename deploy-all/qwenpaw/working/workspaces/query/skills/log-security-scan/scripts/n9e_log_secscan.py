@@ -15,9 +15,9 @@ aggregates by rule & severity, and emits a Markdown report with redacted
 sample contexts so the report is safe to forward.
 
 Examples:
-    uv run scripts/n9e_log_secscan.py --from-time now-15m --output markdown
-    uv run scripts/n9e_log_secscan.py --severity-min high --max-docs 3000
-    uv run scripts/n9e_log_secscan.py --rules-file references/security_rules.yml \\
+    python3 scripts/n9e_log_secscan.py --from-time now-15m --output markdown
+    python3 scripts/n9e_log_secscan.py --severity-min high --max-docs 3000
+    python3 scripts/n9e_log_secscan.py --rules-file references/security_rules.yml \\
         --from-time now-1h --show-samples 5 --output markdown
 """
 

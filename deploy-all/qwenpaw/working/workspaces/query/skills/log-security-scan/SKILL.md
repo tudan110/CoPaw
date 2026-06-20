@@ -52,10 +52,10 @@ N9E_LOG_TIMEOUT=60
 
 ## 配置与最短路径（给 Agent）
 
-- 一站式扫描：`uv run scripts/n9e_log_secscan.py [--from-time now-15m] [--severity-min medium]`
-- 规则一览：`uv run scripts/n9e_log_secrules.py --mode list`
-- 单规则详解：`uv run scripts/n9e_log_secrules.py --mode explain --rule-id <id>`
-- 规则自检 / 试跑：`uv run scripts/n9e_log_secrules.py --mode test --rule-id <id> [--text '...']`
+- 一站式扫描：`python3 scripts/n9e_log_secscan.py [--from-time now-15m] [--severity-min medium]`
+- 规则一览：`python3 scripts/n9e_log_secrules.py --mode list`
+- 单规则详解：`python3 scripts/n9e_log_secrules.py --mode explain --rule-id <id>`
+- 规则自检 / 试跑：`python3 scripts/n9e_log_secrules.py --mode test --rule-id <id> [--text '...']`
 
 ## 时间范围约定
 
@@ -72,7 +72,7 @@ N9E_LOG_TIMEOUT=60
 ### 1. 默认扫描
 
 ```bash
-uv run scripts/n9e_log_secscan.py --from-time now-15m --output markdown
+python3 scripts/n9e_log_secscan.py --from-time now-15m --output markdown
 ```
 
 输出包含：
@@ -85,16 +85,16 @@ uv run scripts/n9e_log_secscan.py --from-time now-15m --output markdown
 
 ```bash
 # 只关心 high 及以上
-uv run scripts/n9e_log_secscan.py --severity-min high --from-time now-1h
+python3 scripts/n9e_log_secscan.py --severity-min high --from-time now-1h
 
 # 只关心 critical
-uv run scripts/n9e_log_secscan.py --severity-min critical --from-time now-1d
+python3 scripts/n9e_log_secscan.py --severity-min critical --from-time now-1d
 ```
 
 ### 3. 大窗口扫描
 
 ```bash
-uv run scripts/n9e_log_secscan.py --from-time now-1d --max-docs 8000 --output markdown
+python3 scripts/n9e_log_secscan.py --from-time now-1d --max-docs 8000 --output markdown
 ```
 
 当 `total_docs > max_docs * 4` 时自动从 `tail` 降级为 `random_score` 抽样，并在报告里标注。
@@ -103,16 +103,16 @@ uv run scripts/n9e_log_secscan.py --from-time now-1d --max-docs 8000 --output ma
 
 ```bash
 # 看规则一览（按 severity 排序）
-uv run scripts/n9e_log_secrules.py --mode list
+python3 scripts/n9e_log_secrules.py --mode list
 
 # 看一条规则的 pattern 与样例
-uv run scripts/n9e_log_secrules.py --mode explain --rule-id secret-aws-ak
+python3 scripts/n9e_log_secrules.py --mode explain --rule-id secret-aws-ak
 
 # 用规则自带 examples 自检
-uv run scripts/n9e_log_secrules.py --mode test --rule-id pii-bankcard
+python3 scripts/n9e_log_secrules.py --mode test --rule-id pii-bankcard
 
 # 用自定义文本试规则
-uv run scripts/n9e_log_secrules.py --mode test --rule-id secret-aws-ak \
+python3 scripts/n9e_log_secrules.py --mode test --rule-id secret-aws-ak \
   --text 'foo AKIAIOSFODNN7EXAMPLE bar'
 ```
 
@@ -158,7 +158,7 @@ uv run scripts/n9e_log_secrules.py --mode test --rule-id secret-aws-ak \
 ## 错误处理规则
 
 - **缺少 `N9E_API_BASE_URL` / `N9E_USER_TOKEN`**：直接提示配置缺失
-- **PyYAML 未安装**：报错提示用 `uv run` 跑（PEP 723 内联依赖）
+- **PyYAML 未安装**：PyYAML 已随镜像烘焙（本技能 requirements.txt + 核心依赖），正常不会缺；本地开发缺时 `pip install pyyaml`
 - **规则文件不存在**：返回 400 并展示期待路径
 - **单条规则 pattern 编译失败**：跳过该条 + warn 在报告顶部，其它规则正常
 - **401 / 403**：提示 token 无效 / 权限不足
@@ -177,31 +177,31 @@ uv run scripts/n9e_log_secrules.py --mode test --rule-id secret-aws-ak \
 ### 示例 1：日常扫描
 
 - 用户：扫一下最近 15 分钟日志里有没有敏感信息
-- 动作：`uv run scripts/n9e_log_secscan.py --from-time now-15m --output markdown`
+- 动作：`python3 scripts/n9e_log_secscan.py --from-time now-15m --output markdown`
 - 回复：先 1~2 句结论（命中规则数 + 最严重的 1~2 条），再总览 + 明细表 + 脱敏样例
 
 ### 示例 2：高危项专扫
 
 - 用户：检查一下日志里有没有 AK SK 泄露
-- 动作：`uv run scripts/n9e_log_secscan.py --severity-min critical --from-time now-1d --output markdown`
+- 动作：`python3 scripts/n9e_log_secscan.py --severity-min critical --from-time now-1d --output markdown`
 - 回复：聚焦 secret-aws-ak / secret-aws-sk / secret-aliyun-ak / secret-private-key 命中
 
 ### 示例 3：规则一览
 
 - 用户：都有哪些规则
-- 动作：`uv run scripts/n9e_log_secrules.py --mode list`
+- 动作：`python3 scripts/n9e_log_secrules.py --mode list`
 - 回复：直接展示规则表
 
 ### 示例 4：测一条规则
 
 - 用户：这一段 `Authorization: Bearer eyJ...` 会不会被识别
-- 动作：`uv run scripts/n9e_log_secrules.py --mode test --rule-id secret-bearer-token --text 'Authorization: Bearer eyJabc...'`
+- 动作：`python3 scripts/n9e_log_secrules.py --mode test --rule-id secret-bearer-token --text 'Authorization: Bearer eyJabc...'`
 - 回复：展示命中数 + 脱敏 match + context
 
 ### 示例 5：用户加规则
 
 - 用户：我想加一条规则识别 GitHub PAT
-- 回复：指引在 `references/security_rules.yml` 加一条（给字段格式 + 示例 pattern `\bghp_[A-Za-z0-9]{36}\b`），然后 `uv run scripts/n9e_log_secrules.py --mode test --rule-id <new-id>` 自检
+- 回复：指引在 `references/security_rules.yml` 加一条（给字段格式 + 示例 pattern `\bghp_[A-Za-z0-9]{36}\b`），然后 `python3 scripts/n9e_log_secrules.py --mode test --rule-id <new-id>` 自检
 
 ## 注意事项
 

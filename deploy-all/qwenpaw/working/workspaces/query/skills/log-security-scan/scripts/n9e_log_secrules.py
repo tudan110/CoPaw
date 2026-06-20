@@ -16,11 +16,11 @@ Modes:
     test     : try a rule against a custom text (or its bundled examples)
 
 Examples:
-    uv run scripts/n9e_log_secrules.py --mode list
-    uv run scripts/n9e_log_secrules.py --mode explain --rule-id secret-aws-ak
-    uv run scripts/n9e_log_secrules.py --mode test --rule-id secret-aws-ak \\
+    python3 scripts/n9e_log_secrules.py --mode list
+    python3 scripts/n9e_log_secrules.py --mode explain --rule-id secret-aws-ak
+    python3 scripts/n9e_log_secrules.py --mode test --rule-id secret-aws-ak \\
         --text 'foo AKIAIOSFODNN7EXAMPLE bar'
-    uv run scripts/n9e_log_secrules.py --mode test --rule-id pii-bankcard
+    python3 scripts/n9e_log_secrules.py --mode test --rule-id pii-bankcard
         # uses the rule's bundled examples
 """
 

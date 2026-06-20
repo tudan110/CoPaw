@@ -45,11 +45,11 @@ INOE_API_TOKEN=your_jwt_token_here
 
 ## 配置与最短路径（给 Agent）
 
-- 原始查询入口：`uv run scripts/get_alarms.py [options]`
-- 统一汇总入口：`uv run scripts/analyze_alarms.py --mode <mode> [options]`
-- 页面类别统计入口：`uv run scripts/query_alarm_class_count.py [options]`
-- 聊天窗口优先：`uv run scripts/analyze_alarms.py --mode <mode> --output markdown`
-- 图表直出：`uv run scripts/analyze_alarms.py --mode <mode> --output markdown-echarts-only`
+- 原始查询入口：`python3 scripts/get_alarms.py [options]`
+- 统一汇总入口：`python3 scripts/analyze_alarms.py --mode <mode> [options]`
+- 页面类别统计入口：`python3 scripts/query_alarm_class_count.py [options]`
+- 聊天窗口优先：`python3 scripts/analyze_alarms.py --mode <mode> --output markdown`
+- 图表直出：`python3 scripts/analyze_alarms.py --mode <mode> --output markdown-echarts-only`
 - 优先读取共享 `secrets/`，未配置时回退技能目录下的 `.env`
 - 配置只关注 2 个字段：`INOE_API_BASE_URL`、`INOE_API_TOKEN`
 - 不要要求用户手动拼接接口 URL
@@ -105,13 +105,13 @@ INOE_API_TOKEN=your_jwt_token_here
 直接执行：
 
 ```bash
-uv run scripts/get_alarms.py --page_num 1 --page_size 10
+python3 scripts/get_alarms.py --page_num 1 --page_size 10
 ```
 
 如果用户指定资源分类，例如"查询数据库当前告警"或"查询当前数据库告警"，应执行：
 
 ```bash
-uv run scripts/get_alarms.py --ne_alias 数据库 --alarm_status 1 --page_num 1 --page_size 10
+python3 scripts/get_alarms.py --ne_alias 数据库 --alarm_status 1 --page_num 1 --page_size 10
 ```
 
 #### 场景 B：统计、分布、筛选、分析
@@ -119,22 +119,22 @@ uv run scripts/get_alarms.py --ne_alias 数据库 --alarm_status 1 --page_num 1 
 优先执行统一汇总脚本：
 
 ```bash
-uv run scripts/analyze_alarms.py --mode summary --output markdown
+python3 scripts/analyze_alarms.py --mode summary --output markdown
 ```
 
 如果用户指定了资源分类，统计脚本也必须带 `--ne_alias`，例如：
 
 ```bash
-uv run scripts/analyze_alarms.py --mode summary --ne_alias 数据库 --alarm_status 1 --output markdown
+python3 scripts/analyze_alarms.py --mode summary --ne_alias 数据库 --alarm_status 1 --output markdown
 ```
 
 若需要更细分的统计，可使用：
 
 ```bash
-uv run scripts/analyze_alarms.py --mode severity --output markdown
-uv run scripts/analyze_alarms.py --mode title --output markdown
-uv run scripts/analyze_alarms.py --mode device --output markdown
-uv run scripts/analyze_alarms.py --mode speciality --output markdown
+python3 scripts/analyze_alarms.py --mode severity --output markdown
+python3 scripts/analyze_alarms.py --mode title --output markdown
+python3 scripts/analyze_alarms.py --mode device --output markdown
+python3 scripts/analyze_alarms.py --mode speciality --output markdown
 ```
 
 只有在需要原始分页结果时，才退回 `get_alarms.py`。
@@ -144,7 +144,7 @@ uv run scripts/analyze_alarms.py --mode speciality --output markdown
 先取总数：
 
 ```bash
-uv run scripts/get_alarms.py --page_num 1 --page_size 1
+python3 scripts/get_alarms.py --page_num 1 --page_size 1
 ```
 
 再按 `total` 获取数据：
@@ -155,8 +155,8 @@ uv run scripts/get_alarms.py --page_num 1 --page_size 1
 例如：
 
 ```bash
-uv run scripts/get_alarms.py --page_num 1 --page_size 100
-uv run scripts/get_alarms.py --page_num 2 --page_size 100
+python3 scripts/get_alarms.py --page_num 1 --page_size 100
+python3 scripts/get_alarms.py --page_num 2 --page_size 100
 ```
 
 ### 3. 数据处理默认规则
@@ -261,32 +261,32 @@ uv run scripts/get_alarms.py --page_num 2 --page_size 100
 ### 示例 1：查询告警总数
 
 - 用户：现在一共有多少条告警？
-- 动作：执行 `uv run scripts/get_alarms.py --page_num 1 --page_size 1`
+- 动作：执行 `python3 scripts/get_alarms.py --page_num 1 --page_size 1`
 - 处理：读取返回中的 `total`
 - 回复：直接给出总数；如有必要补一句"统计基于当前系统告警列表接口"
 
 ### 示例 2：统计严重告警
 
 - 用户：帮我看看有多少严重告警，并列出它们
-- 动作：执行 `uv run scripts/analyze_alarms.py --mode search --severity 1 --include-alarms --output markdown`
+- 动作：执行 `python3 scripts/analyze_alarms.py --mode search --severity 1 --include-alarms --output markdown`
 - 回复：先给严重告警数量，再用 Markdown 表格列出关键字段；若数量很多，只展示前 20 条并说明总数
 
 ### 示例 3：查看告警级别分布
 
 - 用户：按告警级别统计告警数量
-- 动作：执行 `uv run scripts/analyze_alarms.py --mode severity --output markdown`
+- 动作：执行 `python3 scripts/analyze_alarms.py --mode severity --output markdown`
 - 回复：先给各级别结论，再输出统计表；如适合可补 ECharts 饼图或环形图
 
 ### 示例 4：模糊搜索告警
 
 - 用户：查一下标题里包含端口的告警
-- 动作：执行 `uv run scripts/analyze_alarms.py --mode search --keyword 端口 --output markdown`
+- 动作：执行 `python3 scripts/analyze_alarms.py --mode search --keyword 端口 --output markdown`
 - 回复：说明匹配数量，并表格展示告警标题、设备名称、告警级别、告警发生时间等字段
 
 ### 示例 5：按 CI ID 查询告警
 
 - 用户：帮我查 ci id 等于 18 的所有告警
-- 动作：执行 `uv run scripts/analyze_alarms.py --mode search --ci_id 18 --include-alarms --output markdown`
+- 动作：执行 `python3 scripts/analyze_alarms.py --mode search --ci_id 18 --include-alarms --output markdown`
 - 回复：先说明匹配总数，再表格展示告警标题、设备名称、管理IP、CI ID、告警发生时间、告警状态
 
 ## 注意事项

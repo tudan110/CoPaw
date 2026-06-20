@@ -1,0 +1,6 @@
+# alarm-analyst skill runtime deps.
+# Baked into the Docker image at build time (Dockerfile: find -name
+# requirements.txt | uv pip install -r). Lower bounds match the versions
+# already shipped in the app venv so offline builds need no network fetch.
+requests>=2.32.0
+python-dotenv>=1.0.0

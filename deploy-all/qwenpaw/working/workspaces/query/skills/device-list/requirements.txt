@@ -1,0 +1,6 @@
+# device-list skill runtime deps.
+# Baked into the Docker image at build time (Dockerfile: find -name
+# requirements.txt | uv pip install -r). Runs via plain python3 (see
+# SKILL.md); deps must live in the app venv, not a uv-run ephemeral env.
+requests>=2.32.0
+python-dotenv>=1.0.0

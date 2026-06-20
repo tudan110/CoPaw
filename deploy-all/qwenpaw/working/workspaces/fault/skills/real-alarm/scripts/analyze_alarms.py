@@ -4,9 +4,9 @@
 实时告警统一汇总脚本
 
 使用方式:
-    uv run analyze_alarms.py --mode summary
-    uv run analyze_alarms.py --mode severity
-    uv run analyze_alarms.py --mode search --keyword 端口
+    python3 analyze_alarms.py --mode summary
+    python3 analyze_alarms.py --mode severity
+    python3 analyze_alarms.py --mode search --keyword 端口
 
 说明:
     - 统一拉取全部告警后做本地过滤、分组和汇总
@@ -46,25 +46,25 @@ def parse_args() -> argparse.Namespace:
         epilog="""
 示例:
   # 综合概览
-  uv run analyze_alarms.py --mode summary
+  python3 analyze_alarms.py --mode summary
 
   # 按告警级别统计
-  uv run analyze_alarms.py --mode severity
+  python3 analyze_alarms.py --mode severity
 
   # 搜索告警标题包含端口的告警
-  uv run analyze_alarms.py --mode search --keyword 端口
+  python3 analyze_alarms.py --mode search --keyword 端口
 
   # 查询严重告警
-  uv run analyze_alarms.py --mode search --severity 1 --include-alarms
+  python3 analyze_alarms.py --mode search --severity 1 --include-alarms
 
   # 查询指定 CI/网元 ID 的告警
-  uv run analyze_alarms.py --mode search --ci_id 18 --include-alarms --output markdown
+  python3 analyze_alarms.py --mode search --ci_id 18 --include-alarms --output markdown
 
   # 查询数据库当前活跃告警
-  uv run analyze_alarms.py --mode search --ne_alias 数据库 --alarm_status 1 --include-alarms --output markdown
+  python3 analyze_alarms.py --mode search --ne_alias 数据库 --alarm_status 1 --include-alarms --output markdown
 
   # 查询指定时间范围的告警
-  uv run analyze_alarms.py --mode summary --begin_time "2026-03-15 10:00:00" --end_time "2026-03-16 10:00:00"
+  python3 analyze_alarms.py --mode summary --begin_time "2026-03-15 10:00:00" --end_time "2026-03-16 10:00:00"
         """,
     )
     parser.add_argument("--mode", choices=sorted(ALLOWED_MODES), default="summary", help="分析模式")

@@ -4,7 +4,7 @@
 实时告警查询脚本
 
 使用方式:
-    uv run get_alarms.py [--token <token>] [--page_num 1] [--page_size 10]
+    python3 get_alarms.py [--token <token>] [--page_num 1] [--page_size 10]
 
 说明:
     - 配置优先取环境变量/共享 secrets，回退 skill 目录下的 .env
@@ -597,25 +597,25 @@ def main():
         epilog="""
 示例:
   # 使用配置文件中的配置查询最近告警
-  uv run get_alarms.py --page_num 1 --page_size 10
+  python3 get_alarms.py --page_num 1 --page_size 10
 
   # 查询指定时间范围内的告警
-  uv run get_alarms.py --begin_time "2026-03-15 10:00:00" --end_time "2026-03-16 10:00:00"
+  python3 get_alarms.py --begin_time "2026-03-15 10:00:00" --end_time "2026-03-16 10:00:00"
 
   # 查询严重级别告警
-  uv run get_alarms.py --alarm_severitys 1 2
+  python3 get_alarms.py --alarm_severitys 1 2
 
   # 查询指定城市的告警
-  uv run get_alarms.py --cities 南京 秦淮区
+  python3 get_alarms.py --cities 南京 秦淮区
 
   # 查询指定 CI/网元 ID 的告警
-  uv run get_alarms.py --ci_id 18
+  python3 get_alarms.py --ci_id 18
 
   # 查询数据库当前活跃告警
-  uv run get_alarms.py --ne_alias 数据库 --alarm_status 1
+  python3 get_alarms.py --ne_alias 数据库 --alarm_status 1
 
   # 直接指定 token
-  uv run get_alarms.py --token "eyJhbGc..." --page_num 1 --page_size 10
+  python3 get_alarms.py --token "eyJhbGc..." --page_num 1 --page_size 10
 
 配置文件:
   配置优先取环境变量/共享 secrets，回退 skill 目录下的 .env：

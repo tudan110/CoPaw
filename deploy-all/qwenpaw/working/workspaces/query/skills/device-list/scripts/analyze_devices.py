@@ -4,9 +4,9 @@
 设备统一汇总脚本
 
 使用方式:
-    uv run analyze_devices.py --mode summary
-    uv run analyze_devices.py --mode vendor
-    uv run analyze_devices.py --mode search --keyword core
+    python3 analyze_devices.py --mode summary
+    python3 analyze_devices.py --mode vendor
+    python3 analyze_devices.py --mode search --keyword core
 
 说明:
     - 统一拉取全部设备后做本地过滤、分组和汇总
@@ -731,19 +731,19 @@ def parse_args() -> argparse.Namespace:
         epilog="""
 示例:
   # 综合概览
-  uv run analyze_devices.py --mode summary
+  python3 analyze_devices.py --mode summary
 
   # 按厂商统计
-  uv run analyze_devices.py --mode vendor
+  python3 analyze_devices.py --mode vendor
 
   # 查看异常设备
-  uv run analyze_devices.py --mode abnormal --include-devices
+  python3 analyze_devices.py --mode abnormal --include-devices
 
   # 搜索名称或 IP 包含 core 的设备
-  uv run analyze_devices.py --mode search --keyword core
+  python3 analyze_devices.py --mode search --keyword core
 
   # 查询华为离线设备
-  uv run analyze_devices.py --mode search --vendor HW --status offline --include-devices
+  python3 analyze_devices.py --mode search --vendor HW --status offline --include-devices
         """,
     )
     parser.add_argument("--mode", choices=sorted(ALLOWED_MODES), default="summary", help="分析模式")
