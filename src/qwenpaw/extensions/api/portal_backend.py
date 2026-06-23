@@ -1615,6 +1615,7 @@ async def put_diagnosis_settings(
         # Kick the poller so the first round runs immediately instead of
         # waiting out the remaining polling interval.
         _wake_portal_real_alarm_auto_takeover()
+    _refresh_alarm_analyst_environ()
     return diagnosis_settings_store.build_settings_payload()
 
 
@@ -1641,6 +1642,7 @@ async def reset_diagnosis_setting(
     )
     if not previous_enabled and current_enabled:
         _wake_portal_real_alarm_auto_takeover()
+    _refresh_alarm_analyst_environ()
     return diagnosis_settings_store.build_settings_payload()
 
 
@@ -1656,6 +1658,21 @@ def _refresh_inoe_environ() -> None:
         from qwenpaw.extensions.integrations import working_secrets
 
         working_secrets.refresh_inoe_environ()
+    except Exception:  # noqa: BLE001 - settings already persisted
+        pass
+
+
+def _refresh_alarm_analyst_environ() -> None:
+    """Push just-saved alarm-analyst metric settings into ``os.environ``.
+
+    The alarm-analyst skill reads ``ALARM_ANALYST_METRIC_*`` via env in a
+    subprocess, so re-materialise after a diagnosis-settings save/reset.
+    Best-effort — never turn a successful save into an HTTP error.
+    """
+    try:
+        from qwenpaw.extensions.integrations import working_secrets
+
+        working_secrets.refresh_alarm_analyst_environ()
     except Exception:  # noqa: BLE001 - settings already persisted
         pass
 
@@ -2332,6 +2349,31 @@ def _persist_analysis_result_to_registry(
     except Exception as exc:
         print(
             f"[WARN] _persist_analysis_result_to_registry failed: "
+            f"{type(exc).__name__}: {exc}",
+        )
+
+
+def _persist_diagnose_result_to_registry(
+    *,
+    session_id: str,
+    result: dict[str, Any],
+) -> None:
+    """Persist the raw diagnose result directly so external callers get data
+    without requiring the frontend to open the conversation first."""
+    try:
+        alarm_id = session_id.removeprefix(
+            PORTAL_REAL_ALARM_SESSION_PREFIX,
+        ).strip()
+        if not alarm_id:
+            return
+        result_json = json.dumps(result, ensure_ascii=False)
+        _update_portal_real_alarm_registry_safe(
+            alarm_id=alarm_id,
+            analysis_result=result_json,
+        )
+    except Exception as exc:
+        print(
+            f"[WARN] _persist_diagnose_result_to_registry failed: "
             f"{type(exc).__name__}: {exc}",
         )
 
@@ -3578,6 +3620,11 @@ async def portal_alarm_analyst_diagnose(
                 request,
                 session_id=session_id,
                 messages=history,
+            )
+        if session_id.startswith(PORTAL_REAL_ALARM_SESSION_PREFIX):
+            _persist_diagnose_result_to_registry(
+                session_id=session_id,
+                result=result.get("result") or {},
             )
         return result
     except ValueError as exc:
