@@ -44,7 +44,7 @@ bash scripts/zgops-cmdb.sh analyze --mode summary --output markdown-echarts-only
 
 ## 关系拓扑建议
 
-- 先通过 `GET /api/v0.1/ci/s?q=_type:project` 找到目标应用实例，再用 `GET /api/v0.1/ci_relations/s?root_id=<ci_id>&level=1,2,3` 拉取关系树。
+- 先通过 `GET /api/v0.1/ci/s?q=_type:project` 找到目标应用实例，再用 `GET /api/v0.1/ci_relations/s?root_id=<ci_id>&level=1&level=2&level=3` 拉取关系树。
 - `app-relations` 适合做“关联目标分布”统计，不适合作为具体应用关系拓扑图的最终形态。
 - 输出树状图时，把应用放在左侧根节点，向右展开产品归属、虚拟机、中间件、数据库、机柜、IP 地址等链路。
 - 根节点名称必须使用 CMDB 中实际查询到的应用实例名，不要预设某个固定应用名称。
