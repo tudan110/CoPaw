@@ -147,7 +147,7 @@ async def test_collect_portal_employee_statuses_uses_runtime_and_alerts(
     assert by_id["fault"]["workStatus"] == "紧急任务"
 
     assert by_id["resource"]["available"] is False
-    assert by_id["resource"]["employeeName"] == "资产管理员"
+    assert by_id["resource"]["employeeName"] == "资产管理专员"
     assert by_id["resource"]["status"] == "idle"
     assert by_id["resource"]["currentJob"] == "暂无对话"
 
