@@ -12,6 +12,8 @@ import httpx
 from fastapi import APIRouter, Body, HTTPException, Request
 from fastapi.responses import Response, StreamingResponse
 
+from qwenpaw.extensions.api import xingchen_settings_store
+
 router = APIRouter(prefix="/xingchen-adapter/v1", tags=["xingchen-adapter"])
 
 _DEFAULT_CHAT_PATH = "/aipaas/lm/v1/telechat/chat115b"
@@ -24,6 +26,13 @@ _DEFAULT_TOOL_RETRY_THRESHOLD = 5
 
 
 def _read_env(*names: str, default: str = "") -> str:
+    # Settings-page DB override > env (QWENPAW_/COPAW_) > default. The
+    # store resolves the first (canonical QWENPAW_) name; unmodelled names
+    # fall through to the legacy os.getenv loop below.
+    if names:
+        resolved = xingchen_settings_store.resolve_text(names[0])
+        if resolved:
+            return resolved
     for name in names:
         value = os.getenv(name)
         if value is not None and value.strip():

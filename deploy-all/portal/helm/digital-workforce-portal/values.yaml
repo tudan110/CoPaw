@@ -34,3 +34,29 @@ service:
   port: 80
   targetPort: 80
   nodePort: 30083
+
+# 就绪探针：探 nginx 自身静态 /health（不经过上游）。
+# nginx 进程一起来就 ready，前端静态页面始终可服务，不被后端抖动牵连下线。
+readinessProbe:
+  httpGet:
+    path: /health
+    port: 80
+  initialDelaySeconds: 5
+  periodSeconds: 10
+  timeoutSeconds: 3
+  failureThreshold: 3
+
+# 存活探针：探 /healthz（真正经过反代打到 qwenpaw /api/portal/health）。
+# 整机重启后 nginx worker 卡死在上游、反代全部超时但静态页仍 200 时，
+# 这条会持续失败 → 自动重启 pod 自愈。
+# 阈值刻意放宽（约 6×15=90s 持续失败才重启），避免后端短暂抖动误杀；
+# 代价是后端若持续 >90s 不可达，portal 会周期性重启——这种已是需人工
+# 介入的 P0，且重启不会让反代不通的状况更糟，属可接受取舍。
+livenessProbe:
+  httpGet:
+    path: /healthz
+    port: 80
+  initialDelaySeconds: 20
+  periodSeconds: 15
+  timeoutSeconds: 5
+  failureThreshold: 6

@@ -90,7 +90,7 @@ class WebMonitorConfig:
                 }
 
         return cls(
-            base_url=(os.getenv("WEB_MONITOR_BASE_URL", "http://82.156.83.38:3101").strip() or "http://82.156.83.38:3101").rstrip("/"),
+            base_url=(os.getenv("WEB_MONITOR_BASE_URL", "http://82.156.83.38:31010").strip() or "http://82.156.83.38:31010").rstrip("/"),
             authorization=os.getenv("WEB_MONITOR_AUTHORIZATION", "").strip(),
             cookie=os.getenv("WEB_MONITOR_COOKIE", "").strip(),
             timeout_seconds=int(os.getenv("WEB_MONITOR_TIMEOUT_SECONDS", "20").strip() or "20"),

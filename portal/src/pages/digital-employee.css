@@ -9236,6 +9236,31 @@
   line-height: 1.6;
 }
 
+/* Checkbox control row aligned to a text input's height so it lines up
+   with sibling fields in the two-column settings grid. */
+.portal-digital-employee .settings-checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 38px;
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.portal-digital-employee .settings-checkbox-row input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  min-height: 0;
+  padding: 0;
+  margin: 0;
+  border-radius: 4px;
+  accent-color: var(--primary);
+  cursor: pointer;
+  flex: none;
+}
+
 .portal-digital-employee .settings-choice-block {
   display: flex;
   flex-direction: column;

@@ -47,8 +47,9 @@ _LEGACY_NAMESPACE = "diagnosis"
 # Set once after the legacy values have been copied into ``inoe``.
 _MIGRATION_FLAG = "inoe_namespace_migrated_v1"
 
-DEFAULT_INOE_API_BASE_URL = "http://gateway:30080"
+DEFAULT_INOE_API_BASE_URL = "http://gateway:8080"
 DEFAULT_INOE_API_TIMEOUT_SECONDS = 30.0
+DEFAULT_INOE_ENABLE_CURL_FALLBACK = True
 
 # Re-exported so callers can build masked PUT bodies without importing the
 # diagnosis module.
@@ -58,6 +59,7 @@ __all__ = [
     "get_base_url",
     "get_token",
     "get_timeout_seconds",
+    "get_enable_curl_fallback",
     "build_headers",
     "build_url",
     "build_settings_payload",
@@ -93,6 +95,13 @@ INOE_FIELD_SPECS: dict[str, FieldSpec] = {
             "float",
             "inoe",
             min_value=0.1,
+        ),
+        FieldSpec(
+            "inoe_enable_curl_fallback",
+            "INOE_ENABLE_CURL_FALLBACK",
+            DEFAULT_INOE_ENABLE_CURL_FALLBACK,
+            "bool",
+            "inoe",
         ),
     )
 }
@@ -145,6 +154,12 @@ def migrate_legacy_inoe_overrides(*, db_path: Path = DEFAULT_DB_PATH) -> None:
 
 def _typed_override(spec: FieldSpec, raw: Any) -> Any:
     """Coerce a stored override value to the field's type, clamping bounds."""
+    if spec.kind == "bool":
+        if isinstance(raw, bool):
+            return raw
+        if isinstance(raw, str):
+            return raw.strip().lower() in {"1", "true", "yes", "on"}
+        return bool(raw)
     if spec.kind == "float":
         try:
             value = float(raw)
@@ -194,6 +209,22 @@ def get_timeout_seconds(*, db_path: Path = DEFAULT_DB_PATH) -> float:
     return float(
         _resolve(
             INOE_FIELD_SPECS["inoe_api_timeout_seconds"],
+            db_path=db_path,
+        )
+    )
+
+
+def get_enable_curl_fallback(*, db_path: Path = DEFAULT_DB_PATH) -> bool:
+    """Whether skills may retry a failed INOE request via system ``curl``.
+
+    Shared by every INOE skill (alarm-analyst, inspection-analyst,
+    zgops-cmdb, monitoring/resource queries). Resolved like the other INOE
+    fields: settings-page override > env (``INOE_ENABLE_CURL_FALLBACK``) >
+    default (on).
+    """
+    return bool(
+        _resolve(
+            INOE_FIELD_SPECS["inoe_enable_curl_fallback"],
             db_path=db_path,
         )
     )
