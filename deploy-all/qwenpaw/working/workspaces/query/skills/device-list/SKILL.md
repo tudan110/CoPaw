@@ -24,10 +24,10 @@ description: 设备管理系统查询。支持获取设备列表、统计设备�
 
 ## 配置与最短路径（给 Agent）
 
-- 原始查询入口：`uv run scripts/get_devices.py [options]`
-- 统一汇总入口：`uv run scripts/analyze_devices.py --mode <mode> [options]`
-- 聊天窗口优先：`uv run scripts/analyze_devices.py --mode <mode> --output markdown`
-- 图表直出：`uv run scripts/analyze_devices.py --mode <mode> --output markdown-echarts-only`
+- 原始查询入口：`python3 scripts/get_devices.py [options]`
+- 统一汇总入口：`python3 scripts/analyze_devices.py --mode <mode> [options]`
+- 聊天窗口优先：`python3 scripts/analyze_devices.py --mode <mode> --output markdown`
+- 图表直出：`python3 scripts/analyze_devices.py --mode <mode> --output markdown-echarts-only`
 - 优先读取共享 `secrets/`，未配置时回退技能目录下的 `.env`
 - 配置只关注 2 个字段：`INOE_API_BASE_URL`、`INOE_API_TOKEN`
 - 不要要求用户手动拼接接口 URL
@@ -63,7 +63,7 @@ INOE_API_TOKEN=your_jwt_token_here
 直接执行：
 
 ```bash
-uv run scripts/get_devices.py --page_num 1 --page_size 10
+python3 scripts/get_devices.py --page_num 1 --page_size 10
 ```
 
 #### 场景 B：统计、分布、筛选、分析
@@ -71,15 +71,15 @@ uv run scripts/get_devices.py --page_num 1 --page_size 10
 优先执行统一汇总脚本：
 
 ```bash
-uv run scripts/analyze_devices.py --mode summary --output markdown
+python3 scripts/analyze_devices.py --mode summary --output markdown
 ```
 
 若需要更细分的统计，可使用：
 
 ```bash
-uv run scripts/analyze_devices.py --mode vendor --output markdown
-uv run scripts/analyze_devices.py --mode model --output markdown
-uv run scripts/analyze_devices.py --mode abnormal --include-devices --output markdown
+python3 scripts/analyze_devices.py --mode vendor --output markdown
+python3 scripts/analyze_devices.py --mode model --output markdown
+python3 scripts/analyze_devices.py --mode abnormal --include-devices --output markdown
 ```
 
 只有在需要原始分页结果时，才退回 `get_devices.py`。
@@ -89,7 +89,7 @@ uv run scripts/analyze_devices.py --mode abnormal --include-devices --output mar
 先取总数：
 
 ```bash
-uv run scripts/get_devices.py --page_num 1 --page_size 1
+python3 scripts/get_devices.py --page_num 1 --page_size 1
 ```
 
 再按 `total` 获取数据：
@@ -100,8 +100,8 @@ uv run scripts/get_devices.py --page_num 1 --page_size 1
 例如：
 
 ```bash
-uv run scripts/get_devices.py --page_num 1 --page_size 100
-uv run scripts/get_devices.py --page_num 2 --page_size 100
+python3 scripts/get_devices.py --page_num 1 --page_size 100
+python3 scripts/get_devices.py --page_num 2 --page_size 100
 ```
 
 ### 3. 数据处理默认规则
@@ -168,26 +168,26 @@ uv run scripts/get_devices.py --page_num 2 --page_size 100
 ### 示例 1：查询设备总数
 
 - 用户：现在一共有多少台设备？
-- 动作：执行 `uv run scripts/get_devices.py --page_num 1 --page_size 1`
+- 动作：执行 `python3 scripts/get_devices.py --page_num 1 --page_size 1`
 - 处理：读取返回中的 `total`
 - 回复：直接给出总数；如有必要补一句“统计基于当前系统设备列表接口”
 
 ### 示例 2：统计离线设备
 
 - 用户：帮我看看有多少设备离线，并列出它们
-- 动作：执行 `uv run scripts/analyze_devices.py --mode search --status offline --include-devices --output markdown`
+- 动作：执行 `python3 scripts/analyze_devices.py --mode search --status offline --include-devices --output markdown`
 - 回复：先给离线数量，再用 Markdown 表格列出关键字段；若数量很多，只展示前 20 条并说明总数
 
 ### 示例 3：查看厂商分布
 
 - 用户：按厂商统计设备数量
-- 动作：执行 `uv run scripts/analyze_devices.py --mode vendor --output markdown`
+- 动作：执行 `python3 scripts/analyze_devices.py --mode vendor --output markdown`
 - 回复：先给 Top 厂商结论，再输出统计表；如适合可补 ECharts 饼图或柱状图
 
 ### 示例 4：模糊搜索设备
 
 - 用户：查一下名称里包含 core 的设备
-- 动作：执行 `uv run scripts/analyze_devices.py --mode search --keyword core --output markdown`
+- 动作：执行 `python3 scripts/analyze_devices.py --mode search --keyword core --output markdown`
 - 回复：说明匹配数量，并表格展示设备名称、IP、状态、型号、厂商
 
 ## 注意事项

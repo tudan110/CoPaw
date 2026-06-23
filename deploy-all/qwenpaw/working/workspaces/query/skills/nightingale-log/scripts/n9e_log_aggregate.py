@@ -11,11 +11,11 @@ Modes:
 - histogram : date histogram on the timestamp field
 
 Examples:
-    uv run scripts/n9e_log_aggregate.py --mode count --from-time now-1h
-    uv run scripts/n9e_log_aggregate.py --mode level --from-time now-1h --output markdown
-    uv run scripts/n9e_log_aggregate.py --mode host  --query 'level:ERROR' --top 10
-    uv run scripts/n9e_log_aggregate.py --mode terms --field log.level --top 5
-    uv run scripts/n9e_log_aggregate.py --mode histogram --interval 1m --from-time now-1h
+    python3 scripts/n9e_log_aggregate.py --mode count --from-time now-1h
+    python3 scripts/n9e_log_aggregate.py --mode level --from-time now-1h --output markdown
+    python3 scripts/n9e_log_aggregate.py --mode host  --query 'level:ERROR' --top 10
+    python3 scripts/n9e_log_aggregate.py --mode terms --field log.level --top 5
+    python3 scripts/n9e_log_aggregate.py --mode histogram --interval 1m --from-time now-1h
 """
 
 from __future__ import annotations

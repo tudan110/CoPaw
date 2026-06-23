@@ -48,9 +48,9 @@ N9E_LOG_TIMEOUT=60             # 模板挖掘比一般查询稍慢
 
 ## 配置与最短路径（给 Agent）
 
-- 一站式综合报告：`uv run scripts/n9e_log_hazard.py [--from-time now-15m] [--baseline 24h]`
-- 单窗口聚类：`uv run scripts/n9e_log_cluster.py [--from-time now-15m] [--top 20]`
-- 漂移分析：`uv run scripts/n9e_log_drift.py [--baseline 24h] [--from-time now-1h]`
+- 一站式综合报告：`python3 scripts/n9e_log_hazard.py [--from-time now-15m] [--baseline 24h]`
+- 单窗口聚类：`python3 scripts/n9e_log_cluster.py [--from-time now-15m] [--top 20]`
+- 漂移分析：`python3 scripts/n9e_log_drift.py [--baseline 24h] [--from-time now-1h]`
 - 优先读取共享 `secrets/`，未配置时回退本技能目录下的 `.env`
 - 不要要求用户手动拼接 `_msearch` URL 或写 ES DSL
 - 不要先做无意义的 ping / 健康检查；直接执行真实分析
@@ -83,7 +83,7 @@ N9E_LOG_TIMEOUT=60             # 模板挖掘比一般查询稍慢
 #### 场景 A：综合隐患报告（最常用）
 
 ```bash
-uv run scripts/n9e_log_hazard.py --output markdown
+python3 scripts/n9e_log_hazard.py --output markdown
 ```
 
 默认窗口 `now-15m..now`，基线 `24h ago` 的同长窗口，输出包含 4 章：
@@ -95,21 +95,21 @@ uv run scripts/n9e_log_hazard.py --output markdown
 #### 场景 B：单窗口聚类
 
 ```bash
-uv run scripts/n9e_log_cluster.py --from-time now-15m --top 20 --output markdown
-uv run scripts/n9e_log_cluster.py --query 'level:ERROR' --from-time now-1h --output markdown
+python3 scripts/n9e_log_cluster.py --from-time now-15m --top 20 --output markdown
+python3 scripts/n9e_log_cluster.py --query 'level:ERROR' --from-time now-1h --output markdown
 ```
 
 #### 场景 C：当前 vs 基线漂移
 
 ```bash
-uv run scripts/n9e_log_drift.py --baseline 24h --output markdown
-uv run scripts/n9e_log_drift.py --baseline 7d  --from-time now-1h --output markdown
+python3 scripts/n9e_log_drift.py --baseline 24h --output markdown
+python3 scripts/n9e_log_drift.py --baseline 7d  --from-time now-1h --output markdown
 ```
 
 #### 场景 D：自定义基线
 
 ```bash
-uv run scripts/n9e_log_drift.py \
+python3 scripts/n9e_log_drift.py \
   --baseline custom \
   --from-time '2026-05-06T08:00:00' --to-time '2026-05-06T09:00:00' \
   --baseline-from-time '2026-05-05T08:00:00' --baseline-to-time '2026-05-05T09:00:00' \
@@ -158,7 +158,7 @@ uv run scripts/n9e_log_drift.py \
 ## 错误处理规则
 
 - **缺少 `N9E_API_BASE_URL` / `N9E_USER_TOKEN`**：直接提示配置缺失，不继续请求
-- **drain3 未安装**：报错提示用 `uv run` 跑（pyproject.toml 已声明 drain3 依赖）；本技能不会自动 pip install
+- **drain3 未安装**：drain3 已随本技能 requirements.txt 烘焙进镜像，正常不会缺；本地开发缺时 `pip install 'drain3>=0.9.11'`
 - **401 / 403**：提示 token 无效 / 权限不足，建议更新 `.env` 或重新生成 Token
 - **404**：提示数据源 ID / 索引名错误，建议先跑 `nightingale-log/scripts/n9e_log_meta.py --mode datasources`
 - **空命中**：明确说 “未挖掘出任何模板”，并提示放宽时间范围、加大 `--sample-size`、检查 `--message-fields`
@@ -176,31 +176,31 @@ uv run scripts/n9e_log_drift.py \
 ### 示例 1：综合隐患报告
 
 - 用户：看下最近 15 分钟日志里有没有什么异常模式
-- 动作：`uv run scripts/n9e_log_hazard.py --from-time now-15m --output markdown`
+- 动作：`python3 scripts/n9e_log_hazard.py --from-time now-15m --output markdown`
 - 回复：先 1~2 句结论（最显眼的 surge / error_dense / rare），再分章 markdown + ECharts
 
 ### 示例 2：错误日志聚类
 
 - 用户：把最近 1 小时的报错日志聚一下
-- 动作：`uv run scripts/n9e_log_cluster.py --query 'level:ERROR OR message:Exception OR message:failed' --from-time now-1h --output markdown`
+- 动作：`python3 scripts/n9e_log_cluster.py --query 'level:ERROR OR message:Exception OR message:failed' --from-time now-1h --output markdown`
 - 回复：1 句结论（命中数 / Top 模板 / 涉及主机数），再表格 + ECharts 饼图
 
 ### 示例 3：与昨天比
 
 - 用户：跟昨天同时段比，最近 1 小时多出哪些日志模式
-- 动作：`uv run scripts/n9e_log_drift.py --baseline 24h --from-time now-1h --output markdown`
+- 动作：`python3 scripts/n9e_log_drift.py --baseline 24h --from-time now-1h --output markdown`
 - 回复：1 句结论（surged 数 / new 数 / vanished 数），再三段表 + 双柱图
 
 ### 示例 4：稀有日志
 
 - 用户：最近有什么稀有日志
-- 动作：`uv run scripts/n9e_log_hazard.py --output markdown`
+- 动作：`python3 scripts/n9e_log_hazard.py --output markdown`
 - 回复：聚焦 “稀有模板” 段，给前 5 条；说明判定标准（占比 < 0.1% 且 count ∈ [2,10]）
 
 ### 示例 5：自定义基线
 
 - 用户：拿今天上午 8~9 点跟昨天上午 8~9 点比
-- 动作：`uv run scripts/n9e_log_drift.py --baseline custom --from-time 2026-05-07T08:00:00 --to-time 2026-05-07T09:00:00 --baseline-from-time 2026-05-06T08:00:00 --baseline-to-time 2026-05-06T09:00:00 --output markdown`
+- 动作：`python3 scripts/n9e_log_drift.py --baseline custom --from-time 2026-05-07T08:00:00 --to-time 2026-05-07T09:00:00 --baseline-from-time 2026-05-06T08:00:00 --baseline-to-time 2026-05-06T09:00:00 --output markdown`
 - 回复：同示例 3，但基线是用户指定的窗口
 
 ## 注意事项

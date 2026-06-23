@@ -30,7 +30,11 @@ COPY --from=builder /app/dist /usr/share/nginx/html
 COPY deploy-all/portal/nginx.conf /etc/nginx/nginx.conf
 COPY deploy-all/portal/docker-entrypoint.d/40-runtime-config.sh /docker-entrypoint.d/40-runtime-config.sh
 
-RUN chmod +x /docker-entrypoint.d/40-runtime-config.sh
+# nginx:alpine 基础镜像里 /var/cache/nginx 的 owner 可能是 uid 1000(残留),
+# 而 worker 跑 nginx 用户(uid 101),写 client_temp 会 EACCES,大 body POST
+# 直接 nginx 500（请求不会到上游）。显式 chown 让 owner 跟着 worker 走。
+RUN chmod +x /docker-entrypoint.d/40-runtime-config.sh \
+    && chown -R nginx:nginx /var/cache/nginx
 
 EXPOSE 80
 

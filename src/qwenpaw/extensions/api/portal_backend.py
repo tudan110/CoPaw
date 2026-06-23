@@ -4637,6 +4637,8 @@ async def register_alarm_registry_record(
         "deviceName": str(payload.get("deviceName", "")).strip(),
         "manageIp": str(payload.get("manageIp", "")).strip(),
         "eventTime": str(payload.get("eventTime", "")).strip(),
+        "eventLastTime": str(payload.get("eventLastTime", "")).strip(),
+        "actCount": str(payload.get("actCount", "")).strip(),
         "visibleContent": str(payload.get("visibleContent", "")).strip(),
     }
     try:

@@ -295,7 +295,9 @@ export function AlarmRegistryPanel({ pageTheme, onOpenChat }: AlarmRegistryPanel
               <th>资源名称</th>
               <th>IP</th>
               <th>状态</th>
-              <th>告警时间</th>
+              <th>最新告警时间</th>
+              <th>首次告警时间</th>
+              <th>重复次数</th>
               <th>处理时间</th>
               <th>操作</th>
             </tr>
@@ -303,7 +305,7 @@ export function AlarmRegistryPanel({ pageTheme, onOpenChat }: AlarmRegistryPanel
           <tbody>
             {records.length === 0 && !loading && (
               <tr>
-                <td colSpan={7} className="alarm-registry-empty">
+                <td colSpan={9} className="alarm-registry-empty">
                   暂无数据
                 </td>
               </tr>
@@ -331,7 +333,9 @@ export function AlarmRegistryPanel({ pageTheme, onOpenChat }: AlarmRegistryPanel
                     </span>
                   ) : null}
                 </td>
+                <td>{formatTime(record.eventLastTime)}</td>
                 <td>{formatTime(record.eventTime)}</td>
+                <td>{record.actCount || "--"}</td>
                 <td>{formatTime(record.handledAt || record.takenOverAt || record.updatedAt)}</td>
                 <td className="alarm-registry-cell-actions">
                   {record.status !== "resolved" && (

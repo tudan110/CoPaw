@@ -7,6 +7,8 @@ export interface AlarmRegistryRecord {
   deviceName: string;
   manageIp: string;
   eventTime: string;
+  eventLastTime: string;
+  actCount: string;
   visibleContent: string;
   status: string;
   sessionId: string;
@@ -73,6 +75,8 @@ export async function registerAlarmRecord(alarm: {
   deviceName?: string;
   manageIp?: string;
   eventTime?: string;
+  eventLastTime?: string;
+  actCount?: number;
   visibleContent?: string;
   status?: string;
   source?: string;

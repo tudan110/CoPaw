@@ -10,10 +10,10 @@ Sub-commands (via `--mode`):
                 marking fields commonly used for log queries
 
 Usage:
-    uv run scripts/n9e_log_meta.py --mode datasources [--output json|markdown]
-    uv run scripts/n9e_log_meta.py --mode indices    [--datasource <id>] [--output ...]
-    uv run scripts/n9e_log_meta.py --mode mapping    [--index <pattern>]
-    uv run scripts/n9e_log_meta.py --mode fields     [--index <pattern>] [--output ...]
+    python3 scripts/n9e_log_meta.py --mode datasources [--output json|markdown]
+    python3 scripts/n9e_log_meta.py --mode indices    [--datasource <id>] [--output ...]
+    python3 scripts/n9e_log_meta.py --mode mapping    [--index <pattern>]
+    python3 scripts/n9e_log_meta.py --mode fields     [--index <pattern>] [--output ...]
 """
 
 from __future__ import annotations

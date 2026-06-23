@@ -100,8 +100,8 @@ _FLAG_MAP = {
 def load_rules(path: Path) -> LoadedRules:
     if not HAS_YAML:
         raise RuntimeError(
-            "PyYAML 未安装。请用 `uv run` 跑脚本（PEP 723 内联依赖会自动装），"
-            "或 `pip install pyyaml`。"
+            "PyYAML 未安装。请 `pip install pyyaml`"
+            "（镜像已随本技能 requirements.txt 烘焙，正常不应缺）。"
         )
     if not path.exists():
         raise FileNotFoundError(f"rules 文件不存在: {path}")

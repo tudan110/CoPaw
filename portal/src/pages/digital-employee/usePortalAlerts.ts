@@ -102,7 +102,9 @@ export function usePortalAlerts({
         alarmId: alert.id,
         resId: alert.resId,
         visibleContent: alert.visibleContent || alert.dispatchContent,
-        eventTime: alert.timeLabel,
+        eventTime: alert.eventTime,
+        eventLastTime: alert.eventLastTime,
+        actCount: alert.actCount,
         status: "analyzing",
         source: "manual-bell",
       }).catch(() => {});

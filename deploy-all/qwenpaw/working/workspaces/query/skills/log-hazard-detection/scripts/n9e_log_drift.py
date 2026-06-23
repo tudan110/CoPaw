@@ -14,8 +14,8 @@ Mines templates for the current window AND a baseline window (default 24h
 earlier with the same length), then reports surged / new / vanished templates.
 
 Examples:
-    uv run scripts/n9e_log_drift.py --baseline 24h --output markdown
-    uv run scripts/n9e_log_drift.py --baseline 7d --from-time now-1h --output markdown
+    python3 scripts/n9e_log_drift.py --baseline 24h --output markdown
+    python3 scripts/n9e_log_drift.py --baseline 7d --from-time now-1h --output markdown
 """
 
 from __future__ import annotations

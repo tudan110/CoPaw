@@ -4,7 +4,7 @@
 设备列表查询脚本
 
 使用方式:
-    uv run get_devices.py [--token <token>] [--page_num 1] [--page_size 10]
+    python3 get_devices.py [--token <token>] [--page_num 1] [--page_size 10]
 
 说明:
     - 配置优先取环境变量/共享 secrets，回退 skill 目录下的 .env
@@ -195,13 +195,13 @@ def main():
         epilog="""
 示例:
   # 使用配置文件中的配置
-  uv run get_devices.py --page_num 1 --page_size 35
+  python3 get_devices.py --page_num 1 --page_size 35
 
   # 直接指定 token
-  uv run get_devices.py --token "eyJhbGc..." --page_num 1 --page_size 35
+  python3 get_devices.py --token "eyJhbGc..." --page_num 1 --page_size 35
 
     # 临时指定 API 地址
-    uv run get_devices.py --api_base_url "http://127.0.0.1:30080" --page_num 1 --page_size 10
+    python3 get_devices.py --api_base_url "http://127.0.0.1:30080" --page_num 1 --page_size 10
 
 配置文件:
   配置优先取环境变量/共享 secrets，回退 skill 目录下的 .env：

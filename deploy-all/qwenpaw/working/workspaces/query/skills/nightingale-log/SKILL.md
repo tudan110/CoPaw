@@ -64,9 +64,9 @@ N9E_LOG_TIMESTAMP_FIELD=@timestamp
 
 ## 配置与最短路径（给 Agent）
 
-- 元数据查询：`uv run scripts/n9e_log_meta.py --mode <datasources|indices|mapping|fields> [...]`
-- 日志检索：`uv run scripts/n9e_log_query.py [--query <lucene>] [--from-time now-15m] [...]`
-- 聚合统计：`uv run scripts/n9e_log_aggregate.py --mode <count|level|host|service|terms|histogram> [...]`
+- 元数据查询：`python3 scripts/n9e_log_meta.py --mode <datasources|indices|mapping|fields> [...]`
+- 日志检索：`python3 scripts/n9e_log_query.py [--query <lucene>] [--from-time now-15m] [...]`
+- 聚合统计：`python3 scripts/n9e_log_aggregate.py --mode <count|level|host|service|terms|histogram> [...]`
 - 优先读取共享 `secrets/`，未配置时回退本技能目录下的 `.env`
 - 不要要求用户手动拼接 `_msearch` URL 或写完整 ES DSL
 - 不要先做无意义的 ping / 健康检查；直接执行真实查询
@@ -96,17 +96,17 @@ N9E_LOG_TIMESTAMP_FIELD=@timestamp
 #### 场景 A：简单看日志
 
 ```bash
-uv run scripts/n9e_log_query.py --from-time now-15m --size 20 --output markdown
+python3 scripts/n9e_log_query.py --from-time now-15m --size 20 --output markdown
 ```
 
 #### 场景 B：关键字 / 错误日志检索
 
 ```bash
-uv run scripts/n9e_log_query.py \
+python3 scripts/n9e_log_query.py \
   --query 'level:ERROR OR level:WARN' \
   --from-time now-1h --size 50 --output markdown
 
-uv run scripts/n9e_log_query.py \
+python3 scripts/n9e_log_query.py \
   --query 'message:"connection refused"' \
   --from-time now-1h --output markdown
 ```
@@ -114,34 +114,34 @@ uv run scripts/n9e_log_query.py \
 #### 场景 C：按主机 / 服务 / 级别分布
 
 ```bash
-uv run scripts/n9e_log_aggregate.py --mode level --from-time now-1h --output markdown
-uv run scripts/n9e_log_aggregate.py --mode host  --from-time now-1h --output markdown
-uv run scripts/n9e_log_aggregate.py --mode service --from-time now-1h --output markdown
-uv run scripts/n9e_log_aggregate.py --mode terms --field log.level --top 10 --output markdown
+python3 scripts/n9e_log_aggregate.py --mode level --from-time now-1h --output markdown
+python3 scripts/n9e_log_aggregate.py --mode host  --from-time now-1h --output markdown
+python3 scripts/n9e_log_aggregate.py --mode service --from-time now-1h --output markdown
+python3 scripts/n9e_log_aggregate.py --mode terms --field log.level --top 10 --output markdown
 ```
 
 #### 场景 D：日志趋势（时间直方图）
 
 ```bash
-uv run scripts/n9e_log_aggregate.py --mode histogram --interval 1m --from-time now-1h --output markdown
-uv run scripts/n9e_log_aggregate.py --mode histogram --interval 5m --from-time now-6h \
+python3 scripts/n9e_log_aggregate.py --mode histogram --interval 1m --from-time now-1h --output markdown
+python3 scripts/n9e_log_aggregate.py --mode histogram --interval 5m --from-time now-6h \
   --query 'level:ERROR' --output markdown
 ```
 
 #### 场景 E：按主机或服务过滤
 
 ```bash
-uv run scripts/n9e_log_query.py --query 'host.name:"web-01"' --from-time now-1h
-uv run scripts/n9e_log_query.py --query 'service:nginx AND level:ERROR' --from-time now-30m
+python3 scripts/n9e_log_query.py --query 'host.name:"web-01"' --from-time now-1h
+python3 scripts/n9e_log_query.py --query 'service:nginx AND level:ERROR' --from-time now-30m
 ```
 
 #### 场景 F：探索数据源 / 索引 / 字段
 
 ```bash
-uv run scripts/n9e_log_meta.py --mode datasources                   # 列出所有日志数据源
-uv run scripts/n9e_log_meta.py --mode indices                       # 列出当前数据源的索引
-uv run scripts/n9e_log_meta.py --mode mapping --index logstash-*    # 查看索引 mapping
-uv run scripts/n9e_log_meta.py --mode fields  --index logstash-*    # 列出可用字段（精简）
+python3 scripts/n9e_log_meta.py --mode datasources                   # 列出所有日志数据源
+python3 scripts/n9e_log_meta.py --mode indices                       # 列出当前数据源的索引
+python3 scripts/n9e_log_meta.py --mode mapping --index logstash-*    # 查看索引 mapping
+python3 scripts/n9e_log_meta.py --mode fields  --index logstash-*    # 列出可用字段（精简）
 ```
 
 ### 3. 数据处理默认规则
@@ -221,31 +221,31 @@ uv run scripts/n9e_log_meta.py --mode fields  --index logstash-*    # 列出可�
 ### 示例 1：看一下最近的日志
 
 - 用户：看一下最近 15 分钟的日志
-- 动作：`uv run scripts/n9e_log_query.py --from-time now-15m --size 20 --output markdown`
+- 动作：`python3 scripts/n9e_log_query.py --from-time now-15m --size 20 --output markdown`
 - 回复：先给 1 句摘要（命中总数 / 时间窗），再表格列出 时间、级别、主机、服务、message 摘要
 
 ### 示例 2：错误日志统计
 
 - 用户：最近 1 小时各级别日志多少条
-- 动作：`uv run scripts/n9e_log_aggregate.py --mode level --from-time now-1h --output markdown`
+- 动作：`python3 scripts/n9e_log_aggregate.py --mode level --from-time now-1h --output markdown`
 - 回复：先给结论（哪个级别最多），再表格 + ECharts 环形图
 
 ### 示例 3：错误日志趋势
 
 - 用户：最近 6 小时错误日志的趋势
-- 动作：`uv run scripts/n9e_log_aggregate.py --mode histogram --interval 5m --from-time now-6h --query 'level:ERROR' --output markdown`
+- 动作：`python3 scripts/n9e_log_aggregate.py --mode histogram --interval 5m --from-time now-6h --query 'level:ERROR' --output markdown`
 - 回复：先给峰值时段结论，再表格 + ECharts 折线图
 
 ### 示例 4：关键字搜索
 
 - 用户：查一下日志里包含 connection refused 的
-- 动作：`uv run scripts/n9e_log_query.py --query 'message:"connection refused"' --from-time now-1h --output markdown`
+- 动作：`python3 scripts/n9e_log_query.py --query 'message:"connection refused"' --from-time now-1h --output markdown`
 - 回复：说明命中数量，然后表格展示 时间 / 主机 / 服务 / message 摘要；超过 20 条只展示前 20 条
 
 ### 示例 5：探索字段
 
 - 用户：当前日志数据源里有哪些字段可以用
-- 动作：`uv run scripts/n9e_log_meta.py --mode fields --output markdown`
+- 动作：`python3 scripts/n9e_log_meta.py --mode fields --output markdown`
 - 回复：表格输出 字段名 / 类型 / 是否常用，并提示常用字段如何写到 `--query`
 
 ## 注意事项

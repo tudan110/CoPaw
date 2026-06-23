@@ -3,10 +3,10 @@
 """Nightingale (n9e) log query — search hits.
 
 Examples:
-    uv run scripts/n9e_log_query.py --from-time now-15m --size 20 --output markdown
-    uv run scripts/n9e_log_query.py --query 'level:ERROR' --from-time now-1h
-    uv run scripts/n9e_log_query.py --query 'message:"connection refused"'
-    uv run scripts/n9e_log_query.py --query 'service:nginx AND level:ERROR' \\
+    python3 scripts/n9e_log_query.py --from-time now-15m --size 20 --output markdown
+    python3 scripts/n9e_log_query.py --query 'level:ERROR' --from-time now-1h
+    python3 scripts/n9e_log_query.py --query 'message:"connection refused"'
+    python3 scripts/n9e_log_query.py --query 'service:nginx AND level:ERROR' \\
         --from-time now-30m --size 50 --output markdown
 """
 

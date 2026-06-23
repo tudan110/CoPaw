@@ -15,9 +15,9 @@ mining, and reports the dominant templates with frequency, hosts, services,
 and an `error_score` so a hazard model can rank "weird-looking" templates.
 
 Examples:
-    uv run scripts/n9e_log_cluster.py --from-time now-15m --top 20 --output markdown
-    uv run scripts/n9e_log_cluster.py --query 'level:ERROR' --from-time now-1h --output markdown
-    uv run scripts/n9e_log_cluster.py --from-time now-15m --output markdown-echarts-only
+    python3 scripts/n9e_log_cluster.py --from-time now-15m --top 20 --output markdown
+    python3 scripts/n9e_log_cluster.py --query 'level:ERROR' --from-time now-1h --output markdown
+    python3 scripts/n9e_log_cluster.py --from-time now-15m --output markdown-echarts-only
 """
 
 from __future__ import annotations

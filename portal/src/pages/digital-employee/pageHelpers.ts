@@ -936,6 +936,8 @@ export type PortalOpsAlert = {
   message: string;
   timeLabel: string;
   eventTime?: string;
+  eventLastTime?: string;
+  actCount?: number;
   routeEntry?: string | null;
   dispatchContent?: string;
   visibleContent?: string;

@@ -226,13 +226,13 @@ def parse_args() -> argparse.Namespace:
         epilog="""
 示例:
   # 不带任何筛选条件，查询全量类别统计
-  uv run scripts/query_alarm_class_count.py --output markdown
+  python3 scripts/query_alarm_class_count.py --output markdown
 
   # 查询数据库当前应用类告警统计
-  uv run scripts/query_alarm_class_count.py --ne_alias 数据库 --alarm_status 1 --alarm_class application --output markdown
+  python3 scripts/query_alarm_class_count.py --ne_alias 数据库 --alarm_status 1 --alarm_class application --output markdown
 
   # 使用资源类型别名
-  uv run scripts/query_alarm_class_count.py --resource_type database --alarm_status 1
+  python3 scripts/query_alarm_class_count.py --resource_type database --alarm_status 1
         """,
     )
     parser.add_argument("--token", type=str, required=False, help="JWT 认证令牌（默认读取 INOE_API_TOKEN）")

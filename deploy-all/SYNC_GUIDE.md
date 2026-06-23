@@ -50,7 +50,7 @@ rm -f copaw_file_metadata.json 2>/dev/null
 ```bash
 rm -rf deploy-all/qwenpaw/data/qwenpaw/skill_pool 2>/dev/null
 mkdir -p deploy-all/qwenpaw/data/qwenpaw/skill_pool
-rsync -a --exclude='.DS_Store' --exclude='__pycache__' --exclude='*.pyc' --exclude='.venv' --exclude='.lock' \
+rsync -a --exclude='.DS_Store' --exclude='__pycache__' --exclude='*.pyc' --exclude='.venv' --exclude='.lock' --exclude='.git' \
   ~/.qwenpaw/skill_pool/ deploy-all/qwenpaw/data/qwenpaw/skill_pool/
 ```
 
@@ -65,7 +65,7 @@ for ws in $(ls ~/.qwenpaw/workspaces/); do
   # 同步 skills 目录
   if [ -d ~/.qwenpaw/workspaces/$ws/skills ]; then
     mkdir -p "deploy-all/qwenpaw/data/qwenpaw/workspaces/$ws/skills"
-    rsync -a --exclude='.DS_Store' --exclude='__pycache__' --exclude='*.pyc' --exclude='.venv' --exclude='.lock' \
+    rsync -a --exclude='.DS_Store' --exclude='__pycache__' --exclude='*.pyc' --exclude='.venv' --exclude='.lock' --exclude='.git' \
       ~/.qwenpaw/workspaces/$ws/skills/ "deploy-all/qwenpaw/data/qwenpaw/workspaces/$ws/skills/"
   fi
   
@@ -85,13 +85,13 @@ mkdir -p deploy-all/qwenpaw/data/qwenpaw/extensions
 
 # 先同步本地 extensions 运行数据（如通知 settings.json）
 if [ -d ~/.qwenpaw/extensions ]; then
-  rsync -a --exclude='.DS_Store' --exclude='__pycache__' --exclude='*.pyc' \
+  rsync -a --exclude='.DS_Store' --exclude='__pycache__' --exclude='*.pyc' --exclude='.git' \
     ~/.qwenpaw/extensions/ deploy-all/qwenpaw/data/qwenpaw/extensions/
 fi
 
 # 再覆盖仓库内置 extensions 代码（如 notification_settings.py）
 if [ -d deploy-all/qwenpaw/working/extensions ]; then
-  rsync -a --exclude='.DS_Store' --exclude='__pycache__' --exclude='*.pyc' \
+  rsync -a --exclude='.DS_Store' --exclude='__pycache__' --exclude='*.pyc' --exclude='.git' \
     deploy-all/qwenpaw/working/extensions/ deploy-all/qwenpaw/data/qwenpaw/extensions/
 fi
 ```
@@ -284,7 +284,7 @@ rm -f deploy-all/qwenpaw/data/qwenpaw/qwenpaw.log 2>/dev/null
 ### 10. 清理 Python 缓存和系统文件
 
 ```bash
-find deploy-all/qwenpaw/data/qwenpaw -type d \( -name ".venv" -o -name "__pycache__" -o -name "*.egg-info" \) -exec rm -rf {} + 2>/dev/null
+find deploy-all/qwenpaw/data/qwenpaw -type d \( -name ".venv" -o -name "__pycache__" -o -name "*.egg-info" -o -name ".git" \) -exec rm -rf {} + 2>/dev/null
 find deploy-all/qwenpaw/data/qwenpaw -name "*.pyc" -delete 2>/dev/null
 find deploy-all/qwenpaw/data/qwenpaw -name ".DS_Store" -delete 2>/dev/null
 ```
@@ -359,6 +359,7 @@ find deploy-all/qwenpaw/data/qwenpaw -name ".env" -type f -delete 2>/dev/null
 | `.venv/` | Python 虚拟环境 |
 | `__pycache__/` | Python 缓存 |
 | `*.pyc` | 编译后的 Python 文件 |
+| `.git/`（嵌套仓库） | 技能目录被 `uv init` 等建出的内嵌 git 仓库，不应进镜像（rsync 已 `--exclude='.git'`，Step 10 再兜底清理）|
 
 ## 一键同步脚本
 
@@ -462,7 +463,7 @@ find workspaces -type f \( -name "copaw_file_metadata.json" -o -name "token_usag
 echo "=== Step 2: Sync skill_pool ==="
 rm -rf skill_pool
 mkdir -p skill_pool
-rsync -a --exclude='.DS_Store' --exclude='__pycache__' --exclude='*.pyc' --exclude='.venv' --exclude='.lock' \
+rsync -a --exclude='.DS_Store' --exclude='__pycache__' --exclude='*.pyc' --exclude='.venv' --exclude='.lock' --exclude='.git' \
   "$LOCAL_DIR/skill_pool/" skill_pool/
 
 echo "=== Step 3: Sync workspace skills ==="
@@ -470,7 +471,7 @@ for ws in $(ls "$LOCAL_DIR/workspaces/"); do
   rm -rf "workspaces/$ws/skills" "workspaces/$ws/.skill.json.lock" 2>/dev/null || true
   if [ -d "$LOCAL_DIR/workspaces/$ws/skills" ]; then
     mkdir -p "workspaces/$ws/skills"
-    rsync -a --exclude='.DS_Store' --exclude='__pycache__' --exclude='*.pyc' --exclude='.venv' --exclude='.lock' \
+    rsync -a --exclude='.DS_Store' --exclude='__pycache__' --exclude='*.pyc' --exclude='.venv' --exclude='.lock' --exclude='.git' \
       "$LOCAL_DIR/workspaces/$ws/skills/" "workspaces/$ws/skills/"
   fi
   [ -f "$LOCAL_DIR/workspaces/$ws/skill.json" ] && cp "$LOCAL_DIR/workspaces/$ws/skill.json" "workspaces/$ws/"
@@ -480,11 +481,11 @@ echo "=== Step 4: Sync extensions ==="
 rm -rf extensions 2>/dev/null || true
 mkdir -p extensions
 if [ -d "$LOCAL_DIR/extensions" ]; then
-  rsync -a --exclude='.DS_Store' --exclude='__pycache__' --exclude='*.pyc' \
+  rsync -a --exclude='.DS_Store' --exclude='__pycache__' --exclude='*.pyc' --exclude='.git' \
     "$LOCAL_DIR/extensions/" extensions/
 fi
 if [ -d "$REPO_WORKING_DIR/extensions" ]; then
-  rsync -a --exclude='.DS_Store' --exclude='__pycache__' --exclude='*.pyc' \
+  rsync -a --exclude='.DS_Store' --exclude='__pycache__' --exclude='*.pyc' --exclude='.git' \
     "$REPO_WORKING_DIR/extensions/" extensions/
 fi
 
@@ -536,7 +537,7 @@ done
 rm -f token_usage.json qwenpaw.log 2>/dev/null || true
 
 echo "=== Step 10: Clean cache files ==="
-find . -type d \( -name ".venv" -o -name "__pycache__" \) -exec rm -rf {} + 2>/dev/null || true
+find . -type d \( -name ".venv" -o -name "__pycache__" -o -name ".git" \) -exec rm -rf {} + 2>/dev/null || true
 find . -name "*.pyc" -delete 2>/dev/null || true
 find . -name ".DS_Store" -delete 2>/dev/null || true
 
