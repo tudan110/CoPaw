@@ -68,13 +68,19 @@ def test_emit_action_directive_matches_frontend_regex():
     assert payload["submit"] == "submitForm"
 
 
-def test_emit_action_missing_required_emits_no_directive():
+def test_emit_action_always_emits_for_card_completion():
+    # 卡片补全模式:匹配到即出指令——只给了 categoryName、没给 code 也照出,
+    # 没给的字段由前端在聊天里弹卡片让用户补全(不再 exit 2 拦)。
     code, out = _run_emit(
         "workflow.category.add", "--set", "categoryName=财务类"
     )
-    assert code == 2, "缺必填应退出码 2"
-    assert not re.search(CONTRACT_FENCE_RE, out), "缺参时不得产出指令块"
-    assert "code" in out  # 提示还缺 code
+    assert code == 0, "匹配到应直接出指令(不再因缺参退出码 2)"
+    m = re.search(CONTRACT_FENCE_RE, out)
+    assert m, "应产出指令块"
+    payload = json.loads(m.group(1).strip())
+    assert payload["op"] == "workflow.category.add"
+    assert payload["params"].get("categoryName") == "财务类"
+    assert "code" not in payload["params"]  # 没给的字段不编造,交前端补
 
 
 def _find_action_js() -> Path | None:

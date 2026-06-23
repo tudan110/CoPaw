@@ -99,26 +99,9 @@ def main(argv=None) -> int:
         print(f"[error] 操作不存在: {args.op_id}", file=sys.stderr)
         return 3
 
-    missing = directive_mod.missing_required(op, params)
-    if missing:
-        if args.output == "json":
-            print(
-                json.dumps(
-                    {
-                        "status": "need_params",
-                        "op": op.id,
-                        "missing": [m.to_dict() for m in missing],
-                    },
-                    ensure_ascii=False,
-                    indent=2,
-                )
-            )
-        else:
-            lines = ["还差必填参数,请先向用户补全后再生成指令:"]
-            for m in missing:
-                lines.append(f"- {m.label} ({m.prop})")
-            print("\n".join(lines))
-        return 2
+    # 卡片补全模式:匹配到操作即出指令——用户已给的参数填上,没给的字段(文本/
+    # 选择/日期等)由前端在聊天里弹"输入卡 / 选项 chips"让用户逐个补全,故这里
+    # 不再因"必填没齐"拦截。写操作的安全闸仍在最后:用户在页面点提交、走页面校验。
 
     # 默认就近用 getRouters 按 component 反查线上真实路由(与 page-navigator
     # 同机制,最可靠),使指令带上真实 route;拉不到/未配置时回退目录里的 route。

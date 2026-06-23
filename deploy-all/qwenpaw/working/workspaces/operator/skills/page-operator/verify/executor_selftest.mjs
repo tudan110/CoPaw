@@ -220,6 +220,57 @@ function assert(cond, msg) {
   )
   assert(selectedLabel === '公告', 'select: 光标点中了所选项「公告」')
 
+  // ---- 单选(radio)场景:聊天 chips → 点中页面 radio ----
+  let radioClicked = null
+  const mkRadio = (label) => {
+    const lab = new FakeEl({ text: label })
+    const r = new FakeEl({ q: { '.el-radio__label, .el-radio-button__inner': [lab] } })
+    r.click = () => {
+      radioClicked = label
+    }
+    return r
+  }
+  const rGroup = new FakeEl({ q: { '.el-radio, .el-radio-button': [mkRadio('正常'), mkRadio('停用')] } })
+  const rItem = new FakeEl({
+    q: { '.el-form-item__label': [new FakeEl({ text: '状态' })], '.el-radio-group': [rGroup] }
+  })
+  const rDialog = new FakeEl({ q: { '.el-form-item': [rItem] } })
+  let radioAsked = null
+  await runner._fillRadioByChips(
+    null,
+    rDialog,
+    { prop: 'status', label: '状态', type: 'radio' },
+    {
+      requestChoice: (f, opts) => {
+        radioAsked = opts
+        return Promise.resolve('停用')
+      }
+    }
+  )
+  assert(radioAsked && radioAsked.join(',') === '正常,停用', 'radio: chips 拿到页面单选项')
+  assert(radioClicked === '停用', 'radio: 光标点中了所选项「停用」')
+
+  // ---- 文本输入卡场景:requestInput 填值 → 写进 model ----
+  const inpVm = { form: {}, $set(o, k, v) { o[k] = v } }
+  const tInput = new FakeEl({})
+  const tItem = new FakeEl({
+    q: {
+      '.el-form-item__label': [new FakeEl({ text: '备注' })],
+      '.el-form-item__content input, .el-form-item__content textarea': [tInput]
+    }
+  })
+  const tDialog = new FakeEl({ q: { '.el-form-item': [tItem] } })
+  await runner._fillTextByCard(
+    inpVm,
+    tDialog,
+    { prop: 'remark', label: '备注', type: 'textarea' },
+    { requestInput: () => Promise.resolve('测试备注内容') },
+    'form',
+    'textarea',
+    ''
+  )
+  assert(inpVm.form.remark === '测试备注内容', 'input: 输入卡填的值写进了 model')
+
   console.log(failed === 0 ? '\nFRONTEND-EXECUTOR-SELFTEST: PASS' : `\nFRONTEND-EXECUTOR-SELFTEST: FAIL (${failed})`)
   process.exitCode = failed === 0 ? 0 : 1
 })().catch((e) => {
