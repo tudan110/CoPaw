@@ -1,11 +1,15 @@
 """Shared secrets loader for the internal working/secrets directory.
 
-Loads consolidated credential files (e.g. ``secrets/inoe.env``) into
+Loads consolidated credential files (e.g. ``secrets/n9e.env``) into
 ``os.environ`` once at import, so portal backend integrations *and* skill
 subprocesses spawned by an agent inherit a single source of truth. Values
 already present in the environment (real exports, the qwenpaw env store)
 always win, and per-skill ``.env`` files keep working as standalone
 overrides.
+
+The INOE connection no longer ships a static ``secrets/inoe.env``: its
+token / base URL / timeout / curl-fallback are resolved from the settings
+store (see below) and materialised into ``os.environ`` directly.
 
 On top of the static files, the INOE gateway connection (base URL / token
 / timeout) is *materialised* from :mod:`inoe_settings_store` — the
@@ -31,7 +35,7 @@ from typing import Optional
 
 from qwenpaw.constant import WORKING_DIR
 
-SHARED_SECRET_FILES = ("inoe.env", "n9e.env", "zgops-cmdb.env")
+SHARED_SECRET_FILES = ("n9e.env", "zgops-cmdb.env")
 
 # settings-store field key -> resolver attribute on inoe_settings_store.
 # The resolved value is written to the field's ``env_var`` (the name skills

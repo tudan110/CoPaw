@@ -82,42 +82,35 @@ qwenpaw:
     KNOWLEDGE_BASE_LLM_RERANK_INPUT_K: "15"
 
     # 智观告警平台接口
-    INOE_API_BASE_URL: "http://10.3.39.246:30080"
+    INOE_API_BASE_URL: "http://gateway:8080"
     INOE_API_TOKEN: "eyJhbGciOiJIUzUxMiJ9.eyJ1c2VyX2lkIjoxLCJ1c2VyX2tleSI6ImU5ZGIyMTljLTRiNmUtNGJkNS1hYmViLWExOWEyOTQ2YzQzYSIsInVzZXJuYW1lIjoieGlhb2sifQ.EpCFu6WKBPmirfqZHkBR-qPy72p9rZ8WgIPXFuDAJzg4KhH8ou88G7NvbfjwF9BN-hnRdCeh9mKJfbeuCVMetA"
     INOE_API_TIMEOUT: "60"
 
-    # Portal 告警相关配置
-    QWENPAW_PORTAL_REAL_ALARM_ROUTE_TIMEOUT: "5"
-    QWENPAW_PORTAL_REAL_ALARM_CACHE_TTL: "30"
-    QWENPAW_PORTAL_REAL_ALARM_DEGRADED_COOLDOWN: "30"
-    QWENPAW_PORTAL_REAL_ALARM_AUTO_TAKEOVER_ENABLED: "true"
-    QWENPAW_PORTAL_REAL_ALARM_AUTO_TAKEOVER_INTERVAL: "300"
-    QWENPAW_PORTAL_REAL_ALARM_AUTO_TAKEOVER_LIMIT: "100"
-    QWENPAW_PORTAL_REAL_ALARM_MAX_ACTIVE_ANALYSES: "1"
-    # 实时分析回溯（小时）：0=仅分析开启实时分析后新产生的告警；
-    # N=起点前推 N 小时。页面「设置-诊断」配置优先。
-    QWENPAW_PORTAL_REAL_ALARM_LOOKBACK_HOURS: "0"
-    # 告警平台接口时区偏移（小时），默认东八区
-    QWENPAW_PORTAL_REAL_ALARM_TIMEZONE_OFFSET: "8"
-    # 前台告警列表与角标计数的最大条数（1-200），页面「设置-告警」配置优先
-    QWENPAW_PORTAL_REAL_ALARM_LIST_LIMIT: "100"
+    # Portal 告警相关配置：均走「设置页 > 代码默认」解析，不在此注入。
+    # 需要部署期覆盖时，参见 diagnosis_settings_store 的 FieldSpec
+    # （QWENPAW_PORTAL_REAL_ALARM_* / QWENPAW_RECOVERY_*）。
 
-
-    # 启明大模型 OpenAI 风格适配层（测试时请使用本地覆盖文件或 Secret 注入真实密钥）
-    QWENPAW_QIMING_BASE_URL: "http://10.130.154.233:30000"
-    QWENPAW_QIMING_COMPLETIONS_PATH: "/serviceAgent/rest/wsc/completions"
-    QWENPAW_QIMING_APP_ID: "your_qiming_app_id"
-    QWENPAW_QIMING_APP_KEY: "your_qiming_app_key"
-    QWENPAW_QIMING_BEARER_TOKEN: "your_qiming_bearer_token"
-    QWENPAW_QIMING_MODELS: "qiming25_72b_fc"
-
-    # 星辰大模型 OpenAI 风格适配层（测试时请使用本地覆盖文件或 Secret 注入真实密钥）
-    QWENPAW_XINGCHEN_BASE_URL: "https://openapi.teleagi.cn:443"
-    QWENPAW_XINGCHEN_CHAT_PATH: "/aipaas/lm/v1/telechat/chat115b"
-    QWENPAW_XINGCHEN_APP_ID: "your_xingchen_app_id"
-    QWENPAW_XINGCHEN_ORDER_NUM: "your_xingchen_order_num"
-    QWENPAW_XINGCHEN_AUTHORIZATION: "your_xingchen_authorization"
-    QWENPAW_XINGCHEN_MODELS: "telechat-115b"
+    # ----- 大模型 OpenAI 风格适配层（模板，默认不注入）-----
+    # 启明/星辰的网关与凭证默认走「设置页 > 代码默认」解析，不在此明文注入。
+    # 需要在部署期声明式配置时，取消下面对应行的注释并填值；
+    # 密钥（app_key / bearer_token / order_num / authorization）建议用 Secret
+    # 注入，勿在 values 中明文提交。
+    #
+    # 启明：
+    # QWENPAW_QIMING_BASE_URL: "http://<host>:<port>"
+    # QWENPAW_QIMING_COMPLETIONS_PATH: "/serviceAgent/rest/wsc/completions"
+    # QWENPAW_QIMING_APP_ID: "<app_id>"
+    # QWENPAW_QIMING_APP_KEY: "<app_key>"
+    # QWENPAW_QIMING_BEARER_TOKEN: "<bearer_token>"
+    # QWENPAW_QIMING_MODELS: "qiming25_72b_fc"
+    #
+    # 星辰：
+    # QWENPAW_XINGCHEN_BASE_URL: "https://<host>:<port>"
+    # QWENPAW_XINGCHEN_CHAT_PATH: "/aipaas/lm/v1/telechat/chat115b"
+    # QWENPAW_XINGCHEN_APP_ID: "<app_id>"
+    # QWENPAW_XINGCHEN_ORDER_NUM: "<order_num>"
+    # QWENPAW_XINGCHEN_AUTHORIZATION: "<authorization>"
+    # QWENPAW_XINGCHEN_MODELS: "telechat-115b"
 
   # 资源限制
   resources:
