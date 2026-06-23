@@ -17,15 +17,25 @@ from .catalog import Field, Operation
 # 指令块的 fenced 语言标识,前后端共同约定(与 qwenpaw:navigate 同族)。
 DIRECTIVE_LANG = "qwenpaw:action"
 
+# 文本类字段由 operator 在对话里收集;选择类(select/radio/date 等)由前端
+# chips/控件交互填,不在对话里逼用户打字。
+TEXT_FIELD_TYPES = {"input", "textarea", "number", "password"}
+
 
 def missing_required(
     op: Operation,
     params: dict[str, Any] | None,
 ) -> list[Field]:
-    """返回还缺的必填字段(值为空/缺失视为未填)。"""
+    """返回还缺的【文本类】必填字段。
+
+    选择类(select/radio/date 等)由前端 chips/控件交互填写,不在对话里逼用户
+    打字,故这里只拦文本类必填;选择类即使必填也不阻止出指令(前端再收集)。
+    """
     params = params or {}
     missing: list[Field] = []
     for f in op.required_fields():
+        if f.type not in TEXT_FIELD_TYPES:
+            continue  # 选择类 → 前端 chips 收集,不在此拦
         value = params.get(f.prop)
         if value is None or (isinstance(value, str) and not value.strip()):
             missing.append(f)

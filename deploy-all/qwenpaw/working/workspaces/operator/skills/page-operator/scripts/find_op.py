@@ -34,19 +34,30 @@ def _load_runtime():
     return catalog_mod, matcher_mod
 
 
+# 文本类(你在对话里收集)vs 选择类(前端会弹真实选项 chips,你别去问)
+_TEXT_TYPES = {"input", "textarea", "number", "password"}
+
+
 def _fields_lines(op: dict) -> list[str]:
     lines = []
     for f in op.get("fields", []):
+        if f.get("type") not in _TEXT_TYPES:
+            lines.append(
+                f"- {f.get('label')}  ({f.get('prop')}) "
+                f"[选择类·前端会弹选项,你不用收集]"
+            )
+            continue
         flag = "必填" if f.get("required") else "可选"
-        lines.append(
-            f"- {f.get('label')}  ({f.get('prop')}) [{flag}]"
-        )
+        lines.append(f"- {f.get('label')}  ({f.get('prop')}) [{flag}]")
     return lines
 
 
 def _emit_hint(op: dict) -> str:
+    # 只把文本类必填放进 --set 示例;选择类由前端 chips 填
     required = [
-        f.get("prop") for f in op.get("fields", []) if f.get("required")
+        f.get("prop")
+        for f in op.get("fields", [])
+        if f.get("required") and f.get("type") in _TEXT_TYPES
     ]
     sets = " ".join(f"--set {p}=<值>" for p in required) or "--set <字段>=<值>"
     return f"uv run scripts/emit_action.py {op.get('id')} {sets}"

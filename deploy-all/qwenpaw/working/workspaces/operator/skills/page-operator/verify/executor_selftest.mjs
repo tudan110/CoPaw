@@ -45,8 +45,14 @@ const dialog = new FakeEl({
 })
 const wrapper = new FakeEl({ q: { '.el-dialog': [dialog] } })
 
+// 模拟 Element 把 el-select 下拉 append 到 body:由 ddlRef 指向当前可见下拉
+let ddlRef = null
 globalThis.document = {
-  querySelectorAll: (sel) => (sel === '.el-dialog__wrapper' ? [wrapper] : []),
+  querySelectorAll: (sel) => {
+    if (sel === '.el-dialog__wrapper') return [wrapper]
+    if (sel === '.el-select-dropdown') return ddlRef ? [ddlRef] : []
+    return []
+  },
   querySelector: () => null,
   createElement: () => new FakeEl({}),
   getElementById: () => null,
@@ -173,6 +179,46 @@ function assert(cond, msg) {
   assert(res2 && res2.ok === true && res2.kind === 'trigger', '导出: runner 返回 ok(trigger)')
   assert(res2.clicked === true, '导出(只读): 自动点击按钮')
   assert(wpVm._exported === true, '导出(只读): handleExport 已触发(自动完成)')
+
+  // ---- 选择类(select)场景:聊天 chips 拿页面真实选项 → 光标点中那项 ----
+  let selectedLabel = null
+  const mkOpt = (label) => {
+    const el = new FakeEl({ text: label })
+    el.click = () => {
+      selectedLabel = label
+      ddl.style.display = 'none' // 选中后下拉关闭
+    }
+    return el
+  }
+  const ddl = new FakeEl({ q: { '.el-select-dropdown__item': [mkOpt('通知'), mkOpt('公告')] } })
+  ddl.style = { display: 'none' }
+  ddl.offsetParent = {}
+  const selEl = new FakeEl({})
+  selEl.click = () => {
+    // Element 点 el-select 即 toggle 开/关
+    ddl.style.display = ddl.style.display === 'none' ? '' : 'none'
+    ddlRef = ddl
+  }
+  const selItem = new FakeEl({
+    q: { '.el-form-item__label': [new FakeEl({ text: '公告类型' })], '.el-select': [selEl] }
+  })
+  const selDialog = new FakeEl({ q: { '.el-form-item': [selItem] } })
+  let askedOptions = null
+  const requestChoice = (f, opts) => {
+    askedOptions = opts
+    return Promise.resolve('公告') // 用户在聊天里点了「公告」
+  }
+  await runner._fillSelectByChips(
+    null,
+    selDialog,
+    { prop: 'noticeType', label: '公告类型', type: 'select' },
+    { requestChoice }
+  )
+  assert(
+    askedOptions && askedOptions.join(',') === '通知,公告',
+    'select: chips 拿到页面下拉真实选项'
+  )
+  assert(selectedLabel === '公告', 'select: 光标点中了所选项「公告」')
 
   console.log(failed === 0 ? '\nFRONTEND-EXECUTOR-SELFTEST: PASS' : `\nFRONTEND-EXECUTOR-SELFTEST: FAIL (${failed})`)
   process.exitCode = failed === 0 ? 0 : 1

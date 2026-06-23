@@ -137,6 +137,48 @@ def test_all_required_present():
     assert missing == []
 
 
+# ---- 选择类字段:不在对话里拦,留给前端 chips ----
+
+
+def _notice_op():
+    op = _catalog().get("system.notice.add")
+    assert op is not None, "种子目录应含 system.notice.add(含 select 字段)"
+    return op
+
+
+def test_required_select_not_blocked_in_chat():
+    # noticeType 是必填 select,但应由前端 chips 收集,不在对话里拦
+    op = _notice_op()
+    assert any(
+        f.prop == "noticeType" and f.type == "select" and f.required
+        for f in op.fields
+    ), "system.notice.add 应有必填 select noticeType"
+    missing = directive_mod.missing_required(
+        op, {"noticeTitle": "停机通知", "deptIds": "100"}
+    )
+    props = [m.prop for m in missing]
+    assert "noticeType" not in props  # select 不被拦
+    assert missing == []  # 文本必填都给了即可出指令
+
+
+def test_text_required_still_blocks():
+    # 文本必填没给仍要拦(noticeTitle/deptIds),但不会把 select 算进去
+    op = _notice_op()
+    props = [m.prop for m in directive_mod.missing_required(op, {})]
+    assert "noticeTitle" in props and "deptIds" in props
+    assert "noticeType" not in props
+
+
+def test_select_field_still_emitted_to_frontend():
+    # select 字段仍下发给前端(前端据此弹 chips)
+    op = _notice_op()
+    payload = directive_mod.build_payload(
+        op, {"noticeTitle": "停机通知", "deptIds": "100"}
+    )
+    types = {f["prop"]: f["type"] for f in payload["fields"]}
+    assert types.get("noticeType") == "select"
+
+
 # ---- 指令生成 ----
 
 
