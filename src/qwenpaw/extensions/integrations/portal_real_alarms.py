@@ -13,7 +13,7 @@ import requests
 from qwenpaw.extensions.api import diagnosis_settings_store
 from qwenpaw.extensions.api import inoe_settings_store
 
-DEFAULT_INOE_API_BASE_URL = "http://gateway:30080"
+DEFAULT_INOE_API_BASE_URL = "http://gateway:8080"
 REAL_ALARM_LIST_ENDPOINT = "/resource/alarm/statistics/hisAlarmList"
 REAL_ALARM_TIMEOUT_SECONDS = 30.0
 DEFAULT_REAL_ALARM_LIMIT = 100

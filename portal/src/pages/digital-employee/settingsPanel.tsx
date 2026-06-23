@@ -12,12 +12,17 @@ import {
   settingsApi,
   diagnosisSettingsApi,
   inoeSettingsApi,
+  qimingSettingsApi,
+  xingchenSettingsApi,
   DIAGNOSIS_TOKEN_CLEAR,
   type NotificationChannelScopeConfig,
   type NotificationChannelSettings,
   type DiagnosisSettingsPayload,
   type MaskedSecret,
 } from "../../api/settings";
+import ProviderSettingsSection, {
+  type ProviderFieldDesc,
+} from "./ProviderSettingsSection";
 
 // Editable numeric fields in the diagnosis tab, grouped for rendering.
 type DiagnosisNumberField = {
@@ -171,7 +176,7 @@ const DIAGNOSIS_GROUP_META: {
 const INOE_TEXT_FIELD = {
   key: "inoe_api_base_url",
   label: "INOE 网关地址",
-  placeholder: "http://gateway:30080",
+  placeholder: "http://gateway:8080",
   hint: "平台网关 base URL。",
 };
 const INOE_NUMBER_FIELD = {
@@ -182,6 +187,11 @@ const INOE_NUMBER_FIELD = {
   hint: "调用平台网关的请求超时。",
 };
 const INOE_TOKEN_KEY = "inoe_api_token";
+const INOE_BOOL_FIELD = {
+  key: "inoe_enable_curl_fallback",
+  label: "启用 curl 兜底",
+  hint: "调用网关失败（网络异常）时，技能自动改用系统 curl 重试一次。",
+};
 
 function isMaskedSecret(value: unknown): value is MaskedSecret {
   return (
@@ -217,7 +227,81 @@ const SETTINGS_TABS = [
     iconClass: "fa-paper-plane",
     description: "巡检、建单后的 webhook 推送配置",
   },
+  {
+    id: "model-adapters",
+    label: "模型适配",
+    iconClass: "fa-robot",
+    description: "启明、星辰等大模型 adapter 的网关、凭证与模型",
+  },
 ] as const;
+
+// Field descriptors for the two model-provider settings sections. Keys must
+// match the backend FieldSpec keys (qiming_settings_store /
+// xingchen_settings_store). Sensitive fields render masked + 留空则不修改.
+const QIMING_FIELDS: ProviderFieldDesc[] = [
+  {
+    key: "qiming_base_url",
+    label: "网关地址（base_url）",
+    hint: "启明完成接口的 base URL。",
+    placeholder: "http://host:port",
+  },
+  {
+    key: "qiming_completions_path",
+    label: "完成接口路径",
+    hint: "拼在 base_url 后的路径。",
+  },
+  {
+    key: "qiming_completions_url",
+    label: "完整完成接口 URL（可选）",
+    hint: "设置后直接使用，覆盖 base_url + 路径。",
+  },
+  { key: "qiming_models", label: "模型列表", hint: "逗号分隔。" },
+  { key: "qiming_app_id", label: "App ID", hint: "请求头 X-APP-ID。" },
+  {
+    key: "qiming_app_key",
+    label: "App Key",
+    sensitive: true,
+    hint: "请求头 X-APP-KEY。",
+  },
+  {
+    key: "qiming_bearer_token",
+    label: "Bearer Token（可选）",
+    sensitive: true,
+    hint: "Authorization 头，留空则不发送。",
+  },
+];
+
+const XINGCHEN_FIELDS: ProviderFieldDesc[] = [
+  {
+    key: "xingchen_base_url",
+    label: "网关地址（base_url）",
+    hint: "星辰对话接口的 base URL。",
+    placeholder: "http://host:port",
+  },
+  {
+    key: "xingchen_chat_path",
+    label: "对话接口路径",
+    hint: "拼在 base_url 后的路径。",
+  },
+  {
+    key: "xingchen_chat_url",
+    label: "完整对话接口 URL（可选）",
+    hint: "设置后直接使用，覆盖 base_url + 路径。",
+  },
+  { key: "xingchen_models", label: "模型列表", hint: "逗号分隔。" },
+  { key: "xingchen_app_id", label: "App ID", hint: "请求头 X-APP-ID。" },
+  {
+    key: "xingchen_order_num",
+    label: "Order Num",
+    hint: "请求头 Order-Num。",
+  },
+  {
+    key: "xingchen_authorization",
+    label: "Authorization",
+    sensitive: true,
+    hint: "鉴权令牌，请求头 Authorization。",
+  },
+];
 
 type SettingsTabId = (typeof SETTINGS_TABS)[number]["id"];
 type NotificationScopeId = string;
@@ -623,6 +707,7 @@ export function SettingsPanel() {
     useState<DiagnosisSettingsPayload | null>(null);
   const [inoeDraft, setInoeDraft] = useState<Record<string, string>>({});
   const [inoeTokenDraft, setInoeTokenDraft] = useState("");
+  const [inoeFallbackDraft, setInoeFallbackDraft] = useState(true);
   const [inoeLoading, setInoeLoading] = useState(true);
   const [inoeSaving, setInoeSaving] = useState(false);
   const [inoeNotice, setInoeNotice] = useState<{
@@ -646,6 +731,9 @@ export function SettingsPanel() {
     setInoePayload(payload);
     setInoeDraft(buildInoeDraft(payload));
     setInoeTokenDraft("");
+    setInoeFallbackDraft(
+      Boolean(payload.effective[INOE_BOOL_FIELD.key] ?? true),
+    );
   };
 
   useEffect(() => {
@@ -689,6 +777,12 @@ export function SettingsPanel() {
     if (inoeTokenDraft.trim() !== "") {
       return true;
     }
+    if (
+      inoeFallbackDraft !==
+      Boolean(inoePayload.effective[INOE_BOOL_FIELD.key] ?? true)
+    ) {
+      return true;
+    }
     const rawNum = (inoeDraft[INOE_NUMBER_FIELD.key] ?? "").trim();
     if (rawNum !== "") {
       const num = Number(rawNum);
@@ -704,13 +798,13 @@ export function SettingsPanel() {
       return true;
     }
     return false;
-  }, [inoePayload, inoeDraft, inoeTokenDraft]);
+  }, [inoePayload, inoeDraft, inoeTokenDraft, inoeFallbackDraft]);
 
   const handleSaveInoeSettings = async () => {
     if (!inoePayload || inoeSaving) {
       return;
     }
-    const body: Record<string, number | string> = {};
+    const body: Record<string, number | string | boolean> = {};
     const rawNum = (inoeDraft[INOE_NUMBER_FIELD.key] ?? "").trim();
     if (rawNum !== "") {
       const num = Number(rawNum);
@@ -731,6 +825,12 @@ export function SettingsPanel() {
     }
     if (inoeTokenDraft.trim() !== "") {
       body[INOE_TOKEN_KEY] = inoeTokenDraft.trim();
+    }
+    if (
+      inoeFallbackDraft !==
+      Boolean(inoePayload.effective[INOE_BOOL_FIELD.key] ?? true)
+    ) {
+      body[INOE_BOOL_FIELD.key] = inoeFallbackDraft;
     }
     if (Object.keys(body).length === 0) {
       setInoeNotice({ type: "success", text: "没有需要保存的改动" });
@@ -1408,6 +1508,50 @@ export function SettingsPanel() {
                           ) : null}
                         </small>
                       </div>
+
+                      <div className="portal-form-group settings-field">
+                        <label htmlFor="inoe-curl-fallback">
+                          {INOE_BOOL_FIELD.label}
+                        </label>
+                        <label
+                          className="settings-checkbox-row"
+                          htmlFor="inoe-curl-fallback"
+                        >
+                          <input
+                            id="inoe-curl-fallback"
+                            type="checkbox"
+                            checked={inoeFallbackDraft}
+                            disabled={inoeLoading || inoeSaving}
+                            onChange={(event) =>
+                              setInoeFallbackDraft(event.target.checked)
+                            }
+                          />
+                          <span>{inoeFallbackDraft ? "已启用" : "已关闭"}</span>
+                        </label>
+                        <small>
+                          {INOE_BOOL_FIELD.hint}
+                          {`　环境默认：${
+                            (inoePayload?.env[INOE_BOOL_FIELD.key] ?? true)
+                              ? "开"
+                              : "关"
+                          }`}
+                          {inoePayload?.overrides[INOE_BOOL_FIELD.key] ? (
+                            <>
+                              {"　"}
+                              <button
+                                type="button"
+                                className="settings-link-btn"
+                                disabled={inoeSaving}
+                                onClick={() =>
+                                  handleResetInoeField(INOE_BOOL_FIELD.key)
+                                }
+                              >
+                                恢复默认
+                              </button>
+                            </>
+                          ) : null}
+                        </small>
+                      </div>
                     </div>
 
                     <div className="portal-model-form-actions compact-row">
@@ -1423,6 +1567,23 @@ export function SettingsPanel() {
                     </div>
                   </section>
                 </div>
+              ) : null}
+
+              {activeTab === "model-adapters" ? (
+                <>
+                  <ProviderSettingsSection
+                    api={qimingSettingsApi}
+                    title="启明大模型（Qiming）"
+                    description="启明 OpenAI 兼容 adapter 的网关地址、凭证与模型。修改即时生效，无需重启。未在此设置的项会回退到 .env / 部署环境变量。"
+                    fields={QIMING_FIELDS}
+                  />
+                  <ProviderSettingsSection
+                    api={xingchenSettingsApi}
+                    title="星辰大模型（Xingchen）"
+                    description="星辰 OpenAI 兼容 adapter 的网关地址、凭证与模型。修改即时生效，无需重启。未在此设置的项会回退到 .env / 部署环境变量。"
+                    fields={XINGCHEN_FIELDS}
+                  />
+                </>
               ) : null}
 
               {activeTab === "notifications" ? (

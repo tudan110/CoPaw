@@ -32,7 +32,7 @@ def test_defaults_then_env(
     db = _db(tmp_path)
     _clear_env(monkeypatch)
     # No override, no env -> hard-coded defaults.
-    assert store.get_base_url(db_path=db) == "http://gateway:30080"
+    assert store.get_base_url(db_path=db) == "http://gateway:8080"
     assert store.get_timeout_seconds(db_path=db) == 30.0
     assert store.get_token(db_path=db) == ""
     # Env set, still no override -> env wins over default (and is normalized).

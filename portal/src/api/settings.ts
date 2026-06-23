@@ -110,3 +110,36 @@ export const inoeSettingsApi = {
       body: JSON.stringify({ key }),
     }),
 };
+
+// --- Model-provider adapters (Qiming / Xingchen) ---
+//
+// Connection + credentials + models for the OpenAI-compatible adapters,
+// migrated off .env into the settings page. Same payload shape as above.
+
+export interface ProviderSettingsApi {
+  get: () => Promise<DiagnosisSettingsPayload>;
+  update: (
+    body: Record<string, number | boolean | string>,
+  ) => Promise<DiagnosisSettingsPayload>;
+  reset: (key: string) => Promise<DiagnosisSettingsPayload>;
+}
+
+function makeProviderSettingsApi(base: string): ProviderSettingsApi {
+  return {
+    get: () => requestSettings<DiagnosisSettingsPayload>(base),
+    update: (body) =>
+      requestSettings<DiagnosisSettingsPayload>(base, {
+        method: "PUT",
+        body: JSON.stringify(body),
+      }),
+    reset: (key: string) =>
+      requestSettings<DiagnosisSettingsPayload>(`${base}/reset`, {
+        method: "POST",
+        body: JSON.stringify({ key }),
+      }),
+  };
+}
+
+export const qimingSettingsApi = makeProviderSettingsApi("/qiming-settings");
+export const xingchenSettingsApi =
+  makeProviderSettingsApi("/xingchen-settings");

@@ -132,6 +132,8 @@ from qwenpaw.extensions.integrations.portal_monitoring_overview import (
 from qwenpaw.extensions.integrations import knowledge_base
 from qwenpaw.extensions.api import diagnosis_settings_store
 from qwenpaw.extensions.api import inoe_settings_store
+from qwenpaw.extensions.api import qiming_settings_store
+from qwenpaw.extensions.api import xingchen_settings_store
 from qwenpaw.extensions.api import fde_workbench_service
 from qwenpaw.extensions.api.fde_workbench_models import (
     FdeCopyInstalledRequest,
@@ -1642,6 +1644,22 @@ async def reset_diagnosis_setting(
     return diagnosis_settings_store.build_settings_payload()
 
 
+def _refresh_inoe_environ() -> None:
+    """Push the just-saved INOE settings into ``os.environ``.
+
+    Skill subprocesses read the gateway connection from ``os.getenv``; this
+    re-materialises the resolved values so the next spawned skill inherits
+    the change made on the settings page. Best-effort — a failure here must
+    not turn a successful save into an HTTP error.
+    """
+    try:
+        from qwenpaw.extensions.integrations import working_secrets
+
+        working_secrets.refresh_inoe_environ()
+    except Exception:  # noqa: BLE001 - settings already persisted
+        pass
+
+
 @router.get("/inoe-settings")
 async def get_inoe_settings() -> dict[str, Any]:
     """Return INOE gateway settings as ``{effective, env, overrides}``.
@@ -1666,6 +1684,7 @@ async def put_inoe_settings(
         inoe_settings_store.apply_settings_update(body)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
+    _refresh_inoe_environ()
     return inoe_settings_store.build_settings_payload()
 
 
@@ -1682,7 +1701,85 @@ async def reset_inoe_setting(
         inoe_settings_store.reset_setting(key)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
+    _refresh_inoe_environ()
     return inoe_settings_store.build_settings_payload()
+
+
+# ---------------------------------------------------------------------------
+# Model-provider settings (Qiming / Xingchen). Same {effective, env,
+# overrides, groups} shape as INOE; the adapters read these in-process, so
+# no os.environ refresh is needed. See qiming/xingchen_settings_store.
+# ---------------------------------------------------------------------------
+
+
+@router.get("/qiming-settings")
+async def get_qiming_settings() -> dict[str, Any]:
+    """Return Qiming adapter settings as ``{effective, env, overrides}``."""
+    return qiming_settings_store.build_settings_payload()
+
+
+@router.put("/qiming-settings")
+async def put_qiming_settings(
+    body: dict[str, Any] = Body(default_factory=dict),
+) -> dict[str, Any]:
+    """Persist a partial update of the Qiming adapter settings.
+
+    Sensitive fields left empty keep the stored secret; sending
+    ``CLEAR_SENTINEL`` clears them.
+    """
+    try:
+        qiming_settings_store.apply_settings_update(body)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return qiming_settings_store.build_settings_payload()
+
+
+@router.post("/qiming-settings/reset")
+async def reset_qiming_setting(
+    body: dict[str, Any] = Body(default_factory=dict),
+) -> dict[str, Any]:
+    """Drop one Qiming field's override. Body: ``{"key": "<field>"}``."""
+    key = str(body.get("key") or "").strip()
+    try:
+        qiming_settings_store.reset_setting(key)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return qiming_settings_store.build_settings_payload()
+
+
+@router.get("/xingchen-settings")
+async def get_xingchen_settings() -> dict[str, Any]:
+    """Return Xingchen adapter settings as ``{effective, env, overrides}``."""
+    return xingchen_settings_store.build_settings_payload()
+
+
+@router.put("/xingchen-settings")
+async def put_xingchen_settings(
+    body: dict[str, Any] = Body(default_factory=dict),
+) -> dict[str, Any]:
+    """Persist a partial update of the Xingchen adapter settings.
+
+    Sensitive fields left empty keep the stored secret; sending
+    ``CLEAR_SENTINEL`` clears them.
+    """
+    try:
+        xingchen_settings_store.apply_settings_update(body)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return xingchen_settings_store.build_settings_payload()
+
+
+@router.post("/xingchen-settings/reset")
+async def reset_xingchen_setting(
+    body: dict[str, Any] = Body(default_factory=dict),
+) -> dict[str, Any]:
+    """Drop one Xingchen field's override. Body: ``{"key": "<field>"}``."""
+    key = str(body.get("key") or "").strip()
+    try:
+        xingchen_settings_store.reset_setting(key)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return xingchen_settings_store.build_settings_payload()
 
 
 def _read_preview_progress(progress_file: Path) -> list[dict[str, Any]]:

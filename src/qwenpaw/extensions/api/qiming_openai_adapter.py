@@ -10,6 +10,8 @@ import httpx
 from fastapi import APIRouter, Body, HTTPException, Request
 from fastapi.responses import Response, StreamingResponse
 
+from qwenpaw.extensions.api import qiming_settings_store
+
 router = APIRouter(prefix="/qiming-adapter/v1", tags=["qiming-adapter"])
 
 _DEFAULT_COMPLETIONS_PATH = "/serviceAgent/rest/wsc/completions"
@@ -18,6 +20,13 @@ _DEFAULT_TIMEOUT_SECONDS = 300.0
 
 
 def _read_env(*names: str, default: str = "") -> str:
+    # Settings-page DB override > env (QWENPAW_/COPAW_) > default. The
+    # store resolves the first (canonical QWENPAW_) name; unmodelled names
+    # fall through to the legacy os.getenv loop below.
+    if names:
+        resolved = qiming_settings_store.resolve_text(names[0])
+        if resolved:
+            return resolved
     for name in names:
         value = os.getenv(name)
         if value is not None and value.strip():
