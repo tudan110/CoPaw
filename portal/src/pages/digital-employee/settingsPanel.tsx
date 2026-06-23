@@ -28,7 +28,7 @@ import ProviderSettingsSection, {
 type DiagnosisNumberField = {
   key: string;
   label: string;
-  group: "polling" | "query_window" | "recovery";
+  group: "polling" | "query_window" | "recovery" | "alarm_analyst";
   min?: number;
   max?: number;
   step?: number;
@@ -59,6 +59,38 @@ const DIAGNOSIS_NUMBER_FIELDS: DiagnosisNumberField[] = [
     min: 1,
     step: 1,
     hint: "同时进行的告警分析数量，直接决定并发调用大模型的规模。",
+  },
+  {
+    key: "alarm_analyst_metric_timeout_seconds",
+    label: "告警分析·接口超时（秒）",
+    group: "alarm_analyst",
+    min: 1,
+    step: 10,
+    hint: "alarm-analyst 拉取指标定义的请求超时，接口较慢可调大。",
+  },
+  {
+    key: "alarm_analyst_metric_page_size",
+    label: "告警分析·分页大小",
+    group: "alarm_analyst",
+    min: 1,
+    step: 10,
+    hint: "每页拉取多少条指标定义，配合翻页。",
+  },
+  {
+    key: "inspection_metric_timeout_seconds",
+    label: "巡检·接口超时（秒）",
+    group: "alarm_analyst",
+    min: 1,
+    step: 10,
+    hint: "inspection-analyst 拉取指标定义的请求超时，接口较慢可调大。",
+  },
+  {
+    key: "inspection_metric_page_size",
+    label: "巡检·分页大小",
+    group: "alarm_analyst",
+    min: 1,
+    step: 10,
+    hint: "每页拉取多少条指标定义（巡检脚本默认 100），配合翻页。",
   },
   {
     key: "analysis_lookback_hours",
@@ -148,7 +180,7 @@ const DIAGNOSIS_NUMBER_FIELDS: DiagnosisNumberField[] = [
 ];
 
 const DIAGNOSIS_GROUP_META: {
-  id: "polling" | "query_window" | "recovery";
+  id: "polling" | "query_window" | "recovery" | "alarm_analyst";
   title: string;
   description: string;
 }[] = [
@@ -167,6 +199,11 @@ const DIAGNOSIS_GROUP_META: {
     title: "恢复验证",
     description:
       "INOE 推送告警清除通知后，自动复核活动列表并验证关键指标是否真正恢复。",
+  },
+  {
+    id: "alarm_analyst",
+    title: "指标拉取（告警分析 / 巡检）",
+    description: "告警分析与巡检 skill 从平台拉取指标定义的请求超时与分页大小。",
   },
 ];
 

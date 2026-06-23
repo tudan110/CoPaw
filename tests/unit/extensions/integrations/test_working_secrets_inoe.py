@@ -152,3 +152,69 @@ def test_bool_override_off_materialises_lowercase_false(
     # And a skill's own parse of it lands on False.
     parsed = got.strip().lower() in {"1", "true", "yes", "on"}
     assert parsed is False
+
+
+# --- alarm-analyst metric settings (diagnosis namespace -> os.environ) ---
+
+
+def _track_alarm_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    for name in (
+        "ALARM_ANALYST_METRIC_TIMEOUT_SECONDS",
+        "ALARM_ANALYST_METRIC_PAGE_SIZE",
+    ):
+        monkeypatch.delenv(name, raising=False)
+
+
+def test_alarm_analyst_default_materialises(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    db = _db(tmp_path)
+    _track_alarm_env(monkeypatch)
+    # No override, no env -> code defaults reach os.environ for the skill.
+    working_secrets.materialize_alarm_analyst_to_environ(db_path=db)
+    assert os.environ["ALARM_ANALYST_METRIC_TIMEOUT_SECONDS"] == "120"
+    assert os.environ["ALARM_ANALYST_METRIC_PAGE_SIZE"] == "20"
+
+
+def test_alarm_analyst_override_materialises(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from qwenpaw.extensions.api import diagnosis_settings_store as diag
+
+    db = _db(tmp_path)
+    _track_alarm_env(monkeypatch)
+    diag.apply_settings_update(
+        {
+            "alarm_analyst_metric_timeout_seconds": 200,
+            "alarm_analyst_metric_page_size": 50,
+        },
+        db_path=db,
+    )
+    working_secrets.refresh_alarm_analyst_environ(db_path=db)
+    assert os.environ["ALARM_ANALYST_METRIC_TIMEOUT_SECONDS"] == "200"
+    assert os.environ["ALARM_ANALYST_METRIC_PAGE_SIZE"] == "50"
+
+
+def test_inspection_metric_materialises(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from qwenpaw.extensions.api import diagnosis_settings_store as diag
+
+    db = _db(tmp_path)
+    for name in (
+        "INSPECTION_METRIC_TIMEOUT_SECONDS",
+        "INSPECTION_METRIC_PAGE_SIZE",
+    ):
+        monkeypatch.delenv(name, raising=False)
+    # No override -> code defaults (120 / 100) reach the skill.
+    working_secrets.materialize_alarm_analyst_to_environ(db_path=db)
+    assert os.environ["INSPECTION_METRIC_TIMEOUT_SECONDS"] == "120"
+    assert os.environ["INSPECTION_METRIC_PAGE_SIZE"] == "100"
+    # Override wins after a settings-page save.
+    diag.apply_settings_update(
+        {"inspection_metric_page_size": 20}, db_path=db)
+    working_secrets.refresh_alarm_analyst_environ(db_path=db)
+    assert os.environ["INSPECTION_METRIC_PAGE_SIZE"] == "20"

@@ -130,6 +130,59 @@ def refresh_inoe_environ(*, db_path: Optional[Path] = None) -> None:
     materialize_inoe_to_environ(force=True, db_path=db_path)
 
 
+# diagnosis-namespace fields that a skill subprocess consumes via env and
+# therefore must be materialised into ``os.environ`` (same as INOE). Most
+# diagnosis fields are read by the portal main process and don't need this.
+# Covers the analyst skills' metric-fetch knobs (alarm-analyst +
+# inspection-analyst).
+_ALARM_ANALYST_KEYS = (
+    "alarm_analyst_metric_timeout_seconds",
+    "alarm_analyst_metric_page_size",
+    "inspection_metric_timeout_seconds",
+    "inspection_metric_page_size",
+)
+
+
+def materialize_alarm_analyst_to_environ(
+    *,
+    force: bool = False,
+    db_path: Optional[Path] = None,
+) -> None:
+    """Push analyst-skill metric settings into ``os.environ``.
+
+    alarm-analyst / inspection-analyst read ``*_METRIC_*`` via ``os.getenv``
+    in a subprocess, so the settings-page (diagnosis store) values only
+    reach them once materialised here. Same precedence as
+    :func:`materialize_inoe_to_environ`: override forced, otherwise
+    ``setdefault``; empty values skipped.
+    """
+    try:
+        from qwenpaw.extensions.api import diagnosis_settings_store as diag
+    except Exception:  # noqa: BLE001 - never break secret loading
+        return
+
+    kwargs = {} if db_path is None else {"db_path": db_path}
+    for key in _ALARM_ANALYST_KEYS:
+        spec = diag.FIELD_SPECS.get(key)
+        if spec is None:
+            continue
+        try:
+            value = str(spec.resolve(**kwargs)).strip()
+        except Exception:  # noqa: BLE001 - one bad field must not block rest
+            continue
+        if not value:
+            continue
+        if force or diag.has_override(key, **kwargs):
+            os.environ[spec.env_var] = value
+        else:
+            os.environ.setdefault(spec.env_var, value)
+
+
+def refresh_alarm_analyst_environ(*, db_path: Optional[Path] = None) -> None:
+    """Re-materialise alarm-analyst metric settings after a save/reset."""
+    materialize_alarm_analyst_to_environ(force=True, db_path=db_path)
+
+
 def ensure_working_secrets_loaded() -> None:
     """Inject ``WORKING_DIR/secrets/<file>`` into ``os.environ`` once.
 
@@ -146,3 +199,4 @@ def ensure_working_secrets_loaded() -> None:
     for name in SHARED_SECRET_FILES:
         _load_env_file(secrets_dir / name)
     materialize_inoe_to_environ(force=False)
+    materialize_alarm_analyst_to_environ(force=False)

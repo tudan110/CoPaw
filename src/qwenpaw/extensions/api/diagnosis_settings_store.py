@@ -473,6 +473,43 @@ FIELD_SPECS: dict[str, FieldSpec] = {
             "recovery",
             min_value=1,
         ),
+        # --- E. 指标拉取 ---
+        # 由分析类 skill 子进程消费（读 os.getenv），所以这些值还需经
+        # working_secrets 物化到 os.environ 才能对 skill 生效。
+        # alarm-analyst（告警根因）：
+        FieldSpec(
+            "alarm_analyst_metric_timeout_seconds",
+            "ALARM_ANALYST_METRIC_TIMEOUT_SECONDS",
+            120,
+            "int",
+            "metric_fetch",
+            min_value=1,
+        ),
+        FieldSpec(
+            "alarm_analyst_metric_page_size",
+            "ALARM_ANALYST_METRIC_PAGE_SIZE",
+            20,
+            "int",
+            "metric_fetch",
+            min_value=1,
+        ),
+        # inspection-analyst（巡检）：page_size 脚本默认 100。
+        FieldSpec(
+            "inspection_metric_timeout_seconds",
+            "INSPECTION_METRIC_TIMEOUT_SECONDS",
+            120,
+            "int",
+            "metric_fetch",
+            min_value=1,
+        ),
+        FieldSpec(
+            "inspection_metric_page_size",
+            "INSPECTION_METRIC_PAGE_SIZE",
+            100,
+            "int",
+            "metric_fetch",
+            min_value=1,
+        ),
     )
 }
 
