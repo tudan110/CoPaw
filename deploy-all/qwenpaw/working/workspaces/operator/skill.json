@@ -1,0 +1,31 @@
+{
+  "schema_version": "workspace-skill-manifest.v1",
+  "version": 1781200000000,
+  "skills": {
+    "page-operator": {
+      "enabled": true,
+      "channels": [
+        "all"
+      ],
+      "source": "customized",
+      "metadata": {
+        "name": "page-operator",
+        "description": "门户页面\"代操作\"能力(操作模式专用)。把用户的写操作诉求(如\"帮我新建一个流程分类\")解析为前端可执行的 qwenpaw:action 指令——识别命中哪个操作 → 收集必填参数 → 产出指令,由前端执行器跳转、打开新增弹窗、预填参数、高亮提交按钮,最终由用户确认点击提交。只产出指令,不自己提交。",
+        "version_text": "",
+        "commit_text": "",
+        "source": "customized",
+        "protected": false,
+        "requirements": {
+          "require_bins": [],
+          "require_envs": []
+        },
+        "updated_at": "2026-06-17T00:00:00.000000Z"
+      },
+      "requirements": {
+        "require_bins": [],
+        "require_envs": []
+      },
+      "updated_at": "2026-06-17T00:00:00.000000Z"
+    }
+  }
+}

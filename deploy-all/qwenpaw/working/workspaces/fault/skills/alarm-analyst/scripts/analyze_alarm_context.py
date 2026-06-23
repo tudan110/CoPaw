@@ -179,7 +179,7 @@ def _load_cmdb_client():
 def _fetch_topology_relations(root_res_id: str) -> list[dict[str, Any]]:
     client, _find_project, _login_mode = _load_cmdb_client()
     payload = client._request_json(  # noqa: SLF001 - 复用 skill 内部 HTTP helper
-        f"/api/v0.1/ci_relations/s?root_id={urllib.parse.quote(root_res_id)}&level=1,2,3&count=10000"
+        f"/api/v0.1/ci_relations/s?root_id={urllib.parse.quote(root_res_id)}&level=1&level=2&level=3&count=10000"
     )
     if isinstance(payload, dict) and isinstance(payload.get("result"), list):
         return [item for item in payload["result"] if isinstance(item, dict)]
@@ -761,7 +761,7 @@ def _fetch_topology_summary(
     root_resource: dict[str, Any],
 ) -> dict[str, Any]:
     payload = client._request_json(  # noqa: SLF001 - 复用 skill 内部 HTTP helper
-        f"/api/v0.1/ci_relations/s?root_id={urllib.parse.quote(root_res_id)}&level=1,2,3&count=10000"
+        f"/api/v0.1/ci_relations/s?root_id={urllib.parse.quote(root_res_id)}&level=1&level=2&level=3&count=10000"
     )
     topology_rows = [item for item in payload.get("result", []) if isinstance(item, dict)] if isinstance(payload, dict) else []
     return _build_topology_summary(root_res_id, topology_rows, root_resource=root_resource)

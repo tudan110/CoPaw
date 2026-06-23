@@ -76,7 +76,7 @@ def _split_values(value: Any) -> list[str]:
 
 def _fetch_relations(client: CmdbHttpClient, root_id: Any) -> list[dict[str, Any]]:
     payload = client._request_json(  # noqa: SLF001 - skill local helper reuse
-        f"/api/v0.1/ci_relations/s?root_id={urllib.parse.quote(str(root_id))}&level=1,2,3&count=10000"
+        f"/api/v0.1/ci_relations/s?root_id={urllib.parse.quote(str(root_id))}&level=1&level=2&level=3&count=10000"
     )
     if isinstance(payload, dict):
         result = payload.get("result")

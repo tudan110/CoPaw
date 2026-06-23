@@ -45,7 +45,7 @@ description: 用于查询当前 `.env` 配置所指向的 CMDB 环境。当用�
    它现在走后台 HTTP 会话，不会再打开桌面浏览器。
 3. `fetch` 子命令**只接受 API 路径**，不支持 `--ci-id` 等快捷参数。查询资源必须拼完整路径：
    - ✅ `scripts/zgops-cmdb.sh fetch "/api/v0.1/ci/s?q=_id:3034&count=1"`
-   - ✅ `scripts/zgops-cmdb.sh fetch "/api/v0.1/ci_relations/s?root_id=3034&level=1,2,3&count=10000"`
+   - ✅ `scripts/zgops-cmdb.sh fetch "/api/v0.1/ci_relations/s?root_id=3034&level=1&level=2&level=3&count=10000"`
    - ❌ `scripts/zgops-cmdb.sh fetch --ci-id 3034`（不存在此用法）
 4. 按问题选择最小可用命令：
 
@@ -57,7 +57,7 @@ scripts/zgops-cmdb.sh model-attributes <type_id>
 scripts/zgops-cmdb.sh model-relations <type_id>
 scripts/zgops-cmdb.sh fetch "/api/v0.1/relation_types"
 scripts/zgops-cmdb.sh fetch "/api/v0.1/ci/s?q=_type:project&count=20"
-scripts/zgops-cmdb.sh fetch "/api/v0.1/ci_relations/s?root_id=<ci_id>&level=1,2,3&count=10000"
+scripts/zgops-cmdb.sh fetch "/api/v0.1/ci_relations/s?root_id=<ci_id>&level=1&level=2&level=3&count=10000"
 scripts/zgops-cmdb.sh analyze --mode summary --output markdown
 scripts/zgops-cmdb.sh analyze --mode app-relations --output markdown
 scripts/zgops-cmdb.sh analyze --mode summary --output markdown-echarts-only
