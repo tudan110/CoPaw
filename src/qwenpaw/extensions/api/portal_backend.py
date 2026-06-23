@@ -217,9 +217,9 @@ PORTAL_EMPLOYEE_STATUS_NAMES = {
     "query": "数据分析专家",
     "fault": "故障分析专家",
     "knowledge": "知识库助手",
-    "resource": "资产管理员",
-    "inspection": "巡检专家",
-    "order": "工单处置员",
+    "resource": "资产管理专员",
+    "inspection": "运维巡检专员",
+    "order": "工单处置专员",
 }
 PORTAL_FAULT_ALERT_LIMIT = 20
 PORTAL_EMPLOYEE_STATUS_ALERT_COUNT_ENABLED = os.getenv(

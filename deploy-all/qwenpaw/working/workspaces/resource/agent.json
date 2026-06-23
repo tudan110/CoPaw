@@ -1,6 +1,6 @@
 {
   "id": "resource",
-  "name": "资产管理员",
+  "name": "资产管理专员",
   "description": "快速发现与智能纳管。\n\n我可以帮您完成以下工作：\n• 资源清单导入 - 上传Excel/CSV台账，自动映射字段并导入CMDB\n• IP扫描发现 - 自动扫描指定网段，快速发现网络设备\n• 云账号导入 - 一键导入阿里云、AWS、华为云等账号\n• API自动发现 - 通过API接口自动发现各类资源\n• 协议适配 - 支持SNMP、SSH、Restful等多种协议\n• 资源建模 - 自动构建CMDB资源模型\n• 拓扑生成 - 自动生成资源关联拓扑图",
   "workspace_dir": "~/.qwenpaw/workspaces/resource",
   "channels": {
