@@ -386,6 +386,34 @@ function assert(cond, msg) {
   assert(res6 && res6.ok === true && res6.mode === 'row', 'row: runner 返回 ok(row)')
   assert(downloaded === '第3天', 'row: 点中了「第3天」那行的下载(不是别行)')
 
+  // ---- L5-5 当前页"新建":自省弹窗字段 + 就地填(model 名未知,走 DOM 打字)----
+  const dTitle = new FakeEl({})
+  dTitle.dispatchEvent = () => {}
+  const dRemark = new FakeEl({})
+  dRemark.dispatchEvent = () => {}
+  const dItem = (label, inp) =>
+    new FakeEl({
+      q: {
+        '.el-form-item__label': [new FakeEl({ text: label })],
+        input: [inp],
+        '.el-form-item__content input, .el-form-item__content textarea': [inp]
+      }
+    })
+  const newDialog = new FakeEl({
+    q: { '.el-form-item': [dItem('工单标题', dTitle), dItem('备注', dRemark)] }
+  })
+  const dlgFields = await runner._fillDialogFields({ form: {} }, newDialog, {
+    requestInput: (f) => Promise.resolve(f.label === '工单标题' ? '紧急工单' : '尽快处理')
+  })
+  assert(
+    dlgFields.map((f) => f.label + ':' + f.type).join(',') === '工单标题:input,备注:input',
+    'open: 自省到弹窗字段'
+  )
+  assert(
+    dTitle.value === '紧急工单' && dRemark.value === '尽快处理',
+    'open: 弹窗字段在对话里填好并落到页面(DOM)'
+  )
+
   console.log(failed === 0 ? '\nFRONTEND-EXECUTOR-SELFTEST: PASS' : `\nFRONTEND-EXECUTOR-SELFTEST: FAIL (${failed})`)
   process.exitCode = failed === 0 ? 0 : 1
 })().catch((e) => {
