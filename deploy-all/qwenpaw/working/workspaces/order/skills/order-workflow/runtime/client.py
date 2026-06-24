@@ -30,10 +30,26 @@ except ImportError:
 
 
 def _load_skill_env() -> None:
+    """加载配置，优先级：进程环境变量 > 共享 secrets/inoe.env > 技能 .env。
+
+    用 override=False（先到先得，不覆盖已有值）。关键点：脚本会**自己**
+    向上层找到工作根的 `secrets/inoe.env` 并加载，所以直接 `python
+    scripts/order_workflow.py ...` 就能读到 ORDER_* 配置，无需手动传环境
+    变量、也无需技能目录下的 .env。
+    """
     if not HAS_DOTENV:
         return
-    skill_dir = Path(__file__).resolve().parents[1]
-    env_file = skill_dir / ".env"
+    here = Path(__file__).resolve()
+    # 1) 共享 secrets/inoe.env（与后端注入的是同一份）
+    for parent in here.parents:
+        shared = parent / "secrets" / "inoe.env"
+        if shared.exists():
+            load_dotenv(shared, override=False)
+            break
+        if (parent / "workspaces").is_dir() and (parent / "secrets").is_dir():
+            break  # 到工作根仍没有就停，别一路找到文件系统根
+    # 2) 技能目录自身 .env（可选覆盖，最低优先级）
+    env_file = here.parents[1] / ".env"
     if env_file.exists():
         load_dotenv(env_file, override=False)
 
@@ -496,161 +512,197 @@ class OrderWorkflowClient:
 
     @classmethod
     def _normalize_create_payload(cls, payload: dict[str, Any]) -> dict[str, Any]:
+        """归一化为「故障处置」流程模板字段。
+
+        form_data 的 key 必须与模板字段 model 对齐，前端才能正常回显：
+        alarmSeq/alarmTitle/neTime/sendTim/alarmSeverity(中文)/isClear(中文)/
+        neName/neAlias/neIp/vendor/clearuser/clearanceCollectTime/
+        additionalText/alarmLocation/suggestions。
+        """
         if not isinstance(payload, dict):
             raise RuntimeError("create payload must be a JSON object")
 
-        chat_id = cls._pick_text(payload, "chatId", "sessionId", "conversationId") or str(uuid.uuid4())
-        alarm = payload.get("alarm")
-        analysis = payload.get("analysis")
-        ticket = payload.get("ticket")
-        alarm_payload = alarm if isinstance(alarm, dict) else {}
-        analysis_payload = analysis if isinstance(analysis, dict) else {}
-        ticket_payload = ticket if isinstance(ticket, dict) else {}
+        chat_id = cls._pick_text(
+            payload, "chatId", "sessionId", "conversationId"
+        ) or str(uuid.uuid4())
+        analysis_payload = (
+            payload.get("analysis")
+            if isinstance(payload.get("analysis"), dict)
+            else {}
+        )
+        ticket_payload = (
+            payload.get("ticket")
+            if isinstance(payload.get("ticket"), dict)
+            else {}
+        )
 
-        manage_ip = cls._pick_text(
-            payload,
-            "manageIp",
-            "deviceIp",
-            "ip",
-            "hostIp",
-            nested=("alarm", "manageIp"),
+        ne_name = cls._pick_text(
+            payload, "neName", "deviceName", "设备名称", "name", "hostname",
+            nested=("alarm", "neName"), nested_alt=("alarm", "deviceName"),
         )
-        device_name = cls._pick_text(
-            payload,
-            "deviceName",
-            "resourceName",
-            "assetName",
-            "instanceName",
-            "name",
-            nested=("alarm", "deviceName"),
+        ne_ip = cls._pick_text(
+            payload, "neIp", "manageIp", "ip", "deviceIp", "设备IP", "hostIp",
+            nested=("alarm", "neIp"), nested_alt=("alarm", "manageIp"),
         )
-        asset_id = cls._pick_text(
-            payload,
-            "assetId",
-            "resource",
-            "resourceId",
-            "resId",
-            nested=("alarm", "assetId"),
-        )
-        visible_content = cls._pick_text(
-            payload,
-            "visibleContent",
-            "issue",
-            "description",
-            "alarmContent",
-            nested=("alarm", "visibleContent"),
-        )
+        alarm_title = cls._pick_text(
+            payload, "alarmTitle", "title", "告警标题", "标题",
+            nested=("alarm", "alarmTitle"), nested_alt=("alarm", "title"),
+        ) or cls._pick_text(payload, nested=("ticket", "title"))
         suggestions_text = cls._pick_text(
-            payload,
-            "suggestions",
-            "advice",
-            "comment",
+            payload, "suggestions", "处置建议", "处置意见", "advice", "comment",
             nested=("analysis", "summary"),
         ) or cls._join_suggestions(analysis_payload.get("suggestions"))
-        title = cls._pick_text(
-            payload,
-            "title",
-            nested=("alarm", "title"),
-            nested_alt=("ticket", "title"),
+
+        ne_ip = ne_ip or cls._extract_ip(alarm_title) or cls._extract_ip(
+            suggestions_text
+        )
+        if not alarm_title:
+            alarm_title = (suggestions_text or ne_name or ne_ip or "").strip()
+        if not alarm_title:
+            raise RuntimeError(
+                "创建工单至少需要提供告警标题（或处置意见），"
+                "以及设备名称、设备IP 中的至少一个。"
+            )
+        if not (ne_name or ne_ip):
+            raise RuntimeError("创建工单至少需要设备名称、设备IP 中的至少一个。")
+
+        severity_cn = cls._to_alarm_severity(
+            cls._pick_text(
+                payload, "alarmSeverity", "level", "priority", "severity",
+                "告警级别", "级别", "优先级",
+                nested=("alarm", "alarmSeverity"),
+                nested_alt=("ticket", "priority"),
+            )
+        )
+        is_clear = cls._to_is_clear(
+            cls._pick_text(
+                payload, "isClear", "status", "告警状态",
+                nested=("alarm", "isClear"), nested_alt=("alarm", "status"),
+            )
+        )
+        ne_time = cls._resolve_event_time(
+            cls._pick_text(
+                payload, "neTime", "eventTime", "发生时间", "alarmTime",
+                "occurTime", nested=("alarm", "neTime"),
+            )
+        )
+        send_tim = cls._resolve_event_time(
+            cls._pick_text(payload, "sendTim", "sendTime", "发现时间"),
+            default=ne_time,
         )
         metric_type = cls._pick_text(
-            payload,
-            "metricType",
-            "resourceType",
-            "ciType",
+            payload, "metricType", "resourceType", "ciType"
+        ) or cls._infer_metric_type(
+            " ".join([alarm_title, suggestions_text, ne_name]).strip()
+        )
+        alarm_id = cls._pick_text(
+            payload, "alarmId", nested=("alarm", "alarmId")
+        ) or cls._generate_alarm_id()
+        res_id = cls._pick_text(
+            payload, "resId", "resourceId", "assetId"
+        ) or ne_name or ne_ip or alarm_id
+        priority = ticket_payload.get("priority") or cls._severity_to_priority(
+            severity_cn
         )
 
-        extracted_ip = cls._extract_ip(visible_content) or cls._extract_ip(suggestions_text)
-        if not manage_ip and extracted_ip:
-            manage_ip = extracted_ip
-        if not asset_id and device_name:
-            asset_id = device_name
-        if not device_name and asset_id and asset_id != manage_ip:
-            device_name = asset_id
+        def field(*keys: str, alarm_key: str = "") -> str:
+            nested = ("alarm", alarm_key) if alarm_key else None
+            return cls._pick_text(payload, *keys, nested=nested)
 
-        core_text = " ".join(
-            item
-            for item in [title, visible_content, suggestions_text, device_name, asset_id, manage_ip]
-            if item
-        ).strip()
-        if not core_text:
-            raise RuntimeError(
-                "创建工单至少需要提供问题描述/处置意见，以及设备IP、设备名称、资源中的至少一个。"
-            )
-
-        resolved_title = cls._derive_title(
-            title=title,
-            visible_content=visible_content,
-            suggestions=suggestions_text,
-            device_name=device_name,
-            manage_ip=manage_ip,
-            asset_id=asset_id,
-        )
-        resolved_visible_content = (
-            visible_content
-            or cls._derive_visible_content(
-                title=resolved_title,
-                device_name=device_name,
-                manage_ip=manage_ip,
-                asset_id=asset_id,
-                suggestions=suggestions_text,
-            )
-        )
-        resolved_metric_type = metric_type or cls._infer_metric_type(core_text)
-        resolved_level = cls._normalize_level(
-            cls._pick_text(
-                payload,
-                "level",
-                "priority",
-                nested=("alarm", "level"),
-                nested_alt=("ticket", "priority"),
-            ),
-            fallback_text=core_text,
-        )
-        resolved_status = cls._normalize_status(
-            cls._pick_text(payload, "status", nested=("alarm", "status"))
-        )
-        event_time = cls._pick_text(
-            payload,
-            "eventTime",
-            "alarmTime",
-            "occurTime",
-            nested=("alarm", "eventTime"),
-        ) or datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        alarm_id = cls._pick_text(payload, "alarmId", nested=("alarm", "alarmId")) or cls._generate_alarm_id()
-        res_id = cls._pick_text(payload, "resId", "resourceId") or asset_id or manage_ip or device_name or alarm_id
-
-        resolved_suggestions = suggestions_text or f"请人工处理：{resolved_title}"
         return {
             "chatId": chat_id,
             "resId": res_id,
-            "metricType": resolved_metric_type,
+            "metricType": metric_type,
             "alarm": {
                 "alarmId": alarm_id,
-                "title": resolved_title,
-                "visibleContent": resolved_visible_content,
-                "deviceName": device_name or asset_id or "-",
-                "manageIp": manage_ip or "",
-                "assetId": asset_id or res_id,
-                "level": resolved_level,
-                "status": resolved_status,
-                "eventTime": event_time,
+                "alarmSeq": field("alarmSeq", "告警流水", "seq", "流水",
+                                  alarm_key="alarmSeq"),
+                "alarmTitle": alarm_title,
+                "neTime": ne_time,
+                "sendTim": send_tim,
+                "alarmSeverity": severity_cn,
+                "isClear": is_clear,
+                "neName": ne_name,
+                "neAlias": field("neAlias", "设备别名", "alias",
+                                 alarm_key="neAlias"),
+                "neIp": ne_ip,
+                "vendor": field("vendor", "厂家", "设备类型", "厂商",
+                                "manufacturer", alarm_key="vendor"),
+                "clearuser": field("clearuser", "告警清除人",
+                                   alarm_key="clearuser"),
+                "clearanceCollectTime": field(
+                    "clearanceCollectTime", "告警清除时间",
+                    alarm_key="clearanceCollectTime"),
+                "additionalText": field(
+                    "additionalText", "告警原始报文", "原始报文", "rawMessage",
+                    alarm_key="additionalText"),
+                "alarmLocation": field("alarmLocation", "定位信息", "location",
+                                       alarm_key="alarmLocation"),
             },
             "analysis": {
-                "summary": analysis_payload.get("summary") or resolved_suggestions,
+                "summary": analysis_payload.get("summary") or "",
                 "rootCause": analysis_payload.get("rootCause") or "",
                 "suggestions": cls._split_suggestions(
-                    analysis_payload.get("suggestions") or resolved_suggestions
+                    analysis_payload.get("suggestions") or suggestions_text
                 ),
             },
             "ticket": {
-                "title": ticket_payload.get("title") or cls._derive_ticket_title(resolved_title),
-                "priority": ticket_payload.get("priority") or cls._level_to_priority(resolved_level),
-                "category": ticket_payload.get("category") or cls._infer_category(resolved_metric_type),
+                "title": ticket_payload.get("title") or alarm_title,
+                "priority": priority,
+                "category": ticket_payload.get("category")
+                or cls._infer_category(metric_type),
                 "source": ticket_payload.get("source") or "portal-order-agent",
-                "externalSystem": ticket_payload.get("externalSystem") or "manual-workorder",
+                "externalSystem": ticket_payload.get("externalSystem")
+                or "manual-workorder",
             },
         }
+
+    _SEVERITY_CN: dict[str, str] = {
+        "严重": "严重", "critical": "严重", "p1": "严重", "紧急": "严重",
+        "高危": "严重", "一级": "严重",
+        "主要": "主要", "major": "主要", "p2": "主要", "重要": "主要",
+        "二级": "主要",
+        "普通": "普通", "minor": "普通", "p3": "普通", "一般": "普通",
+        "三级": "普通",
+        "预警": "预警", "warning": "预警", "p4": "预警", "四级": "预警",
+    }
+
+    @classmethod
+    def _to_alarm_severity(cls, raw: str) -> str:
+        """输入级别/优先级 → 模板下拉中文（严重/主要/普通/预警）。"""
+        text = (raw or "").strip().lower()
+        if not text:
+            return "主要"
+        for token, label in cls._SEVERITY_CN.items():
+            if token in text:
+                return label
+        for digit, label in (("1", "严重"), ("2", "主要"), ("3", "普通"),
+                             ("4", "预警")):
+            if text == digit:
+                return label
+        return "主要"
+
+    @staticmethod
+    def _severity_to_priority(severity_cn: str) -> str:
+        return {"严重": "P1", "主要": "P2", "普通": "P3", "预警": "P3"}.get(
+            severity_cn, "P2"
+        )
+
+    @staticmethod
+    def _to_is_clear(raw: str) -> str:
+        """告警状态 → 模板下拉中文（活跃告警/清除告警）。"""
+        text = (raw or "").strip().lower()
+        if any(t in text for t in ["clear", "清除", "恢复", "closed",
+                                   "resolved"]):
+            return "清除告警"
+        return "活跃告警"
+
+    @staticmethod
+    def _resolve_event_time(raw: str, *, default: str = "") -> str:
+        text = (raw or "").strip()
+        if not text or text in {"现在", "now", "当前", "此刻", "刚刚", "目前"}:
+            return default or datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        return text
 
     @staticmethod
     def _pick_text(
@@ -904,13 +956,13 @@ class OrderWorkflowClient:
 
         title = str(
             ticket_payload.get("title")
-            or alarm_payload.get("title")
+            or alarm_payload.get("alarmTitle")
             or "处置工单"
         ).strip()
-        device_name = str(alarm_payload.get("deviceName") or "-").strip()
-        manage_ip = str(alarm_payload.get("manageIp") or "-").strip()
-        level = str(alarm_payload.get("level") or "-").strip()
-        visible_content = str(alarm_payload.get("visibleContent") or "-").strip()
+        device_name = str(alarm_payload.get("neName") or "-").strip()
+        manage_ip = str(alarm_payload.get("neIp") or "-").strip()
+        level = str(alarm_payload.get("alarmSeverity") or "-").strip()
+        visible_content = str(alarm_payload.get("alarmTitle") or "-").strip()
         suggestions = self._join_suggestions(analysis_payload.get("suggestions")) or str(
             analysis_payload.get("summary") or "-"
         ).strip()

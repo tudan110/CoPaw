@@ -309,21 +309,55 @@ class OrderWorkflowTests(unittest.TestCase):
         self.assertEqual(config.base_url, "http://82.156.83.38:30080")
         self.assertEqual(config.authorization, "inoe-token")
 
-    def test_normalize_create_payload_accepts_lightweight_form_fields(self) -> None:
+    def test_normalize_create_payload_maps_template_fields(self) -> None:
         payload = OrderWorkflowClient._normalize_create_payload(
             {
-                "deviceName": "db_mysql_001",
-                "manageIp": "10.43.150.186",
-                "assetId": "3094",
-                "suggestions": "数据库锁异常，需要人工排查长事务和阻塞链",
+                "alarmSeq": "test001",
+                "alarmTitle": "端口down告警",
+                "neName": "HW-hs318",
+                "neIp": "192.168.1.32",
+                "vendor": "华为",
+                "neTime": "现在",
+                "alarmSeverity": "P2",
             }
         )
-        self.assertEqual(payload["resId"], "3094")
-        self.assertEqual(payload["alarm"]["deviceName"], "db_mysql_001")
-        self.assertEqual(payload["alarm"]["manageIp"], "10.43.150.186")
-        self.assertTrue(payload["chatId"])
-        self.assertTrue(payload["alarm"]["alarmId"].startswith("alarm-"))
-        self.assertIn("数据库锁异常", payload["alarm"]["title"])
+        alarm = payload["alarm"]
+        self.assertEqual(alarm["alarmSeq"], "test001")
+        self.assertEqual(alarm["alarmTitle"], "端口down告警")
+        self.assertEqual(alarm["neName"], "HW-hs318")
+        self.assertEqual(alarm["neIp"], "192.168.1.32")
+        self.assertEqual(alarm["vendor"], "华为")
+        self.assertEqual(alarm["alarmSeverity"], "主要")
+        self.assertEqual(alarm["isClear"], "活跃告警")
+        self.assertTrue(alarm["neTime"])
+        self.assertEqual(alarm["sendTim"], alarm["neTime"])
+        self.assertEqual(payload["ticket"]["priority"], "P2")
+        self.assertEqual(payload["ticket"]["title"], "端口down告警")
+        self.assertTrue(alarm["alarmId"].startswith("alarm-"))
+        # 用户没给处置建议 → suggestions 不乱塞，留空
+        self.assertEqual(payload["analysis"]["suggestions"], [])
+
+    def test_normalize_create_payload_accepts_old_aliases(self) -> None:
+        payload = OrderWorkflowClient._normalize_create_payload(
+            {
+                "deviceName": "db1",
+                "manageIp": "10.0.0.9",
+                "title": "数据库锁异常",
+                "level": "critical",
+                "suggestions": "需人工排查长事务",
+            }
+        )
+        alarm = payload["alarm"]
+        self.assertEqual(alarm["neName"], "db1")
+        self.assertEqual(alarm["neIp"], "10.0.0.9")
+        self.assertEqual(alarm["alarmTitle"], "数据库锁异常")
+        self.assertEqual(alarm["alarmSeverity"], "严重")
+        self.assertEqual(payload["ticket"]["priority"], "P1")
+        self.assertEqual(payload["analysis"]["suggestions"], ["需人工排查长事务"])
+
+    def test_normalize_create_payload_requires_device(self) -> None:
+        with self.assertRaises(RuntimeError):
+            OrderWorkflowClient._normalize_create_payload({"alarmTitle": "x"})
 
     def test_create_disposal_workorder_raises_on_business_failure(self) -> None:
         client = OrderWorkflowClient(
@@ -335,7 +369,9 @@ class OrderWorkflowTests(unittest.TestCase):
             return_value={"code": 500, "msg": "获取流程失败！", "data": None},
         ):
             with self.assertRaises(RuntimeError) as ctx:
-                client.create_disposal_workorder({"alarm": {"title": "x"}})
+                client.create_disposal_workorder(
+                    {"alarmTitle": "x", "neName": "d1"}
+                )
         self.assertIn("获取流程失败", str(ctx.exception))
 
     def test_create_markdown_renders_workorder_ids(self) -> None:
