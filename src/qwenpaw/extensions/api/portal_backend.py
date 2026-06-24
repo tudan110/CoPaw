@@ -556,11 +556,13 @@ async def _drain_portal_real_alarm_stream(
     task_tracker: Any,
     queue: Any,
     chat_id: str,
+    session_id: str = "",
 ) -> None:
+    chunks: list[str] = []
     stream_it = task_tracker.stream_from_queue(queue, chat_id)
     try:
-        async for _ in stream_it:
-            pass
+        async for chunk in stream_it:
+            chunks.append(chunk)
     except Exception:
         print(
             f"[WARN] drain portal real alarm stream failed for chat_id={chat_id}",
@@ -573,6 +575,12 @@ async def _drain_portal_real_alarm_stream(
         status="analyzed",
         source="auto-stream-done",
     )
+    if session_id and chunks:
+        _try_persist_analysis_result_from_stream(
+            chunks=chunks,
+            chat_id=chat_id,
+            session_id=session_id,
+        )
 
 
 def _portal_real_alarm_has_history(state: dict[str, Any]) -> bool:
@@ -844,6 +852,7 @@ async def _ensure_portal_real_alarm_sessions(
                         workspace.task_tracker,
                         queue,
                         chat.id,
+                        session_id=session_id,
                     ),
                 )
             else:
@@ -2353,27 +2362,88 @@ def _persist_analysis_result_to_registry(
         )
 
 
-def _persist_diagnose_result_to_registry(
+def _extract_text_from_sse_message_content(content: Any) -> str:
+    """Extract plain text from a message event's content field (str or list)."""
+    if not content:
+        return ""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts = []
+        for item in content:
+            if isinstance(item, str):
+                parts.append(item)
+            elif isinstance(item, dict):
+                text = item.get("text") or item.get("content") or ""
+                if text:
+                    parts.append(str(text))
+        return "\n".join(filter(None, parts))
+    return ""
+
+
+def _collect_sse_report_markdown(chunks: list[str]) -> str:
+    """Parse collected SSE event strings and return the full text of the last
+    completed assistant message (the alarm analyst report)."""
+    texts = []
+    for chunk in chunks:
+        chunk = chunk.strip()
+        if not chunk.startswith("data:"):
+            continue
+        payload = chunk[len("data:"):].strip()
+        try:
+            event = json.loads(payload)
+        except (json.JSONDecodeError, ValueError):
+            continue
+        if (
+            event.get("object") == "message"
+            and event.get("role") == "assistant"
+            and event.get("type") == "message"
+            and event.get("status") == "completed"
+        ):
+            text = _extract_text_from_sse_message_content(
+                event.get("content"),
+            )
+            if text:
+                texts.append(text)
+    return "\n\n".join(texts).strip()
+
+
+def _try_persist_analysis_result_from_stream(
     *,
+    chunks: list[str],
+    chat_id: str,
     session_id: str,
-    result: dict[str, Any],
 ) -> None:
-    """Persist the raw diagnose result directly so external callers get data
-    without requiring the frontend to open the conversation first."""
+    """After agent streaming ends, parse SSE chunks to extract the alarm
+    analyst report, build a card, and persist it so external callers get
+    data without requiring the frontend to open the conversation."""
     try:
-        alarm_id = session_id.removeprefix(
-            PORTAL_REAL_ALARM_SESSION_PREFIX,
-        ).strip()
-        if not alarm_id:
+        if not session_id.startswith(PORTAL_REAL_ALARM_SESSION_PREFIX):
             return
-        result_json = json.dumps(result, ensure_ascii=False)
-        _update_portal_real_alarm_registry_safe(
-            alarm_id=alarm_id,
-            analysis_result=result_json,
+        report_markdown = _collect_sse_report_markdown(chunks)
+        if not report_markdown:
+            return
+        if not is_alarm_analyst_card_candidate(
+            employee_id="fault",
+            report_markdown=report_markdown,
+            process_blocks=[],
+        ):
+            return
+        message_id = f"auto-stream-{chat_id}"
+        card = build_alarm_analyst_card(
+            chat_id=chat_id,
+            message_id=message_id,
+            employee_id="fault",
+            report_markdown=report_markdown,
+            process_blocks=[],
+        )
+        _persist_analysis_result_to_registry(
+            session_id=session_id,
+            card=card.model_dump(by_alias=True),
         )
     except Exception as exc:
         print(
-            f"[WARN] _persist_diagnose_result_to_registry failed: "
+            f"[WARN] _try_persist_analysis_result_from_stream failed: "
             f"{type(exc).__name__}: {exc}",
         )
 
@@ -3620,11 +3690,6 @@ async def portal_alarm_analyst_diagnose(
                 request,
                 session_id=session_id,
                 messages=history,
-            )
-        if session_id.startswith(PORTAL_REAL_ALARM_SESSION_PREFIX):
-            _persist_diagnose_result_to_registry(
-                session_id=session_id,
-                result=result.get("result") or {},
             )
         return result
     except ValueError as exc:
