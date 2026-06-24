@@ -143,6 +143,10 @@ COPY --from=agentscope-registry.ap-southeast-1.cr.aliyuncs.com/agentscope/uv:lat
 RUN uv pip install --python /app/venv/bin/python --no-cache-dir ".[ollama]" \
   && rm -rf ./build
 
+# drain3 pins cachetools==4.2.1 which lacks TLRUCache, breaking fastmcp's
+# MemoryStore import chain. Force-upgrade after the main install to override.
+RUN uv pip install --python /app/venv/bin/python --no-cache-dir "cachetools>=7"
+
 # Init working dir with default config.json and HEARTBEAT.md (build time).
 RUN qwenpaw init --defaults --accept-security
 
