@@ -21,7 +21,7 @@ export const PortalQwenPawMarkdown = memo(function PortalQwenPawMarkdown({
       <Markdown
         content={content}
         cursor={isStreaming}
-        baseFontSize={14}
+        baseFontSize={15}
         baseLineHeight={1.7}
         disableImage={false}
         allowHtml={false}

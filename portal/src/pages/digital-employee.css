@@ -391,7 +391,7 @@
 }
 
 .portal-digital-employee .sidebar-advanced-header-title {
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
   color: var(--text-secondary);
 }
@@ -467,7 +467,7 @@
 }
 
 .portal-digital-employee .sidebar-advanced-item-name {
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 600;
   color: var(--text-primary);
   width: 100%;
@@ -477,7 +477,7 @@
 .portal-digital-employee .sidebar-advanced-item-desc,
 .portal-digital-employee .sidebar-advanced-item-meta {
   font-size: 9px;
-  color: var(--text-muted);
+  color: var(--text-secondary);
   line-height: 1.4;
   width: 100%;
   min-width: 0;
@@ -6901,7 +6901,7 @@
 .portal-digital-employee .message-bubble {
   padding: 14px 18px;
   border-radius: 16px;
-  font-size: 13px;
+  font-size: 15px;
   line-height: 1.6;
   background: var(--bg-gray);
   overflow: hidden;
@@ -7081,7 +7081,7 @@
   font-family:
     "SFMono-Regular", SFMono-Regular, ui-monospace, Menlo, Monaco, Consolas,
     "Liberation Mono", "Courier New", monospace;
-  font-size: 12px;
+  font-size: 14px;
 }
 
 .portal-digital-employee .markdown-bubble > *:not(.portal-x-markdown) :not(pre) > code {
@@ -7171,7 +7171,7 @@
 }
 
 .portal-digital-employee .markdown-bubble .portal-x-markdown {
-  font-size: 14px;
+  font-size: 15px;
   line-height: 1.75;
   background: transparent;
 }
