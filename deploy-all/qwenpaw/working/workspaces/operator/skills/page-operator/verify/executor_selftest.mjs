@@ -60,6 +60,12 @@ globalThis.document = {
   body: { appendChild() {} },
   head: { appendChild() {} }
 }
+// typeIntoInput 会 new Event(...) 派发事件,node 无 DOM,给个最小桩
+globalThis.Event = class {
+  constructor(type) {
+    this.type = type
+  }
+}
 
 const addBtn = new FakeEl({ text: '新增', q: { '.el-icon-plus': [] } })
 const vm = {
@@ -316,6 +322,40 @@ function assert(cond, msg) {
     '自省: 抽到工具栏按钮(搜索/导出)'
   )
   assert(actText.indexOf('查看') === -1, '自省: 排除了表格行内按钮')
+
+  // ---- L5 就地操作:runOperate 填搜索框 + 自动点搜索(只读直跑)----
+  let queried = false
+  const qInput = new FakeEl({})
+  qInput.dispatchEvent = () => {}
+  const qItem = new FakeEl({
+    q: {
+      '.el-form-item__label': [new FakeEl({ text: '流程名称' })],
+      '.el-form-item__content input, .el-form-item__content textarea': [qInput]
+    }
+  })
+  const searchBtn = new FakeEl({ text: '搜索' })
+  searchBtn.click = () => {
+    queried = true
+  }
+  const wpOpVm = {
+    $options: { name: 'WpOperate' },
+    $el: new FakeEl({ q: { '.el-form-item': [qItem], button: [searchBtn] } })
+  }
+  registerPage(wpOpVm)
+  const res5 = await runner.runOperate(
+    {
+      mode: 'current',
+      page: 'WpOperate',
+      fill: [{ label: '流程名称', value: '系统派单' }],
+      click: '搜索',
+      risk: 'query',
+      title: '按流程名称搜索'
+    },
+    {}
+  )
+  assert(res5 && res5.ok === true && res5.mode === 'operate', 'operate: runner 返回 ok(operate)')
+  assert(qInput.value === '系统派单', 'operate: 搜索框被填入「系统派单」')
+  assert(queried === true, 'operate: 只读自动点了「搜索」')
 
   console.log(failed === 0 ? '\nFRONTEND-EXECUTOR-SELFTEST: PASS' : `\nFRONTEND-EXECUTOR-SELFTEST: FAIL (${failed})`)
   process.exitCode = failed === 0 ? 0 : 1
