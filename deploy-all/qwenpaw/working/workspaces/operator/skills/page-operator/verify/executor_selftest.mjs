@@ -357,6 +357,35 @@ function assert(cond, msg) {
   assert(qInput.value === '系统派单', 'operate: 搜索框被填入「系统派单」')
   assert(queried === true, 'operate: 只读自动点了「搜索」')
 
+  // ---- L5-7 表格行内操作:describePage 抽行内按钮 + runOperate 点对应行的下载 ----
+  let downloaded = null
+  const mkRow = (dayText) => {
+    const dlBtn = new FakeEl({ text: '下载' })
+    dlBtn.click = () => {
+      downloaded = dayText
+    }
+    return new FakeEl({ text: dayText, q: { button: [dlBtn] } })
+  }
+  const tableEl = new FakeEl({
+    q: {
+      '.el-table__row': [mkRow('第1天'), mkRow('第3天')],
+      '.el-table__row, tbody tr': [mkRow('第1天'), mkRow('第3天')]
+    }
+  })
+  const reportVm = {
+    $options: { name: 'Report' },
+    $el: new FakeEl({ q: { '.el-table': [tableEl] } })
+  }
+  registerPage(reportVm)
+  const reportSchema = describePage(reportVm)
+  assert((reportSchema.rowActions || []).indexOf('下载') !== -1, '自省: 抽到表格行内按钮(下载)')
+  const res6 = await runner.runOperate(
+    { mode: 'current', page: 'Report', row: { match: '第3天', click: '下载' }, risk: 'query', title: '下载第3天' },
+    {}
+  )
+  assert(res6 && res6.ok === true && res6.mode === 'row', 'row: runner 返回 ok(row)')
+  assert(downloaded === '第3天', 'row: 点中了「第3天」那行的下载(不是别行)')
+
   console.log(failed === 0 ? '\nFRONTEND-EXECUTOR-SELFTEST: PASS' : `\nFRONTEND-EXECUTOR-SELFTEST: FAIL (${failed})`)
   process.exitCode = failed === 0 ? 0 : 1
 })().catch((e) => {
