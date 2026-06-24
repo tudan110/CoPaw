@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
@@ -21,10 +22,10 @@ ALARM_TOP5_ENDPOINT = "/resource/alarm/statistics/statResTop"
 TOPOLOGY_ENDPOINT = "/resource/monitor/overview/topology"
 ASSET_OVERVIEW_ENDPOINT = "/resource/monitor/overview/asset/overview"
 REAL_ALARM_LIST_ENDPOINT = "/resource/realalarm/list"
-# Today's workorder stats live on the same INOE gateway, under /flowable
-# (the gateway also backs the order-workflow skill). Returns
-# data: {inProgressCount, finishedCount, todoCount}.
-WORKORDER_STATS_ENDPOINT = "/flowable/workflow/workOrder/getWorkOrder"
+# Today's workorder stats live on the same INOE gateway, under the
+# inoe-ferry 工单 module (which also backs the order-workflow skill).
+# Returns data: {inProgressCount, finishedCount, todoCount}.
+WORKORDER_STATS_ENDPOINT = "/api/v1/work-order/getWorkOrder"
 # Alarm-count trend grouped by severity (1=紧急/2=严重/3=普通/4=预警). The
 # gateway only offers per-day buckets, so the overview shows the last N days.
 SEVERITY_TREND_ENDPOINT = "/resource/alarm/statistics/statSeverityTrend"

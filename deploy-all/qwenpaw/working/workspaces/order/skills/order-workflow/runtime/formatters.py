@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import re
 from typing import Any
 
 
@@ -11,11 +10,11 @@ def format_stats_markdown(payload: dict[str, Any]) -> str:
     data = payload.get("data") or {}
     return "\n".join(
         [
-            "## 今日工单统计",
+            "## 工单统计",
             "",
-            f"- 待处理：**{data.get('inProgressCount', 0)}**",
+            f"- 待处理：**{data.get('todoCount', 0)}**",
+            f"- 进行中：**{data.get('inProgressCount', 0)}**",
             f"- 已完成：**{data.get('finishedCount', 0)}**",
-            f"- 进行中：**{data.get('todoCount', 0)}**",
         ]
     ).strip()
 
@@ -62,13 +61,15 @@ def format_list_markdown(
 
 def format_detail_markdown(payload: dict[str, Any], *, lightweight: bool = True) -> str:
     data = payload.get("data") or {}
-    process_forms = data.get("processFormList") or []
     detail_payload = _build_order_workorder_detail_payload(data)
+    sections = (
+        ((detail_payload.get("tabs") or {}).get("form") or {}).get("sections")
+    ) or []
 
     if lightweight:
-        return _format_detail_light_markdown(detail_payload, process_forms)
+        return _format_detail_light_markdown(detail_payload, sections)
 
-    return _format_detail_full_markdown(detail_payload, process_forms)
+    return _format_detail_full_markdown(detail_payload, sections)
 
 
 def format_create_markdown(payload: dict[str, Any]) -> str:
@@ -79,8 +80,8 @@ def format_create_markdown(payload: dict[str, Any]) -> str:
         [
             "## 处置工单创建结果",
             "",
-            f"- `procInsId`: `{data.get('procInsId', '-')}`",
-            f"- `taskId`: `{data.get('taskId', '-')}`",
+            f"- `工单号`: `{data.get('workOrderId', '-')}`",
+            f"- `流程`: `{data.get('processId', '-')}`",
             f"- 通知推送：**{notification_status}**",
         ]
     ).strip()
@@ -129,31 +130,34 @@ def _format_list_table(rows: list[dict[str, Any]], *, title: str, start_index: i
         for offset, row in enumerate(rows)
     ]
     if is_finished:
-        headers = ["序号", "任务编号", "流程名称", "任务节点", "流程发起人", "接收时间", "审批时间", "耗时"]
+        headers = ["序号", "工单号", "流程号", "标题", "流程", "状态", "处理人", "创建时间", "更新时间"]
         table_rows = [
             [
                 item["sequence"],
-                item["taskId"],
+                item["workOrderId"],
+                item["processId"],
+                item["title"],
                 item["processName"],
-                item["taskName"],
-                item["starter"],
-                item["receiveTime"],
-                item["finishTime"],
-                item["duration"],
+                item["state"],
+                item["principals"],
+                item["createTime"],
+                item["updateTime"],
             ]
             for item in normalized
         ]
     else:
-        headers = ["序号", "任务编号", "流程名称", "任务节点", "流程版本", "流程发起人", "接收时间"]
+        headers = ["序号", "工单号", "流程号", "标题", "流程", "当前节点", "处理人", "优先级", "创建时间"]
         table_rows = [
             [
                 item["sequence"],
-                item["taskId"],
+                item["workOrderId"],
+                item["processId"],
+                item["title"],
                 item["processName"],
-                item["taskName"],
-                item["version"],
-                item["starter"],
-                item["receiveTime"],
+                item["stateName"],
+                item["principals"],
+                item["priority"],
+                item["createTime"],
             ]
             for item in normalized
         ]
@@ -318,272 +322,261 @@ def _safe_inline(value: Any) -> str:
     return text or "-"
 
 
-def _resolve_process_name(row: dict[str, Any]) -> str:
-    proc_vars = row.get("procVars") or {}
-    return (
-        row.get("procDefName")
-        or proc_vars.get("title")
-        or proc_vars.get("alarmTitle")
-        or "-"
-    )
-
-
-def _resolve_task_name(row: dict[str, Any]) -> str:
-    return row.get("taskName") or "-"
-
-
-def _resolve_version(row: dict[str, Any]) -> str:
-    version = row.get("procDefVersion")
-    if version in (None, ""):
+def _priority_label(value: Any) -> str:
+    """ferry 数字优先级 3/2/1 → P1/P2/P3。"""
+    if value in (None, "", "-"):
         return "-"
-    return f"v{version}"
+    try:
+        return {3: "P1", 2: "P2", 1: "P3"}.get(int(value), str(value))
+    except (TypeError, ValueError):
+        return _safe_inline(value)
+
+
+def _as_int(value: Any, default: int = 0) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
 
 
 def _normalize_list_row(row: dict[str, Any], *, is_finished: bool, sequence: int) -> dict[str, Any]:
+    row = row if isinstance(row, dict) else {}
     normalized = {
         "sequence": sequence,
-        "taskId": str(row.get("taskId") or "-"),
-        "procInsId": str(row.get("procInsId") or "-"),
-        "processName": _resolve_process_name(row),
-        "taskName": _resolve_task_name(row),
-        "starter": str(row.get("startUserName") or "-"),
-        "receiveTime": str(row.get("createTime") or "-"),
+        "workOrderId": str(row.get("id") or "-"),
+        "processId": str(row.get("process") or "-"),
+        "title": _safe_inline(row.get("title")),
+        "processName": _safe_inline(row.get("process_name")),
+        "principals": _safe_inline(row.get("principals")),
+        "createTime": str(row.get("create_time") or "-"),
     }
     if is_finished:
-        normalized["finishTime"] = str(row.get("finishTime") or "-")
-        normalized["duration"] = str(row.get("duration") or "-")
+        normalized["updateTime"] = str(row.get("update_time") or "-")
+        normalized["state"] = "已结束" if _as_int(row.get("is_end")) == 1 else "进行中"
     else:
-        normalized["version"] = _resolve_version(row)
+        normalized["stateName"] = _safe_inline(row.get("state_name"))
+        normalized["priority"] = _priority_label(row.get("priority"))
     return normalized
 
 
 def _build_order_workorder_detail_payload(data: dict[str, Any]) -> dict[str, Any]:
-    process_forms = data.get("processFormList") or []
-    history_nodes = data.get("historyProcNodeList") or []
-    bpmn_xml = str(data.get("bpmnXml") or "")
-    process_name = _extract_process_name_from_bpmn(bpmn_xml) or _first_form_title(process_forms)
-    form_fields = _collect_form_fields(process_forms)
+    """把 ferry process-structure 响应映射成门户消费的归一化详情块。"""
+    process = data.get("process") if isinstance(data.get("process"), dict) else {}
+    work_order = data.get("workOrder") if isinstance(data.get("workOrder"), dict) else {}
+    nodes = data.get("nodes") or []
+    history = data.get("circulationHistory") or []
+    tpls = data.get("tpls") or []
+
+    process_name = _safe_inline(
+        process.get("name") or work_order.get("process_name") or "-"
+    )
+    current_state = str(work_order.get("current_state") or "")
+    node_label_map = {
+        str(node.get("id")): _safe_inline(node.get("label"))
+        for node in nodes
+        if isinstance(node, dict)
+    }
+
+    form_sections = _build_ferry_form_sections(tpls)
+    form_fields = [
+        field for section in form_sections for field in section.get("fields") or []
+    ]
 
     return {
-        "processName": process_name or "-",
-        "summary": _build_detail_summary(form_fields, history_nodes),
+        "processName": process_name,
+        "summary": _build_ferry_detail_summary(
+            work_order,
+            form_fields,
+            node_label_map,
+            current_state,
+        ),
         "tabs": {
-            "form": _build_form_tab(process_forms),
-            "records": _build_record_tab(history_nodes),
-            "tracking": _build_tracking_tab(
-                bpmn_xml,
-                data.get("flowViewer") or {},
-                history_nodes,
-            ),
+            "form": {"title": "表单信息", "sections": form_sections},
+            "records": _build_ferry_record_tab(history),
+            "tracking": _build_ferry_tracking_tab(nodes, history, current_state),
         },
     }
 
 
-def _build_detail_summary(
-    form_fields: list[dict[str, Any]],
-    history_nodes: list[dict[str, Any]],
-) -> list[dict[str, str]]:
-    active_node = _pick_active_or_latest_node(history_nodes)
-    summary_items: list[dict[str, str]] = []
-    consumed_names: set[str] = set()
+def _ferry_form_label_map(structure: dict[str, Any]) -> dict[str, str]:
+    """从 ferry 表单 form_structure 里尽量挖出 字段名→中文标签 映射。
 
-    for item in (
-        _build_summary_item(
-            form_fields,
-            consumed_names,
-            label="告警标题",
-            names=("title", "alarmTitle"),
-            labels=("告警标题",),
-        ),
-        _build_summary_item(
-            form_fields,
-            consumed_names,
-            label="设备名称",
-            names=("deviceName", "devName", "ciName", "instanceName"),
-            labels=("设备名称", "设备别名", "资源", "实例名称"),
-        ),
-        _build_summary_item(
-            form_fields,
-            consumed_names,
-            label="管理 IP",
-            names=("manageIp", "deviceIp", "ip", "hostIp"),
-            labels=("管理IP", "设备IP", "设备 ip", "IP地址"),
-        ),
-    ):
-        if item:
-            summary_items.append(item)
+    ferry 表单 widget schema 文档未完整给出，这里做防御式深度遍历，
+    兼容 vform / form-generator 常见结构，挖不到就回退原始 key。
+    """
+    label_map: dict[str, str] = {}
 
-    for field in form_fields:
-        name = str(field.get("name") or "").strip()
-        label = str(field.get("label") or name or "字段")
-        value = field.get("value")
-        if name in consumed_names or value in (None, "", []):
+    def walk(node: Any) -> None:
+        if isinstance(node, list):
+            for item in node:
+                walk(item)
+            return
+        if not isinstance(node, dict):
+            return
+        config = node.get("__config__") if isinstance(node.get("__config__"), dict) else {}
+        options = node.get("options") if isinstance(node.get("options"), dict) else {}
+        name = (
+            node.get("model")
+            or node.get("__vModel__")
+            or node.get("vModel")
+            or node.get("name")
+            or options.get("name")
+            or node.get("id")
+        )
+        label = node.get("label") or config.get("label") or options.get("label")
+        if isinstance(name, str) and name and isinstance(label, str) and label:
+            label_map.setdefault(name, label)
+        for key in ("list", "children", "columns", "widgetList", "tableColumns", "trItems"):
+            if key in node:
+                walk(node[key])
+
+    walk(structure.get("list") if isinstance(structure, dict) else structure)
+    return label_map
+
+
+def _build_ferry_form_sections(tpls: list[Any]) -> list[dict[str, Any]]:
+    sections: list[dict[str, Any]] = []
+    for tpl in tpls:
+        if not isinstance(tpl, dict):
             continue
-        summary_items.append(
+        form_data = tpl.get("form_data") if isinstance(tpl.get("form_data"), dict) else {}
+        structure = (
+            tpl.get("form_structure")
+            if isinstance(tpl.get("form_structure"), dict)
+            else {}
+        )
+        label_map = _ferry_form_label_map(structure)
+        fields = [
             {
-                "label": label,
-                "value": _compact_summary_value(value),
+                "name": str(name),
+                "label": label_map.get(str(name), str(name)),
+                "value": _normalize_form_value(value),
+                "multiline": False,
             }
-        )
-        consumed_names.add(name)
-        if len(summary_items) >= 3:
-            break
-
-    summary_items.append(
-        {
-            "label": "当前节点",
-            "value": _safe_inline(_resolve_node_label(active_node) if active_node else "-"),
-        }
-    )
-    return summary_items[:4]
-
-
-def _build_form_tab(process_forms: list[dict[str, Any]]) -> dict[str, Any]:
-    sections = []
-    for form in process_forms:
-        fields = _extract_form_fields(
-            form.get("formModel") or {},
-            form.get("formData") or {},
-        )
+            for name, value in form_data.items()
+        ]
         sections.append(
             {
-                "title": str(form.get("title") or "表单信息"),
+                "title": _safe_inline(tpl.get("name") or "表单信息"),
                 "fields": fields,
             }
         )
-    return {
-        "title": "表单信息",
-        "sections": sections,
-    }
+    return sections
 
 
-def _build_record_tab(history_nodes: list[dict[str, Any]]) -> dict[str, Any]:
+def _build_ferry_detail_summary(
+    work_order: dict[str, Any],
+    form_fields: list[dict[str, Any]],
+    node_label_map: dict[str, str],
+    current_state: str,
+) -> list[dict[str, str]]:
+    items: list[dict[str, str]] = []
+    title = _safe_inline(work_order.get("title"))
+    if title != "-":
+        items.append({"label": "工单标题", "value": title})
+    priority = _priority_label(work_order.get("priority"))
+    if priority != "-":
+        items.append({"label": "优先级", "value": priority})
+    node_label = node_label_map.get(current_state) or _safe_inline(
+        work_order.get("state_name")
+    )
+    items.append({"label": "当前节点", "value": node_label or "-"})
+    principals = _safe_inline(work_order.get("principals"))
+    if principals != "-":
+        items.append({"label": "处理人", "value": principals})
+
+    if len(items) < 2:
+        for field in form_fields:
+            value = field.get("value")
+            if value in (None, "", [], "-"):
+                continue
+            items.append(
+                {
+                    "label": field.get("label") or field.get("name") or "字段",
+                    "value": _compact_summary_value(value),
+                }
+            )
+            if len(items) >= 4:
+                break
+    return items[:4]
+
+
+def _ferry_circulation_status(value: Any) -> str:
+    """ferry 流转记录 status → 前端状态键（枚举待真实响应校正）。"""
+    try:
+        code = int(value)
+    except (TypeError, ValueError):
+        return "finished"
+    return {1: "active", 2: "finished", 3: "rejected"}.get(code, "finished")
+
+
+def _ferry_record_comments(node: dict[str, Any]) -> list[str]:
+    raw = node.get("opinion") or node.get("comment") or node.get("remark")
+    text = str(raw or "").strip()
+    return [text] if text else []
+
+
+def _build_ferry_record_tab(history: list[Any]) -> dict[str, Any]:
     records = []
-    for index, node in enumerate(sorted(history_nodes, key=_history_sort_key)):
-        comments = node.get("commentList") or []
-        is_active = not node.get("endTime") and str(node.get("activityType") or "") == "userTask"
+    for index, node in enumerate(history):
+        if not isinstance(node, dict):
+            continue
         records.append(
             {
-                "id": f"record-{index}",
-                "status": "active" if is_active else "finished",
-                "nodeLabel": _resolve_node_label(node),
-                "nodeType": str(node.get("activityType") or "-"),
-                "assignee": str(node.get("assigneeName") or node.get("assigneeId") or "-"),
-                "candidate": str(node.get("candidate") or "-"),
-                "receiveTime": str(node.get("createTime") or "-"),
-                "handleTime": str(node.get("endTime") or "-"),
+                "id": f"record-{node.get('id', index)}",
+                "status": _ferry_circulation_status(node.get("status")),
+                "nodeLabel": _safe_inline(node.get("circulation")),
+                "nodeType": "-",
+                "assignee": _safe_inline(
+                    node.get("processor") or node.get("processor_id")
+                ),
+                "candidate": "-",
+                "receiveTime": str(node.get("create_time") or "-"),
+                "handleTime": str(
+                    node.get("update_time") or node.get("handle_time") or "-"
+                ),
                 "duration": str(node.get("duration") or "-"),
-                "comments": [
-                    str(comment.get("fullMessage") or comment.get("message") or "").strip()
-                    for comment in comments
-                    if str(comment.get("fullMessage") or comment.get("message") or "").strip()
-                ],
+                "comments": _ferry_record_comments(node),
             }
         )
-    return {
-        "title": "流转记录",
-        "records": records,
-    }
+    return {"title": "流转记录", "records": records}
 
 
-def _build_tracking_tab(
-    bpmn_xml: str,
-    flow_viewer: dict[str, Any],
-    history_nodes: list[dict[str, Any]],
+def _build_ferry_tracking_tab(
+    nodes: list[Any],
+    history: list[Any],
+    current_state: str,
 ) -> dict[str, Any]:
-    parsed = _parse_bpmn_flow(bpmn_xml)
-    history_map = {str(node.get("activityId") or ""): node for node in history_nodes}
-    finished = {str(item) for item in flow_viewer.get("finishedTaskSet") or []}
-    unfinished = {str(item) for item in flow_viewer.get("unfinishedTaskSet") or []}
-    rejected = {str(item) for item in flow_viewer.get("rejectedTaskSet") or []}
-    nodes = []
-    for item in parsed["nodes"]:
-        node_id = item["id"]
-        status = "pending"
-        if node_id in finished:
-            status = "finished"
-        elif node_id in unfinished:
+    finished_ids = {
+        str(item.get("node_id") or item.get("activityId") or "")
+        for item in history
+        if isinstance(item, dict)
+    }
+    ordered = sorted(
+        [node for node in nodes if isinstance(node, dict)],
+        key=lambda node: _as_int(node.get("sort"), 0),
+    )
+    track = []
+    for node in ordered:
+        node_id = str(node.get("id") or "")
+        clazz = str(node.get("clazz") or "")
+        if node_id and node_id == current_state:
             status = "active"
-        elif node_id in rejected:
-            status = "rejected"
-        history = history_map.get(node_id) or {}
-        nodes.append(
+        elif node_id and node_id in finished_ids:
+            status = "finished"
+        elif clazz == "start":
+            status = "finished"
+        else:
+            status = "pending"
+        track.append(
             {
                 "id": node_id,
-                "label": _resolve_node_label(history) if history else item["label"],
-                "kind": item["kind"],
+                "label": _safe_inline(node.get("label")),
+                "kind": clazz or "-",
                 "status": status,
-                "assignee": str(history.get("assigneeName") or history.get("assigneeId") or "-"),
-                "startTime": str(history.get("createTime") or "-"),
-                "endTime": str(history.get("endTime") or "-"),
             }
         )
-    return {
-        "title": "流程跟踪",
-        "nodes": nodes,
-    }
-
-
-def _collect_form_fields(process_forms: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    all_fields: list[dict[str, Any]] = []
-    for form in process_forms:
-        all_fields.extend(
-            _extract_form_fields(
-                form.get("formModel") or {},
-                form.get("formData") or {},
-            )
-        )
-    return all_fields
-
-
-def _lookup_field_value(
-    fields: list[dict[str, Any]],
-    *,
-    names: tuple[str, ...] = (),
-    labels: tuple[str, ...] = (),
-) -> Any:
-    normalized_names = {item.strip().lower() for item in names if item.strip()}
-    normalized_labels = {item.strip().lower() for item in labels if item.strip()}
-    for field in fields:
-        name = str(field.get("name") or "").strip().lower()
-        label = str(field.get("label") or "").strip().lower()
-        if name in normalized_names or label in normalized_labels:
-            value = field.get("value")
-            if value not in (None, "", []):
-                return value
-    for field in fields:
-        label = str(field.get("label") or "").strip().lower()
-        if any(token in label for token in normalized_labels):
-            value = field.get("value")
-            if value not in (None, "", []):
-                return value
-    return "-"
-
-
-def _build_summary_item(
-    fields: list[dict[str, Any]],
-    consumed_names: set[str],
-    *,
-    label: str,
-    names: tuple[str, ...] = (),
-    labels: tuple[str, ...] = (),
-) -> dict[str, str] | None:
-    normalized_names = {item.strip().lower() for item in names if item.strip()}
-    normalized_labels = {item.strip().lower() for item in labels if item.strip()}
-    for field in fields:
-        name = str(field.get("name") or "").strip()
-        normalized_name = name.lower()
-        normalized_label = str(field.get("label") or "").strip().lower()
-        value = field.get("value")
-        if normalized_name in normalized_names or normalized_label in normalized_labels:
-            if value in (None, "", []):
-                return None
-            consumed_names.add(name)
-            return {
-                "label": label,
-                "value": _compact_summary_value(value),
-            }
-    return None
+    return {"title": "流程跟踪", "nodes": track}
 
 
 def _compact_summary_value(value: Any) -> str:
@@ -637,32 +630,6 @@ def _trim_cell(value: Any, *, limit: int) -> str:
     return text if len(text) <= limit else f"{text[:limit - 3]}..."
 
 
-def _extract_form_fields(form_model: dict[str, Any], form_data: dict[str, Any]) -> list[dict[str, Any]]:
-    fields: list[dict[str, Any]] = []
-
-    def walk_widgets(widgets: list[dict[str, Any]]) -> None:
-        for widget in widgets:
-            options = widget.get("options") or {}
-            name = str(options.get("name") or "").strip()
-            if widget.get("formItemFlag") and name:
-                fields.append(
-                    {
-                        "name": name,
-                        "label": str(options.get("label") or name),
-                        "value": _normalize_form_value(form_data.get(name)),
-                        "multiline": widget.get("type") == "textarea",
-                    }
-                )
-            for child in widget.get("widgetList") or []:
-                walk_widgets([child])
-            for row in widget.get("rows") or []:
-                for col in row.get("cols") or []:
-                    walk_widgets(col.get("widgetList") or [])
-
-    walk_widgets(form_model.get("widgetList") or [])
-    return fields
-
-
 def _normalize_form_value(value: Any) -> Any:
     if isinstance(value, str):
         text = value.strip()
@@ -677,107 +644,6 @@ def _normalize_form_value(value: Any) -> Any:
     if value is None:
         return "-"
     return value
-
-
-def _extract_process_name_from_bpmn(bpmn_xml: str) -> str:
-    match = re.search(r"<bpmn2:process[^>]*name=\"([^\"]+)\"", bpmn_xml or "")
-    return match.group(1).strip() if match else ""
-
-
-def _parse_bpmn_flow(bpmn_xml: str) -> dict[str, list[dict[str, str]]]:
-    if not bpmn_xml:
-        return {"nodes": []}
-
-    nodes: dict[str, dict[str, str]] = {}
-    for kind in ("startEvent", "userTask", "endEvent"):
-        pattern = re.compile(
-            rf"<bpmn2:{kind}[^>]*id=\"([^\"]+)\"([^>]*)>([\s\S]*?)</bpmn2:{kind}>",
-            re.IGNORECASE,
-        )
-        for match in pattern.finditer(bpmn_xml):
-            node_id = match.group(1)
-            attrs = match.group(2) or ""
-            label_match = re.search(r'name="([^"]+)"', attrs)
-            text_match = re.search(r'flowable:text="([^"]+)"', attrs)
-            label = (
-                (label_match.group(1) if label_match else "")
-                or (text_match.group(1) if text_match else "")
-                or _default_node_label(kind)
-            )
-            nodes[node_id] = {
-                "id": node_id,
-                "label": label,
-                "kind": kind,
-            }
-
-    outgoing: dict[str, str] = {}
-    flow_pattern = re.compile(
-        r"<bpmn2:sequenceFlow[^>]*sourceRef=\"([^\"]+)\"[^>]*targetRef=\"([^\"]+)\"",
-        re.IGNORECASE,
-    )
-    for match in flow_pattern.finditer(bpmn_xml):
-        outgoing[match.group(1)] = match.group(2)
-
-    start_nodes = [node_id for node_id, node in nodes.items() if node["kind"] == "startEvent"]
-    ordered: list[dict[str, str]] = []
-    visited: set[str] = set()
-    current = start_nodes[0] if start_nodes else next(iter(nodes.keys()), "")
-    while current and current not in visited and current in nodes:
-        ordered.append(nodes[current])
-        visited.add(current)
-        current = outgoing.get(current, "")
-    for node_id, item in nodes.items():
-        if node_id not in visited:
-            ordered.append(item)
-    return {"nodes": ordered}
-
-
-def _default_node_label(kind: str) -> str:
-    return {
-        "startEvent": "开始",
-        "userTask": "人工办理",
-        "endEvent": "结束",
-    }.get(kind, kind or "未知节点")
-
-
-def _resolve_node_label(node: dict[str, Any]) -> str:
-    return str(
-        node.get("activityName")
-        or _default_node_label(str(node.get("activityType") or ""))
-        or node.get("activityType")
-        or "未知节点"
-    )
-
-
-def _first_form_title(process_forms: list[dict[str, Any]]) -> str:
-    return str((process_forms[0] or {}).get("title") or "") if process_forms else ""
-
-
-def _pick_active_or_latest_node(history_nodes: list[dict[str, Any]]) -> dict[str, Any]:
-    if not history_nodes:
-        return {}
-    active_nodes = [node for node in history_nodes if not node.get("endTime")]
-    if active_nodes:
-        return sorted(active_nodes, key=_history_sort_key)[-1]
-    return sorted(history_nodes, key=_history_sort_key)[-1]
-
-
-def _history_sort_key(node: dict[str, Any]) -> tuple[str, str]:
-    return (
-        str(node.get("createTime") or ""),
-        f"{_history_type_rank(str(node.get('activityType') or '')):02d}",
-        str(node.get("endTime") or "9999-99-99 99:99:99"),
-    )
-
-
-def _history_type_rank(activity_type: str) -> int:
-    return {
-        "startEvent": 0,
-        "userTask": 1,
-        "serviceTask": 2,
-        "exclusiveGateway": 3,
-        "endEvent": 9,
-    }.get(activity_type, 5)
 
 
 def status_text_value(status: Any) -> str:

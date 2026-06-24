@@ -61,42 +61,55 @@ def main() -> None:
     action = str(context.get("action") or context.get("intent") or "").strip()
     client = OrderWorkflowClient()
 
-    if action == "stats":
-        print(format_stats_markdown(client.get_workorder_stats()))
-        return
-    if action == "todo-list":
-        payload = client.list_todo_workorders(
-            page_num=int(context.get("pageNum") or 1),
-            page_size=int(context.get("pageSize") or 10),
-            begin_time=str(context.get("beginTime") or ""),
-            end_time=str(context.get("endTime") or ""),
-            fetch_all=bool(context.get("fetchAll")),
-        )
-        print(format_list_markdown(payload, title="待办工单", lightweight=True))
-        return
-    if action == "finished-list":
-        payload = client.list_finished_workorders(
-            page_num=int(context.get("pageNum") or 1),
-            page_size=int(context.get("pageSize") or 10),
-            begin_time=str(context.get("beginTime") or ""),
-            end_time=str(context.get("endTime") or ""),
-            fetch_all=bool(context.get("fetchAll")),
-        )
-        print(format_list_markdown(payload, title="已办工单", lightweight=True))
-        return
-    if action == "detail":
-        payload = client.get_workorder_detail(
-            proc_ins_id=str(context.get("procInsId") or ""),
-            task_id=str(context.get("taskId") or ""),
-        )
-        print(format_detail_markdown(payload, lightweight=True))
-        return
-    if action == "create":
-        create_payload = context.get("payload")
-        if not isinstance(create_payload, dict):
-            create_payload = context
-        payload = client.create_disposal_workorder(create_payload)
-        print(format_create_markdown(payload))
+    try:
+        if action == "stats":
+            print(
+                format_stats_markdown(
+                    client.get_workorder_stats(
+                        start_time=str(context.get("beginTime") or ""),
+                        end_time=str(context.get("endTime") or ""),
+                    )
+                )
+            )
+            return
+        if action == "todo-list":
+            payload = client.list_todo_workorders(
+                page_num=int(context.get("pageNum") or 1),
+                page_size=int(context.get("pageSize") or 10),
+                begin_time=str(context.get("beginTime") or ""),
+                end_time=str(context.get("endTime") or ""),
+                title=str(context.get("title") or ""),
+                fetch_all=bool(context.get("fetchAll")),
+            )
+            print(format_list_markdown(payload, title="待办工单", lightweight=True))
+            return
+        if action == "finished-list":
+            payload = client.list_finished_workorders(
+                page_num=int(context.get("pageNum") or 1),
+                page_size=int(context.get("pageSize") or 10),
+                begin_time=str(context.get("beginTime") or ""),
+                end_time=str(context.get("endTime") or ""),
+                title=str(context.get("title") or ""),
+                fetch_all=bool(context.get("fetchAll")),
+            )
+            print(format_list_markdown(payload, title="已办工单", lightweight=True))
+            return
+        if action == "detail":
+            payload = client.get_workorder_detail(
+                process_id=str(context.get("processId") or ""),
+                work_order_id=str(context.get("workOrderId") or ""),
+            )
+            print(format_detail_markdown(payload, lightweight=True))
+            return
+        if action == "create":
+            create_payload = context.get("payload")
+            if not isinstance(create_payload, dict):
+                create_payload = context
+            payload = client.create_disposal_workorder(create_payload)
+            print(format_create_markdown(payload))
+            return
+    except RuntimeError as exc:
+        print(f"## 操作失败\n\n{exc}")
         return
 
     raise RuntimeError(

@@ -11,11 +11,11 @@
 | 监控总览 | `monitoring-overview-query` | 3 | 告警 Top、监控拓扑、资产总览 |
 | CMDB 查询/统计 | `zgops-cmdb` | 16 | CI 类型、CI 实例、CI 关系、CMDB count/group |
 | 故障/巡检指标 | `alarm-analyst`、`inspection-analyst` | 2 | 指标定义、指标值批量查询 |
-| 传统工单 | `order-workflow` | 5 | 工单统计、创建、待办、已办、详情 |
+| 工单能力 | `order-workflow` | 4 | 工单统计、创建处置、列表(待办/已办)、详情 |
 | 巡检规则 | `inspection-analyst` | 2 | 巡检配置、字典解码 |
 | Web 可用性 | `web-availability-monitor` | 14 | 监测任务、执行记录、选择器辅助 |
 | CMDB 导入 | `zgops-cmdb-import` | 14 | CMDB 类型、分组、属性、关系、CI 写入 |
-| **合计** |  | **69** |  |
+| **合计** |  | **68** |  |
 
 ## 接口明细
 
@@ -92,11 +92,10 @@
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
-| GET | `/flowable/workflow/workOrder/getWorkOrder` | 查询今日工单统计 |
-| POST | `/flowable/workflow/workOrder/faultManualWorkorders` | 创建处置工单 |
-| GET | `/flowable/workflow/process/todoList` | 查询待办工单列表 |
-| GET | `/flowable/workflow/process/finishedList` | 查询已办工单列表 |
-| GET | `/flowable/workflow/process/detail` | 查询工单详情 |
+| GET | `/api/v1/work-order/getWorkOrder` | 查询工单统计 |
+| POST | `/api/v1/work-order/faultManualWorkorders` | 创建处置工单 |
+| GET | `/api/v1/work-order/list` | 查询工单列表（classify=1 待办 / 5 已办理） |
+| GET | `/api/v1/work-order/process-structure` | 查询工单详情（processId+workOrderId） |
 
 ### 巡检规则
 

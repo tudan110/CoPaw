@@ -7,7 +7,6 @@ import json
 from pathlib import Path
 import sys
 import tempfile
-from urllib.parse import parse_qs, urlparse
 from unittest import mock
 
 
@@ -22,6 +21,91 @@ from runtime.formatters import (
     format_list_markdown,
     format_stats_markdown,
 )
+
+
+# Sample payloads mirror the inoe-ferry 工单接口文档 examples.
+TODO_ROW = {
+    "id": 123,
+    "title": "数据库锁异常人工处置",
+    "priority": 3,
+    "process": 15,
+    "classify": 1,
+    "is_end": 0,
+    "creator": 1,
+    "create_time": "2026-06-18 10:13:21",
+    "update_time": "2026-06-18 10:25:09",
+    "current_state": "recv1",
+    "process_name": "故障处置",
+    "principals": "张三",
+    "state_name": "处理节点",
+}
+
+PROCESS_STRUCTURE_DETAIL = {
+    "code": 200,
+    "data": {
+        "process": {"id": 15, "name": "故障处置"},
+        "nodes": [
+            {"id": "start1", "clazz": "start", "label": "开始", "sort": 0},
+            {"id": "recv1", "clazz": "receiveTask", "label": "处理节点", "sort": 1},
+            {"id": "end1", "clazz": "end", "label": "结束", "sort": 2},
+        ],
+        "edges": [
+            {"source": "start1", "target": "recv1", "sort": 0},
+            {"source": "recv1", "target": "end1", "sort": 1},
+        ],
+        "circulationHistory": [
+            {
+                "id": 1,
+                "work_order": 123,
+                "circulation": "新建",
+                "processor": "张三",
+                "processor_id": 1,
+                "status": 2,
+            }
+        ],
+        "workOrder": {
+            "id": 123,
+            "title": "数据库锁异常人工处置",
+            "priority": 3,
+            "current_state": "recv1",
+            "principals": "李四",
+        },
+        "tpls": [
+            {
+                "name": "故障处置表单",
+                "form_structure": {
+                    "list": [
+                        {
+                            "__vModel__": "deviceName",
+                            "__config__": {"label": "设备名称"},
+                        }
+                    ],
+                    "config": {},
+                },
+                "form_data": {
+                    "deviceName": "db_mysql_001",
+                    "manageIp": "10.43.150.186",
+                },
+            }
+        ],
+        "userAuthority": True,
+    },
+    "msg": "数据获取成功",
+}
+
+
+def _list_envelope(rows, *, total=None, page=1, per_page=10):
+    return {
+        "code": 200,
+        "data": {
+            "total_count": len(rows) if total is None else total,
+            "total_page": 1,
+            "page": page,
+            "per_page": per_page,
+            "data": rows,
+        },
+        "msg": "",
+    }
 
 
 class OrderWorkflowTests(unittest.TestCase):
@@ -64,295 +148,153 @@ class OrderWorkflowTests(unittest.TestCase):
         self.assertEqual(config.create_notify_timeout_seconds, 17)
         self.assertFalse(config.create_notify_mention_all)
 
-    def test_build_list_params_uses_documented_query_keys(self) -> None:
+    def test_build_list_params_uses_ferry_query_keys(self) -> None:
         params = OrderWorkflowClient._build_list_params(
-            page_num=2,
-            page_size=20,
-            begin_time="2026-04-23 00:00:00",
-            end_time="2026-04-23 23:59:59",
+            classify=OrderWorkflowClient.CLASSIFY_FINISHED,
+            page=2,
+            per_page=20,
+            begin_time="2026-06-01 00:00:00",
+            end_time="2026-06-30 23:59:59",
+            title="数据库",
         )
         self.assertEqual(
             params,
             {
-                "pageNum": 2,
-                "pageSize": 20,
-                "params.beginTime": "2026-04-23 00:00:00",
-                "params.endTime": "2026-04-23 23:59:59",
+                "classify": 5,
+                "page": 2,
+                "per_page": 20,
+                "title": "数据库",
+                "startTime": "2026-06-01 00:00:00",
+                "endTime": "2026-06-30 23:59:59",
             },
         )
 
-    def test_stats_markdown_renders_counts(self) -> None:
+    def test_require_ok_raises_on_business_failure(self) -> None:
+        with self.assertRaises(RuntimeError) as ctx:
+            OrderWorkflowClient._require_ok(
+                {"code": 500, "msg": "获取流程失败！", "data": None}
+            )
+        self.assertIn("获取流程失败", str(ctx.exception))
+
+    def test_require_ok_passes_on_success(self) -> None:
+        # Should not raise.
+        OrderWorkflowClient._require_ok({"code": 200, "data": {}, "msg": ""})
+
+    def test_normalize_list_payload_maps_paginator_result(self) -> None:
+        normalized = OrderWorkflowClient._normalize_list_payload(
+            _list_envelope([TODO_ROW], total=26, page=1, per_page=10)
+        )
+        self.assertEqual(normalized["total"], 26)
+        self.assertEqual(normalized["pageNum"], 1)
+        self.assertEqual(normalized["pageSize"], 10)
+        self.assertEqual([row["id"] for row in normalized["rows"]], [123])
+
+    def test_stats_markdown_renders_counts_with_ferry_semantics(self) -> None:
         markdown = format_stats_markdown(
             {
                 "code": 200,
                 "data": {
-                    "inProgressCount": 3,
-                    "finishedCount": 4,
                     "todoCount": 5,
+                    "inProgressCount": 12,
+                    "finishedCount": 30,
                 },
             }
         )
-        self.assertIn("待处理：**3**", markdown)
-        self.assertIn("已完成：**4**", markdown)
-        self.assertIn("进行中：**5**", markdown)
+        self.assertIn("待处理：**5**", markdown)
+        self.assertIn("进行中：**12**", markdown)
+        self.assertIn("已完成：**30**", markdown)
 
-    def test_list_markdown_renders_core_columns(self) -> None:
+    def test_todo_list_markdown_renders_ferry_columns(self) -> None:
         markdown = format_list_markdown(
-            {
-                "total": 1,
-                "rows": [
-                    {
-                        "taskId": "task-1",
-                        "procDefName": "故障处置工单",
-                        "procDefVersion": 7,
-                        "startUserName": "xiaok",
-                        "taskName": "人工处置",
-                        "createTime": "2026-04-23 10:10:07",
-                        "procVars": {
-                            "title": "数据库锁异常",
-                            "processStatus": "running",
-                        },
-                    }
-                ],
-            },
+            {"total": 1, "rows": [TODO_ROW]},
             title="待办工单",
         )
         self.assertIn("预览第 1 页 1 条", markdown)
-        self.assertIn("| 序号 | 任务编号 | 流程名称 | 任务节点 | 流程版本 | 流程发起人 | 接收时间 |", markdown)
-        self.assertIn("故障处置工单", markdown)
-        self.assertIn("v7", markdown)
-        self.assertIn("| 1 | task-1 | 故障处置工单 | 人工处置 | v7 | xiaok | 2026-04-23 10:10:07 |", markdown)
-        self.assertIn("查看第 3 条", markdown)
-        self.assertNotIn("### 完整编号", markdown)
+        self.assertIn(
+            "| 序号 | 工单号 | 流程号 | 标题 | 流程 | 当前节点 | 处理人 | 优先级 | 创建时间 |",
+            markdown,
+        )
+        self.assertIn(
+            "| 1 | 123 | 15 | 数据库锁异常人工处置 | 故障处置 | 处理节点 | 张三 | P1 | 2026-06-18 10:13:21 |",
+            markdown,
+        )
         self.assertNotIn("portal-visualization", markdown)
 
-    def test_finished_list_markdown_renders_page_columns(self) -> None:
+    def test_finished_list_markdown_renders_state_and_times(self) -> None:
+        finished_row = dict(TODO_ROW, is_end=1)
         markdown = format_list_markdown(
-            {
-                "total": 1,
-                "rows": [
-                    {
-                        "taskId": "task-2",
-                        "procDefName": "故障处置工单",
-                        "startUserName": "xiaok",
-                        "taskName": "人工处置",
-                        "createTime": "2026-04-23 10:25:37",
-                        "finishTime": "2026-04-23 11:56:31",
-                        "duration": "1小时30分54秒",
-                    }
-                ],
-            },
+            {"total": 1, "rows": [finished_row]},
             title="已办工单",
         )
-        self.assertIn("| 序号 | 任务编号 | 流程名称 | 任务节点 | 流程发起人 | 接收时间 | 审批时间 | 耗时 |", markdown)
-        self.assertIn("2026-04-23 11:56:31", markdown)
-        self.assertIn("1小时30分54秒", markdown)
-        self.assertIn("| 1 | task-2 | 故障处置工单 | 人工处置 | xiaok | 2026-04-23 10:25:37 | 2026-04-23 11:56:31 | 1小时30分54秒 |", markdown)
-        self.assertNotIn("### 完整编号", markdown)
-        self.assertNotIn("portal-visualization", markdown)
-
-    def test_list_markdown_never_emits_portal_visualization(self) -> None:
-        markdown = format_list_markdown(
-            {
-                "total": 1,
-                "rows": [
-                    {
-                        "taskId": "task-3",
-                        "procDefName": "故障处置工单",
-                        "procDefVersion": 7,
-                        "startUserName": "xiaok",
-                        "taskName": "人工处置",
-                        "createTime": "2026-04-23 10:10:07",
-                    }
-                ],
-            },
-            title="待办工单",
-            lightweight=False,
+        self.assertIn(
+            "| 序号 | 工单号 | 流程号 | 标题 | 流程 | 状态 | 处理人 | 创建时间 | 更新时间 |",
+            markdown,
         )
-        self.assertIn("| 1 | task-3 | 故障处置工单 | 人工处置 | v7 | xiaok | 2026-04-23 10:10:07 |", markdown)
+        self.assertIn(
+            "| 1 | 123 | 15 | 数据库锁异常人工处置 | 故障处置 | 已结束 | 张三 | 2026-06-18 10:13:21 | 2026-06-18 10:25:09 |",
+            markdown,
+        )
         self.assertNotIn("portal-visualization", markdown)
 
     def test_list_markdown_uses_global_index_for_later_pages(self) -> None:
+        row = dict(TODO_ROW, id=131)
         markdown = format_list_markdown(
-            {
-                "total": 31,
-                "pageNum": 2,
-                "pageSize": 10,
-                "rows": [
-                    {
-                        "taskId": "task-11",
-                        "procDefName": "故障处置工单",
-                        "procDefVersion": 7,
-                        "startUserName": "xiaok",
-                        "taskName": "人工处置",
-                        "createTime": "2026-04-23 10:10:07",
-                    }
-                ],
-            },
+            {"total": 31, "pageNum": 2, "pageSize": 10, "rows": [row]},
             title="待办工单",
         )
-        self.assertIn("| 11 | task-11 | 故障处置工单 | 人工处置 | v7 | xiaok | 2026-04-23 10:10:07 |", markdown)
+        self.assertIn("| 11 | 131 | 15 |", markdown)
 
-    def test_detail_markdown_renders_light_preview(self) -> None:
-        markdown = format_detail_markdown(
-            {
-                "data": {
-                    "bpmnXml": """
-<bpmn2:definitions>
-  <bpmn2:process id="Process_1" name="故障处置工单">
-    <bpmn2:startEvent id="StartEvent_1" name="开始"></bpmn2:startEvent>
-    <bpmn2:userTask id="Activity_1" name="人工办理"></bpmn2:userTask>
-    <bpmn2:endEvent id="Event_1" name="结束"></bpmn2:endEvent>
-    <bpmn2:sequenceFlow id="Flow_1" sourceRef="StartEvent_1" targetRef="Activity_1" />
-    <bpmn2:sequenceFlow id="Flow_2" sourceRef="Activity_1" targetRef="Event_1" />
-  </bpmn2:process>
-</bpmn2:definitions>
-                    """,
-                    "flowViewer": {
-                        "finishedTaskSet": ["StartEvent_1"],
-                        "unfinishedTaskSet": ["Activity_1"],
-                    },
-                    "processFormList": [
-                        {
-                            "title": "告警列表",
-                            "formData": {
-                                "alarmTitle": "云包异常",
-                                "deviceName": "DKCZZ-HUAWEI-DCLEAF-1",
-                                "manageIp": "172.27.34.15",
-                            },
-                            "formModel": {
-                                "widgetList": [
-                                    {
-                                        "type": "input",
-                                        "formItemFlag": True,
-                                        "options": {"name": "alarmTitle", "label": "告警标题"},
-                                    },
-                                    {
-                                        "type": "textarea",
-                                        "formItemFlag": True,
-                                        "options": {"name": "locationInfo", "label": "定位信息"},
-                                    },
-                                ]
-                            },
-                        }
-                    ],
-                    "historyProcNodeList": [
-                        {
-                            "activityId": "StartEvent_1",
-                            "activityName": "开始",
-                            "activityType": "startEvent",
-                            "assigneeName": "xiaok",
-                            "createTime": "2026-04-16 19:20:04",
-                            "endTime": "2026-04-16 19:20:04",
-                            "duration": "0秒",
-                        },
-                        {
-                            "activityId": "Activity_1",
-                            "activityName": "人工办理",
-                            "activityType": "userTask",
-                            "assigneeName": "xiaok",
-                            "createTime": "2026-04-16 19:20:04",
-                            "commentList": [{"fullMessage": "已接单"}],
-                        },
-                    ],
-                }
-            }
-        )
+    def test_detail_markdown_maps_process_structure(self) -> None:
+        markdown = format_detail_markdown(PROCESS_STRUCTURE_DETAIL)
+        self.assertIn("## 工单详情", markdown)
+        self.assertIn("流程名称：**故障处置**", markdown)
+        self.assertIn("工单标题：**数据库锁异常人工处置**", markdown)
+        self.assertIn("当前节点：**处理节点**", markdown)
         self.assertIn("### 表单信息预览", markdown)
-        self.assertIn("| 字段 | 内容 |", markdown)
+        self.assertIn("设备名称", markdown)
+        self.assertIn("db_mysql_001", markdown)
         self.assertIn("### 流转记录", markdown)
-        self.assertIn("1. `开始`", markdown)
-        self.assertIn("2. `人工办理`", markdown)
+        self.assertIn("1. `新建`", markdown)
         self.assertIn("### 流程跟踪", markdown)
-        self.assertIn("开始（已完成） -> 人工办理（处理中） -> 结束（未到达）", markdown)
-        self.assertIn("查看完整表单信息", markdown)
+        self.assertIn(
+            "开始（已完成） -> 处理节点（处理中） -> 结束（未到达）",
+            markdown,
+        )
         self.assertNotIn("portal-visualization", markdown)
 
-    def test_detail_markdown_full_still_uses_markdown_only(self) -> None:
-        markdown = format_detail_markdown(
-            {
-                "data": {
-                    "processFormList": [
-                        {
-                            "title": "告警列表",
-                            "formData": {"alarmTitle": "云包异常", "manageIp": "172.27.34.15"},
-                            "formModel": {
-                                "widgetList": [
-                                    {
-                                        "type": "input",
-                                        "formItemFlag": True,
-                                        "options": {"name": "alarmTitle", "label": "告警标题"},
-                                    },
-                                    {
-                                        "type": "input",
-                                        "formItemFlag": True,
-                                        "options": {"name": "manageIp", "label": "设备IP"},
-                                    },
-                                ]
-                            },
-                        }
-                    ],
-                    "historyProcNodeList": [
-                        {
-                            "activityId": "StartEvent_1",
-                            "activityName": "开始",
-                            "activityType": "startEvent",
-                            "assigneeName": "xiaok",
-                            "createTime": "2026-04-16 19:20:04",
-                            "endTime": "2026-04-16 19:20:04",
-                            "duration": "0秒",
-                        }
-                    ],
-                    "bpmnXml": "",
-                    "flowViewer": {},
-                }
-            },
-            lightweight=False,
-        )
-        self.assertIn("### 表单信息", markdown)
-        self.assertIn("### 流转记录", markdown)
-        self.assertIn("### 流程跟踪", markdown)
-        self.assertNotIn("portal-visualization", markdown)
+    def test_detail_markdown_emits_portal_order_detail_block(self) -> None:
+        markdown = format_detail_markdown(PROCESS_STRUCTURE_DETAIL)
+        start = markdown.index("```portal-order-detail")
+        block = markdown[start:].split("```", 2)[1]
+        payload = json.loads(block.replace("portal-order-detail", "", 1).strip())
+        self.assertEqual(payload["processName"], "故障处置")
+        tabs = payload["tabs"]
+        self.assertTrue(tabs["form"]["sections"])
+        self.assertEqual(tabs["records"]["records"][0]["nodeLabel"], "新建")
+        self.assertEqual(tabs["records"]["records"][0]["status"], "finished")
+        statuses = {node["id"]: node["status"] for node in tabs["tracking"]["nodes"]}
+        self.assertEqual(statuses["recv1"], "active")
+        self.assertEqual(statuses["start1"], "finished")
+        self.assertEqual(statuses["end1"], "pending")
 
     def test_fetch_all_workorders_aggregates_pages(self) -> None:
         client = OrderWorkflowClient(
-            OrderWorkflowConfig(
-                base_url="http://example.com",
-                authorization="token",
-            )
+            OrderWorkflowConfig(base_url="http://example.com", authorization="token")
         )
         with mock.patch.object(
             client,
             "_request",
             side_effect=[
-                {
-                    "total": 3,
-                    "rows": [
-                        {"taskId": "task-1"},
-                        {"taskId": "task-2"},
-                    ],
-                },
-                {
-                    "total": 3,
-                    "rows": [
-                        {"taskId": "task-3"},
-                    ],
-                },
+                _list_envelope(
+                    [{"id": 1}, {"id": 2}], total=3, page=1, per_page=2
+                ),
+                _list_envelope([{"id": 3}], total=3, page=2, per_page=2),
             ],
         ) as request_mock:
             payload = client.list_todo_workorders(page_size=2, fetch_all=True)
-        self.assertEqual([row["taskId"] for row in payload["rows"]], ["task-1", "task-2", "task-3"])
+        self.assertEqual([row["id"] for row in payload["rows"]], [1, 2, 3])
         self.assertTrue(payload["fetchedAll"])
         self.assertEqual(request_mock.call_count, 2)
-
-    def test_client_uses_default_route_base_url(self) -> None:
-        client = OrderWorkflowClient(
-            OrderWorkflowConfig(
-                base_url="http://82.156.83.38:30081",
-                authorization="token",
-            )
-        )
-        self.assertEqual(client.config.base_url, "http://82.156.83.38:30081")
 
     def test_config_falls_back_to_inoe_env(self) -> None:
         with mock.patch.dict(
@@ -379,64 +321,47 @@ class OrderWorkflowTests(unittest.TestCase):
         self.assertEqual(payload["resId"], "3094")
         self.assertEqual(payload["alarm"]["deviceName"], "db_mysql_001")
         self.assertEqual(payload["alarm"]["manageIp"], "10.43.150.186")
-        self.assertEqual(payload["alarm"]["assetId"], "3094")
         self.assertTrue(payload["chatId"])
         self.assertTrue(payload["alarm"]["alarmId"].startswith("alarm-"))
         self.assertIn("数据库锁异常", payload["alarm"]["title"])
-        self.assertIn("人工排查", payload["analysis"]["summary"])
-        self.assertGreaterEqual(len(payload["analysis"]["suggestions"]), 1)
 
-    def test_normalize_create_payload_preserves_nested_fields(self) -> None:
-        payload = OrderWorkflowClient._normalize_create_payload(
+    def test_create_disposal_workorder_raises_on_business_failure(self) -> None:
+        client = OrderWorkflowClient(
+            OrderWorkflowConfig(base_url="http://example.com", authorization="token")
+        )
+        with mock.patch.object(
+            client,
+            "_request",
+            return_value={"code": 500, "msg": "获取流程失败！", "data": None},
+        ):
+            with self.assertRaises(RuntimeError) as ctx:
+                client.create_disposal_workorder({"alarm": {"title": "x"}})
+        self.assertIn("获取流程失败", str(ctx.exception))
+
+    def test_create_markdown_renders_workorder_ids(self) -> None:
+        markdown = format_create_markdown(
             {
-                "chatId": "chat-1",
-                "resId": "res-1",
-                "metricType": "mysql",
-                "alarm": {
-                    "alarmId": "alarm-1",
-                    "title": "数据库锁异常",
-                    "visibleContent": "数据库锁异常（db_mysql_001 10.43.150.186）",
-                    "deviceName": "db_mysql_001",
-                    "manageIp": "10.43.150.186",
-                    "assetId": "3094",
-                    "level": "critical",
-                    "status": "active",
-                    "eventTime": "2026-04-23 20:00:00",
-                },
-                "analysis": {
-                    "summary": "AI 无法直接止血，转人工处理",
-                    "rootCause": "疑似长事务",
-                    "suggestions": ["排查长事务", "检查阻塞链"],
-                },
-                "ticket": {
-                    "title": "数据库锁异常人工处置",
-                    "priority": "P1",
-                    "category": "database-lock",
-                    "source": "portal-fault-disposal",
-                    "externalSystem": "manual-workorder",
+                "data": {"workOrderId": 124, "processId": 16},
+                "notification": {
+                    "status": "sent",
+                    "channels": [{"channel": "app", "status": "sent"}],
                 },
             }
         )
-        self.assertEqual(payload["chatId"], "chat-1")
-        self.assertEqual(payload["resId"], "res-1")
-        self.assertEqual(payload["metricType"], "mysql")
-        self.assertEqual(payload["alarm"]["alarmId"], "alarm-1")
-        self.assertEqual(payload["alarm"]["eventTime"], "2026-04-23 20:00:00")
-        self.assertEqual(payload["analysis"]["rootCause"], "疑似长事务")
-        self.assertEqual(payload["analysis"]["suggestions"], ["排查长事务", "检查阻塞链"])
-        self.assertEqual(payload["ticket"]["priority"], "P1")
+        self.assertIn("`工单号`: `124`", markdown)
+        self.assertIn("`流程`: `16`", markdown)
+        self.assertIn("通知推送：**应用已发送**", markdown)
 
-    def test_create_notification_payload_mentions_all_when_enabled(self) -> None:
+    def test_create_notification_context_uses_workorder_ids(self) -> None:
         client = OrderWorkflowClient(
             OrderWorkflowConfig(
                 base_url="http://example.com",
                 authorization="token",
                 create_notify_push_url="http://notify.example.com/push",
-                create_notify_mention_all=True,
             )
         )
         context = client._build_create_notify_context(
-            response_payload={"data": {"taskId": "task-1", "procInsId": "proc-1"}},
+            response_payload={"data": {"workOrderId": "wo-1", "processId": "p-1"}},
             request_payload=OrderWorkflowClient._normalize_create_payload(
                 {
                     "deviceName": "db_mysql_001",
@@ -446,84 +371,8 @@ class OrderWorkflowTests(unittest.TestCase):
             ),
         )
         payload = client._build_create_notify_payload(context)
-        self.assertEqual(payload["type"], "text")
-        self.assertEqual(payload["title"], "工单创建通知")
-        self.assertIn("摘要：", payload["content"])
-        self.assertIn("设备：db_mysql_001 / 10.43.150.186", payload["content"])
-        self.assertIn("taskId：task-1", payload["content"])
-        self.assertIn("procInsId：proc-1", payload["content"])
-
-    def test_dingtalk_notification_payload_mentions_all_when_enabled(self) -> None:
-        client = OrderWorkflowClient(
-            OrderWorkflowConfig(
-                base_url="http://example.com",
-                authorization="token",
-                create_notify_dingtalk_webhook_url="https://oapi.dingtalk.com/robot/send?access_token=test",
-                create_notify_mention_all=True,
-            )
-        )
-        context = client._build_create_notify_context(
-            response_payload={"data": {"taskId": "task-1", "procInsId": "proc-1"}},
-            request_payload=OrderWorkflowClient._normalize_create_payload(
-                {
-                    "deviceName": "db_mysql_001",
-                    "manageIp": "10.43.150.186",
-                    "suggestions": "数据库锁异常，需要人工排查长事务和阻塞链",
-                }
-            ),
-        )
-        payload = client._build_dingtalk_create_notify_payload(context)
-        self.assertEqual(payload["msgtype"], "text")
-        self.assertTrue(payload["at"]["isAtAll"])
-        self.assertTrue(payload["text"]["content"].startswith("【工单创建通知】"))
-        self.assertIn("摘要：", payload["text"]["content"])
-        self.assertIn("taskId：task-1", payload["text"]["content"])
-
-    def test_dingtalk_signed_webhook_url_appends_timestamp_and_sign(self) -> None:
-        client = OrderWorkflowClient(
-            OrderWorkflowConfig(
-                base_url="http://example.com",
-                authorization="token",
-                create_notify_dingtalk_webhook_url="https://oapi.dingtalk.com/robot/send?access_token=test",
-                create_notify_dingtalk_secret="SEC-secret",
-            )
-        )
-        with mock.patch("runtime.client.time.time", return_value=1700000000.0):
-            url = client._build_dingtalk_signed_webhook_url(
-                "https://oapi.dingtalk.com/robot/send?access_token=test"
-            )
-        query = parse_qs(urlparse(url).query)
-        self.assertEqual(query["access_token"][0], "test")
-        self.assertEqual(query["timestamp"][0], "1700000000000")
-        self.assertTrue(query["sign"][0])
-
-    def test_feishu_notification_payload_appends_timestamp_and_sign(self) -> None:
-        client = OrderWorkflowClient(
-            OrderWorkflowConfig(
-                base_url="http://example.com",
-                authorization="token",
-                create_notify_feishu_webhook_url="https://open.feishu.cn/open-apis/bot/v2/hook/test",
-                create_notify_feishu_secret="feishu-secret",
-                create_notify_mention_all=True,
-            )
-        )
-        context = client._build_create_notify_context(
-            response_payload={"data": {"taskId": "task-1", "procInsId": "proc-1"}},
-            request_payload=OrderWorkflowClient._normalize_create_payload(
-                {
-                    "deviceName": "db_mysql_001",
-                    "manageIp": "10.43.150.186",
-                    "suggestions": "数据库锁异常，需要人工排查长事务和阻塞链",
-                }
-            ),
-        )
-        with mock.patch("runtime.client.time.time", return_value=1700000000.0):
-            payload = client._build_feishu_create_notify_payload(context)
-        self.assertEqual(payload["msg_type"], "text")
-        self.assertEqual(payload["timestamp"], "1700000000")
-        self.assertTrue(payload["sign"])
-        self.assertIn('<at user_id="all">所有人</at>', payload["content"]["text"])
-        self.assertIn("摘要：", payload["content"]["text"])
+        self.assertIn("工单号：wo-1", payload["content"])
+        self.assertIn("流程：p-1", payload["content"])
 
     def test_create_notification_failure_does_not_break_create(self) -> None:
         client = OrderWorkflowClient(
@@ -536,7 +385,10 @@ class OrderWorkflowTests(unittest.TestCase):
         with mock.patch.object(
             client,
             "_request",
-            return_value={"code": 200, "data": {"taskId": "task-1", "procInsId": "proc-1"}},
+            return_value={
+                "code": 200,
+                "data": {"workOrderId": "wo-1", "processId": "p-1"},
+            },
         ), mock.patch(
             "runtime.client.requests.post",
             side_effect=RuntimeError("notify down"),
@@ -548,62 +400,9 @@ class OrderWorkflowTests(unittest.TestCase):
                     "suggestions": "数据库锁异常，需要人工排查长事务和阻塞链",
                 }
             )
-        self.assertEqual(payload["data"]["taskId"], "task-1")
+        self.assertEqual(payload["data"]["workOrderId"], "wo-1")
         self.assertEqual(payload["notification"]["status"], "failed")
         self.assertIn("notify down", payload["notification"]["reason"])
-
-    def test_create_notification_supports_multi_channel_success(self) -> None:
-        client = OrderWorkflowClient(
-            OrderWorkflowConfig(
-                base_url="http://example.com",
-                authorization="token",
-                create_notify_push_url="http://notify.example.com/push",
-                create_notify_dingtalk_webhook_url="https://oapi.dingtalk.com/robot/send?access_token=test",
-                create_notify_feishu_webhook_url="https://open.feishu.cn/open-apis/bot/v2/hook/test",
-                create_notify_mention_all=True,
-            )
-        )
-
-        class MockResponse:
-            def __init__(self, payload):
-                self._payload = payload
-
-            def raise_for_status(self):
-                return None
-
-            def json(self):
-                return self._payload
-
-        with mock.patch.object(
-            client,
-            "_request",
-            return_value={"code": 200, "data": {"taskId": "task-1", "procInsId": "proc-1"}},
-        ), mock.patch(
-            "runtime.client.requests.post",
-            side_effect=[
-                MockResponse({"ok": True, "code": 200}),
-                MockResponse({"errcode": 0, "errmsg": "ok"}),
-                MockResponse({"StatusCode": 0, "StatusMessage": "success", "code": 0}),
-            ],
-        ):
-            payload = client.create_disposal_workorder(
-                {
-                    "deviceName": "db_mysql_001",
-                    "manageIp": "10.43.150.186",
-                    "suggestions": "数据库锁异常，需要人工排查长事务和阻塞链",
-                }
-            )
-        self.assertEqual(payload["notification"]["status"], "sent")
-        self.assertEqual(len(payload["notification"]["channels"]), 3)
-
-    def test_create_markdown_renders_notification_status(self) -> None:
-        markdown = format_create_markdown(
-            {
-                "data": {"procInsId": "proc-1", "taskId": "task-1"},
-                "notification": {"status": "sent", "channels": [{"channel": "app", "status": "sent"}, {"channel": "dingtalk", "status": "sent"}, {"channel": "feishu", "status": "sent"}]},
-            }
-        )
-        self.assertIn("通知推送：**应用、钉钉、飞书已发送**", markdown)
 
 
 if __name__ == "__main__":

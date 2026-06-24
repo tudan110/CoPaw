@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 from __future__ import annotations
 
 import importlib.util
@@ -12,7 +13,9 @@ ORDER_SOURCE = "portal-order-workflow-api"
 
 
 def _resolve_workspace_skill_root(workspace: str, skill: str) -> Path:
-    working_root = constant.WORKING_DIR / "workspaces" / workspace / "skills" / skill
+    working_root = (
+        constant.WORKING_DIR / "workspaces" / workspace / "skills" / skill
+    )
     repo_root = (
         Path(__file__).resolve().parents[4]
         / "deploy-all"
@@ -31,10 +34,14 @@ def _resolve_workspace_skill_root(workspace: str, skill: str) -> Path:
 
 
 def _resolve_order_client_script() -> Path:
-    client_script = _resolve_workspace_skill_root(
-        "order",
-        "order-workflow",
-    ) / "runtime" / "client.py"
+    client_script = (
+        _resolve_workspace_skill_root(
+            "order",
+            "order-workflow",
+        )
+        / "runtime"
+        / "client.py"
+    )
     if not client_script.exists():
         raise FileNotFoundError("order-workflow runtime client not found")
     return client_script
@@ -64,17 +71,24 @@ def query_order_workorders(
     limit: int,
     time_range: str = "today",
 ) -> dict[str, Any]:
-    from qwenpaw.extensions.integrations.working_secrets import ensure_working_secrets_loaded
+    from qwenpaw.extensions.integrations.working_secrets import (
+        ensure_working_secrets_loaded,
+    )
 
     ensure_working_secrets_loaded()
     module = _load_order_client_module()
     client = module.OrderWorkflowClient()
     safe_limit = max(1, min(int(limit or 20), 100))
     stats_payload = client.get_workorder_stats()
-    todo_payload = client.list_todo_workorders(page_num=1, page_size=safe_limit)
+    todo_payload = client.list_todo_workorders(
+        page_num=1,
+        page_size=safe_limit,
+    )
     rows = [
         _normalize_workorder_row(row, index)
-        for index, row in enumerate(list(todo_payload.get("rows") or [])[:safe_limit])
+        for index, row in enumerate(
+            list(todo_payload.get("rows") or [])[:safe_limit],
+        )
     ]
     return {
         "source": "live",
@@ -86,26 +100,36 @@ def query_order_workorders(
     }
 
 
+def _priority_label(value: Any) -> str:
+    if value in (None, "", "--"):
+        return "--"
+    try:
+        return {3: "P1", 2: "P2", 1: "P3"}.get(int(value), str(value))
+    except (TypeError, ValueError):
+        return str(value)
+
+
 def _normalize_workorder_row(row: Any, index: int) -> dict[str, Any]:
+    # ferry list row: id/title/priority/process/process_name/state_name/
+    # principals/create_time/update_time/is_end/current_state/creator.
     raw = row if isinstance(row, dict) else {}
-    proc_vars = raw.get("procVars") if isinstance(raw.get("procVars"), dict) else {}
+    work_order_id = str(raw.get("id") or f"order-{index + 1}")
+    is_end = str(raw.get("is_end") or "0") in {"1", "true", "True"}
+    state_name = str(raw.get("state_name") or "")
+    status = "已结束" if is_end else (state_name or "进行中")
     return {
-        "id": str(raw.get("taskId") or raw.get("procInsId") or f"order-{index + 1}"),
-        "workorderNo": str(raw.get("taskId") or raw.get("procInsId") or f"order-{index + 1}"),
-        "title": str(
-            proc_vars.get("title")
-            or proc_vars.get("alarmTitle")
-            or raw.get("procDefName")
-            or "待办工单"
-        ),
-        "status": str(proc_vars.get("processStatus") or raw.get("taskName") or "待处理"),
-        "severity": str(proc_vars.get("priority") or proc_vars.get("level") or "--"),
-        "eventTime": str(raw.get("createTime") or raw.get("receiveTime") or "--"),
-        "taskId": str(raw.get("taskId") or ""),
-        "procInsId": str(raw.get("procInsId") or ""),
-        "processName": str(raw.get("procDefName") or "--"),
-        "taskName": str(raw.get("taskName") or "--"),
-        "starter": str(raw.get("startUserName") or "--"),
+        "id": work_order_id,
+        "workorderNo": work_order_id,
+        "title": str(raw.get("title") or "待办工单"),
+        "status": status,
+        "severity": _priority_label(raw.get("priority")),
+        "eventTime": str(raw.get("create_time") or "--"),
+        "taskId": "",
+        "procInsId": "",
+        "processId": str(raw.get("process") or ""),
+        "processName": str(raw.get("process_name") or "--"),
+        "taskName": state_name or "--",
+        "starter": str(raw.get("creator") or "--"),
     }
 
 

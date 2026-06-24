@@ -198,22 +198,43 @@ class OrderWorkflowConfig:
 class OrderWorkflowClient:
     DEFAULT_BATCH_SIZE = 100
 
+    # inoe-ferry 工单模块统一前缀；base url 仍由配置决定，这里只固定路径。
+    BASE_PATH = "/api/v1/work-order"
+    STATS_PATH = f"{BASE_PATH}/getWorkOrder"
+    CREATE_FAULT_PATH = f"{BASE_PATH}/faultManualWorkorders"
+    LIST_PATH = f"{BASE_PATH}/list"
+    DETAIL_PATH = f"{BASE_PATH}/process-structure"
+
+    # 列表 classify 口径：1=待办 / 5=已办理（见接口文档）。
+    CLASSIFY_TODO = 1
+    CLASSIFY_FINISHED = 5
+
     def __init__(self, config: OrderWorkflowConfig | None = None) -> None:
         self.config = config or OrderWorkflowConfig.from_env()
 
-    def get_workorder_stats(self) -> dict[str, Any]:
-        return self._request(
-            "GET",
-            "/flowable/workflow/workOrder/getWorkOrder",
-        )
+    def get_workorder_stats(
+        self,
+        *,
+        start_time: str = "",
+        end_time: str = "",
+    ) -> dict[str, Any]:
+        params: dict[str, Any] = {}
+        if start_time:
+            params["startTime"] = start_time
+        if end_time:
+            params["endTime"] = end_time
+        payload = self._request("GET", self.STATS_PATH, params=params or None)
+        self._require_ok(payload, self.config.base_url)
+        return payload
 
     def create_disposal_workorder(self, payload: dict[str, Any]) -> dict[str, Any]:
         normalized_payload = self._normalize_create_payload(payload)
         response_payload = self._request(
             "POST",
-            "/flowable/workflow/workOrder/faultManualWorkorders",
+            self.CREATE_FAULT_PATH,
             json_body=normalized_payload,
         )
+        self._require_ok(response_payload, self.config.base_url)
         response_payload["notification"] = self._notify_create_success(
             response_payload=response_payload,
             request_payload=normalized_payload,
@@ -227,14 +248,16 @@ class OrderWorkflowClient:
         page_size: int = 10,
         begin_time: str = "",
         end_time: str = "",
+        title: str = "",
         fetch_all: bool = False,
     ) -> dict[str, Any]:
         return self._list_workorders(
-            "/flowable/workflow/process/todoList",
+            classify=self.CLASSIFY_TODO,
             page_num=page_num,
             page_size=page_size,
             begin_time=begin_time,
             end_time=end_time,
+            title=title,
             fetch_all=fetch_all,
         )
 
@@ -245,67 +268,109 @@ class OrderWorkflowClient:
         page_size: int = 10,
         begin_time: str = "",
         end_time: str = "",
+        title: str = "",
         fetch_all: bool = False,
     ) -> dict[str, Any]:
         return self._list_workorders(
-            "/flowable/workflow/process/finishedList",
+            classify=self.CLASSIFY_FINISHED,
             page_num=page_num,
             page_size=page_size,
             begin_time=begin_time,
             end_time=end_time,
+            title=title,
             fetch_all=fetch_all,
         )
 
-    def get_workorder_detail(self, *, proc_ins_id: str, task_id: str) -> dict[str, Any]:
-        resolved_proc_ins_id = self._resolve_detail_proc_ins_id(
-            proc_ins_id=proc_ins_id,
-            task_id=task_id,
-        )
-        return self._request(
+    def get_workorder_detail(
+        self,
+        *,
+        process_id: str,
+        work_order_id: str,
+    ) -> dict[str, Any]:
+        payload = self._request(
             "GET",
-            "/flowable/workflow/process/detail",
+            self.DETAIL_PATH,
             params={
-                "procInsId": resolved_proc_ins_id,
-                "taskId": task_id,
+                "processId": process_id,
+                "workOrderId": work_order_id or "0",
             },
         )
-
-    def _resolve_detail_proc_ins_id(self, *, proc_ins_id: str, task_id: str) -> str:
-        proc_ins_id = str(proc_ins_id or "").strip()
-        task_id = str(task_id or "").strip()
-        if not task_id or (proc_ins_id and proc_ins_id != task_id):
-            return proc_ins_id
-
-        for list_workorders in (self.list_todo_workorders, self.list_finished_workorders):
-            try:
-                payload = list_workorders(page_size=self.DEFAULT_BATCH_SIZE, fetch_all=True)
-            except Exception:
-                continue
-            for row in payload.get("rows") or []:
-                if str(row.get("taskId") or "").strip() != task_id:
-                    continue
-                resolved = str(row.get("procInsId") or "").strip()
-                if resolved and resolved != "-":
-                    return resolved
-        return proc_ins_id
+        self._require_ok(payload, self.config.base_url)
+        return payload
 
     @staticmethod
     def _build_list_params(
         *,
-        page_num: int,
-        page_size: int,
+        classify: int,
+        page: int,
+        per_page: int,
         begin_time: str = "",
         end_time: str = "",
+        title: str = "",
+        is_end: str = "",
     ) -> dict[str, Any]:
         params: dict[str, Any] = {
-            "pageNum": page_num,
-            "pageSize": page_size,
+            "classify": classify,
+            "page": page,
+            "per_page": per_page,
         }
+        if title:
+            params["title"] = title
         if begin_time:
-            params["params.beginTime"] = begin_time
+            params["startTime"] = begin_time
         if end_time:
-            params["params.endTime"] = end_time
+            params["endTime"] = end_time
+        if is_end != "":
+            params["isEnd"] = is_end
         return params
+
+    @staticmethod
+    def _require_ok(payload: dict[str, Any], base_url: str = "") -> None:
+        """ferry HTTP 恒 200，业务结果看 code；非 200 抛出 msg。
+
+        附带请求的网关地址，方便区分“地址/服务未就绪”与“本地缺配置”。
+        """
+        if not isinstance(payload, dict):
+            return
+        code = payload.get("code")
+        if code is None:
+            return
+        try:
+            code_int = int(code)
+        except (TypeError, ValueError):
+            return
+        if code_int != 200:
+            message = (
+                str(payload.get("msg") or "").strip()
+                or f"接口返回业务失败 (code={code_int})"
+            )
+            if base_url:
+                message = (
+                    f"{message}（工单接口地址 {base_url}，"
+                    f"请确认网关/ferry 服务地址是否正确；本地无需 .env）"
+                )
+            raise RuntimeError(message)
+
+    @staticmethod
+    def _normalize_list_payload(payload: dict[str, Any]) -> dict[str, Any]:
+        """把 ferry PaginatorResult 归一化成 formatter 现有契约。"""
+        data = payload.get("data")
+        if not isinstance(data, dict):
+            data = {}
+        rows = data.get("data")
+        if not isinstance(rows, list):
+            rows = []
+        total = data.get("total_count")
+        if total is None:
+            total = len(rows)
+        return {
+            "total": int(total or 0),
+            "rows": rows,
+            "pageNum": int(data.get("page") or 1),
+            "pageSize": int(data.get("per_page") or (len(rows) or 10)),
+            "totalPage": int(data.get("total_page") or 0),
+            "fetchedAll": False,
+        }
 
     def _request(
         self,
@@ -350,58 +415,69 @@ class OrderWorkflowClient:
 
     def _list_workorders(
         self,
-        path: str,
         *,
+        classify: int,
         page_num: int,
         page_size: int,
         begin_time: str = "",
         end_time: str = "",
+        title: str = "",
+        is_end: str = "",
         fetch_all: bool = False,
     ) -> dict[str, Any]:
         effective_page_size = page_size if page_size > 0 else self.DEFAULT_BATCH_SIZE
         first_payload = self._request(
             "GET",
-            path,
+            self.LIST_PATH,
             params=self._build_list_params(
-                page_num=page_num,
-                page_size=effective_page_size,
+                classify=classify,
+                page=page_num,
+                per_page=effective_page_size,
                 begin_time=begin_time,
                 end_time=end_time,
+                title=title,
+                is_end=is_end,
             ),
         )
+        self._require_ok(first_payload, self.config.base_url)
+        normalized = self._normalize_list_payload(first_payload)
         if not fetch_all:
-            return first_payload
+            return normalized
 
-        rows = list(first_payload.get("rows") or [])
-        total = int(first_payload.get("total") or len(rows))
+        rows = list(normalized.get("rows") or [])
+        total = int(normalized.get("total") or len(rows))
         if total <= len(rows):
-            first_payload["rows"] = rows
-            first_payload["fetchedAll"] = True
-            return first_payload
+            normalized["rows"] = rows
+            normalized["fetchedAll"] = True
+            return normalized
 
         next_page = page_num + 1
         while len(rows) < total:
             payload = self._request(
                 "GET",
-                path,
+                self.LIST_PATH,
                 params=self._build_list_params(
-                    page_num=next_page,
-                    page_size=effective_page_size,
+                    classify=classify,
+                    page=next_page,
+                    per_page=effective_page_size,
                     begin_time=begin_time,
                     end_time=end_time,
+                    title=title,
+                    is_end=is_end,
                 ),
             )
-            batch = list(payload.get("rows") or [])
+            self._require_ok(payload, self.config.base_url)
+            batch = list(self._normalize_list_payload(payload).get("rows") or [])
             if not batch:
                 break
             rows.extend(batch)
             next_page += 1
 
-        first_payload["rows"] = rows[:total]
-        first_payload["pageNum"] = page_num
-        first_payload["pageSize"] = effective_page_size
-        first_payload["fetchedAll"] = len(first_payload["rows"]) >= total
-        return first_payload
+        normalized["rows"] = rows[:total]
+        normalized["pageNum"] = page_num
+        normalized["pageSize"] = effective_page_size
+        normalized["fetchedAll"] = len(normalized["rows"]) >= total
+        return normalized
 
     def _build_headers(self) -> dict[str, str]:
         headers = {
@@ -751,9 +827,9 @@ class OrderWorkflowClient:
             }
 
         data = response_payload.get("data") or {}
-        task_id = str(data.get("taskId") or "").strip()
-        proc_ins_id = str(data.get("procInsId") or "").strip()
-        if not task_id and not proc_ins_id:
+        work_order_id = str(data.get("workOrderId") or "").strip()
+        process_id = str(data.get("processId") or "").strip()
+        if not work_order_id and not process_id:
             return {
                 "enabled": True,
                 "status": "skipped",
@@ -838,8 +914,8 @@ class OrderWorkflowClient:
         suggestions = self._join_suggestions(analysis_payload.get("suggestions")) or str(
             analysis_payload.get("summary") or "-"
         ).strip()
-        task_id = str(data.get("taskId") or "-").strip()
-        proc_ins_id = str(data.get("procInsId") or "-").strip()
+        work_order_id = str(data.get("workOrderId") or "-").strip()
+        process_id = str(data.get("processId") or "-").strip()
         created_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         summary = self._build_create_summary(
             title=title,
@@ -853,8 +929,8 @@ class OrderWorkflowClient:
             "device_name": device_name,
             "manage_ip": manage_ip,
             "level": level,
-            "task_id": task_id,
-            "proc_ins_id": proc_ins_id,
+            "work_order_id": work_order_id,
+            "process_id": process_id,
             "created_at": created_at,
         }
 
@@ -865,8 +941,8 @@ class OrderWorkflowClient:
             f"摘要：{context['summary']}",
             f"设备：{context['device_name']} / {context['manage_ip']}",
             f"等级：{context['level']}",
-            f"taskId：{context['task_id']}",
-            f"procInsId：{context['proc_ins_id']}",
+            f"工单号：{context['work_order_id']}",
+            f"流程：{context['process_id']}",
             f"创建时间：{context['created_at']}",
             "请相关同事关注并尽快处理。",
         ]
@@ -883,8 +959,8 @@ class OrderWorkflowClient:
             f"摘要：{context['summary']}",
             f"设备：{context['device_name']} / {context['manage_ip']}",
             f"等级：{context['level']}",
-            f"taskId：{context['task_id']}",
-            f"procInsId：{context['proc_ins_id']}",
+            f"工单号：{context['work_order_id']}",
+            f"流程：{context['process_id']}",
             f"创建时间：{context['created_at']}",
             "请相关同事关注并尽快处理。",
         ]
@@ -905,8 +981,8 @@ class OrderWorkflowClient:
             f"摘要：{context['summary']}",
             f"设备：{context['device_name']} / {context['manage_ip']}",
             f"等级：{context['level']}",
-            f"taskId：{context['task_id']}",
-            f"procInsId：{context['proc_ins_id']}",
+            f"工单号：{context['work_order_id']}",
+            f"流程：{context['process_id']}",
             f"创建时间：{context['created_at']}",
             "请相关同事关注并尽快处理。",
         ]

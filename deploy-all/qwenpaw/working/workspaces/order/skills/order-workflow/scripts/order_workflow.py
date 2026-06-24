@@ -65,6 +65,8 @@ def main() -> None:
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     stats_parser = subparsers.add_parser("stats")
+    stats_parser.add_argument("--begin-time", default="")
+    stats_parser.add_argument("--end-time", default="")
     stats_parser.add_argument("--output", choices=["markdown", "json"], default="markdown")
 
     create_parser = subparsers.add_parser("create")
@@ -76,20 +78,24 @@ def main() -> None:
         list_parser.add_argument("--page-num", type=int)
         list_parser.add_argument("--page-size", type=int)
         list_parser.add_argument("--fetch-all", action="store_true")
+        list_parser.add_argument("--title", default="")
         list_parser.add_argument("--begin-time", default="")
         list_parser.add_argument("--end-time", default="")
         list_parser.add_argument("--output", choices=["markdown", "json"], default="markdown")
 
     detail_parser = subparsers.add_parser("detail")
-    detail_parser.add_argument("--proc-ins-id", required=True)
-    detail_parser.add_argument("--task-id", required=True)
+    detail_parser.add_argument("--process-id", required=True)
+    detail_parser.add_argument("--work-order-id", required=True)
     detail_parser.add_argument("--output", choices=["markdown", "json"], default="markdown")
 
     args = parser.parse_args()
     client = OrderWorkflowClient()
 
     if args.command == "stats":
-        payload = client.get_workorder_stats()
+        payload = client.get_workorder_stats(
+            start_time=args.begin_time,
+            end_time=args.end_time,
+        )
         _print_output(
             payload,
             output=args.output,
@@ -113,6 +119,7 @@ def main() -> None:
             page_size=args.page_size or 10,
             begin_time=args.begin_time,
             end_time=args.end_time,
+            title=args.title,
             fetch_all=bool(args.fetch_all),
         )
         _print_output(
@@ -128,6 +135,7 @@ def main() -> None:
             page_size=args.page_size or 10,
             begin_time=args.begin_time,
             end_time=args.end_time,
+            title=args.title,
             fetch_all=bool(args.fetch_all),
         )
         _print_output(
@@ -139,8 +147,8 @@ def main() -> None:
 
     if args.command == "detail":
         payload = client.get_workorder_detail(
-            proc_ins_id=args.proc_ins_id,
-            task_id=args.task_id,
+            process_id=args.process_id,
+            work_order_id=args.work_order_id,
         )
         _print_output(
             payload,
