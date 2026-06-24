@@ -4,6 +4,7 @@
 import { extractAction } from './_fe/action.js'
 import { registerPage } from './_fe/operator/operableBus.js'
 import runner from './_fe/operator/runner.js'
+import { describePage } from './_fe/operator/pageSchema.js'
 
 class FakeEl {
   constructor({ text = '', q = {}, style = {}, offsetParent = {} } = {}) {
@@ -270,6 +271,51 @@ function assert(cond, msg) {
     ''
   )
   assert(inpVm.form.remark === '测试备注内容', 'input: 输入卡填的值写进了 model')
+
+  // ---- 页面自省(L5 地基):describePage 抽搜索字段 + 工具栏按钮、排除行内按钮 ----
+  const sf = (label, ctrlKey) =>
+    new FakeEl({
+      q: {
+        '.el-form-item__label': [new FakeEl({ text: label })],
+        [ctrlKey]: [new FakeEl({})]
+      }
+    })
+  const butItem = new FakeEl({
+    q: { button: [new FakeEl({ text: '搜索' }), new FakeEl({ text: '重置' })] }
+  })
+  const queryForm = new FakeEl({
+    q: {
+      '.el-form-item': [
+        sf('流程标识', 'input'),
+        sf('流程名称', 'input'),
+        sf('流程分类', '.el-select'),
+        butItem
+      ]
+    }
+  })
+  const rowBtn = new FakeEl({ text: '查看' })
+  rowBtn.closest = (sel) => (sel === '.el-table' ? {} : null) // 行内按钮应被排除
+  const wpProcVm = {
+    $options: { name: 'WorkProcess' },
+    $el: new FakeEl({
+      q: {
+        '.queryForm': [queryForm],
+        button: [new FakeEl({ text: '搜索' }), new FakeEl({ text: '重置' }), new FakeEl({ text: '导出' }), rowBtn]
+      }
+    })
+  }
+  const schema = describePage(wpProcVm)
+  assert(
+    schema.search.map((s) => s.label + ':' + s.type).join(',') ===
+      '流程标识:input,流程名称:input,流程分类:select',
+    '自省: 抽到搜索字段(含控件类型)'
+  )
+  const actText = schema.actions.map((a) => a.text)
+  assert(
+    actText.indexOf('搜索') !== -1 && actText.indexOf('导出') !== -1,
+    '自省: 抽到工具栏按钮(搜索/导出)'
+  )
+  assert(actText.indexOf('查看') === -1, '自省: 排除了表格行内按钮')
 
   console.log(failed === 0 ? '\nFRONTEND-EXECUTOR-SELFTEST: PASS' : `\nFRONTEND-EXECUTOR-SELFTEST: FAIL (${failed})`)
   process.exitCode = failed === 0 ? 0 : 1

@@ -30,6 +30,7 @@ MODULES = [
     "operator/operableMixin.js",
     "operator/cursor.js",
     "operator/runner.js",
+    "operator/pageSchema.js",
 ]
 
 _IMPORT_RE = re.compile(r"(from\s+['\"])(\.[^'\"]+?)(['\"])")
