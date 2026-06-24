@@ -414,6 +414,54 @@ function assert(cond, msg) {
     'open: 弹窗字段在对话里填好并落到页面(DOM)'
   )
 
+  // ---- L5-6 日期范围(填两端)+ 下拉按值自动选 ----
+  const rIn1 = new FakeEl({})
+  rIn1.dispatchEvent = () => {}
+  const rIn2 = new FakeEl({})
+  rIn2.dispatchEvent = () => {}
+  const dateItem = new FakeEl({
+    q: { '.el-form-item__label': [new FakeEl({ text: '时间' })], '.el-range-input': [rIn1, rIn2] }
+  })
+  let picked6 = null
+  const mkOpt6 = (label) => {
+    const el = new FakeEl({ text: label })
+    el.click = () => {
+      picked6 = label
+      ddl6.style.display = 'none'
+    }
+    return el
+  }
+  const ddl6 = new FakeEl({ q: { '.el-select-dropdown__item': [mkOpt6('请假'), mkOpt6('报销')] } })
+  ddl6.style = { display: 'none' }
+  ddl6.offsetParent = {}
+  const selEl6 = new FakeEl({})
+  selEl6.click = () => {
+    ddl6.style.display = ddl6.style.display === 'none' ? '' : 'none'
+    ddlRef = ddl6
+  }
+  const catItem = new FakeEl({
+    q: { '.el-form-item__label': [new FakeEl({ text: '流程分类' })], '.el-select': [selEl6] }
+  })
+  const l6Vm = {
+    $options: { name: 'L6' },
+    $el: new FakeEl({ q: { '.el-form-item': [dateItem, catItem] } })
+  }
+  registerPage(l6Vm)
+  await runner.runOperate(
+    {
+      mode: 'current',
+      page: 'L6',
+      fill: [
+        { label: '时间', value: '2026-06-23~2026-06-24' },
+        { label: '流程分类', value: '请假' }
+      ],
+      risk: 'query'
+    },
+    {}
+  )
+  assert(rIn1.value === '2026-06-23' && rIn2.value === '2026-06-24', 'date: 日期范围两端都填了')
+  assert(picked6 === '请假', 'select: 下拉按值自动选中「请假」')
+
   console.log(failed === 0 ? '\nFRONTEND-EXECUTOR-SELFTEST: PASS' : `\nFRONTEND-EXECUTOR-SELFTEST: FAIL (${failed})`)
   process.exitCode = failed === 0 ? 0 : 1
 })().catch((e) => {
