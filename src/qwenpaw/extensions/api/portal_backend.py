@@ -4756,9 +4756,10 @@ async def list_alarm_registry_records(
                 or search_term in str(r.get("resId", "")).lower()
             ]
 
-        # Sort by eventTime descending, then by handledAt descending
+        # Sort: eventLastTime → eventTime → handledAt/takenOverAt/updatedAt, all desc
         items.sort(
             key=lambda r: (
+                r.get("eventLastTime", "") or "",
                 r.get("eventTime", "") or "",
                 r.get("handledAt", "")
                 or r.get("takenOverAt", "")
