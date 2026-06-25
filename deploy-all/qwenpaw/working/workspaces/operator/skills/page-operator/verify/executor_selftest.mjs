@@ -364,7 +364,7 @@ function assert(cond, msg) {
     dlBtn.click = () => {
       downloaded = dayText
     }
-    return new FakeEl({ text: dayText, q: { button: [dlBtn] } })
+    return new FakeEl({ text: dayText, q: { button: [dlBtn], 'button, a': [dlBtn] } })
   }
   const tableEl = new FakeEl({
     q: {
@@ -385,6 +385,26 @@ function assert(cond, msg) {
   )
   assert(res6 && res6.ok === true && res6.mode === 'row', 'row: runner 返回 ok(row)')
   assert(downloaded === '第3天', 'row: 点中了「第3天」那行的下载(不是别行)')
+
+  // ---- row 按钮模糊匹配:agent 猜"详情",实际按钮是"查看" → 应点中"查看"(同义)----
+  let viewed = null
+  const mkVRow = (label) => {
+    const vb = new FakeEl({ text: '查看' })
+    vb.click = () => {
+      viewed = label
+    }
+    const hb = new FakeEl({ text: '办理' })
+    return new FakeEl({ text: label, q: { button: [hb, vb], 'button, a': [hb, vb] } })
+  }
+  const vTable = new FakeEl({ q: { '.el-table__row': [mkVRow('r1'), mkVRow('r2'), mkVRow('r3')] } })
+  const vVm = { $options: { name: 'Todo' }, $el: new FakeEl({ q: { '.el-table': [vTable] } }) }
+  registerPage(vVm)
+  const resV = await runner.runOperate(
+    { mode: 'current', page: 'Todo', row: { index: 3, click: '详情' }, risk: 'query' },
+    {}
+  )
+  assert(resV && resV.ok === true && resV.mode === 'row', 'row模糊: runner 返回 ok')
+  assert(viewed === 'r3', 'row模糊: 猜"详情"→点中第3行真实按钮"查看"(同义匹配)')
 
   // ---- L5-5 当前页"新建":自省弹窗字段 + 就地填(model 名未知,走 DOM 打字)----
   const dTitle = new FakeEl({})
@@ -464,14 +484,20 @@ function assert(cond, msg) {
 
   // ---- 跨页:runOperate 按页面名解析路由 → 跳转 → 再就地操作(点第2行详情)----
   let pushedTo = null
-  const navRouter = { currentRoute: { path: '/somewhere' }, push: (p) => (pushedTo = p) }
+  const navRouter = {
+    currentRoute: { path: '/somewhere' },
+    push(p) {
+      pushedTo = p
+      this.currentRoute.path = p
+    }
+  }
   const resolvePath = (name) => (name === '自动巡检结果报表' ? '/inspect/report' : '')
   let navHit = null
   const detailBtn = new FakeEl({ text: '详情' })
   detailBtn.click = () => (navHit = 'row2')
-  const navRow2 = new FakeEl({ text: '第二条', q: { button: [detailBtn] } })
+  const navRow2 = new FakeEl({ text: '第二条', q: { button: [detailBtn], 'button, a': [detailBtn] } })
   const navTable = new FakeEl({
-    q: { '.el-table__row, tbody tr': [new FakeEl({ text: '第一条' }), navRow2] }
+    q: { '.el-table__row': [new FakeEl({ text: '第一条' }), navRow2] }
   })
   const navVm = {
     $options: { name: 'InspectReport' },
