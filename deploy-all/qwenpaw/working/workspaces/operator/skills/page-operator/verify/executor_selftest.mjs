@@ -538,6 +538,22 @@ function assert(cond, msg) {
     exNl && exNl.payload.navigate === '工单管理' && exNl.payload.row && exNl.payload.row.index === 3,
     '转译: navigate+自然语言"第3条详情" → navigate=工单管理, row.index=3'
   )
+  // 真实 agent 输出格式①:steps + "fill: 字段 = 值" + click(搜索场景)
+  const exFill = extractOperate('x\n```qwenpaw:operate\nsteps:\n  - fill: 流程名称 = 系统派单\n  - click: 搜索\n```')
+  assert(
+    exFill &&
+      exFill.payload.fill &&
+      exFill.payload.fill[0].label === '流程名称' &&
+      exFill.payload.fill[0].value === '系统派单' &&
+      exFill.payload.click === '搜索',
+    '转译(真实): "fill: 字段 = 值" → fill[{流程名称,系统派单}] + click 搜索'
+  )
+  // 真实 agent 输出格式②:action:click + row + button(下载场景)
+  const exDl = extractOperate('x\n```qwenpaw:operate\naction: click\nrow: 2\nbutton: 下载\n```')
+  assert(
+    exDl && exDl.payload.row && exDl.payload.row.index === 2 && exDl.payload.row.click === '下载',
+    '转译(真实): action:click+row:2+button:下载 → row{index:2,click:下载}'
+  )
 
   console.log(failed === 0 ? '\nFRONTEND-EXECUTOR-SELFTEST: PASS' : `\nFRONTEND-EXECUTOR-SELFTEST: FAIL (${failed})`)
   process.exitCode = failed === 0 ? 0 : 1
