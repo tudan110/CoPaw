@@ -26,17 +26,16 @@ for _cand in \
   fi
 done
 
-if [[ -z "${ENV_FILE}" ]]; then
-  echo "未找到 CMDB 环境文件；请优先配置共享 secrets/zgops-cmdb.env，本技能 .env 仅作旧版回退" >&2
-  exit 1
+# 找到配置文件就 source；没有文件也可以——配置可由设置页「CMDB / 资源导入」
+# 物化到环境变量（子进程继承 os.environ）。最后统一校验 ZGOPS_BASE_URL。
+if [[ -n "${ENV_FILE}" ]]; then
+  set -a
+  # shellcheck disable=SC1090
+  source "${ENV_FILE}"
+  set +a
 fi
 
-set -a
-# shellcheck disable=SC1090
-source "${ENV_FILE}"
-set +a
-
-: "${ZGOPS_BASE_URL:?必须配置 ZGOPS_BASE_URL}"
+: "${ZGOPS_BASE_URL:?未配置 ZGOPS_BASE_URL（请在设置页「CMDB / 资源导入」配置，或提供 secrets/zgops-cmdb.env）}"
 
 ZGOPS_CMDB_URL="${ZGOPS_BASE_URL%/}/cmdb/"
 ZGOPS_API_BASE_URL="${ZGOPS_BASE_URL%/}/api"

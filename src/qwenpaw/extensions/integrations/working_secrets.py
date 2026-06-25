@@ -183,6 +183,113 @@ def refresh_alarm_analyst_environ(*, db_path: Optional[Path] = None) -> None:
     materialize_alarm_analyst_to_environ(force=True, db_path=db_path)
 
 
+def materialize_zgops_to_environ(
+    *,
+    force: bool = False,
+    db_path: Optional[Path] = None,
+) -> None:
+    """Push the zgops CMDB connection into ``os.environ``.
+
+    The zgops-cmdb skills read ``ZGOPS_*`` via ``os.getenv`` (python) or an
+    inherited env (shell ``_env.sh``, once the static secrets file is gone).
+    Same precedence as :func:`materialize_inoe_to_environ`.
+    """
+    try:
+        from qwenpaw.extensions.api import zgops_settings_store as zg
+    except Exception:  # noqa: BLE001 - never break secret loading
+        return
+
+    kwargs = {} if db_path is None else {"db_path": db_path}
+    for key, spec in zg.ZGOPS_FIELD_SPECS.items():
+        try:
+            value = zg.resolve_text(spec.env_var, **kwargs).strip()
+        except Exception:  # noqa: BLE001 - one bad field must not block rest
+            continue
+        if not value:
+            continue
+        if force or zg.has_override(key, **kwargs):
+            os.environ[spec.env_var] = value
+        else:
+            os.environ.setdefault(spec.env_var, value)
+
+
+def refresh_zgops_environ(*, db_path: Optional[Path] = None) -> None:
+    """Re-materialise zgops settings after a save/reset."""
+    materialize_zgops_to_environ(force=True, db_path=db_path)
+
+
+_RIL_SUFFIXES = ("_BASE_URL", "_API_KEY", "_MODEL", "_VISION_MODEL")
+
+
+def materialize_resource_import_llm_to_environ(
+    *,
+    force: bool = False,
+    db_path: Optional[Path] = None,
+) -> None:
+    """Expand the resource-import LLM pool into ``os.environ``.
+
+    The pool is a variable-length list; it materialises as
+    ``RESOURCE_IMPORT_LLM_BASE_URL`` (#1), ``RESOURCE_IMPORT_LLM_2_*`` (#2)…
+    plus the two scalars. On startup with an empty DB pool we leave env
+    untouched (static secrets / real exports stand); once the pool exists in
+    the DB (or on a forced post-save refresh) the DB is authoritative, so we
+    clear any stale ``RESOURCE_IMPORT_LLM_*`` rows first to avoid leftovers
+    when a model is removed.
+    """
+    try:
+        from qwenpaw.extensions.api import (
+            resource_import_llm_settings_api as llm,
+        )
+    except Exception:  # noqa: BLE001 - never break secret loading
+        return
+
+    kwargs = {} if db_path is None else {"db_path": db_path}
+    try:
+        models = llm.get_resolved_models(**kwargs)
+        scalars = llm.get_resolved_scalars(**kwargs)
+    except Exception:  # noqa: BLE001
+        return
+
+    if not force and not models:
+        return  # nothing in DB; don't disturb static env / secrets file
+
+    for env_key in list(os.environ):
+        if env_key.startswith("RESOURCE_IMPORT_LLM_") and env_key.endswith(
+            _RIL_SUFFIXES
+        ):
+            os.environ.pop(env_key, None)
+
+    for index, model in enumerate(models, start=1):
+        prefix = (
+            "RESOURCE_IMPORT_LLM_"
+            if index == 1
+            else f"RESOURCE_IMPORT_LLM_{index}_"
+        )
+        if model.get("base_url"):
+            os.environ[prefix + "BASE_URL"] = model["base_url"]
+        if model.get("model"):
+            os.environ[prefix + "MODEL"] = model["model"]
+        if model.get("api_key"):
+            os.environ[prefix + "API_KEY"] = model["api_key"]
+        if model.get("vision_model"):
+            os.environ[prefix + "VISION_MODEL"] = model["vision_model"]
+
+    os.environ["RESOURCE_IMPORT_LLM_SHEET_PARALLELISM"] = str(
+        scalars["sheet_parallelism"]
+    )
+    os.environ["RESOURCE_IMPORT_LLM_STEP_TIMEOUT"] = str(
+        scalars["step_timeout"]
+    )
+
+
+def refresh_resource_import_llm_environ(
+    *,
+    db_path: Optional[Path] = None,
+) -> None:
+    """Re-materialise the resource-import LLM pool after a save."""
+    materialize_resource_import_llm_to_environ(force=True, db_path=db_path)
+
+
 def ensure_working_secrets_loaded() -> None:
     """Inject ``WORKING_DIR/secrets/<file>`` into ``os.environ`` once.
 
@@ -200,3 +307,5 @@ def ensure_working_secrets_loaded() -> None:
         _load_env_file(secrets_dir / name)
     materialize_inoe_to_environ(force=False)
     materialize_alarm_analyst_to_environ(force=False)
+    materialize_zgops_to_environ(force=False)
+    materialize_resource_import_llm_to_environ(force=False)

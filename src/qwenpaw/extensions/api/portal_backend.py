@@ -134,6 +134,8 @@ from qwenpaw.extensions.api import diagnosis_settings_store
 from qwenpaw.extensions.api import inoe_settings_store
 from qwenpaw.extensions.api import qiming_settings_store
 from qwenpaw.extensions.api import xingchen_settings_store
+from qwenpaw.extensions.api import zgops_settings_store
+from qwenpaw.extensions.api import resource_import_llm_settings_api
 from qwenpaw.extensions.api import fde_workbench_service
 from qwenpaw.extensions.api.fde_workbench_models import (
     FdeCopyInstalledRequest,
@@ -1806,6 +1808,85 @@ async def reset_xingchen_setting(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     return xingchen_settings_store.build_settings_payload()
+
+
+# ---------------------------------------------------------------------------
+# zgops CMDB connection + resource-import LLM pool. Materialised into
+# os.environ (skill subprocesses + resource_import bridge inherit it).
+# ---------------------------------------------------------------------------
+
+
+def _refresh_zgops_environ() -> None:
+    try:
+        from qwenpaw.extensions.integrations import working_secrets
+
+        working_secrets.refresh_zgops_environ()
+    except Exception:  # noqa: BLE001 - settings already persisted
+        pass
+
+
+def _refresh_resource_import_llm_environ() -> None:
+    try:
+        from qwenpaw.extensions.integrations import working_secrets
+
+        working_secrets.refresh_resource_import_llm_environ()
+    except Exception:  # noqa: BLE001 - settings already persisted
+        pass
+
+
+@router.get("/zgops-settings")
+async def get_zgops_settings() -> dict[str, Any]:
+    """Return zgops CMDB settings as ``{effective, env, overrides}``."""
+    return zgops_settings_store.build_settings_payload()
+
+
+@router.put("/zgops-settings")
+async def put_zgops_settings(
+    body: dict[str, Any] = Body(default_factory=dict),
+) -> dict[str, Any]:
+    """Persist a partial update of the zgops CMDB settings."""
+    try:
+        zgops_settings_store.apply_settings_update(body)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    _refresh_zgops_environ()
+    return zgops_settings_store.build_settings_payload()
+
+
+@router.post("/zgops-settings/reset")
+async def reset_zgops_setting(
+    body: dict[str, Any] = Body(default_factory=dict),
+) -> dict[str, Any]:
+    """Drop one zgops field's override. Body: ``{"key": "<field>"}``."""
+    key = str(body.get("key") or "").strip()
+    try:
+        zgops_settings_store.reset_setting(key)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    _refresh_zgops_environ()
+    return zgops_settings_store.build_settings_payload()
+
+
+@router.get("/resource-import-llm-settings")
+async def get_resource_import_llm_settings() -> dict[str, Any]:
+    """Return the resource-import LLM pool ``{scalars, models}``.
+
+    Each model's ``api_key`` is masked.
+    """
+    return resource_import_llm_settings_api.build_settings_payload()
+
+
+@router.put("/resource-import-llm-settings")
+async def put_resource_import_llm_settings(
+    body: dict[str, Any] = Body(default_factory=dict),
+) -> dict[str, Any]:
+    """Replace the resource-import LLM pool from ``{scalars?, models?}``."""
+    try:
+        resource_import_llm_settings_api.apply_settings_update(body)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    _refresh_resource_import_llm_environ()
+    return resource_import_llm_settings_api.build_settings_payload()
 
 
 def _read_preview_progress(progress_file: Path) -> list[dict[str, Any]]:

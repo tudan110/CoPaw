@@ -1,15 +1,14 @@
 ---
 name: zgops-cmdb
-description: 用于查询当前 `.env` 配置所指向的 CMDB 环境。当用户询问模型、关系、层级、IPAM、DCIM、应用拓扑、资源拓扑、资源数量统计、资源状态统计、制造商/厂商分布、CMDB count/group 类接口时使用。
+description: 用于查询当前配置所指向的 CMDB 环境。当用户询问模型、关系、层级、IPAM、DCIM、应用拓扑、资源拓扑、资源数量统计、资源状态统计、制造商/厂商分布、CMDB count/group 类接口时使用。
 ---
 
 # ZGOPS CMDB 查询技能
 
-仅面向凭证（共享 `secrets/zgops-cmdb.env` 或本技能 `.env`）所配置的当前 CMDB 环境。
-凭证优先从共享 `secrets/zgops-cmdb.env` 读取，未配置时回退本技能目录 `.env`（`.env.example` 仅模板）。
-凭证解析顺序统一为 `$ZGOPS_ENV_FILE` → 共享 `secrets/zgops-cmdb.env` → 本技能目录 `.env`（旧版回退）；不读取其他 skill 的 `.env`。
+仅面向当前配置所指向的 CMDB 环境。凭证（ZGOPS 地址/账号/密码与 INOE 网关地址/令牌）由设置页「CMDB / 资源导入」「平台」统一管理，运行时物化为环境变量（`ZGOPS_*` / `INOE_*`），脚本从环境变量读取；不读取其他 skill 的 `.env`。
+（历史回退：脚本仍兼容 `$ZGOPS_ENV_FILE` → 共享 `secrets/zgops-cmdb.env` → 本技能 `.env`，但配置已迁设置页、这些文件通常已删除。）
 
-不要在对外描述里写死某个固定地址、某套“测试环境”或特定站点；环境信息应完全来自上述凭证文件。
+不要在对外描述里写死某个固定地址、某套“测试环境”或特定站点；环境信息应完全来自上述配置（设置页 / 物化的环境变量）。
 
 ## 默认行为
 
@@ -127,7 +126,7 @@ scripts/zgops-cmdb.sh inoe-stat types --output markdown
 
 环境切换：
 
-- 测试、生产等不同环境只需要替换共享 `secrets/zgops-cmdb.env` 的 `INOE_API_BASE_URL` 和 `INOE_API_TOKEN`；本技能目录 `.env` 仅作旧版回退或临时覆盖。
+- 测试、生产等不同环境只需在设置页改 INOE / ZGOPS 的地址与凭证（即时生效）；共享 `secrets/zgops-cmdb.env` 与本技能 `.env` 仅作历史回退。
 - 如果 CMDB 接口走独立网关，可单独配置 `INOE_CMDB_API_BASE_URL`。
 - 如果不同网关路径前缀不同，可覆盖 `INOE_CMDB_TYPES_PATH`、`INOE_CMDB_TYPE_GROUPS_PATH`、`INOE_CMDB_COUNT_GROUP_PATH` 等路径变量。
 
@@ -154,7 +153,7 @@ scripts/zgops-cmdb.sh inoe-stat types --output markdown
 ## 备注
 
 - 这套环境中，`project` 对应“应用”模型。
-- 凭据默认保留在共享 `secrets/zgops-cmdb.env` 中；本技能 `.env` 仅作为旧版回退或临时覆盖。
+- 凭据由设置页统一管理、物化为环境变量；共享 `secrets/zgops-cmdb.env` 与本技能 `.env` 仅作历史回退。
 - 如果 `.env` 中配置了用户名密码但登录失败，允许继续尝试匿名访问只读接口；不要因为登录失败就阻断整个查询链路。
 - 如需图表规范，读取 `references/chart-guide.md` 或 `references/echarts-examples.md`。
 - 如果用户要做资源导入、资源纳管、批量导入，改用同级 `zgops-cmdb-import` skill。
