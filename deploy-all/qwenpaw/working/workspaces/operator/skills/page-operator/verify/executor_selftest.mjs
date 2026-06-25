@@ -462,6 +462,29 @@ function assert(cond, msg) {
   assert(rIn1.value === '2026-06-23' && rIn2.value === '2026-06-24', 'date: 日期范围两端都填了')
   assert(picked6 === '请假', 'select: 下拉按值自动选中「请假」')
 
+  // ---- 跨页:runOperate 按页面名解析路由 → 跳转 → 再就地操作(点第2行详情)----
+  let pushedTo = null
+  const navRouter = { currentRoute: { path: '/somewhere' }, push: (p) => (pushedTo = p) }
+  const resolvePath = (name) => (name === '自动巡检结果报表' ? '/inspect/report' : '')
+  let navHit = null
+  const detailBtn = new FakeEl({ text: '详情' })
+  detailBtn.click = () => (navHit = 'row2')
+  const navRow2 = new FakeEl({ text: '第二条', q: { button: [detailBtn] } })
+  const navTable = new FakeEl({
+    q: { '.el-table__row, tbody tr': [new FakeEl({ text: '第一条' }), navRow2] }
+  })
+  const navVm = {
+    $options: { name: 'InspectReport' },
+    $el: new FakeEl({ q: { '.el-table': [navTable] } })
+  }
+  registerPage(navVm) // 模拟跳转后已注册(getCurrentPage 取它)
+  await runner.runOperate(
+    { mode: 'current', navigate: '自动巡检结果报表', row: { index: 2, click: '详情' }, risk: 'query' },
+    { router: navRouter, resolvePath }
+  )
+  assert(pushedTo === '/inspect/report', 'navigate: 按页面名解析路由并跳转过去')
+  assert(navHit === 'row2', 'navigate: 跳转后点中了第2行的详情')
+
   console.log(failed === 0 ? '\nFRONTEND-EXECUTOR-SELFTEST: PASS' : `\nFRONTEND-EXECUTOR-SELFTEST: FAIL (${failed})`)
   process.exitCode = failed === 0 ? 0 : 1
 })().catch((e) => {
