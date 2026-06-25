@@ -5,6 +5,7 @@ import { extractAction, extractOperate, normalizeOperate, canonicalizeOperate } 
 import { registerPage } from './_fe/operator/operableBus.js'
 import runner from './_fe/operator/runner.js'
 import { describePage } from './_fe/operator/pageSchema.js'
+import { pageLeaves, resolvePath as resolveLeafPath } from './_fe/operator/pageMap.js'
 
 class FakeEl {
   constructor({ text = '', q = {}, style = {}, offsetParent = {} } = {}) {
@@ -602,6 +603,29 @@ function assert(cond, msg) {
     exDl && exDl.payload.row && exDl.payload.row.index === 2 && exDl.payload.row.click === '下载',
     '转译(真实): action:click+row:2+button:下载 → row{index:2,click:下载}'
   )
+  // 真实 agent 输出格式③(联调实采,跨页):navigate + action:查看 + target:第3行
+  const exA = extractOperate(
+    'x\n```qwenpaw:operate\nnavigate: 自动巡检结果报表\naction: 查看\ntarget: 第3行\n```'
+  )
+  assert(
+    exA &&
+      exA.payload.navigate === '自动巡检结果报表' &&
+      exA.payload.row &&
+      exA.payload.row.index === 3 &&
+      exA.payload.row.click === '查看',
+    '转译(真实③跨页): navigate+action:查看+target:第3行 → navigate=报表,row{3,查看}'
+  )
+  // 真实 agent 输出格式④(联调实采,本页):action:click + target:row=3, 查看
+  // 关键:target 是"行"而非页面,绝不能误抠成 navigate=row=3
+  const exB = extractOperate('x\n```qwenpaw:operate\naction: click\ntarget: row=3, 查看\n```')
+  assert(
+    exB &&
+      !exB.payload.navigate &&
+      exB.payload.row &&
+      exB.payload.row.index === 3 &&
+      exB.payload.row.click === '查看',
+    '转译(真实④本页): action:click+target:row=3,查看 → 无navigate,row{3,查看}'
+  )
 
   // ---- L6 批量导入:upload → DataTransfer 注入 el-upload → 高亮确定(写,不自动点)----
   globalThis.DataTransfer = class {
@@ -648,6 +672,47 @@ function assert(cond, msg) {
   )
   assert(askedAccept === '.xlsx,.xls', 'import: 聊天上传卡带了 accept 限定')
   assert(impConfirmClicked === false, 'import: "确定"不自动点(写操作,留用户确认)')
+
+  // ---- 全系统页面地图解析(整系统接入 / 防 404 / 修 bug#2)----
+  const routers = [
+    {
+      path: '/workorder',
+      component: 'Layout',
+      meta: { title: '工单管理' },
+      children: [
+        { path: 'todo', component: 'workorder/todo', meta: { title: '待办工单' } },
+        { path: 'done', component: 'workorder/done', meta: { title: '已办工单' } }
+      ]
+    },
+    {
+      path: '/inspect',
+      component: 'Layout',
+      meta: { title: '自动巡检' },
+      children: [{ path: 'report', component: 'inspect/report', meta: { title: '自动巡检结果报表' } }]
+    }
+  ]
+  const leaves = pageLeaves(routers)
+  const leafTitles = leaves.map((l) => l.title)
+  const leafPaths = leaves.map((l) => l.path)
+  assert(
+    leafTitles.includes('待办工单') && leafTitles.includes('自动巡检结果报表'),
+    'pageMap: 抽到真实叶子页(全系统可跳转清单)'
+  )
+  assert(
+    !leafTitles.includes('工单管理') && !leafTitles.includes('自动巡检'),
+    'pageMap: 父级菜单容器被排除(防 404)'
+  )
+  assert(resolveLeafPath(routers, '待办工单') === '/workorder/todo', 'pageMap: 精确叶子名 → 叶子路径')
+  assert(
+    resolveLeafPath(routers, '自动巡检结果报表') === '/inspect/report',
+    'pageMap: 点名报表页 → 报表叶子路径(修 bug#2:不当成当前页)'
+  )
+  const parentResolved = resolveLeafPath(routers, '工单管理')
+  assert(
+    parentResolved === '' || leafPaths.includes(parentResolved),
+    'pageMap: 父菜单名永不解析成容器路径(只会是叶子或空,杜绝 404)'
+  )
+  assert(resolveLeafPath(routers, '查无此页xyz') === '', 'pageMap: 解析不到 → 空串(上层据此中止跳转)')
 
   console.log(failed === 0 ? '\nFRONTEND-EXECUTOR-SELFTEST: PASS' : `\nFRONTEND-EXECUTOR-SELFTEST: FAIL (${failed})`)
   process.exitCode = failed === 0 ? 0 : 1
