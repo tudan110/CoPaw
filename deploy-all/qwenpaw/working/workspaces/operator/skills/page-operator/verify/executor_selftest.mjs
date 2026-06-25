@@ -603,6 +603,52 @@ function assert(cond, msg) {
     '转译(真实): action:click+row:2+button:下载 → row{index:2,click:下载}'
   )
 
+  // ---- L6 批量导入:upload → DataTransfer 注入 el-upload → 高亮确定(写,不自动点)----
+  globalThis.DataTransfer = class {
+    constructor() {
+      this._f = []
+      this.items = { add: (f) => this._f.push(f) }
+    }
+    get files() {
+      return this._f
+    }
+  }
+  const impFileInput = new FakeEl({})
+  impFileInput.dispatchEvent = () => {}
+  const impConfirm = new FakeEl({ text: '确定' })
+  let impConfirmClicked = false
+  impConfirm.click = () => {
+    impConfirmClicked = true
+  }
+  const impVm = {
+    $options: { name: 'DeviceImport' },
+    $el: new FakeEl({
+      q: {
+        '.el-upload': [new FakeEl({})],
+        '.el-upload input[type=file]': [impFileInput],
+        button: [impConfirm]
+      }
+    })
+  }
+  registerPage(impVm)
+  let askedAccept = null
+  const resImp = await runner.runOperate(
+    { mode: 'current', upload: true, click: '确定', accept: '.xlsx,.xls', risk: 'create', title: '批量导入设备' },
+    {
+      requestUpload: (opts) => {
+        askedAccept = opts.accept
+        return Promise.resolve({ name: 'devices.xlsx' })
+      }
+    }
+  )
+  assert(resImp && resImp.ok === true && resImp.mode === 'import', 'import: runner 返回 ok(import)')
+  assert(
+    impFileInput.files && impFileInput.files.length === 1 && impFileInput.files[0].name === 'devices.xlsx',
+    'import: 文件被注入页面 el-upload(DataTransfer)'
+  )
+  assert(askedAccept === '.xlsx,.xls', 'import: 聊天上传卡带了 accept 限定')
+  assert(impConfirmClicked === false, 'import: "确定"不自动点(写操作,留用户确认)')
+
   console.log(failed === 0 ? '\nFRONTEND-EXECUTOR-SELFTEST: PASS' : `\nFRONTEND-EXECUTOR-SELFTEST: FAIL (${failed})`)
   process.exitCode = failed === 0 ? 0 : 1
 })().catch((e) => {

@@ -60,6 +60,10 @@ def build_payload(args: argparse.Namespace) -> dict:
         payload["click"] = args.click
     if args.open:
         payload["open"] = args.open
+    if args.upload:
+        payload["upload"] = True
+    if args.accept:
+        payload["accept"] = args.accept
 
     payload["risk"] = args.risk
     if args.title:
@@ -76,7 +80,15 @@ def main(argv=None) -> int:
     p.add_argument("--row-index", default="", help="表格第几行(从 1 开始)")
     p.add_argument("--row-match", default="", help="按某列文案定位行")
     p.add_argument("--row-click", default="", help="该行要点的按钮(如 详情/下载)")
-    p.add_argument("--open", default="", help="要点开的弹窗按钮(如 新增)")
+    p.add_argument("--open", default="", help="要点开的弹窗按钮(如 新增/导入)")
+    p.add_argument(
+        "--upload",
+        action="store_true",
+        help="批量导入:在聊天里让用户上传文件并注入页面 el-upload",
+    )
+    p.add_argument(
+        "--accept", default="", help="上传允许的文件类型(如 .xlsx,.xls)"
+    )
     p.add_argument(
         "--risk",
         default="query",
@@ -98,6 +110,7 @@ def main(argv=None) -> int:
         or payload.get("click")
         or payload.get("row")
         or payload.get("open")
+        or payload.get("upload")
     ):
         sys.stderr.write(
             "至少要给一个操作:--navigate / --fill / --click / --row-index|--row-match / --open\n"

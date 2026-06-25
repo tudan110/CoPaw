@@ -44,6 +44,8 @@ operator 负责"代填"。两者都只产出指令,真正的动作在前端执�
   `(date)` 范围用「起~止」(如 `2026-06-23~2026-06-24`;"昨天到今天"你自己换算成具体日期);
   `(select)` 直接给选项值(如「请假」)。
 - `--open <按钮>`:本页"新建"(点开弹窗,前端再让用户逐字段填、确认提交)。
+- `--upload [--accept ".xlsx,.xls"]`:**批量导入**——前端会点开导入弹窗、在聊天里让用户
+  上传文件并注入页面上传框,再高亮"确定"由用户点。配 `--open 导入 --click 确定`。
 - `--risk query|create|update|delete`:**只读**(搜/查/看详情/下载)用 `query`(前端**自动执行**);
   **写**(新增/编辑)用 `create`/`update`(预填、用户点提交);**危险**(删除/批量)用 `delete`
   (只定位 + 告知后果、用户确认决断)。**别因"危险"就拒绝——准备好交用户拍板。**
@@ -52,6 +54,10 @@ operator 负责"代填"。两者都只产出指令,真正的动作在前端执�
 例(查看"待办工单"页第 3 条的详情):
 
     uv run scripts/emit_operate.py --navigate 待办工单 --row-index 3 --row-click 详情 --risk query --title "查看待办工单第3条详情"
+
+例(批量导入,如"在资产中心批量导入设备";导入是按资源类型分的,navigate 到具体资源页):
+
+    uv run scripts/emit_operate.py --navigate 设备资源 --open 导入 --upload --accept ".xlsx,.xls" --click 确定 --risk create --title "批量导入设备"
 
 脚本输出 = 一段话术 + 一个 ` ```qwenpaw:operate ``` ` 块。**原样返回,别改写、别自己再拼 JSON。**
 
