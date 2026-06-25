@@ -143,3 +143,45 @@ function makeProviderSettingsApi(base: string): ProviderSettingsApi {
 export const qimingSettingsApi = makeProviderSettingsApi("/qiming-settings");
 export const xingchenSettingsApi =
   makeProviderSettingsApi("/xingchen-settings");
+export const zgopsSettingsApi = makeProviderSettingsApi("/zgops-settings");
+
+// --- Resource-import LLM pool (zgops-cmdb) ---
+//
+// Dynamic pool of OpenAI-compatible models (variable count) + 2 scalars.
+// api_key is masked on read; empty on write keeps the stored key by row.
+
+export interface ResourceImportLlmModel {
+  base_url: string;
+  model: string;
+  vision_model: string;
+  api_key: MaskedSecret;
+}
+
+export interface ResourceImportLlmPayload {
+  scalars: { sheet_parallelism: number; step_timeout: number };
+  models: ResourceImportLlmModel[];
+}
+
+// Write shape: api_key is a plain string ("" = keep existing for that row).
+export interface ResourceImportLlmModelInput {
+  base_url: string;
+  model: string;
+  vision_model: string;
+  api_key: string;
+}
+
+export interface ResourceImportLlmUpdate {
+  scalars?: { sheet_parallelism: number; step_timeout: number };
+  models?: ResourceImportLlmModelInput[];
+}
+
+export const resourceImportLlmApi = {
+  get: () =>
+    requestSettings<ResourceImportLlmPayload>("/resource-import-llm-settings"),
+
+  update: (body: ResourceImportLlmUpdate) =>
+    requestSettings<ResourceImportLlmPayload>("/resource-import-llm-settings", {
+      method: "PUT",
+      body: JSON.stringify(body),
+    }),
+};

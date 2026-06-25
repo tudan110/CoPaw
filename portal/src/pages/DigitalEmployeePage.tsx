@@ -1469,7 +1469,7 @@ export default function DigitalEmployeePage({
             </div>
             <div className="logo-text">
               <h1>{portalAppTitle}</h1>
-              <span>智能 · 高效 · 自动化</span>
+              <span>全域 · 洞察 · 智能</span>
             </div>
           </button>
 

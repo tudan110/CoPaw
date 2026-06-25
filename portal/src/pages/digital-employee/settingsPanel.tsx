@@ -14,6 +14,7 @@ import {
   inoeSettingsApi,
   qimingSettingsApi,
   xingchenSettingsApi,
+  zgopsSettingsApi,
   DIAGNOSIS_TOKEN_CLEAR,
   type NotificationChannelScopeConfig,
   type NotificationChannelSettings,
@@ -23,6 +24,7 @@ import {
 import ProviderSettingsSection, {
   type ProviderFieldDesc,
 } from "./ProviderSettingsSection";
+import ResourceImportLlmSection from "./ResourceImportLlmSection";
 
 // Editable numeric fields in the diagnosis tab, grouped for rendering.
 type DiagnosisNumberField = {
@@ -270,7 +272,34 @@ const SETTINGS_TABS = [
     iconClass: "fa-robot",
     description: "启明、星辰等大模型 adapter 的网关、凭证与模型",
   },
+  {
+    id: "cmdb",
+    label: "CMDB / 资源导入",
+    iconClass: "fa-database",
+    description: "zgops CMDB 连接与资源导入 LLM 池",
+  },
 ] as const;
+
+const ZGOPS_FIELDS: ProviderFieldDesc[] = [
+  {
+    key: "zgops_base_url",
+    label: "ZGOPS 地址（base_url）",
+    hint: "zgops CMDB 的 base URL。",
+    placeholder: "http://host:31089",
+  },
+  { key: "zgops_username", label: "用户名", hint: "登录账号。" },
+  {
+    key: "zgops_password",
+    label: "密码",
+    sensitive: true,
+    hint: "登录密码，留空则不修改。",
+  },
+  {
+    key: "zgops_session_name",
+    label: "Session 名",
+    hint: "会话标识（可选）。",
+  },
+];
 
 // Field descriptors for the two model-provider settings sections. Keys must
 // match the backend FieldSpec keys (qiming_settings_store /
@@ -1620,6 +1649,18 @@ export function SettingsPanel() {
                     description="星辰 OpenAI 兼容 adapter 的网关地址、凭证与模型。修改即时生效，无需重启。未在此设置的项会回退到 .env / 部署环境变量。"
                     fields={XINGCHEN_FIELDS}
                   />
+                </>
+              ) : null}
+
+              {activeTab === "cmdb" ? (
+                <>
+                  <ProviderSettingsSection
+                    api={zgopsSettingsApi}
+                    title="ZGOPS CMDB 连接"
+                    description="zgops CMDB 的地址与账号。修改即时生效，供 zgops-cmdb 等技能与资源导入使用。未在此设置的项会回退到部署环境变量。"
+                    fields={ZGOPS_FIELDS}
+                  />
+                  <ResourceImportLlmSection />
                 </>
               ) : null}
 
