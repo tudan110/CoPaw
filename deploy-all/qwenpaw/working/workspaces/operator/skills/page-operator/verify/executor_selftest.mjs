@@ -1,7 +1,7 @@
 // 操作模式前端执行器自测(无框架、无网络):最小假 DOM + 桩光标,真实跑
 // runner.run(),验证 C 方案的关键行为:跳转 → 开新增弹窗 → 预填 model →
 // 不自动提交。前端模块由 run.py 拷进 ./_fe/(并补 .js 扩展名)后运行。
-import { extractAction } from './_fe/action.js'
+import { extractAction, extractOperate } from './_fe/action.js'
 import { registerPage } from './_fe/operator/operableBus.js'
 import runner from './_fe/operator/runner.js'
 import { describePage } from './_fe/operator/pageSchema.js'
@@ -484,6 +484,28 @@ function assert(cond, msg) {
   )
   assert(pushedTo === '/inspect/report', 'navigate: 按页面名解析路由并跳转过去')
   assert(navHit === 'row2', 'navigate: 跳转后点中了第2行的详情')
+
+  // ---- 宽松兜底:agent 写成 YAML/steps,extractOperate 也能抠出 navigate+row ----
+  const yamlBlock =
+    '```qwenpaw:operate\n' +
+    'steps:\n' +
+    '  - action: navigate\n' +
+    '    target: 工单管理\n' +
+    '  - action: row\n' +
+    '    index: 2\n' +
+    '    filter: 待办\n' +
+    '    detail: true\n' +
+    '```'
+  const exYaml = extractOperate('好的。\n' + yamlBlock)
+  assert(exYaml && exYaml.payload && exYaml.payload.navigate === '工单管理', 'loose: YAML 抠出 navigate=工单管理')
+  assert(
+    exYaml &&
+      exYaml.payload.row &&
+      exYaml.payload.row.index === 2 &&
+      exYaml.payload.row.click === '详情',
+    'loose: YAML 抠出 row{index:2, click:详情}'
+  )
+  assert(exYaml && exYaml.payload.risk === 'query', 'loose: 只读默认 risk=query(可自动执行)')
 
   console.log(failed === 0 ? '\nFRONTEND-EXECUTOR-SELFTEST: PASS' : `\nFRONTEND-EXECUTOR-SELFTEST: FAIL (${failed})`)
   process.exitCode = failed === 0 ? 0 : 1
