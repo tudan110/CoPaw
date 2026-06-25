@@ -511,6 +511,28 @@ function assert(cond, msg) {
   assert(pushedTo === '/inspect/report', 'navigate: 按页面名解析路由并跳转过去')
   assert(navHit === 'row2', 'navigate: 跳转后点中了第2行的详情')
 
+  // navigateFor:只跳转 + 等页面就绪,不执行任何操作(供 L6 感知闭环:跳后再重扫)
+  let navOnlyPushed = null
+  const navOnlyRouter = {
+    currentRoute: { path: '/a' },
+    push(p) {
+      navOnlyPushed = p
+      this.currentRoute.path = p
+    }
+  }
+  registerPage({
+    $options: { name: 'ReadyPage' },
+    $el: new FakeEl({ q: { button: [new FakeEl({ text: 'x' })] } })
+  })
+  const navOnly = await runner.navigateFor('随便页', {
+    router: navOnlyRouter,
+    resolvePath: () => '/target'
+  })
+  assert(
+    navOnly && navOnly.ok === true && navOnlyPushed === '/target',
+    'navigateFor: 只跳转到目标路由(不执行操作)'
+  )
+
   // ---- 宽松兜底:agent 写成 YAML/steps,extractOperate 也能抠出 navigate+row ----
   const yamlBlock =
     '```qwenpaw:operate\n' +
