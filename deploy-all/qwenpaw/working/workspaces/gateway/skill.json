@@ -1,6 +1,6 @@
 {
   "schema_version": "workspace-skill-manifest.v1",
-  "version": 1782374482819,
+  "version": 1782380257623,
   "skills": {
     "inspection-analyst": {
       "enabled": true,
@@ -386,31 +386,6 @@
       "metadata": {
         "name": "knowledge-search",
         "description": "知识库问答(RAG)。【仅当用户消息带「【知识库】」标记时使用本技能】—— 这个标记是前端\"知识库\"开关打开后自动加上的显式信号。流程:去掉标记得到真正的问题 → 用 kb_search.py 检索知识库证据 → 【只依据检索到的证据】用中文回答并在末尾列出引用来源;证据不足就如实说没有,绝不凭常识编造。没有「【知识库】」标记的普通问题不要用本技能,交给其它技能或常识回答。",
-        "version_text": "",
-        "commit_text": "",
-        "source": "customized",
-        "protected": false,
-        "requirements": {
-          "require_bins": [],
-          "require_envs": []
-        },
-        "updated_at": "2026-06-16T00:00:00.000000Z"
-      },
-      "requirements": {
-        "require_bins": [],
-        "require_envs": []
-      },
-      "updated_at": "2026-06-16T00:00:00.000000Z"
-    },
-    "page-navigator": {
-      "enabled": true,
-      "channels": [
-        "all"
-      ],
-      "source": "customized",
-      "metadata": {
-        "name": "page-navigator",
-        "description": "门户页面导航/跳转能力。【仅当用户明确表达\"页面/去某处\"的意图时才用本技能】—— 例如话里出现\"…页面\"\"…在哪里/在哪个菜单\"\"打开/进入/跳转到…页面\"\"带我去…页面\"\"…怎么进/怎么找到\"等。这类诉求:查路由菜单→匹配页面→产出跳转指令,不确定就列候选让用户确认。【默认业务/数据类技能优先】:像\"看巡检结果报表\"\"我想看工单统计\"\"查一下告警\"这种没有点出\"页面/导航\"的说法,一律交给对应业务技能(如 inspection-analyst)出数据/结果,不要用本技能跳转。本技能只负责\"带用户去页面\",不生成数据、不执行任务。",
         "version_text": "",
         "commit_text": "",
         "source": "customized",
