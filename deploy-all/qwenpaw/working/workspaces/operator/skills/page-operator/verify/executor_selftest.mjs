@@ -4,15 +4,16 @@
 import { extractAction, extractOperate, normalizeOperate, canonicalizeOperate } from './_fe/action.js'
 import { registerPage } from './_fe/operator/operableBus.js'
 import runner from './_fe/operator/runner.js'
-import { describePage } from './_fe/operator/pageSchema.js'
+import { describePage, describeForm } from './_fe/operator/pageSchema.js'
 import { pageLeaves, resolvePath as resolveLeafPath } from './_fe/operator/pageMap.js'
 
 class FakeEl {
-  constructor({ text = '', q = {}, style = {}, offsetParent = {} } = {}) {
+  constructor({ text = '', q = {}, style = {}, offsetParent = {}, className = '' } = {}) {
     this.textContent = text
     this._q = q
     this.style = Object.assign({ display: '' }, style)
     this.offsetParent = offsetParent
+    this.className = className
     this.classList = { add() {}, remove() {} }
   }
   querySelector(sel) {
@@ -34,6 +35,7 @@ const item = (label, input) =>
   new FakeEl({
     q: {
       '.el-form-item__label': [new FakeEl({ text: label })],
+      input: [input], // controlType 靠它判类型(=input)
       '.el-form-item__content input, .el-form-item__content textarea': [input]
     }
   })
@@ -42,6 +44,7 @@ const submitBtn = new FakeEl({ text: '确 定' })
 const dialog = new FakeEl({
   q: {
     '.el-form-item': items,
+    button: [submitBtn],
     '.dialog-footer .el-button--primary, .el-dialog__footer .el-button--primary': [submitBtn]
   }
 })
@@ -49,9 +52,12 @@ const wrapper = new FakeEl({ q: { '.el-dialog': [dialog] } })
 
 // 模拟 Element 把 el-select 下拉 append 到 body:由 ddlRef 指向当前可见下拉
 let ddlRef = null
+// 当前是否有"打开的弹窗"。默认无(当前页操作场景);需要弹窗作用域的用例显式置 true,
+// 模拟 Element 弹窗可见。这样 getActiveDialog 只在确有弹窗时才返回它(真实环境一致)。
+let dialogShown = false
 globalThis.document = {
   querySelectorAll: (sel) => {
-    if (sel === '.el-dialog__wrapper') return [wrapper]
+    if (sel === '.el-dialog__wrapper') return dialogShown ? [wrapper] : []
     if (sel === '.el-select-dropdown') return ddlRef ? [ddlRef] : []
     return []
   },
@@ -144,6 +150,7 @@ function assert(cond, msg) {
   assert(ex && ex.payload && ex.payload.op === 'workflow.category.add', 'extractAction 解析出 op')
 
   registerPage(vm)
+  dialogShown = true // 新增流程会打开弹窗,模拟弹窗可见
   const res = await runner.run(payload, { router })
   assert(res && res.ok === true, 'runner 返回 ok')
   assert(pushed.length === 1 && pushed[0] === '/workflow/category', 'router.push 到目标路由')
@@ -153,6 +160,7 @@ function assert(cond, msg) {
   assert(vm.form.remark === undefined, 'remark 未给值则不预填')
   assert(vm._submitted !== true, 'submitForm 不被自动调用(提交交用户)')
   assert(res.dialogFound === true, '执行器定位到弹窗')
+  dialogShown = false // 复位:后续当前页操作场景没有弹窗
 
   // ---- 触发类(导出,只读 risk=export)场景:自动点击「导出」按钮完成 ----
   const exportBtn = new FakeEl({ text: '导出' })
@@ -672,6 +680,107 @@ function assert(cond, msg) {
   )
   assert(askedAccept === '.xlsx,.xls', 'import: 聊天上传卡带了 accept 限定')
   assert(impConfirmClicked === false, 'import: "确定"不自动点(写操作,留用户确认)')
+
+  // ---- 真机"新建/提交"链路逼出的修复(Fix1 作用域 / Fix2 必填 / Fix3 确认卡 / Fix4 确认才执行)----
+  dialogShown = true // 模拟弹窗打开(el-dialog append-to-body)
+  // Fix1:弹窗开着时,就地 fill 落进【弹窗】输入框(不是页面上)——根治"找不到弹窗元素"
+  inputName.value = ''
+  await runner.runOperate(
+    { mode: 'current', fill: [{ label: '分类名称', value: '测试密钥' }], risk: 'query' },
+    {}
+  )
+  assert(inputName.value === '测试密钥', 'Fix1: 弹窗开着 → fill 落进弹窗输入框(作用域感知)')
+
+  // Fix4:写操作(click 确定)——没确认只高亮、用户点了卡片(confirmed)才真点
+  let submitClicked = false
+  submitBtn.click = () => {
+    submitClicked = true
+  }
+  await runner.runOperate({ mode: 'current', click: '确定', risk: 'create' }, {})
+  assert(submitClicked === false, 'Fix4: 写操作未确认 → 只高亮不点')
+  await runner.runOperate({ mode: 'current', click: '确定', risk: 'create', confirmed: true }, {})
+  assert(submitClicked === true, 'Fix4: 写操作已确认(点了卡片)→ 真正点击「确定」')
+
+  // Fix3:确认提交卡——requestSubmit 返回 true → 真正点弹窗「确定」;取消则不点
+  submitClicked = false
+  let askedSubmit = null
+  const resCs = await runner._confirmSubmit(
+    dialog,
+    {
+      requestSubmit: (o) => {
+        askedSubmit = o
+        return Promise.resolve(true)
+      }
+    },
+    { title: '确认提交' },
+    'open'
+  )
+  assert(askedSubmit && askedSubmit.label === '确定', 'Fix3: 提交前弹「确认提交」卡(带按钮名)')
+  assert(
+    resCs && resCs.submitted === true && submitClicked === true,
+    'Fix3: 用户点确认 → 真正点弹窗「确定」提交'
+  )
+  submitClicked = false
+  const resCancel = await runner._confirmSubmit(
+    dialog,
+    { requestSubmit: () => Promise.resolve(false) },
+    {},
+    'open'
+  )
+  assert(
+    resCancel.submitted === false && submitClicked === false,
+    'Fix3: 用户取消 → 不提交'
+  )
+  dialogShown = false
+
+  // Fix2:describeForm 标出必填字段(名称*必填、备注选填)
+  const reqForm = new FakeEl({
+    q: {
+      '.el-form-item': [
+        new FakeEl({
+          className: 'el-form-item is-required',
+          q: { '.el-form-item__label': [new FakeEl({ text: '名称' })], input: [new FakeEl({})] }
+        }),
+        new FakeEl({
+          className: 'el-form-item',
+          q: { '.el-form-item__label': [new FakeEl({ text: '备注' })], input: [new FakeEl({})] }
+        })
+      ]
+    }
+  })
+  const reqFields = describeForm(reqForm)
+  assert(
+    reqFields.length === 2 &&
+      reqFields[0].label === '名称' &&
+      reqFields[0].required === true &&
+      reqFields[1].required === false,
+    'Fix2: describeForm 标出必填(名称必填、备注选填)'
+  )
+
+  // 兜底(真机关键):agent 经常把"新建"发成 click(而非 open)。前端检测到"点新建→弹窗
+  // 打开"就接管:列真实字段总览 + 给「确认提交」卡。**完全不依赖 agent 出 open/submit 指令。**
+  let noteText = null
+  let askedNew = null
+  submitClicked = false
+  addBtn.click = () => {
+    dialogShown = true // 模拟点"新增"后弹窗打开
+  }
+  dialogShown = false
+  await runner.runOperate(
+    { mode: 'current', page: 'Category', click: '新增', risk: 'query' },
+    {
+      note: (t) => {
+        noteText = t
+      },
+      requestSubmit: (o) => {
+        askedNew = o
+        return Promise.resolve(true)
+      }
+    }
+  )
+  assert(/分类名称/.test(noteText || ''), '兜底: 点"新增"弹出弹窗 → 前端列出真实字段总览(不靠 agent)')
+  assert(askedNew && submitClicked === true, '兜底: 点"新增"后给「确认提交」卡,确认即真提交')
+  dialogShown = false
 
   // ---- 全系统页面地图解析(整系统接入 / 防 404 / 修 bug#2)----
   const routers = [
