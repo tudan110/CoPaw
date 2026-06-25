@@ -679,6 +679,24 @@ function assert(cond, msg) {
       exArrow.payload.click === '搜索',
     '转译(真实⑧ key+箭头): - fill: 搜索框 → 主机 / - click: 搜索 全抠出'
   )
+  // 真实⑨(联调实采):合法 JSON 但用 actions[] 数组(type/field/target)
+  const exJsonActs = extractOperateAny(
+    'x\n```qwenpaw:operate\n{ "actions": [ { "type": "fill", "field": "关键词", "value": "主机" }, { "type": "click", "target": "搜索" } ] }\n```'
+  )
+  assert(
+    exJsonActs &&
+      exJsonActs.payload.fill &&
+      exJsonActs.payload.fill[0].label === '关键词' &&
+      exJsonActs.payload.fill[0].value === '主机' &&
+      exJsonActs.payload.click === '搜索',
+    '转译(真实⑨ JSON actions[]): {type:fill/field/value}+{type:click/target} → fill+click'
+  )
+  // 真实⑩(联调实采):{action:"click", target:"新增"} —— target 是按钮不是页面,绝不能当 navigate
+  const exJsonAct = extractOperateAny('x\n```qwenpaw:operate\n{ "action": "click", "target": "新增" }\n```')
+  assert(
+    exJsonAct && exJsonAct.payload.click === '新增' && !exJsonAct.payload.navigate,
+    '转译(真实⑩ JSON action+target): click 的 target=新增 → click(不误当 navigate)'
+  )
   // 普通对话不应被误解析成操作(extractOperate 严格 fence;Any 仅操作模式用)
   assert(
     extractOperate('好的，日志中心可以在左侧菜单找到，您直接点进去就行。') === null,
