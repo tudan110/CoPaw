@@ -497,7 +497,10 @@ function assert(cond, msg) {
     '    detail: true\n' +
     '```'
   const exYaml = extractOperate('好的。\n' + yamlBlock)
-  assert(exYaml && exYaml.payload && exYaml.payload.navigate === '工单管理', 'loose: YAML 抠出 navigate=工单管理')
+  assert(
+    exYaml && exYaml.payload && exYaml.payload.navigate === '待办工单管理',
+    'loose: YAML 把 filter(待办)拼进页面名 → 待办工单管理'
+  )
   assert(
     exYaml &&
       exYaml.payload.row &&
@@ -506,6 +509,15 @@ function assert(cond, msg) {
     'loose: YAML 抠出 row{index:2, click:详情}'
   )
   assert(exYaml && exYaml.payload.risk === 'query', 'loose: 只读默认 risk=query(可自动执行)')
+
+  // ---- 防 404:navigate 解析不到真实页面时,绝不跳转、中止 ----
+  let pushed404 = null
+  const res404 = await runner.runOperate(
+    { mode: 'current', navigate: '不存在的页面', row: { index: 1, click: '详情' }, risk: 'query' },
+    { router: { currentRoute: { path: '/x' }, push: (p) => (pushed404 = p) }, resolvePath: () => '' }
+  )
+  assert(res404 && res404.ok === false && res404.reason === 'page-not-resolved', 'navigate: 解析不到则中止')
+  assert(pushed404 === null, 'navigate: 解析不到时绝不跳转(防 404)')
 
   console.log(failed === 0 ? '\nFRONTEND-EXECUTOR-SELFTEST: PASS' : `\nFRONTEND-EXECUTOR-SELFTEST: FAIL (${failed})`)
   process.exitCode = failed === 0 ? 0 : 1
