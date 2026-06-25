@@ -1,7 +1,7 @@
 // 操作模式前端执行器自测(无框架、无网络):最小假 DOM + 桩光标,真实跑
 // runner.run(),验证 C 方案的关键行为:跳转 → 开新增弹窗 → 预填 model →
 // 不自动提交。前端模块由 run.py 拷进 ./_fe/(并补 .js 扩展名)后运行。
-import { extractAction, extractOperate } from './_fe/action.js'
+import { extractAction, extractOperate, normalizeOperate, canonicalizeOperate } from './_fe/action.js'
 import { registerPage } from './_fe/operator/operableBus.js'
 import runner from './_fe/operator/runner.js'
 import { describePage } from './_fe/operator/pageSchema.js'
@@ -518,6 +518,26 @@ function assert(cond, msg) {
   )
   assert(res404 && res404.ok === false && res404.reason === 'page-not-resolved', 'navigate: 解析不到则中止')
   assert(pushed404 === null, 'navigate: 解析不到时绝不跳转(防 404)')
+
+  // ---- 转译层:canonicalize 把各种走样掰成标准 schema + 校验 ----
+  const c1 = canonicalizeOperate({ row: 1, button: '流转记录', risk: 'query' })
+  assert(
+    c1.ok && c1.payload.row && c1.payload.row.index === 1 && c1.payload.row.click === '流转记录',
+    '转译: row数字+button别名 → row{index:1,click:流转记录}'
+  )
+  const c2 = canonicalizeOperate({ mode: 'current', risk: 'query' })
+  assert(c2.ok === false, '转译: 没有任何操作 → 校验不过(ok:false)')
+  const c3 = canonicalizeOperate({ row: { index: 2, click: '删除' } })
+  assert(c3.ok && c3.payload.risk === 'delete', '转译: 按"删除"文案推断 risk=delete')
+  const c4 = normalizeOperate('not json at all 乱写一通')
+  assert(c4.ok === false, '转译: 彻底没结构 → ok:false(交二次转译/回问,不乱跑)')
+  const nlBlock =
+    '```qwenpaw:operate\nsteps:\n  - navigate: 工单管理\n  - operate: |\n      定位列表中第3条记录,点击该行进入详情\n```'
+  const exNl = extractOperate('好的。\n' + nlBlock)
+  assert(
+    exNl && exNl.payload.navigate === '工单管理' && exNl.payload.row && exNl.payload.row.index === 3,
+    '转译: navigate+自然语言"第3条详情" → navigate=工单管理, row.index=3'
+  )
 
   console.log(failed === 0 ? '\nFRONTEND-EXECUTOR-SELFTEST: PASS' : `\nFRONTEND-EXECUTOR-SELFTEST: FAIL (${failed})`)
   process.exitCode = failed === 0 ? 0 : 1
