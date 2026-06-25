@@ -1,7 +1,7 @@
 // 操作模式前端执行器自测(无框架、无网络):最小假 DOM + 桩光标,真实跑
 // runner.run(),验证 C 方案的关键行为:跳转 → 开新增弹窗 → 预填 model →
 // 不自动提交。前端模块由 run.py 拷进 ./_fe/(并补 .js 扩展名)后运行。
-import { extractAction, extractOperate, normalizeOperate, canonicalizeOperate } from './_fe/action.js'
+import { extractAction, extractOperate, extractOperateAny, normalizeOperate, canonicalizeOperate } from './_fe/action.js'
 import { registerPage } from './_fe/operator/operableBus.js'
 import runner from './_fe/operator/runner.js'
 import { describePage, describeForm } from './_fe/operator/pageSchema.js'
@@ -633,6 +633,56 @@ function assert(cond, msg) {
       exB.payload.row.index === 3 &&
       exB.payload.row.click === '查看',
     '转译(真实④本页): action:click+target:row=3,查看 → 无navigate,row{3,查看}'
+  )
+  // 真实⑤(联调实采):agent 写成【无 fence 的 steps 列表】(action/page/ref/value)
+  const exSteps = extractOperateAny(
+    '当前页是待办工单，需要先跳转再搜索 👇\n\nsteps:\n  - action: navigate\n    page: 日志\n  - action: fill\n    ref: 搜索关键词\n    value: "主机"\n  - action: click\n    ref: 搜索'
+  )
+  assert(
+    exSteps &&
+      exSteps.payload.navigate === '日志' &&
+      exSteps.payload.fill &&
+      exSteps.payload.fill[0].label === '搜索关键词' &&
+      exSteps.payload.fill[0].value === '主机' &&
+      exSteps.payload.click === '搜索',
+    '转译(真实⑤无fence steps): navigate+fill(ref/value)+click 全抠出'
+  )
+  // 真实⑥(联调实采):fence 内 navigate + actions 列表 + CSS/Playwright selector 寻址
+  const exActs = extractOperateAny(
+    '先跳转再操作👇\n\n```qwenpaw:operate\nnavigate: 日志中心\nactions:\n  - type: fill\n    selector: input[placeholder*="搜索"] , input[type="search"]\n    value: 主机\n  - type: click\n    selector: button:has-text("搜索")\n```'
+  )
+  assert(
+    exActs &&
+      exActs.payload.navigate === '日志中心' &&
+      exActs.payload.fill &&
+      exActs.payload.fill[0].value === '主机' &&
+      exActs.payload.click === '搜索',
+    '转译(真实⑥actions+selector): 从 has-text/placeholder 抠出"搜索"文字线索'
+  )
+  // 真实⑦:无 fence steps,只 navigate+click(漏洞扫描场景)
+  const exScan = extractOperateAny(
+    'steps:\n  - action: navigate\n    page: 漏洞扫描\n  - action: click\n    ref: 扫描'
+  )
+  assert(
+    exScan && exScan.payload.navigate === '漏洞扫描' && exScan.payload.click === '扫描',
+    '转译(真实⑦无fence): navigate+click(扫描)'
+  )
+  // 真实⑧(联调实采):navigate + steps,步骤用「动作名为 key + 箭头」`- fill: 搜索框 → 主机`
+  const exArrow = extractOperateAny(
+    '正在为您跳转 👇\n\n```qwenpaw:operate\nnavigate: 日志中心\nsteps:\n  - fill: 搜索框 → 主机\n  - click: 搜索\n```'
+  )
+  assert(
+    exArrow &&
+      exArrow.payload.navigate === '日志中心' &&
+      exArrow.payload.fill &&
+      exArrow.payload.fill[0].value === '主机' &&
+      exArrow.payload.click === '搜索',
+    '转译(真实⑧ key+箭头): - fill: 搜索框 → 主机 / - click: 搜索 全抠出'
+  )
+  // 普通对话不应被误解析成操作(extractOperate 严格 fence;Any 仅操作模式用)
+  assert(
+    extractOperate('好的，日志中心可以在左侧菜单找到，您直接点进去就行。') === null,
+    '转译: 普通对话(无 fence)→ extractOperate 不误判'
   )
 
   // ---- L6 批量导入:upload → DataTransfer 注入 el-upload → 高亮确定(写,不自动点)----
