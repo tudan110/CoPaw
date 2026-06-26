@@ -17,6 +17,8 @@
 [![DingTalk](https://img.shields.io/badge/DingTalk-Join_Us-orange.svg)](https://qr.dingtalk.com/action/joingroup?code=v1,k1,OmDlBXpjW+I2vWjKDsjvI9dhcXjGZi3bQiojOq3dlDw=&_dt_no_comment=1&origin=11)
 [![AgentScope Platform](https://img.shields.io/badge/%E2%98%81_AgentScope_Platform-%F0%9F%90%BE_7%2F24_Online_%26_Free-FF6B2B.svg)](https://platform.agentscope.io/)
 
+<a href="https://trendshift.io/repositories/25882" target="_blank"><img src="https://trendshift.io/api/badge/trendshift/repositories/25882/daily" alt="agentscope-ai%2FQwenPaw | Trendshift" style="width: 250px; height: 55px;" width="250" height="55"/></a>
+
 [[ドキュメント](https://qwenpaw.agentscope.io/)] [[English](README.md)] [[中文](README_zh.md)] [[Русский](README_ru.md)]
 
 <p align="center">
@@ -59,17 +61,21 @@
 
 ## ニュース
 
-- [2026-06-11] **AgentScope プラットフォーム公開** — QwenPaw の無料デプロイ、プラグイン共有、Skill マーケットに対応。[今すぐ試す →](https://platform.agentscope.io/)
-
-- [2026-06-10] **v1.1.11 — 無料モデル OAuth & プラグインマーケット** | ゼロコンフィグ無料モデルのワンクリック OAuth 認証、AgentScope Platform 連携プラグインマーケット。
+- [2026-06-17] **v1.1.12 — モデルページ大刷新 & シンプルモード** | Provider 集約による新モデルページデザイン、フラットナビのシンプルモード追加。
 
   | ハイライト | 内容 |
   |-----------|------|
-  | **無料モデル OAuth** | ゼロコンフィグ無料モデル、ワンクリック OAuth 認証。 |
-  | **プラグインマーケット** | AgentScope Platform 連携の新しいプラグインマーケットタブ。 |
-  | **MCP ツールホワイトリスト** | サーバーごとの MCP ツールホワイトリスト、フロントエンドトグル UI 付き。 |
+  | **モデルページ大刷新** | Provider 集約、統一カード UI & レイアウト刷新。 |
+  | **シンプルモード** | フラットナビ、更新時間順セッションリスト。 |
+  | **ノンブロッキングフラッシュ** | 全チャネルで適応型スロットリング。 |
+  | **ターンごとのトークン使用量** | ターンごとのトークン＆コンテキスト使用量ポップオーバー。 |
+  | **デスクトップポート永続化** | 再起動後もバックエンドポートを維持。 |
 
-  その他：自己進化スキル作成、バックエンド起動最適化、Feishu グループ共有、QQ QR コード認証。[v1.1.11 リリースノート →](https://qwenpaw.agentscope.io/release-notes#v1.1.11)
+  その他：ワイドモード、シンタックスハイライト、Langfuse エージェントループグルーピング、Gemini ツールスキーマ修正。[v1.1.12 リリースノート →](https://qwenpaw.agentscope.io/release-notes#v1.1.12)
+
+- [2026-06-11] **AgentScope プラットフォーム公開** — QwenPaw の無料デプロイ、プラグイン共有、Skill マーケットに対応。[今すぐ試す →](https://platform.agentscope.io/)
+
+- [2026-06-10] **v1.1.11** — 無料モデル OAuth、プラグインマーケット、MCP ツールホワイトリスト。[v1.1.11 リリースノート →](https://qwenpaw.agentscope.io/release-notes#v1.1.11)
 
 - [2026-06-01] **v1.1.10** — サブエージェント生成、ディレクトリを開く、Tencent Yuanbao チャネル。[v1.1.10 リリースノート →](https://qwenpaw.agentscope.io/release-notes#v1.1.10)
 
@@ -432,23 +438,14 @@ GitHubでQwenPawにスターを付けて、新しいリリースの通知を即�
 | ------------------------ | -------------------------------------------------------------------------------------------- | ------------ |
 | **横展開**               | より多くのチャネル、モデル、スキル、MCP など — **コミュニティの貢献歓迎**                    | 貢献者募集中 |
 | **既存機能の拡張・改善** | 表示の最適化、ダウンロードヒント、Windows パス互換など — **コミュニティの貢献歓迎**          | 貢献者募集中 |
-| **クライアント体験**     | インストール・アップデート・パッケージングの最適化                                           | 進行中       |
 | **モデル**               | マルチモデル切り替え                                                                         | 進行中       |
-|                          | OAuth                                                                                        | 計画中       |
-|                          | Response API                                                                                 | 計画中       |
-| **ワークスペース**       | Sandbox 連携のファイルアクセス制御                                                           | 進行中       |
-|                          | サブディレクトリ分割（設定・本番ファイルなど）                                               | 計画中       |
-| **Coding 能力**          | LSP、専用 Prompt、ワークスペースバージョン管理、実行環境などの関連インフラ                   | 進行中       |
-|                          | 軽量ネイティブ API                                                                           | 計画中       |
-|                          | ツール自己進化                                                                               | 計画中       |
-|                          | Claude Code など既存 Agent との互換                                                          | 計画中       |
-| **マルチエージェント**   | グループチャット                                                                             | 計画中       |
-|                          | Subagent の可視化                                                                            | 計画中       |
-|                          | HiClaw エンタープライズ機能                                                                  | 計画中       |
-| **コンテキスト管理**     | 個人ナレッジベース                                                                           | 進行中       |
-|                          | ユーザー選択による圧縮（細粒度制御）                                                         | 計画中       |
+| **Browser-use**          | Chrome 拡張機能のサポート                                                                    | 進行中       |
+| **長期記憶**             | 個人ナレッジベース                                                                           | 進行中       |
 | **QwenPaw アプリケーション** | QwenPaw Creator                                                                           | 進行中       |
 |                          | QwenPaw Insight                                                                              | 進行中       |
+| **マルチエージェント**   | Claude Code など既存 Agent との互換                                                          | 計画中       |
+|                          | グループチャット                                                                             | 計画中       |
+|                          | Subagent の可視化                                                                            | 計画中       |
 
 _状態説明：**進行中** — 積極的に開発中；**計画中** — キューまたは設計段階、貢献も歓迎；**貢献者募集中** — コミュニティの参加を強く推奨。_
 
