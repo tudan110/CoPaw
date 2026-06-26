@@ -4,7 +4,7 @@
 import { extractAction, extractOperate, extractOperateAny, normalizeOperate, canonicalizeOperate } from './_fe/action.js'
 import { registerPage } from './_fe/operator/operableBus.js'
 import runner, { resolveDateRange, actionGroundsInSchema } from './_fe/operator/runner.js'
-import { describePage, describeForm } from './_fe/operator/pageSchema.js'
+import { describePage, describeForm, isGuidedTaskPage, describeSteps } from './_fe/operator/pageSchema.js'
 import { pageLeaves, resolvePath as resolveLeafPath, pageCandidates } from './_fe/operator/pageMap.js'
 
 class FakeEl {
@@ -1209,6 +1209,64 @@ function assert(cond, msg) {
     actionGroundsInSchema({ row: { click: 'X' } }, { rowActions: ['指标阈值'] }) === true,
     'ground: 唯一行按钮 → 命中(无歧义)'
   )
+
+  // ---- 引导式多步任务流(同 App 向导/导入页):落地→总览note→上传注入→终态确认 ----
+  assert(
+    isGuidedTaskPage(new FakeEl({ q: { '.el-step': [new FakeEl({})] } })) === true,
+    'isGuidedTaskPage: 有 .el-step(向导)→ 判为任务页'
+  )
+  assert(
+    isGuidedTaskPage(new FakeEl({ q: { '.el-upload': [new FakeEl({})] } })) === true,
+    'isGuidedTaskPage: 有 .el-upload(导入)→ 判为任务页'
+  )
+  assert(
+    isGuidedTaskPage(new FakeEl({ q: { '.el-form': [new FakeEl({})], button: [new FakeEl({ text: '查询' })] } })) === false,
+    'isGuidedTaskPage: 普通搜索表单页 → 不误判(不骚扰)'
+  )
+  // 向导 fixture:步骤 + 上传 + 导入(没 select,避免下拉机制干扰,聚焦编排)
+  const gStep = new FakeEl({ q: { '.el-step__title': [new FakeEl({ text: '文件上传' })] } })
+  const gUpInput = new FakeEl({})
+  gUpInput.dispatchEvent = () => {}
+  const gUpload = new FakeEl({ q: { '.el-upload input[type=file]': [gUpInput], 'input[type=file]': [gUpInput] } })
+  let gImported = false
+  const gImpBtn = new FakeEl({ text: '导入' })
+  gImpBtn.click = () => {
+    gImported = true
+  }
+  const gWizEl = new FakeEl({
+    q: {
+      '.el-step': [gStep],
+      '.el-upload': [gUpload],
+      'input[type="file"]': [gUpInput], // isGuidedTaskPage 用(带引号)
+      '.el-upload input[type=file]': [gUpInput], // injectFile 用(无引号)
+      'input[type=file]': [gUpInput],
+      button: [gImpBtn]
+    }
+  })
+  registerPage({ $options: { name: 'WizardX' }, $el: gWizEl })
+  let gNote = null
+  let gAskedUpload = null
+  let gAskedSubmit = null
+  await runner.runOperate(
+    { mode: 'current', page: 'WizardX', title: '批量导入' },
+    {
+      note: (t) => {
+        gNote = t
+      },
+      requestUpload: (o) => {
+        gAskedUpload = o
+        return Promise.resolve({ name: 'data.xlsx' })
+      },
+      requestSubmit: (o) => {
+        gAskedSubmit = o
+        return Promise.resolve(true)
+      }
+    }
+  )
+  assert(/引导|步骤|上传|批量导入/.test(gNote || ''), '引导流: 落地任务页 → 发总览 note(要做哪几件事)')
+  assert(gAskedUpload && gUpInput.files && gUpInput.files.length === 1, '引导流: 上传文件注入页面 el-upload')
+  assert(gAskedSubmit && gImported === true, '引导流: 终态「导入」→ 确认卡 → 真点')
+  assert(describeSteps(gWizEl).length === 1, 'describeSteps: 抽到向导步骤')
 
   console.log(failed === 0 ? '\nFRONTEND-EXECUTOR-SELFTEST: PASS' : `\nFRONTEND-EXECUTOR-SELFTEST: FAIL (${failed})`)
   process.exitCode = failed === 0 ? 0 : 1
