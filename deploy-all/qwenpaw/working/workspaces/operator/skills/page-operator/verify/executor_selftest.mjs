@@ -543,6 +543,33 @@ function assert(cond, msg) {
   const d7 = resolveDateRange('近7天')
   assert(d7 && ymdRe.test(d7[0]) && ymdRe.test(d7[1]) && d7[0] < d7[1], 'date相对: "近7天" → 区间')
   assert(resolveDateRange('随便不是时间') === null, 'date相对: 非时间词 → null(走原逻辑)')
+  // "近三天/近3天/最近十天":中文数字也认
+  const d3 = resolveDateRange('近三天')
+  const d3b = resolveDateRange('近3天')
+  assert(d3 && d3b && d3[0] === d3b[0] && d3[1] === d3b[1], 'date相对: "近三天"="近3天"(中文数字)')
+  assert(resolveDateRange('最近十天') !== null, 'date相对: "最近十天" → 区间(十=10)')
+
+  // ---- 原生 datetime-local 两个框(本平台日志页结构)+ "近三天" → 起补T00:00、止补T23:59 ----
+  const startInput = new FakeEl({})
+  startInput.type = 'datetime-local'
+  startInput.dispatchEvent = () => {}
+  const endInput = new FakeEl({})
+  endInput.type = 'datetime-local'
+  endInput.dispatchEvent = () => {}
+  const dateForm = new FakeEl({
+    q: { 'input[type="date"], input[type="datetime-local"]': [startInput, endInput] }
+  })
+  const dateVm = { $options: { name: 'LogDate' }, $el: new FakeEl({ q: { '.queryForm': [dateForm] } }) }
+  registerPage(dateVm)
+  await runner.runOperate(
+    { mode: 'current', page: 'LogDate', fill: [{ label: '时间', value: '近三天' }], risk: 'query' },
+    {}
+  )
+  assert(
+    /^\d{4}-\d{2}-\d{2}T00:00$/.test(startInput.value) && /^\d{4}-\d{2}-\d{2}T23:59$/.test(endInput.value),
+    'date原生: "近三天" 填进两个 datetime-local(起T00:00/止T23:59)'
+  )
+  assert(startInput.value.slice(0, 10) < endInput.value.slice(0, 10), 'date原生: 起 < 止')
 
   // ---- 跨页:runOperate 按页面名解析路由 → 跳转 → 再就地操作(点第2行详情)----
   let pushedTo = null
