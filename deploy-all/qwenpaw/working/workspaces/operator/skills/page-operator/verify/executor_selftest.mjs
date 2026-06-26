@@ -3,7 +3,7 @@
 // 不自动提交。前端模块由 run.py 拷进 ./_fe/(并补 .js 扩展名)后运行。
 import { extractAction, extractOperate, extractOperateAny, normalizeOperate, canonicalizeOperate } from './_fe/action.js'
 import { registerPage } from './_fe/operator/operableBus.js'
-import runner from './_fe/operator/runner.js'
+import runner, { resolveDateRange } from './_fe/operator/runner.js'
 import { describePage, describeForm } from './_fe/operator/pageSchema.js'
 import { pageLeaves, resolvePath as resolveLeafPath } from './_fe/operator/pageMap.js'
 
@@ -528,6 +528,22 @@ function assert(cond, msg) {
   assert(rIn1.value === '2026-06-23' && rIn2.value === '2026-06-24', 'date: 日期范围两端都填了')
   assert(picked6 === '请假', 'select: 下拉按值自动选中「请假」')
 
+  // ---- 相对时间换算:本周/今天/近7天 → 具体日期范围(修"时间没解析") ----
+  const ymdRe = /^\d{4}-\d{2}-\d{2}$/
+  const dToday = resolveDateRange('今天')
+  assert(
+    dToday && ymdRe.test(dToday[0]) && dToday[0] === dToday[1],
+    'date相对: "今天" → [今日,今日] 同一天 YYYY-MM-DD'
+  )
+  const dWeek = resolveDateRange('本周')
+  assert(
+    dWeek && ymdRe.test(dWeek[0]) && ymdRe.test(dWeek[1]) && dWeek[0] <= dWeek[1],
+    'date相对: "本周" → [周一,周日] 合法日期范围'
+  )
+  const d7 = resolveDateRange('近7天')
+  assert(d7 && ymdRe.test(d7[0]) && ymdRe.test(d7[1]) && d7[0] < d7[1], 'date相对: "近7天" → 区间')
+  assert(resolveDateRange('随便不是时间') === null, 'date相对: 非时间词 → null(走原逻辑)')
+
   // ---- 跨页:runOperate 按页面名解析路由 → 跳转 → 再就地操作(点第2行详情)----
   let pushedTo = null
   const navRouter = {
@@ -568,7 +584,8 @@ function assert(cond, msg) {
   }
   registerPage({
     $options: { name: 'ReadyPage' },
-    $el: new FakeEl({ q: { button: [new FakeEl({ text: 'x' })] } })
+    // navigateFor 就绪判据看 .el-table/.el-form/.queryForm(不再看泛 button)
+    $el: new FakeEl({ q: { '.el-form': [new FakeEl({})], button: [new FakeEl({ text: 'x' })] } })
   })
   const navOnly = await runner.navigateFor('随便页', {
     router: navOnlyRouter,
