@@ -630,6 +630,64 @@ function assert(cond, msg) {
   )
   assert(scanDone === true, '选项兜底: 用户选「批量执行」→ 真点中执行')
 
+  // ---- 贴【真实】日志页结构(LogList.vue:纯 input/button/table、无 el-*)端到端 ----
+  const realKw = new FakeEl({})
+  realKw.type = 'text'
+  realKw.value = ''
+  realKw.getAttribute = (a) => (a === 'placeholder' ? '搜索关键词' : a === 'type' ? 'text' : null)
+  realKw.dispatchEvent = () => {}
+  const realFrom = new FakeEl({})
+  realFrom.type = 'datetime-local'
+  realFrom.getAttribute = (a) => (a === 'type' ? 'datetime-local' : null)
+  realFrom.dispatchEvent = () => {}
+  const realTo = new FakeEl({})
+  realTo.type = 'datetime-local'
+  realTo.getAttribute = (a) => (a === 'type' ? 'datetime-local' : null)
+  realTo.dispatchEvent = () => {}
+  let realSearched = false
+  const realBtn = new FakeEl({ text: '检索查询' })
+  realBtn.click = () => {
+    realSearched = true
+  }
+  const realCopy = new FakeEl({ text: '复制' })
+  realCopy.closest = (sel) => (sel === 'table' ? {} : null)
+  const realTr = new FakeEl({ q: { button: [realCopy], 'button, a': [realCopy] } })
+  const realTable = new FakeEl({ q: { 'tbody tr': [realTr] } })
+  const realLogEl = new FakeEl({
+    q: {
+      input: [realKw, realFrom, realTo],
+      'input, textarea': [realKw, realFrom, realTo],
+      'input[type="date"], input[type="datetime-local"]': [realFrom, realTo],
+      button: [realBtn],
+      table: [realTable]
+    }
+  })
+  const realLogVm = { $options: { name: 'Construction' }, $el: realLogEl }
+  const rlsc = describePage(realLogVm)
+  assert(
+    rlsc.search.some((s) => s.label === '搜索关键词') && rlsc.search.some((s) => s.type === 'date'),
+    '真实日志页: 感知到「搜索关键词」+ 时间(date)'
+  )
+  assert(rlsc.actions.some((a) => a.text === '检索查询'), '真实日志页: 感知到「检索查询」按钮')
+  assert(rlsc.rowActions.indexOf('复制') !== -1, '真实日志页: 感知到行内「复制」(排除出工具栏)')
+  registerPage(realLogVm)
+  await runner.runOperate(
+    {
+      mode: 'current',
+      page: 'Construction',
+      fill: [{ label: '关键词', value: '主机' }, { label: '时间', value: '近三天' }],
+      click: '搜索',
+      risk: 'query'
+    },
+    {}
+  )
+  assert(realKw.value === '主机', '真实日志页: 关键词「主机」填进搜索框(纯 input)')
+  assert(
+    /^\d{4}-\d{2}-\d{2}T00:00$/.test(realFrom.value) && /T23:59$/.test(realTo.value),
+    '真实日志页: 近三天填进两个 datetime-local(起T00:00/止T23:59)'
+  )
+  assert(realSearched === true, '真实日志页: click「搜索」同义命中「检索查询」并触发检索')
+
   // ---- 跨页:runOperate 按页面名解析路由 → 跳转 → 再就地操作(点第2行详情)----
   let pushedTo = null
   const navRouter = {
