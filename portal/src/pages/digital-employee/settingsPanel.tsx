@@ -15,6 +15,7 @@ import {
   qimingSettingsApi,
   xingchenSettingsApi,
   zgopsSettingsApi,
+  n9eSettingsApi,
   DIAGNOSIS_TOKEN_CLEAR,
   type NotificationChannelScopeConfig,
   type NotificationChannelSettings,
@@ -278,7 +279,43 @@ const SETTINGS_TABS = [
     iconClass: "fa-database",
     description: "zgops CMDB 连接与资源导入 LLM 池",
   },
+  {
+    id: "n9e",
+    label: "日志",
+    iconClass: "fa-file-lines",
+    description: "夜莺（N9E）日志查询连接",
+  },
 ] as const;
+
+const N9E_FIELDS: ProviderFieldDesc[] = [
+  {
+    key: "n9e_api_base_url",
+    label: "N9E 地址（base_url）",
+    hint: "夜莺日志网关 base URL。",
+    placeholder: "http://host:17001",
+  },
+  {
+    key: "n9e_user_token",
+    label: "User Token",
+    sensitive: true,
+    hint: "夜莺访问令牌，留空则不修改。",
+  },
+  {
+    key: "n9e_log_datasource_id",
+    label: "日志数据源 ID",
+    hint: "datasource id（默认 1）。",
+  },
+  {
+    key: "n9e_log_index",
+    label: "日志索引",
+    hint: "如 casaos-syslog-*。",
+  },
+  {
+    key: "n9e_log_timestamp_field",
+    label: "时间字段",
+    hint: "日志时间戳字段（默认 @timestamp）。",
+  },
+];
 
 const ZGOPS_FIELDS: ProviderFieldDesc[] = [
   {
@@ -1662,6 +1699,15 @@ export function SettingsPanel() {
                   />
                   <ResourceImportLlmSection />
                 </>
+              ) : null}
+
+              {activeTab === "n9e" ? (
+                <ProviderSettingsSection
+                  api={n9eSettingsApi}
+                  title="夜莺日志（N9E）连接"
+                  description="夜莺日志网关地址、令牌、数据源与索引。供日志隐患检测、安全扫描、日志查询等技能使用，修改即时生效。"
+                  fields={N9E_FIELDS}
+                />
               ) : null}
 
               {activeTab === "notifications" ? (

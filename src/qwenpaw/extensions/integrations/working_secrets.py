@@ -290,6 +290,40 @@ def refresh_resource_import_llm_environ(
     materialize_resource_import_llm_to_environ(force=True, db_path=db_path)
 
 
+def materialize_n9e_to_environ(
+    *,
+    force: bool = False,
+    db_path: Optional[Path] = None,
+) -> None:
+    """Push the Nightingale (N9E) log connection into ``os.environ``.
+
+    The log skills read ``N9E_*`` via ``os.getenv`` (env preferred over the
+    ``.env`` fallback). Same precedence as :func:`materialize_inoe_to_environ`.
+    """
+    try:
+        from qwenpaw.extensions.api import n9e_settings_store as n9e
+    except Exception:  # noqa: BLE001 - never break secret loading
+        return
+
+    kwargs = {} if db_path is None else {"db_path": db_path}
+    for key, spec in n9e.N9E_FIELD_SPECS.items():
+        try:
+            value = n9e.resolve_text(spec.env_var, **kwargs).strip()
+        except Exception:  # noqa: BLE001 - one bad field must not block rest
+            continue
+        if not value:
+            continue
+        if force or n9e.has_override(key, **kwargs):
+            os.environ[spec.env_var] = value
+        else:
+            os.environ.setdefault(spec.env_var, value)
+
+
+def refresh_n9e_environ(*, db_path: Optional[Path] = None) -> None:
+    """Re-materialise N9E settings after a save/reset."""
+    materialize_n9e_to_environ(force=True, db_path=db_path)
+
+
 def ensure_working_secrets_loaded() -> None:
     """Inject ``WORKING_DIR/secrets/<file>`` into ``os.environ`` once.
 
@@ -309,3 +343,4 @@ def ensure_working_secrets_loaded() -> None:
     materialize_alarm_analyst_to_environ(force=False)
     materialize_zgops_to_environ(force=False)
     materialize_resource_import_llm_to_environ(force=False)
+    materialize_n9e_to_environ(force=False)
