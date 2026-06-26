@@ -3,9 +3,9 @@
 // 不自动提交。前端模块由 run.py 拷进 ./_fe/(并补 .js 扩展名)后运行。
 import { extractAction, extractOperate, extractOperateAny, normalizeOperate, canonicalizeOperate } from './_fe/action.js'
 import { registerPage } from './_fe/operator/operableBus.js'
-import runner, { resolveDateRange, actionGroundsInSchema } from './_fe/operator/runner.js'
+import runner, { resolveDateRange, actionGroundsInSchema, deriveToolbarAction, isBareWrite } from './_fe/operator/runner.js'
 import { describePage, describeForm, isGuidedTaskPage, describeSteps } from './_fe/operator/pageSchema.js'
-import { pageLeaves, resolvePath as resolveLeafPath, pageCandidates } from './_fe/operator/pageMap.js'
+import { pageLeaves, resolvePath as resolveLeafPath, resolvePathConfidence, pageCandidates } from './_fe/operator/pageMap.js'
 
 class FakeEl {
   constructor({ text = '', q = {}, style = {}, offsetParent = {}, className = '' } = {}) {
@@ -1267,6 +1267,69 @@ function assert(cond, msg) {
   assert(gAskedUpload && gUpInput.files && gUpInput.files.length === 1, '引导流: 上传文件注入页面 el-upload')
   assert(gAskedSubmit && gImported === true, '引导流: 终态「导入」→ 确认卡 → 真点')
   assert(describeSteps(gWizEl).length === 1, 'describeSteps: 抽到向导步骤')
+
+  // ===== 闭环"navigate-only 业务意图"类 + 加固(A1/A2/R3/R4/R6)=====
+
+  // R6:无动作字段的 payload 不该"真空命中"(否则 navigate-only 误走快路、执行成空操作后停手)
+  assert(actionGroundsInSchema({}, { actions: [{ text: '新增' }] }) === false, 'R6: 空 payload 不再真空命中(显式 false)')
+  assert(actionGroundsInSchema({ mode: 'current' }, { actions: [{ text: '新增' }] }) === false, 'R6: 只有 mode 的 payload 不命中')
+  assert(actionGroundsInSchema({ open: '新增任务' }, { actions: [{ text: '新增' }] }) === true, 'R6: 有动作仍按同义词正常命中(新增任务⊃新增)')
+
+  // A1 deriveToolbarAction:据【用户原话目标 + 真实工具栏】推动作(纯前端,不调 LLM)
+  const a1Scan = { search: [], actions: [{ text: '查询' }, { text: '新增' }, { text: '批量执行' }], rowActions: [] }
+  const a1d = deriveToolbarAction('帮我进行漏洞扫描', a1Scan)
+  assert(a1d && a1d.open === '新增' && a1d.risk === 'create', 'A1: "进行漏洞扫描"+页面有新增 → open 新增(开表单引导,通用)')
+  const a1direct = deriveToolbarAction('我想检索一下日志', { actions: [{ text: '检索查询' }, { text: '重置' }] })
+  assert(a1direct && a1direct.click === '检索查询' && a1direct.risk === 'query', 'A1: 目标命中真实工具栏按钮(检索↔检索查询)→ click')
+  const a1exp = deriveToolbarAction('帮我导出', { actions: [{ text: '导出' }, { text: '新增' }] })
+  assert(a1exp && a1exp.click === '导出', 'A1: "导出"先被导出按钮接住,不误开新增')
+  assert(deriveToolbarAction('随便看看', { actions: [{ text: '重置' }] }) === null, 'A1: 无动作意图/无新增按钮 → null(交 reground 兜)')
+  assert(deriveToolbarAction('', a1Scan) === null && deriveToolbarAction('x', { actions: [] }) === null, 'A1: 空目标/空工具栏 → null')
+
+  // R2 助手 isBareWrite:直接 click/row 的写需先确认;open/upload(自带提交卡)不算裸写
+  assert(isBareWrite({ click: '删除', risk: 'delete' }) === true, 'R2: click 删除(delete)= 裸写(需确认卡)')
+  assert(isBareWrite({ row: { click: '删除' }, risk: 'delete' }) === true, 'R2: row 删除 = 裸写')
+  assert(isBareWrite({ open: '新增', risk: 'create' }) === false, 'R2: open 新增有表单提交卡兜底 → 非裸写')
+  assert(isBareWrite({ click: '查询', risk: 'query' }) === false, 'R2: 只读 click 非裸写')
+
+  // R3 resolvePathConfidence:精确/包含(exact)vs 字符重合打分(fuzzy)
+  const r3routers = [
+    { path: '/scan', component: 'View', meta: { title: '定时扫描' } },
+    { path: '/log', component: 'View', meta: { title: '日志检索' } }
+  ]
+  const rcExact = resolvePathConfidence(r3routers, '定时扫描')
+  assert(rcExact.path === '/scan' && rcExact.exact === true, 'R3: 精确标题 → exact:true(可信直接跳)')
+  const rcFuzzy = resolvePathConfidence(r3routers, '漏洞扫描')
+  assert(rcFuzzy.path === '/scan' && rcFuzzy.exact === false, 'R3: "漏洞扫描"仅字符重合命中"定时扫描" → exact:false(应先确认)')
+  assert(resolvePathConfidence(r3routers, '不沾边xyz').path === '', 'R3: 完全不沾边 → 空路径')
+
+  // R4 describeForm visibleOnly:跳过隐藏 tab(offsetParent===null)的字段
+  const mkItem = (label, inp, hidden) =>
+    new FakeEl({
+      offsetParent: hidden ? null : {},
+      q: {
+        '.el-form-item__label': [new FakeEl({ text: label })],
+        input: [inp],
+        '.el-form-item__content input, .el-form-item__content textarea': [inp]
+      }
+    })
+  const r4form = new FakeEl({ q: { '.el-form-item': [mkItem('起始地址', new FakeEl({}), false), mkItem('SNMP端口', new FakeEl({}), true)] } })
+  assert(describeForm(r4form).length === 2, 'R4: 默认 describeForm 返回全部字段(2)')
+  const r4vis = describeForm(r4form, { visibleOnly: true })
+  assert(r4vis.length === 1 && r4vis[0].label === '起始地址', 'R4: visibleOnly 跳过隐藏 tab 字段(只剩可见的 起始地址)')
+
+  // A2 _fillDialogFields 只逐项引导【必填+可见】字段(open 表单路径的核心:对话化填表)
+  const a2Req = mkItem('目标地址', new FakeEl({}), false)
+  a2Req.className = 'is-required'
+  const a2Dialog = new FakeEl({ q: { '.el-form-item': [a2Req, mkItem('备注', new FakeEl({}), false)] } })
+  const a2Asked = []
+  await runner._fillDialogFields(
+    {},
+    a2Dialog,
+    { requestInput: (f) => { a2Asked.push(f.label); return Promise.resolve('10.0.0.1') } },
+    { requiredOnly: true }
+  )
+  assert(a2Asked.length === 1 && a2Asked[0] === '目标地址', 'A2: open 表单只逐项引导【必填】(目标地址),不骚扰选填(备注)')
 
   console.log(failed === 0 ? '\nFRONTEND-EXECUTOR-SELFTEST: PASS' : `\nFRONTEND-EXECUTOR-SELFTEST: FAIL (${failed})`)
   process.exitCode = failed === 0 ? 0 : 1
