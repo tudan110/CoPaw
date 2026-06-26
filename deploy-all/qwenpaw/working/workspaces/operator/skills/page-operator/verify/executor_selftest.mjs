@@ -3,7 +3,7 @@
 // 不自动提交。前端模块由 run.py 拷进 ./_fe/(并补 .js 扩展名)后运行。
 import { extractAction, extractOperate, extractOperateAny, normalizeOperate, canonicalizeOperate } from './_fe/action.js'
 import { registerPage } from './_fe/operator/operableBus.js'
-import runner, { resolveDateRange } from './_fe/operator/runner.js'
+import runner, { resolveDateRange, actionGroundsInSchema } from './_fe/operator/runner.js'
 import { describePage, describeForm } from './_fe/operator/pageSchema.js'
 import { pageLeaves, resolvePath as resolveLeafPath, pageCandidates } from './_fe/operator/pageMap.js'
 
@@ -1148,6 +1148,67 @@ function assert(cond, msg) {
     'pageMap: 父菜单名永不解析成容器路径(只会是叶子或空,杜绝 404)'
   )
   assert(resolveLeafPath(routers, '查无此页xyz') === '', 'pageMap: 解析不到 → 空串(上层据此中止跳转)')
+
+  // ---- 行内"定位+动作"归一(修指标阈值bug)+ 永不"完成一半" + actionGroundsInSchema ----
+  // (A) 转译:row{match} + 顶层 click → 折叠进 row.click("指标阈值"不丢、不默认"详情")
+  const exFold = extractOperateAny(
+    'x\n```qwenpaw:operate\n{"mode":"current","row":{"match":"硬件设备 AC"},"click":"指标阈值"}\n```'
+  )
+  assert(
+    exFold && exFold.payload.row && exFold.payload.row.click === '指标阈值' && !exFold.payload.click,
+    '转译: row+顶层click → 折叠进 row.click(指标阈值不丢)'
+  )
+  // (B) 行内永不半途:该行唯一按钮"指标阈值",agent 说的"详情"匹配不上 → 直接点这唯一按钮
+  let metricClicked = false
+  const metricBtn = new FakeEl({ text: '指标阈值' })
+  metricBtn.click = () => {
+    metricClicked = true
+  }
+  const acRow = new FakeEl({ text: '硬件设备 AC', q: { button: [metricBtn] } })
+  const acTable = new FakeEl({ q: { '.el-table__row': [new FakeEl({ text: '物理机', q: { button: [new FakeEl({ text: '指标阈值' })] } }), acRow] } })
+  registerPage({ $options: { name: 'Threshold' }, $el: new FakeEl({ q: { '.el-table': [acTable] } }) })
+  await runner.runOperate(
+    { mode: 'current', page: 'Threshold', row: { match: '硬件设备 AC', click: '详情' }, risk: 'query' },
+    {}
+  )
+  assert(metricClicked === true, '行内永不半途: 行唯一按钮"指标阈值"→agent说"详情"也直接点中')
+  // (C) 行内多按钮没匹配 → 列出该行真实按钮让用户选
+  let rowPick = null
+  const editB = new FakeEl({ text: '编辑' })
+  const delB = new FakeEl({ text: '删除' })
+  delB.click = () => {
+    rowPick = '删除'
+  }
+  const r2 = new FakeEl({ text: '行X', q: { button: [editB, delB] } })
+  registerPage({ $options: { name: 'MultiBtn' }, $el: new FakeEl({ q: { '.el-table': [new FakeEl({ q: { '.el-table__row': [r2] } })] } }) })
+  let rowOffered = null
+  await runner.runOperate(
+    { mode: 'current', page: 'MultiBtn', row: { match: '行X', click: '归档' }, risk: 'query' },
+    {
+      requestChoice: (f, opts) => {
+        rowOffered = opts
+        return Promise.resolve('删除')
+      }
+    }
+  )
+  assert(
+    rowOffered && rowOffered.indexOf('编辑') !== -1 && rowOffered.indexOf('删除') !== -1,
+    '行内永不半途: 多按钮没匹配 → 列出该行真实按钮'
+  )
+  assert(rowPick === '删除', '行内永不半途: 选"删除"→真点中')
+  // (D) actionGroundsInSchema:快路命中判定(决定直接执行 vs reground 语义决策)
+  assert(
+    actionGroundsInSchema({ click: '扫描' }, { actions: [{ text: '开始扫描' }, { text: '重置' }] }) === true,
+    'ground: "扫描"⊂"开始扫描" → 命中(快路直接执行)'
+  )
+  assert(
+    actionGroundsInSchema({ click: '扫描' }, { actions: [{ text: '新增' }, { text: '批量执行' }] }) === false,
+    'ground: "扫描" vs 新增/批量执行 → 不命中(走 reground 语义决策)'
+  )
+  assert(
+    actionGroundsInSchema({ row: { click: 'X' } }, { rowActions: ['指标阈值'] }) === true,
+    'ground: 唯一行按钮 → 命中(无歧义)'
+  )
 
   console.log(failed === 0 ? '\nFRONTEND-EXECUTOR-SELFTEST: PASS' : `\nFRONTEND-EXECUTOR-SELFTEST: FAIL (${failed})`)
   process.exitCode = failed === 0 ? 0 : 1
