@@ -1430,6 +1430,7 @@ export default function DigitalEmployeePage({
           notice={modelNotice}
           onSelectModel={handleSelectModel}
           onOpenConfig={openModelConfig}
+          onRefresh={() => void fetchModelState()}
         />
       ) : null}
       <>
