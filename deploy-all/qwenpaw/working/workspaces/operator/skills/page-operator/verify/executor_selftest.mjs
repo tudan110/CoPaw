@@ -366,6 +366,43 @@ function assert(cond, msg) {
   assert(qInput.value === '系统派单', 'operate: 搜索框被填入「系统派单」')
   assert(queried === true, 'operate: 只读自动点了「搜索」')
 
+  // ---- 兜底(真机"只跳不搜"后续):fill 标签没匹配上真实字段(agent 把字段名写成"搜索")
+  //      → 关键词值兜底填进搜索区第一个空文本框,而不是丢掉 ----
+  dialogShown = false
+  const kwInput = new FakeEl({})
+  kwInput.dispatchEvent = () => {}
+  kwInput.value = ''
+  const kwItem = new FakeEl({
+    q: {
+      '.el-form-item__label': [new FakeEl({ text: '关键词' })],
+      '.el-form-item__content input, .el-form-item__content textarea': [kwInput]
+    }
+  })
+  const sBtn = new FakeEl({ text: '搜索' })
+  let searched2 = false
+  sBtn.click = () => {
+    searched2 = true
+  }
+  const qForm2 = new FakeEl({ q: { '.el-form-item': [kwItem], 'input, textarea': [kwInput] } })
+  const vmFb = {
+    $options: { name: 'LogSearch' },
+    $el: new FakeEl({ q: { '.el-form-item': [kwItem], '.queryForm': [qForm2], button: [sBtn] } })
+  }
+  registerPage(vmFb)
+  await runner.runOperate(
+    { mode: 'current', page: 'LogSearch', fill: [{ label: '搜索', value: '主机' }], click: '搜索', risk: 'query' },
+    {}
+  )
+  assert(kwInput.value === '主机', '兜底: fill标签"搜索"未匹配字段 → 主机 填进搜索区真实关键词框')
+  assert(searched2 === true, '兜底: 填好关键词后点了搜索')
+  // 双向匹配:fill 标签"搜索关键词" 应能命中真实字段"关键词"(findFieldInput 直接匹配,不走兜底)
+  kwInput.value = ''
+  await runner.runOperate(
+    { mode: 'current', page: 'LogSearch', fill: [{ label: '搜索关键词', value: '网关' }], risk: 'query' },
+    {}
+  )
+  assert(kwInput.value === '网关', '兜底: fill标签"搜索关键词" 双向包含命中真实字段「关键词」')
+
   // ---- L5-7 表格行内操作:describePage 抽行内按钮 + runOperate 点对应行的下载 ----
   let downloaded = null
   const mkRow = (dayText) => {
