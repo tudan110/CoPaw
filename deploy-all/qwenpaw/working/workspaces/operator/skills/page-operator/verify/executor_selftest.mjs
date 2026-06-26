@@ -5,7 +5,7 @@ import { extractAction, extractOperate, extractOperateAny, normalizeOperate, can
 import { registerPage } from './_fe/operator/operableBus.js'
 import runner, { resolveDateRange } from './_fe/operator/runner.js'
 import { describePage, describeForm } from './_fe/operator/pageSchema.js'
-import { pageLeaves, resolvePath as resolveLeafPath } from './_fe/operator/pageMap.js'
+import { pageLeaves, resolvePath as resolveLeafPath, pageCandidates } from './_fe/operator/pageMap.js'
 
 class FakeEl {
   constructor({ text = '', q = {}, style = {}, offsetParent = {}, className = '' } = {}) {
@@ -739,6 +739,46 @@ function assert(cond, msg) {
     navOnly && navOnly.ok === true && navOnlyPushed === '/target',
     'navigateFor: 只跳转到目标路由(不执行操作)'
   )
+
+  // ---- 导航解析不到 → 列相似真实页让用户选(根治"漏洞扫描没动静":页面名不存在时不静默)----
+  const secRouters = [
+    {
+      path: '/sec',
+      component: 'Layout',
+      meta: { title: '安全中心' },
+      children: [
+        { path: 'timed', component: 'timedScanning/index', meta: { title: '定时扫描' } },
+        { path: 'rep', component: 'sec/report', meta: { title: '扫描报告' } }
+      ]
+    }
+  ]
+  const pcand = pageCandidates(secRouters, '漏洞扫描')
+  assert(
+    pcand.indexOf('定时扫描') !== -1 && pcand.indexOf('扫描报告') !== -1,
+    'pageCandidates: "漏洞扫描"解析不到 → 列出含"扫描"的相似页'
+  )
+  // navigateFor:解析不到 → requestChoice 列候选 → 用户选「定时扫描」→ 导航过去
+  let navCandPushed = null
+  const candRouter = {
+    currentRoute: { path: '/x' },
+    push(p) {
+      navCandPushed = p
+      this.currentRoute.path = p
+    }
+  }
+  registerPage({ $options: { name: 'TimedScanning' }, $el: new FakeEl({ q: { '.el-table': [new FakeEl({})] } }) })
+  let offeredPages = null
+  const navCand = await runner.navigateFor('漏洞扫描', {
+    router: candRouter,
+    resolvePath: (n) => (n === '定时扫描' ? '/sec/timed' : ''),
+    pageCandidates: () => ['定时扫描', '扫描报告'],
+    requestChoice: (f, opts) => {
+      offeredPages = opts
+      return Promise.resolve('定时扫描')
+    }
+  })
+  assert(offeredPages && offeredPages.indexOf('定时扫描') !== -1, 'navigateFor: 解析不到 → 列候选页让用户选')
+  assert(navCand && navCand.ok === true && navCandPushed === '/sec/timed', 'navigateFor: 选了候选页 → 真导航过去')
 
   // ---- 宽松兜底:agent 写成 YAML/steps,extractOperate 也能抠出 navigate+row ----
   const yamlBlock =
