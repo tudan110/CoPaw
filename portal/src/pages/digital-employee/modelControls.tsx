@@ -1670,6 +1670,7 @@ export function ChatModelSelector({
   notice,
   onSelectModel,
   onOpenConfig,
+  onRefresh,
 }: {
   activeModelLabel: string;
   activeProviderId: string;
@@ -1681,6 +1682,7 @@ export function ChatModelSelector({
   notice: ModelNoticeState | null;
   onSelectModel: (providerId: string, modelId: string) => Promise<boolean>;
   onOpenConfig: () => void;
+  onRefresh?: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -1693,8 +1695,13 @@ export function ChatModelSelector({
         className={open ? "model-selector-trigger active" : "model-selector-trigger"}
         disabled={disabled}
         onClick={() => {
-          if (!disabled) {
-            setOpen((prev) => !prev);
+          if (disabled) {
+            return;
+          }
+          const next = !open;
+          setOpen(next);
+          if (next) {
+            onRefresh?.();
           }
         }}
       >
@@ -1723,7 +1730,7 @@ export function ChatModelSelector({
             </button>
           </div>
 
-          {loading ? (
+          {loading && !eligibleProviders.length ? (
             <div className="model-selector-empty">
               <i className="fas fa-spinner fa-spin" />
               <span>正在加载模型列表...</span>

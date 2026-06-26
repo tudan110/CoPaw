@@ -15,6 +15,7 @@ import {
   qimingSettingsApi,
   xingchenSettingsApi,
   zgopsSettingsApi,
+  n9eSettingsApi,
   DIAGNOSIS_TOKEN_CLEAR,
   type NotificationChannelScopeConfig,
   type NotificationChannelSettings,
@@ -256,9 +257,9 @@ const SETTINGS_TABS = [
   },
   {
     id: "diagnosis",
-    label: "告警",
+    label: "告警 / 巡检",
     iconClass: "fa-stethoscope",
-    description: "实时告警分析、根因卡片等结果展示偏好",
+    description: "实时告警分析、根因卡片，以及告警/巡检的指标拉取参数",
   },
   {
     id: "notifications",
@@ -267,18 +268,54 @@ const SETTINGS_TABS = [
     description: "巡检、建单后的 webhook 推送配置",
   },
   {
-    id: "model-adapters",
-    label: "模型适配",
-    iconClass: "fa-robot",
-    description: "启明、星辰等大模型 adapter 的网关、凭证与模型",
-  },
-  {
     id: "cmdb",
     label: "CMDB / 资源导入",
     iconClass: "fa-database",
     description: "zgops CMDB 连接与资源导入 LLM 池",
   },
+  {
+    id: "n9e",
+    label: "日志",
+    iconClass: "fa-file-lines",
+    description: "夜莺（N9E）日志查询连接",
+  },
+  {
+    id: "model-adapters",
+    label: "模型适配",
+    iconClass: "fa-robot",
+    description: "启明、星辰等大模型 adapter 的网关、凭证与模型",
+  },
 ] as const;
+
+const N9E_FIELDS: ProviderFieldDesc[] = [
+  {
+    key: "n9e_api_base_url",
+    label: "N9E 地址（base_url）",
+    hint: "夜莺日志网关 base URL。",
+    placeholder: "http://host:17001",
+  },
+  {
+    key: "n9e_user_token",
+    label: "User Token",
+    sensitive: true,
+    hint: "夜莺访问令牌，留空则不修改。",
+  },
+  {
+    key: "n9e_log_datasource_id",
+    label: "日志数据源 ID",
+    hint: "datasource id（默认 1）。",
+  },
+  {
+    key: "n9e_log_index",
+    label: "日志索引",
+    hint: "如 casaos-syslog-*。",
+  },
+  {
+    key: "n9e_log_timestamp_field",
+    label: "时间字段",
+    hint: "日志时间戳字段（默认 @timestamp）。",
+  },
+];
 
 const ZGOPS_FIELDS: ProviderFieldDesc[] = [
   {
@@ -1662,6 +1699,15 @@ export function SettingsPanel() {
                   />
                   <ResourceImportLlmSection />
                 </>
+              ) : null}
+
+              {activeTab === "n9e" ? (
+                <ProviderSettingsSection
+                  api={n9eSettingsApi}
+                  title="夜莺日志（N9E）连接"
+                  description="夜莺日志网关地址、令牌、数据源与索引。供日志隐患检测、安全扫描、日志查询等技能使用，修改即时生效。"
+                  fields={N9E_FIELDS}
+                />
               ) : null}
 
               {activeTab === "notifications" ? (

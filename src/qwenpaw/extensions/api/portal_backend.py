@@ -136,6 +136,7 @@ from qwenpaw.extensions.api import qiming_settings_store
 from qwenpaw.extensions.api import xingchen_settings_store
 from qwenpaw.extensions.api import zgops_settings_store
 from qwenpaw.extensions.api import resource_import_llm_settings_api
+from qwenpaw.extensions.api import n9e_settings_store
 from qwenpaw.extensions.api import fde_workbench_service
 from qwenpaw.extensions.api.fde_workbench_models import (
     FdeCopyInstalledRequest,
@@ -1887,6 +1888,48 @@ async def put_resource_import_llm_settings(
         raise HTTPException(status_code=400, detail=str(exc))
     _refresh_resource_import_llm_environ()
     return resource_import_llm_settings_api.build_settings_payload()
+
+
+def _refresh_n9e_environ() -> None:
+    try:
+        from qwenpaw.extensions.integrations import working_secrets
+
+        working_secrets.refresh_n9e_environ()
+    except Exception:  # noqa: BLE001 - settings already persisted
+        pass
+
+
+@router.get("/n9e-settings")
+async def get_n9e_settings() -> dict[str, Any]:
+    """Return N9E log settings as ``{effective, env, overrides}``."""
+    return n9e_settings_store.build_settings_payload()
+
+
+@router.put("/n9e-settings")
+async def put_n9e_settings(
+    body: dict[str, Any] = Body(default_factory=dict),
+) -> dict[str, Any]:
+    """Persist a partial update of the N9E log settings."""
+    try:
+        n9e_settings_store.apply_settings_update(body)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    _refresh_n9e_environ()
+    return n9e_settings_store.build_settings_payload()
+
+
+@router.post("/n9e-settings/reset")
+async def reset_n9e_setting(
+    body: dict[str, Any] = Body(default_factory=dict),
+) -> dict[str, Any]:
+    """Drop one N9E field's override. Body: ``{"key": "<field>"}``."""
+    key = str(body.get("key") or "").strip()
+    try:
+        n9e_settings_store.reset_setting(key)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    _refresh_n9e_environ()
+    return n9e_settings_store.build_settings_payload()
 
 
 def _read_preview_progress(progress_file: Path) -> list[dict[str, Any]]:

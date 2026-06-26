@@ -144,8 +144,10 @@ RUN uv pip install --python /app/venv/bin/python --no-cache-dir ".[ollama]" \
   && rm -rf ./build
 
 # drain3 pins cachetools==4.2.1 which lacks TLRUCache, breaking fastmcp's
-# MemoryStore import chain. Force-upgrade after the main install to override.
-RUN uv pip install --python /app/venv/bin/python --no-cache-dir "cachetools>=7"
+# MemoryStore import chain. Use pip (not uv) to force the upgrade — uv silently
+# resolves back to 4.2.1 to satisfy drain3's constraint; pip installs >=7 with
+# a warning but succeeds, which is the behavior we need.
+RUN /app/venv/bin/pip install --no-cache-dir "cachetools>=7"
 
 # Init working dir with default config.json and HEARTBEAT.md (build time).
 RUN qwenpaw init --defaults --accept-security
