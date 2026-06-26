@@ -697,6 +697,26 @@ function assert(cond, msg) {
     exJsonAct && exJsonAct.payload.click === '新增' && !exJsonAct.payload.navigate,
     '转译(真实⑩ JSON action+target): click 的 target=新增 → click(不误当 navigate)'
   )
+  // 真实⑪(联调实采,只跳不搜的真因):fill 写成对象映射 {字段:值} 而非数组 → 旧代码丢了
+  const exFillObj = extractOperateAny(
+    '正在跳转并搜索 👇\n```qwenpaw:operate\n{ "mode": "current", "navigate": "日志", "fill": { "关键词": "主机" }, "click": "搜索" }\n```'
+  )
+  assert(
+    exFillObj &&
+      exFillObj.payload.navigate === '日志' &&
+      exFillObj.payload.fill &&
+      exFillObj.payload.fill.length === 1 &&
+      exFillObj.payload.fill[0].label === '关键词' &&
+      exFillObj.payload.fill[0].value === '主机' &&
+      exFillObj.payload.click === '搜索',
+    '转译(真实⑪ fill对象映射): {"关键词":"主机"} → [{label:关键词,value:主机}](不再丢)'
+  )
+  // 单个 {label,value} 不能被误拆成字段映射
+  const cFillOne = canonicalizeOperate({ fill: { label: '关键词', value: '主机' } })
+  assert(
+    cFillOne.ok && cFillOne.payload.fill.length === 1 && cFillOne.payload.fill[0].label === '关键词',
+    '转译: fill 单个 {label,value} → 不被误当字段映射'
+  )
   // 普通对话不应被误解析成操作(extractOperate 严格 fence;Any 仅操作模式用)
   assert(
     extractOperate('好的，日志中心可以在左侧菜单找到，您直接点进去就行。') === null,
