@@ -256,9 +256,9 @@ const SETTINGS_TABS = [
   },
   {
     id: "diagnosis",
-    label: "告警",
+    label: "告警 / 巡检",
     iconClass: "fa-stethoscope",
-    description: "实时告警分析、根因卡片等结果展示偏好",
+    description: "实时告警分析、根因卡片，以及告警/巡检的指标拉取参数",
   },
   {
     id: "notifications",
