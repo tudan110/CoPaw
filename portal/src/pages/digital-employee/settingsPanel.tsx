@@ -268,12 +268,6 @@ const SETTINGS_TABS = [
     description: "巡检、建单后的 webhook 推送配置",
   },
   {
-    id: "model-adapters",
-    label: "模型适配",
-    iconClass: "fa-robot",
-    description: "启明、星辰等大模型 adapter 的网关、凭证与模型",
-  },
-  {
     id: "cmdb",
     label: "CMDB / 资源导入",
     iconClass: "fa-database",
@@ -284,6 +278,12 @@ const SETTINGS_TABS = [
     label: "日志",
     iconClass: "fa-file-lines",
     description: "夜莺（N9E）日志查询连接",
+  },
+  {
+    id: "model-adapters",
+    label: "模型适配",
+    iconClass: "fa-robot",
+    description: "启明、星辰等大模型 adapter 的网关、凭证与模型",
   },
 ] as const;
 
