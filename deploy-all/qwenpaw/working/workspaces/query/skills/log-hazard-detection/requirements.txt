@@ -5,3 +5,6 @@
 requests>=2.32.0
 python-dotenv>=1.0.0
 drain3>=0.9.11
+# drain3 pins cachetools==4.2.1 but only uses LRUCache/Cache/cachedmethod,
+# all of which exist in every cachetools version. Override to unblock fastmcp.
+cachetools>=7
