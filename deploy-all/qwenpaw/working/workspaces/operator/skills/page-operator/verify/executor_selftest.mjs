@@ -571,6 +571,65 @@ function assert(cond, msg) {
   )
   assert(startInput.value.slice(0, 10) < endInput.value.slice(0, 10), 'date原生: 起 < 止')
 
+  // ---- 统一方法论 L3:通用感知(自定义页纯 input/button)+ 动作同义词 + 找不到列真实选项 ----
+  // (A) 通用感知:日志页那种纯 <input placeholder>/<button> 无 el-* 类,也能被 describePage 抽出
+  const kwIn = new FakeEl({})
+  kwIn.type = 'text'
+  kwIn.getAttribute = (a) => (a === 'placeholder' ? '搜索关键词' : a === 'type' ? 'text' : null)
+  const dt1 = new FakeEl({})
+  dt1.type = 'datetime-local'
+  dt1.getAttribute = (a) => (a === 'type' ? 'datetime-local' : null)
+  const dt2 = new FakeEl({})
+  dt2.type = 'datetime-local'
+  dt2.getAttribute = (a) => (a === 'type' ? 'datetime-local' : null)
+  const realSearchBtn = new FakeEl({ text: '检索查询' })
+  const customVm = {
+    $options: { name: 'CustomLog' },
+    $el: new FakeEl({ q: { input: [kwIn, dt1, dt2], button: [realSearchBtn] } })
+  }
+  const csc = describePage(customVm)
+  assert(
+    csc.search.some((s) => s.label === '搜索关键词' && s.type === 'input'),
+    '通用感知: 自定义页纯 <input placeholder> 当搜索字段'
+  )
+  assert(csc.search.some((s) => s.type === 'date'), '通用感知: 原生 datetime-local 记为时间(date)')
+  assert(csc.actions.some((a) => a.text === '检索查询'), '通用感知: 原生 <button>「检索查询」进工具栏')
+
+  // (B) 同义词:click「搜索」自动命中页面真实按钮「检索查询」
+  let searched3 = false
+  const sBtn3 = new FakeEl({ text: '检索查询' })
+  sBtn3.click = () => {
+    searched3 = true
+  }
+  registerPage({ $options: { name: 'SynPage' }, $el: new FakeEl({ q: { button: [sBtn3] } }) })
+  await runner.runOperate({ mode: 'current', page: 'SynPage', click: '搜索', risk: 'query' }, {})
+  assert(searched3 === true, '同义词: click「搜索」→ 命中真实「检索查询」并点击')
+
+  // (C) 找不到 → 列真实按钮让用户选 → 点选执行(扫描页没有"扫描",真实是新增/批量执行)
+  let scanDone = false
+  const addB = new FakeEl({ text: '新增' })
+  addB.click = () => {}
+  const execB = new FakeEl({ text: '批量执行' })
+  execB.click = () => {
+    scanDone = true
+  }
+  registerPage({ $options: { name: 'ScanPage' }, $el: new FakeEl({ q: { button: [addB, execB] } }) })
+  let offered = null
+  await runner.runOperate(
+    { mode: 'current', page: 'ScanPage', click: '扫描', risk: 'create', confirmed: true },
+    {
+      requestChoice: (field, opts) => {
+        offered = opts
+        return Promise.resolve('批量执行')
+      }
+    }
+  )
+  assert(
+    offered && offered.indexOf('新增') !== -1 && offered.indexOf('批量执行') !== -1,
+    '选项兜底: 找不到「扫描」→ requestChoice 列出真实按钮(新增/批量执行)'
+  )
+  assert(scanDone === true, '选项兜底: 用户选「批量执行」→ 真点中执行')
+
   // ---- 跨页:runOperate 按页面名解析路由 → 跳转 → 再就地操作(点第2行详情)----
   let pushedTo = null
   const navRouter = {
