@@ -162,6 +162,15 @@ export interface AiBigScreenDiffEntry {
   after: unknown;
 }
 
+export interface AiBigScreenMetricsResponse {
+  total: number;
+  successRate: number;
+  degradedRate: number;
+  avgDurationMs: number;
+  capabilityFailureRates: Record<string, number>;
+  kinds: Record<string, number>;
+}
+
 export interface AiBigScreenPatchResponse {
   screen: AiBigScreenApp;
   version: AiBigScreenVersion | null;

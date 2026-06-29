@@ -4,6 +4,7 @@ import {
   deleteAiBigScreen,
   duplicateAiBigScreen,
   getAiBigScreenDraftTask,
+  getAiBigScreenMetrics,
   listAiBigScreenPlugins,
   listAiBigScreens,
   patchAiBigScreen,
@@ -15,9 +16,16 @@ import {
 import { BigScreenRenderer } from "../../components/big-screen/BigScreenRenderer.tsx";
 import { adaptLegacyScreen } from "../../components/big-screen/adaptLegacyScreen.ts";
 import { summarizePatchDiff } from "../../components/big-screen/patchDiff.ts";
+import {
+  formatPercent,
+  formatDurationMs,
+  topFailingCapabilities,
+  hasMetrics,
+} from "../../components/big-screen/metricsFormat.ts";
 import "../../components/big-screen/big-screen.css";
 import type {
   AiBigScreenApp,
+  AiBigScreenMetricsResponse,
   AiBigScreenPlugin,
   AiBigScreenPublishTarget,
   AiBigScreenTask,
@@ -166,6 +174,9 @@ export function AiBigScreenPanel() {
   const [error, setError] = useState("");
   const [previewLines, setPreviewLines] = useState<string[]>([]);
   const [previewing, setPreviewing] = useState(false);
+  const [metrics, setMetrics] = useState<AiBigScreenMetricsResponse | null>(
+    null,
+  );
 
   const selectedComponent = useMemo(
     () =>
@@ -193,6 +204,13 @@ export function AiBigScreenPanel() {
       setPlugins(pluginsResponse.items || []);
     } catch (requestError) {
       setError(extractErrorMessage(requestError) || "加载 AI 大屏工坊失败");
+    }
+    // generation quality is supplementary — its failure never blocks the
+    // catalog, so it is loaded separately and swallowed on error.
+    try {
+      setMetrics(await getAiBigScreenMetrics());
+    } catch {
+      setMetrics(null);
     }
   };
 
@@ -694,6 +712,42 @@ export function AiBigScreenPanel() {
                   草稿
                 </span>
               </div>
+              {hasMetrics(metrics ?? undefined) && metrics ? (
+                <div className="ai-big-screen-quality">
+                  <div className="ai-big-screen-quality-head">
+                    <span>生成质量</span>
+                    <span>近 {metrics.total} 次</span>
+                  </div>
+                  <div className="ai-big-screen-quality-row">
+                    <span>
+                      <strong>{formatPercent(metrics.successRate)}</strong>
+                      成功率
+                    </span>
+                    <span>
+                      <strong>{formatPercent(metrics.degradedRate)}</strong>
+                      降级率
+                    </span>
+                    <span>
+                      <strong>{formatDurationMs(metrics.avgDurationMs)}</strong>
+                      平均耗时
+                    </span>
+                  </div>
+                  {topFailingCapabilities(metrics.capabilityFailureRates, 3)
+                    .length ? (
+                    <ul className="ai-big-screen-quality-fail">
+                      {topFailingCapabilities(
+                        metrics.capabilityFailureRates,
+                        3,
+                      ).map((item) => (
+                        <li key={item.capabilityId}>
+                          {item.capabilityId}
+                          <em>{formatPercent(item.rate)} 失败</em>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : null}
+                </div>
+              ) : null}
               {screens.length ? (
                 <div className="ai-big-screen-list">
                   {screens.map((item) => (

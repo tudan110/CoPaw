@@ -3,6 +3,7 @@ import type {
   AiBigScreenApp,
   AiBigScreenDeleteResponse,
   AiBigScreenListResponse,
+  AiBigScreenMetricsResponse,
   AiBigScreenPatchResponse,
   AiBigScreenPluginsResponse,
   AiBigScreenPublishResponse,
@@ -16,6 +17,14 @@ const AI_BIG_SCREEN_GENERATION_TIMEOUT_MS = 600000;
 export function listAiBigScreenPlugins() {
   return requestPortalApi<AiBigScreenPluginsResponse>(
     "/ai-big-screens/plugins",
+    {},
+    AI_BIG_SCREEN_TIMEOUT_MS,
+  );
+}
+
+export function getAiBigScreenMetrics(limit = 100) {
+  return requestPortalApi<AiBigScreenMetricsResponse>(
+    `/ai-big-screens/metrics?limit=${encodeURIComponent(String(limit))}`,
     {},
     AI_BIG_SCREEN_TIMEOUT_MS,
   );
