@@ -133,13 +133,10 @@ if [ "$CURRENT_DEPS_STAMP" != "$INSTALLED_DEPS_STAMP" ]; then
             UV_HTTP_TIMEOUT=300 "$UV_BIN" pip install --python "$PYTHON_BIN" -r "$req"
         done < "$SKILL_REQS_FILE"
     fi
-    # drain3 的 metadata 把 cachetools 精确钉死在 ==4.2.1，但 py-key-value-aio[memory]
-    # （FastMCP 起会话状态存储用的 MemoryStore）需要 cachetools>=5 的 TLRUCache。重装
-    # 依赖时解析器可能把 cachetools 拉回 4.2.1，导致加载 agent 时 500 报
-    # "MemoryStore requires py-key-value-aio[memory]"。drain3 实际只用 4→7 都稳定的
-    # LRUCache/cachedmethod，这里在安装后强制升回 7.x 兜底。
-    echo "      → 修正 cachetools 版本（绕开 drain3 ==4.2.1 钉死冲突）"
-    UV_HTTP_TIMEOUT=300 "$UV_BIN" pip install --python "$PYTHON_BIN" "cachetools>=7,<8"
+    # 注：cachetools 后置强升已移除。其唯一冲突源 drain3 来自 log-hazard-detection
+    # skill，该 skill 的 requirements.txt 已全注释禁用（drain3 不再装），app 自身依赖
+    # （py-key-value-aio[memory] 的 MemoryStore）会装现代版 cachetools。若将来重启用
+    # 该 skill，需在此处补回 `uv pip install cachetools>=7,<8` 兜底。
     printf '%s\n' "$CURRENT_DEPS_STAMP" > "$DEPS_STAMP_FILE"
 else
     echo "[3/5] 依赖未变化，跳过安装"
