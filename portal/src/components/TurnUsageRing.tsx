@@ -82,10 +82,10 @@ function PopoverBody({
         <div style={{ marginBottom: context ? 12 : 0 }}>
           <div style={{ fontWeight: 600, marginBottom: 4 }}>
             {usage.estimated ? "本轮约" : "本轮"}{" "}
-            {formatCompact(usage.total_tokens || 0)} tok
+            {formatCompact(usage.total_tokens || 0)} token
           </div>
           <div style={{ opacity: 0.75 }}>
-            in {formatCompact(usage.prompt_tokens || 0)} · out{" "}
+            输入 {formatCompact(usage.prompt_tokens || 0)} · 输出{" "}
             {formatCompact(usage.completion_tokens || 0)}
           </div>
         </div>
