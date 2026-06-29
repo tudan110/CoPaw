@@ -84,22 +84,8 @@ COUNT_FIELDS = [
 ]
 
 
-def load_env_file(path: Path) -> None:
-    if not path.exists():
-        return
-    for raw_line in path.read_text(encoding="utf-8").splitlines():
-        line = raw_line.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        key, value = line.split("=", 1)
-        os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
-
-
-def load_skill_env() -> None:
-    load_env_file(Path(__file__).resolve().parent.parent / ".env")
-
-
-load_skill_env()
+# INOE_* / ZGOPS_* 凭证由设置页统一管理并物化到 os.environ（子进程继承）。
+# 不再读取技能目录下的 .env。
 
 
 def normalize_resource(resource_type: str | None, type_id: str | None) -> dict[str, str]:

@@ -44,4 +44,4 @@
 
 - 未配置任何通知地址 → 明确写出"通知未配置"
 - 部分渠道推送失败 → 明确写出"部分通知发送失败"
-- 通知配置优先读取 Portal「高级功能 → 设置 → 通知」中的 `inspection` 配置；只有未设置时才回退 `.env` 中的 `INSPECTION_NOTIFY_*` / `ORDER_CREATE_NOTIFY_*`
+- 通知配置读取 Portal「高级功能 → 设置 → 通知」中的 `inspection` 配置（物化为环境变量 `INSPECTION_NOTIFY_*` / `ORDER_CREATE_NOTIFY_*`）；不再回退技能目录下的 `.env`。

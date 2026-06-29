@@ -22,46 +22,40 @@ ZGOPS_HTTP = _load_module("zgops_http_test", SCRIPT_DIR / "zgops_http.py")
 
 
 class ZgopsCmdbEnvResolutionTests(unittest.TestCase):
-    def test_find_project_prefers_shared_secret_before_skill_local_env(self):
-        with (
-            patch.dict("os.environ", {}, clear=True),
-            patch.object(Path, "home", return_value=Path("/home/test")),
+    def test_resolve_reads_zgops_env_from_environ(self):
+        with patch.dict(
+            "os.environ",
+            {
+                "ZGOPS_BASE_URL": "http://cmdb.example.com",
+                "ZGOPS_USERNAME": "admin",
+                "ZGOPS_PASSWORD": "secret",
+                "ZGOPS_SESSION_NAME": "zgops-cmdb",
+            },
+            clear=True,
         ):
-            env_paths = FIND_PROJECT._candidate_env_files()
+            env = FIND_PROJECT._resolve_zgops_env()
 
         self.assertEqual(
-            env_paths,
-            [
-                SCRIPT_DIR.parents[4] / "secrets" / "zgops-cmdb.env",
-                Path("/home/test/.qwenpaw/secrets/zgops-cmdb.env"),
-                SCRIPT_DIR.parent / ".env",
-            ],
+            env,
+            {
+                "ZGOPS_BASE_URL": "http://cmdb.example.com",
+                "ZGOPS_USERNAME": "admin",
+                "ZGOPS_PASSWORD": "secret",
+                "ZGOPS_SESSION_NAME": "zgops-cmdb",
+            },
         )
 
-    def test_find_project_honors_explicit_and_working_secret_order(self):
-        with (
-            patch.dict(
-                "os.environ",
-                {
-                    "ZGOPS_ENV_FILE": "/tmp/custom.env",
-                    "QWENPAW_WORKING_DIR": "/work/qwenpaw",
-                },
-                clear=True,
-            ),
-            patch.object(Path, "home", return_value=Path("/home/test")),
+    def test_resolve_omits_unset_keys_and_has_no_file_fallback(self):
+        with patch.dict(
+            "os.environ",
+            {"ZGOPS_BASE_URL": "http://only-base"},
+            clear=True,
         ):
-            env_paths = FIND_PROJECT._candidate_env_files()
+            env = FIND_PROJECT._resolve_zgops_env()
 
-        self.assertEqual(
-            env_paths,
-            [
-                Path("/tmp/custom.env"),
-                Path("/work/qwenpaw/secrets/zgops-cmdb.env"),
-                SCRIPT_DIR.parents[4] / "secrets" / "zgops-cmdb.env",
-                Path("/home/test/.qwenpaw/secrets/zgops-cmdb.env"),
-                SCRIPT_DIR.parent / ".env",
-            ],
-        )
+        self.assertEqual(env, {"ZGOPS_BASE_URL": "http://only-base"})
+        self.assertFalse(hasattr(FIND_PROJECT, "_candidate_env_files"))
+        self.assertFalse(hasattr(FIND_PROJECT, "_load_env_file"))
 
     def test_app_topology_uses_shared_env_resolver(self):
         with (

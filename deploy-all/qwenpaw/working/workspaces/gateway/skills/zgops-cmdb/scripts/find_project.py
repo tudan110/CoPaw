@@ -15,79 +15,15 @@ from pathlib import Path
 from typing import Any
 
 
-def _load_env_file(path: Path) -> dict[str, str]:
-    values: dict[str, str] = {}
-    for raw_line in path.read_text(encoding="utf-8").splitlines():
-        line = raw_line.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        key, value = line.split("=", 1)
-        values[key.strip()] = value.strip()
-    return values
-
-
-def _default_env_file() -> Path:
-    return Path(__file__).resolve().parents[1] / ".env"
-
-
-def _candidate_env_files() -> list[Path]:
-    """ZGOPS env resolution order (first existing file wins).
-
-    Shared secrets are preferred; the per-skill ``.env`` is only a
-    legacy fallback used when secrets are not yet provisioned.
-
-    1. ``$ZGOPS_ENV_FILE`` if set (explicit override).
-    2. ``$QWENPAW_WORKING_DIR/secrets/zgops-cmdb.env`` (or COPAW).
-    3. ``~/.qwenpaw/secrets/zgops-cmdb.env`` — default working dir.
-    4. The per-skill ``.env`` next to this skill (legacy fallback).
-    """
-    candidates: list[Path] = []
-    explicit = os.environ.get("ZGOPS_ENV_FILE")
-    if explicit:
-        candidates.append(Path(explicit).expanduser())
-    working = os.environ.get("QWENPAW_WORKING_DIR") or os.environ.get(
-        "COPAW_WORKING_DIR"
-    )
-    if working:
-        candidates.append(
-            Path(working).expanduser() / "secrets" / "zgops-cmdb.env"
-        )
-    try:
-        candidates.append(
-            _default_env_file().parents[4] / "secrets" / "zgops-cmdb.env"
-        )
-    except IndexError:
-        pass
-    candidates.append(
-        Path.home() / ".qwenpaw" / "secrets" / "zgops-cmdb.env"
-    )
-    candidates.append(_default_env_file())
-    seen: set[str] = set()
-    unique: list[Path] = []
-    for path in candidates:
-        key = str(path)
-        if key not in seen:
-            seen.add(key)
-            unique.append(path)
-    return unique
-
-
 def _resolve_zgops_env() -> dict[str, str]:
-    """Resolve ZGOPS_* config from the shared secrets cascade.
+    """Resolve ZGOPS_* config from ``os.environ``.
 
-    Falls back through ``_candidate_env_files``; real environment values
-    (e.g. backend-injected shared secrets) always win for ZGOPS_* keys.
+    Credentials come from the settings page «CMDB / 资源导入», materialised
+    into ``os.environ`` (which this subprocess inherits). There is no
+    ``.env`` / ``secrets`` file fallback — all config lives in the settings
+    page.
     """
     values: dict[str, str] = {}
-    for path in _candidate_env_files():
-        try:
-            if not path.is_file():
-                continue
-        except OSError:
-            continue
-        values = _load_env_file(path)
-        if values.get("ZGOPS_BASE_URL"):
-            break
     for key in (
         "ZGOPS_BASE_URL",
         "ZGOPS_USERNAME",

@@ -14,6 +14,7 @@ import argparse
 from concurrent.futures import ThreadPoolExecutor
 import importlib.util
 import json
+import os
 import sys
 import urllib.parse
 from collections import Counter
@@ -39,10 +40,6 @@ def _load_skill_env() -> None:
     if not HAS_DOTENV:
         return
 
-    skill_dir = Path(__file__).resolve().parents[1]
-    skill_env_file = skill_dir / ".env"
-    if skill_env_file.exists():
-        load_dotenv(skill_env_file, override=False)
 
 
 _load_skill_env()
@@ -144,20 +141,15 @@ def _build_alarm_query_windows(
 
 def _load_cmdb_client():
     find_project = _load_module("zgops_find_project", _zgops_find_project_path())
-    env_path = (
-        _workspace_root()
-        / "query"
-        / "skills"
-        / "zgops-cmdb"
-        / ".env"
-    )
-    if not env_path.exists():
-        raise ValueError(f"未找到 zgops-cmdb 的环境文件：{env_path}")
-
-    env = find_project._load_env_file(env_path)  # noqa: SLF001
+    env = {
+        key: os.environ.get(key, "")
+        for key in ("ZGOPS_BASE_URL", "ZGOPS_USERNAME", "ZGOPS_PASSWORD")
+    }
     base_url = _safe_str(env.get("ZGOPS_BASE_URL"))
     if not base_url:
-        raise ValueError(f"zgops-cmdb 的环境文件缺少 ZGOPS_BASE_URL：{env_path}")
+        raise ValueError(
+            "未配置 ZGOPS_BASE_URL（请在设置页「CMDB / 资源导入」配置）"
+        )
 
     username = _safe_str(env.get("ZGOPS_USERNAME"))
     password = _safe_str(env.get("ZGOPS_PASSWORD"))
@@ -1062,8 +1054,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--window-minutes", type=int, default=DEFAULT_ALARM_WINDOW_MINUTES, help="最近告警查询窗口，默认以告警时间为中心前后 10 分钟")
     parser.add_argument("--compare-begin-time", default="", help="可选，AI 自定义环比窗口开始时间，格式 YYYY-MM-DD HH:MM:SS")
     parser.add_argument("--compare-end-time", default="", help="可选，AI 自定义环比窗口结束时间，格式 YYYY-MM-DD HH:MM:SS")
-    parser.add_argument("--api-base-url", default=None, help="告警/指标 API 基础地址，默认读取 .env")
-    parser.add_argument("--token", default=None, help="Bearer Token，默认读取 .env")
+    parser.add_argument("--api-base-url", default=None, help="告警/指标 API 基础地址，默认读取环境变量/设置页配置")
+    parser.add_argument("--token", default=None, help="Bearer Token，默认读取环境变量/设置页配置")
     parser.add_argument("--related-alarm-preview-limit", type=int, default=DEFAULT_RELATED_ALARM_PREVIEW_LIMIT, help="Markdown 预览关联告警条数")
     parser.add_argument("--output", choices=sorted(ALLOWED_OUTPUTS), default="json", help="输出格式")
     return parser.parse_args()

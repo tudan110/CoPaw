@@ -8,7 +8,7 @@
     python scripts/get_metric_definitions.py --metric-type mysql --res-id 3094 --output markdown
 
 说明:
-    - 优先环境变量/共享 secrets，回退当前 skill 目录下的 .env 文件
+    - 优先环境变量/共享 secrets（由设置页统一管理）
     - 先按 ciType 调用 /resource/resource/threshold/getMetricDefinitions
     - 再按 AI 选出的关键指标批量调用 /resource/pm/getMetricData（一次请求传递多个 queryKeys）
     - 接口不可用时直接报错，不再回退到 mock 数据
@@ -82,10 +82,6 @@ def _load_skill_env() -> None:
     if not HAS_DOTENV:
         return
 
-    skill_dir = Path(__file__).resolve().parents[1]
-    skill_env_file = skill_dir / ".env"
-    if skill_env_file.exists():
-        load_dotenv(skill_env_file, override=False)
 
 
 _load_skill_env()
@@ -102,14 +98,14 @@ def _safe_str(value: Any) -> str:
 def _normalize_base_url(api_base_url: str | None) -> str:
     base_url = (api_base_url or os.getenv("INOE_API_BASE_URL") or "").strip()
     if not base_url:
-        raise ValueError("未设置 INOE_API_BASE_URL，请检查 skills/alarm-analyst/.env")
+        raise ValueError("未设置 INOE_API_BASE_URL，请在设置页配置 INOE 平台地址与令牌")
     return base_url.rstrip("/")
 
 
 def _get_token(token: str | None) -> str:
     normalized_token = _safe_str(token or os.getenv("INOE_API_TOKEN"))
     if not normalized_token:
-        raise ValueError("未设置 INOE_API_TOKEN，请检查 skills/alarm-analyst/.env")
+        raise ValueError("未设置 INOE_API_TOKEN，请在设置页配置 INOE 平台地址与令牌")
     return normalized_token
 
 
@@ -766,10 +762,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--metric-type", required=True, help="资源类型，对应 ciType，例如 mysql")
     parser.add_argument("--res-id", help="CMDB 返回的 CI ID，对应 getMetricData 的 mulRes[].resId")
     parser.add_argument("--page-num", type=int, default=1, help="页码，默认 1")
-    parser.add_argument("--page-size", type=int, default=None, help="每页条数，默认从 .env 读取")
-    parser.add_argument("--api-base-url", help="API 基础地址，默认从 .env 读取")
+    parser.add_argument("--page-size", type=int, default=None, help="每页条数，默认读取环境变量/设置页配置")
+    parser.add_argument("--api-base-url", help="API 基础地址，默认读取环境变量/设置页配置")
     parser.add_argument("--token", help="可选，Bearer Token，默认从环境变量 INOE_API_TOKEN 读取")
-    parser.add_argument("--timeout-seconds", type=int, default=None, help="超时时间，默认从 .env 读取")
+    parser.add_argument("--timeout-seconds", type=int, default=None, help="超时时间，默认读取环境变量/设置页配置")
     parser.add_argument("--max-metrics", type=int, default=DEFAULT_MAX_METRICS, help="最多查询多少个相关指标")
     parser.add_argument("--query-type", default="0", help="指标查询类型，0 表示查询最近一次")
     parser.add_argument("--start-time", help="开始时间，queryType != 0 时必填")

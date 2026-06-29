@@ -47,10 +47,6 @@ SOFTWARE_TYPES = {
 }
 
 
-def _default_env_file() -> Path:
-    return Path(__file__).resolve().parents[1] / ".env"
-
-
 def _split_values(value: Any) -> list[str]:
     if value is None:
         return []

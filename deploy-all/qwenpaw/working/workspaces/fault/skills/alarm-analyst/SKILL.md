@@ -225,17 +225,15 @@ cd skills/alarm-analyst && python scripts/send_analysis_report.py \
 
 ## 配置
 
-**配置优先级**：
-1. 共享 `secrets/inoe.env` 或同名环境变量（优先）
-2. 技能目录下的 `.env` 文件（回退）
+**配置来源**：由设置页「平台 / INOE」统一管理，运行时物化为环境变量（`INOE_*`），脚本从环境变量读取（设置页改动对下一次技能调用即时生效）。**不再回退共享 `secrets/inoe.env` 或技能目录下的 `.env`。**
 
 如果配置缺失或无效，脚本会直接返回配置错误信息，不会继续执行请求。
 
-`.env` 最小配置：
+涉及的环境变量（在设置页配置，勿手填 `.env`）：
 
 ```bash
-INOE_API_BASE_URL=http://82.156.83.38:30080
-INOE_API_TOKEN=your_jwt_token_here
+INOE_API_BASE_URL=...           # 设置页：INOE 平台地址
+INOE_API_TOKEN=...              # 设置页：INOE 令牌
 ALARM_ANALYST_METRIC_TIMEOUT_SECONDS=120
 ALARM_ANALYST_METRIC_PAGE_SIZE=20
 ```
