@@ -273,7 +273,7 @@
     "target": "main"
   },
   "running": {
-    "max_iters": 100,
+    "max_iters": 20,
     "auto_continue_on_text_only": false,
     "llm_retry_enabled": true,
     "llm_max_retries": 3,

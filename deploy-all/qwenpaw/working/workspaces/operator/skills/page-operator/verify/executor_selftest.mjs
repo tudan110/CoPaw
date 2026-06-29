@@ -3,7 +3,7 @@
 // 不自动提交。前端模块由 run.py 拷进 ./_fe/(并补 .js 扩展名)后运行。
 import { extractAction, extractOperate, extractOperateAny, normalizeOperate, canonicalizeOperate } from './_fe/action.js'
 import { registerPage } from './_fe/operator/operableBus.js'
-import runner, { resolveDateRange, actionGroundsInSchema, deriveToolbarAction, isBareWrite } from './_fe/operator/runner.js'
+import runner, { resolveDateRange, actionGroundsInSchema, deriveToolbarAction, isBareWrite, embeddedIframeSrc } from './_fe/operator/runner.js'
 import { describePage, describeForm, isGuidedTaskPage, describeSteps } from './_fe/operator/pageSchema.js'
 import { pageLeaves, resolvePath as resolveLeafPath, resolvePathConfidence, pageCandidates } from './_fe/operator/pageMap.js'
 
@@ -1330,6 +1330,154 @@ function assert(cond, msg) {
     { requiredOnly: true }
   )
   assert(a2Asked.length === 1 && a2Asked[0] === '目标地址', 'A2: open 表单只逐项引导【必填】(目标地址),不骚扰选填(备注)')
+
+  // ---- 复合指令 open+fill:已给值(目标地址/端口)直接填进弹窗、不再追问;缺的必填项才引导 ----
+  const cfAddr = new FakeEl({})
+  cfAddr.dispatchEvent = () => {}
+  const cfPort = new FakeEl({})
+  cfPort.dispatchEvent = () => {}
+  const cfRemark = new FakeEl({})
+  cfRemark.dispatchEvent = () => {}
+  const cfItem = (label, inp, required) =>
+    new FakeEl({
+      className: required ? 'el-form-item is-required' : 'el-form-item',
+      q: {
+        '.el-form-item__label': [new FakeEl({ text: label })],
+        input: [inp],
+        '.el-form-item__content input, .el-form-item__content textarea': [inp]
+      }
+    })
+  const cfDialog = new FakeEl({
+    q: { '.el-form-item': [cfItem('目标地址', cfAddr, true), cfItem('端口', cfPort, true), cfItem('备注', cfRemark, true)] }
+  })
+  let cfAsked = []
+  await runner._fillDialogFields(
+    { form: {} },
+    cfDialog,
+    {
+      requestInput: (f) => {
+        cfAsked.push(f.label)
+        return Promise.resolve('用户补的')
+      }
+    },
+    { requiredOnly: true, provided: [{ label: '目标地址', value: '192.168.1.1' }, { label: '端口', value: '80' }] }
+  )
+  assert(cfAddr.value === '192.168.1.1' && cfPort.value === '80', '复合: 已给值(目标地址/端口)直接填进弹窗')
+  assert(cfAsked.indexOf('目标地址') === -1 && cfAsked.indexOf('端口') === -1, '复合: 已给值的字段不再追问')
+  assert(cfAsked.indexOf('备注') !== -1, '复合: 缺的必填项「备注」→ 引导用户输入')
+
+  // ---- 内联表单(open 等不到弹窗):漏洞扫描"创建扫描任务"直接铺在页上、主按钮「开始扫描」----
+  // 真机根因:这页没有"新建"弹窗,open 去干等弹窗 → 卡几十秒。现在等不到弹窗就【就地填页面表单】:
+  // 已给值直接填、缺必填引导、找「开始扫描」类主按钮弹确认卡。
+  const ifAddr = new FakeEl({})
+  ifAddr.dispatchEvent = () => {}
+  const ifPort = new FakeEl({})
+  ifPort.dispatchEvent = () => {}
+  const ifItem = (label, inp, required) =>
+    new FakeEl({
+      className: required ? 'el-form-item is-required' : 'el-form-item',
+      q: {
+        '.el-form-item__label': [new FakeEl({ text: label })],
+        input: [inp],
+        '.el-form-item__content input, .el-form-item__content textarea': [inp]
+      }
+    })
+  const ifScanBtn = new FakeEl({ text: '开始扫描' })
+  let ifScanClicked = false
+  ifScanBtn.click = () => {
+    ifScanClicked = true
+  }
+  const ifVm = {
+    $options: { name: 'VulnScan' },
+    $el: new FakeEl({
+      q: {
+        '.el-form-item': [ifItem('目标地址', ifAddr, true), ifItem('端口范围', ifPort, false)],
+        button: [ifScanBtn]
+      }
+    })
+  }
+  registerPage(ifVm)
+  let ifNote = null
+  let ifAsked = null
+  const ifRes = await runner._pageInlineFormFlow(
+    ifVm,
+    {
+      note: (t) => {
+        ifNote = t
+      },
+      requestSubmit: (o) => {
+        ifAsked = o
+        return Promise.resolve(true)
+      }
+    },
+    {
+      navigate: '漏洞扫描',
+      open: '新建',
+      risk: 'create',
+      title: '创建漏洞扫描任务',
+      fill: [
+        { label: '目标地址', value: '192.168.1.1' },
+        { label: '端口', value: '80' }
+      ]
+    }
+  )
+  assert(ifAddr.value === '192.168.1.1', '内联: 已给值「目标地址」直接填进页面表单(非弹窗)')
+  assert(ifPort.value === '80', '内联: 「端口」模糊匹配「端口范围」并填入')
+  assert(/目标地址/.test(ifNote || ''), '内联: 列出页面真实字段总览')
+  assert(ifAsked && /开始扫描/.test(ifAsked.label || ''), '内联: 找到「开始扫描」主按钮 → 弹确认卡(findSubmitButton 认内联主按钮)')
+  assert(ifRes && ifRes.submitted === true && ifScanClicked === true, '内联: 用户确认 → 真正点「开始扫描」提交')
+
+  // 内联但识别不到任何可填字段(结构特殊/自定义)→ 如实告知 + 列出要填的值,绝不空点提交
+  const ifBlankVm = { $options: { name: 'Weird' }, $el: new FakeEl({ q: {} }) }
+  registerPage(ifBlankVm)
+  let ifBlankNote = null
+  let ifBlankAsked = false
+  const ifBlankRes = await runner._pageInlineFormFlow(
+    ifBlankVm,
+    {
+      note: (t) => {
+        ifBlankNote = t
+      },
+      requestSubmit: () => {
+        ifBlankAsked = true
+        return Promise.resolve(true)
+      }
+    },
+    { navigate: '某页', fill: [{ label: '目标地址', value: '1.1.1.1' }] }
+  )
+  assert(
+    /目标地址=1\.1\.1\.1/.test(ifBlankNote || ''),
+    '内联: 识别不到字段 → 如实告知并列出要填的值(目标地址=1.1.1.1)'
+  )
+  assert(
+    ifBlankRes.filled === false && ifBlankAsked === false,
+    '内联: 识别不到字段 → 绝不空点提交'
+  )
+
+  // ---- 内嵌独立系统(iframe 外链)识别:真机漏洞扫描=<iframe src=http://82.156.83.38:30020/>,
+  // operator 在外层进不去 → 必须识别出来如实告知,而不是空转/卡住。----
+  const realDoc = globalThis.document
+  const bigIframe = new FakeEl({})
+  bigIframe.getAttribute = (k) => (k === 'src' ? 'http://82.156.83.38:30020/' : null)
+  bigIframe.getBoundingClientRect = () => ({ left: 0, top: 0, width: 1200, height: 700 })
+  globalThis.document = {
+    querySelector: (sel) => (sel === '.app-main' ? new FakeEl({ q: { iframe: [bigIframe] } }) : null),
+    querySelectorAll: () => []
+  }
+  const emb = embeddedIframeSrc()
+  assert(emb && emb.host === '82.156.83.38:30020', 'iframe: 识别主区撑满的外链 iframe → 返回 host(82.156.83.38:30020)')
+  assert(emb && emb.src === 'http://82.156.83.38:30020/', 'iframe: 返回 iframe 真实 src(供如实告知)')
+  const smallIframe = new FakeEl({})
+  smallIframe.getAttribute = () => 'http://x/'
+  smallIframe.getBoundingClientRect = () => ({ left: 0, top: 0, width: 80, height: 60 })
+  globalThis.document = {
+    querySelector: (sel) => (sel === '.app-main' ? new FakeEl({ q: { iframe: [smallIframe] } }) : null),
+    querySelectorAll: () => []
+  }
+  assert(embeddedIframeSrc() === null, 'iframe: 小挂件 iframe(图表)不误判为独立子系统')
+  globalThis.document = { querySelector: () => null, querySelectorAll: () => [] }
+  assert(embeddedIframeSrc() === null, 'iframe: 普通页(无 iframe)→ null,照常操作')
+  globalThis.document = realDoc
 
   console.log(failed === 0 ? '\nFRONTEND-EXECUTOR-SELFTEST: PASS' : `\nFRONTEND-EXECUTOR-SELFTEST: FAIL (${failed})`)
   process.exitCode = failed === 0 ? 0 : 1

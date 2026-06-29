@@ -3,6 +3,7 @@ import type {
   AiBigScreenApp,
   AiBigScreenDeleteResponse,
   AiBigScreenListResponse,
+  AiBigScreenMetricsResponse,
   AiBigScreenPatchResponse,
   AiBigScreenPluginsResponse,
   AiBigScreenPublishResponse,
@@ -16,6 +17,14 @@ const AI_BIG_SCREEN_GENERATION_TIMEOUT_MS = 600000;
 export function listAiBigScreenPlugins() {
   return requestPortalApi<AiBigScreenPluginsResponse>(
     "/ai-big-screens/plugins",
+    {},
+    AI_BIG_SCREEN_TIMEOUT_MS,
+  );
+}
+
+export function getAiBigScreenMetrics(limit = 100) {
+  return requestPortalApi<AiBigScreenMetricsResponse>(
+    `/ai-big-screens/metrics?limit=${encodeURIComponent(String(limit))}`,
     {},
     AI_BIG_SCREEN_TIMEOUT_MS,
   );
@@ -73,7 +82,10 @@ export function getAiBigScreenDraftTask(taskId: string) {
   );
 }
 
-export function saveAiBigScreen(screen: AiBigScreenApp, requestedBy = "portal") {
+export function saveAiBigScreen(
+  screen: AiBigScreenApp,
+  requestedBy = "portal",
+) {
   return requestPortalApi<AiBigScreenResponse>(
     "/ai-big-screens",
     {
@@ -168,6 +180,8 @@ export function patchAiBigScreen(
     selectionContext?: Record<string, unknown>;
     instruction: string;
     requestedBy?: string;
+    /** dry-run: compute the diff on a copy without persisting/versioning. */
+    preview?: boolean;
   },
 ) {
   return requestPortalApi<AiBigScreenPatchResponse>(

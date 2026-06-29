@@ -1,0 +1,61 @@
+{
+  "skill_name": "zgops-cmdb",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "登录当前 .env 配置的 ZGOPS CMDB 环境，列出当前所有模型，并按业务、应用、计算资源、数据存储、网络、IPAM、DCIM 这些场景做一个简要分类。",
+      "expected_output": "返回模型清单，并给出面向场景的分类说明。",
+      "files": [],
+      "expectations": [
+        "结果说明该环境包含 36 个 CI 模型。",
+        "结果提到应用模型 project / 应用。",
+        "结果按业务、计算、数据、网络、IPAM 或 DCIM 进行场景分类。"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "查看应用模型（project / 应用）的字段和关系配置，告诉我它和产品、虚拟机、数据库、中间件之间是怎么建模的。",
+      "expected_output": "返回应用模型属性、关系类型和关系链摘要。",
+      "files": [],
+      "expectations": [
+        "结果提到 project -> deploy -> vserver。",
+        "结果提到 project -> contain -> mysql、PostgreSQL、database 或中间件。",
+        "结果提到 product -> contain -> project 或等价的父子归属关系。"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "结合当前 .env 配置的 CMDB 环境，梳理一个从产品、应用、虚拟机、数据库到机柜和 IP 地址的 CMDB 场景图，说明适合怎么落库和怎么查关系。",
+      "expected_output": "输出一个场景化的关系梳理，覆盖业务、运行时、DCIM、IPAM 四类对象。",
+      "files": [],
+      "expectations": [
+        "结果至少包含一条业务链路和一条基础设施链路。",
+        "结果提到 CI 查询接口和 CI 关系查询接口。",
+        "结果解释了 CI 查询和关系查询如何互补。"
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "给我一个可以直接渲染的 ECharts 图表，展示当前 .env 配置的 ZGOPS CMDB 环境里模型分组分布和应用关联目标分布。",
+      "expected_output": "输出包含 ECharts 代码块的 Markdown，可直接用于页面渲染。",
+      "files": [],
+      "expectations": [
+        "结果包含 ```echarts 代码块。",
+        "结果提到模型分组分布或应用关联目标分布。",
+        "结果不是只返回原始 JSON。"
+      ]
+    },
+    {
+      "id": 5,
+      "prompt": "请先查看当前 .env 配置的 CMDB 环境里实际管理的应用实例，再把其中一个应用及其关联的产品、虚拟机、数据库、中间件、机柜、IP 地址画成可以直接渲染的 ECharts 拓扑图，要求从左到右展开。",
+      "expected_output": "输出包含 ECharts 树状图代码块的 Markdown，适合展示应用关系拓扑。",
+      "files": [],
+      "expectations": [
+        "结果包含 ```echarts 代码块。",
+        "结果包含 tree 类型，或明确使用 ECharts 树状图。",
+        "结果包含从左到右展开的信息，例如 orient: 'LR' 或等价配置。",
+        "结果以 CMDB 中实际应用实例为根节点展开关系。"
+      ]
+    }
+  ]
+}

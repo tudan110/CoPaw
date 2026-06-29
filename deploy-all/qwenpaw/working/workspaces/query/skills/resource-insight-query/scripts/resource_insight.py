@@ -31,6 +31,11 @@ RESOURCE_TYPES = {
     "operating_system": {"api_type": "操作系统", "label": "操作系统", "default_order_code": "cpuRate"},
     "operatingsystem": {"api_type": "操作系统", "label": "操作系统", "default_order_code": "cpuRate"},
     "操作系统": {"api_type": "操作系统", "label": "操作系统", "default_order_code": "cpuRate"},
+    # 主机 / host 在 INOE 侧的性能数据归在「操作系统」维度；问“主机磁盘”默认按磁盘排行。
+    "host": {"api_type": "操作系统", "label": "主机", "default_order_code": "diskRate"},
+    "hosts": {"api_type": "操作系统", "label": "主机", "default_order_code": "diskRate"},
+    "主机": {"api_type": "操作系统", "label": "主机", "default_order_code": "diskRate"},
+    "主机系统": {"api_type": "操作系统", "label": "主机", "default_order_code": "diskRate"},
     "server": {"api_type": "服务器", "label": "服务器", "default_order_code": "cpuRate"},
     "服务器": {"api_type": "服务器", "label": "服务器", "default_order_code": "cpuRate"},
     "compute": {"api_type": "服务器", "label": "服务器", "default_order_code": "cpuRate"},
@@ -261,9 +266,14 @@ def query_top_metric(
 def query_top_resource_metric(
     top_num: int = 10,
     order_key: str = "diskRate",
+    resource_type: str | None = None,
     **kwargs: Any,
 ) -> dict[str, Any]:
-    payload = {"topNum": top_num, "orderKey": order_key}
+    payload: dict[str, Any] = {"topNum": top_num, "orderKey": order_key}
+    # 该接口默认返回全局 Top；带 resource_type 时按资源维度注入 type 过滤。
+    # 缺省不传 type，保持与旧行为兼容。
+    if resource_type:
+        payload["type"] = normalize_resource_type(resource_type)["api_type"]
     return request_json("POST", "/resource/resource/performance/topResMetricData", json_payload=payload, **kwargs)
 
 
@@ -308,6 +318,49 @@ def _metric_value(row: dict[str, Any], key: str) -> Any:
     if isinstance(metric_data, dict) and key in metric_data:
         return metric_data.get(key)
     return row.get(key)
+
+
+def _to_float(value: Any) -> float | None:
+    """Parse a metric value (e.g. ``85``, ``85.3``, ``"85.3%"``) to float."""
+    if value is None:
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    text = str(value).strip().rstrip("%").replace(",", "")
+    if not text:
+        return None
+    try:
+        return float(text)
+    except ValueError:
+        return None
+
+
+def filter_payload_rows_by_min_rate(
+    payload: dict[str, Any],
+    metric_key: str,
+    min_rate: float | None,
+) -> dict[str, Any]:
+    """Narrow a success payload's row list to rows where ``metric_key`` >= ``min_rate``.
+
+    Lets callers ask e.g. "磁盘使用率超 80% 的主机" in one shot instead of
+    fetching a Top-N list and self-filtering (which repeatedly came back empty
+    and triggered tool retries). No-op when ``min_rate`` is None, the payload
+    is not a 200 envelope, or no row list can be located.
+    """
+    if min_rate is None or payload.get("code") != 200:
+        return payload
+    rows = _as_list(payload)
+    kept = [
+        row
+        for row in rows
+        if (_to_float(_metric_value(row, metric_key)) or 0.0) >= min_rate
+    ]
+    if isinstance(payload.get("data"), list):
+        payload["data"] = kept
+    elif isinstance(payload.get("rows"), list):
+        payload["rows"] = kept
+    # Unknown shape → leave the payload untouched rather than wipe it.
+    return payload
 
 
 def _format_table(headers: list[str], rows: list[list[Any]]) -> str:
@@ -496,14 +549,17 @@ def build_parser() -> argparse.ArgumentParser:
     status.add_argument("--output", choices=["json", "markdown"], default="markdown")
 
     top = subparsers.add_parser("top-metric", help="查询页面性能 Top")
-    top.add_argument("--resource_type", default="database", help="database/network/os/server/middleware")
+    top.add_argument("--resource_type", default="database", help="database/network/os/server/host(主机)/middleware")
     top.add_argument("--top_num", type=int, default=5)
     top.add_argument("--order_code", help="cpuRate/memRate/diskRate/avgDelay/lossPercent/responseTim/linkCount")
+    top.add_argument("--min_rate", type=float, help="仅保留所排指标 >= 此阈值的行，例如填 80 表示筛出使用率达到 80 及以上的资源")
     top.add_argument("--output", choices=["json", "markdown"], default="markdown")
 
     top_resource = subparsers.add_parser("top-resource-metric", help="查询资源性能 Top")
     top_resource.add_argument("--top_num", type=int, default=10)
     top_resource.add_argument("--order_key", default="diskRate")
+    top_resource.add_argument("--resource_type", help="可选，按资源维度过滤，如 host/主机/server/database")
+    top_resource.add_argument("--min_rate", type=float, help="仅保留 order_key 指标 >= 此阈值的行")
     top_resource.add_argument("--output", choices=["json", "markdown"], default="markdown")
 
     metric_page = subparsers.add_parser("metric-page", help="查询数据库性能指标清单")
@@ -541,11 +597,20 @@ def main(argv: list[str] | None = None) -> int:
             order_code=args.order_code,
             **common,
         )
+        resource = normalize_resource_type(args.resource_type)
+        metric_key = args.order_code or resource["default_order_code"]
+        payload = filter_payload_rows_by_min_rate(payload, metric_key, args.min_rate)
         print_output(payload, args.output, format_top_metric_markdown(payload, args.resource_type, args.order_code))
         return 0 if payload.get("code") == 200 else 1
 
     if args.command == "top-resource-metric":
-        payload = query_top_resource_metric(top_num=args.top_num, order_key=args.order_key, **common)
+        payload = query_top_resource_metric(
+            top_num=args.top_num,
+            order_key=args.order_key,
+            resource_type=args.resource_type,
+            **common,
+        )
+        payload = filter_payload_rows_by_min_rate(payload, args.order_key, args.min_rate)
         print_output(payload, args.output, format_top_resource_metric_markdown(payload, args.order_key))
         return 0 if payload.get("code") == 200 else 1
 

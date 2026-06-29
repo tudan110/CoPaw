@@ -1,0 +1,9 @@
+[project]
+name = "device-list"
+version = "0.1.0"
+description = "Device list management skill"
+requires-python = ">=3.8"
+dependencies = [
+    "python-dotenv>=1.0.0",
+    "requests>=2.28.0",
+]

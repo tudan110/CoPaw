@@ -4,6 +4,7 @@ import {
   deleteAiBigScreen,
   duplicateAiBigScreen,
   getAiBigScreenDraftTask,
+  getAiBigScreenMetrics,
   listAiBigScreenPlugins,
   listAiBigScreens,
   patchAiBigScreen,
@@ -14,9 +15,17 @@ import {
 } from "../../api/aiBigScreen";
 import { BigScreenRenderer } from "../../components/big-screen/BigScreenRenderer.tsx";
 import { adaptLegacyScreen } from "../../components/big-screen/adaptLegacyScreen.ts";
+import { summarizePatchDiff } from "../../components/big-screen/patchDiff.ts";
+import {
+  formatPercent,
+  formatDurationMs,
+  topFailingCapabilities,
+  hasMetrics,
+} from "../../components/big-screen/metricsFormat.ts";
 import "../../components/big-screen/big-screen.css";
 import type {
   AiBigScreenApp,
+  AiBigScreenMetricsResponse,
   AiBigScreenPlugin,
   AiBigScreenPublishTarget,
   AiBigScreenTask,
@@ -31,13 +40,15 @@ function extractErrorMessage(error: unknown) {
   return String(error || "");
 }
 
-function getExternalTarget(screen: AiBigScreenApp | null): AiBigScreenPublishTarget | null {
+function getExternalTarget(
+  screen: AiBigScreenApp | null,
+): AiBigScreenPublishTarget | null {
   if (!screen?.publishTargets?.length) {
     return null;
   }
   return (
-    screen.publishTargets.find((item) => item.type === "external-link")
-    || screen.publishTargets[0]
+    screen.publishTargets.find((item) => item.type === "external-link") ||
+    screen.publishTargets[0]
   );
 }
 
@@ -67,7 +78,11 @@ function getComponentCount(screen: AiBigScreenApp) {
   return screen.components?.length || 0;
 }
 
-function AiBigScreenGenerationStage({ task }: { task: AiBigScreenTask | null }) {
+function AiBigScreenGenerationStage({
+  task,
+}: {
+  task: AiBigScreenTask | null;
+}) {
   const activeStage = String(task?.stage || "queued");
   return (
     <section className="ai-big-screen-generation-stage" aria-live="polite">
@@ -82,7 +97,10 @@ function AiBigScreenGenerationStage({ task }: { task: AiBigScreenTask | null }) 
       <div className="ai-big-screen-generation-copy">
         <span>AI 编排进行中</span>
         <h2>正在生成大屏草稿</h2>
-        <p>{task?.message || "复杂大屏会持续调用模型和数据接口，可能需要数分钟。"}</p>
+        <p>
+          {task?.message ||
+            "复杂大屏会持续调用模型和数据接口，可能需要数分钟。"}
+        </p>
       </div>
       <div className="ai-big-screen-generation-flow">
         {GENERATION_STEPS.map((step, index) => {
@@ -141,8 +159,12 @@ export function AiBigScreenPanel() {
   const [screens, setScreens] = useState<AiBigScreenApp[]>([]);
   const [plugins, setPlugins] = useState<AiBigScreenPlugin[]>([]);
   const [selectedComponentId, setSelectedComponentId] = useState("");
-  const [selectedComponentIds, setSelectedComponentIds] = useState<string[]>([]);
-  const [generationTask, setGenerationTask] = useState<AiBigScreenTask | null>(null);
+  const [selectedComponentIds, setSelectedComponentIds] = useState<string[]>(
+    [],
+  );
+  const [generationTask, setGenerationTask] = useState<AiBigScreenTask | null>(
+    null,
+  );
   const [regionEditorOpen, setRegionEditorOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -150,9 +172,16 @@ export function AiBigScreenPanel() {
   const [publishing, setPublishing] = useState(false);
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
+  const [previewLines, setPreviewLines] = useState<string[]>([]);
+  const [previewing, setPreviewing] = useState(false);
+  const [metrics, setMetrics] = useState<AiBigScreenMetricsResponse | null>(
+    null,
+  );
 
   const selectedComponent = useMemo(
-    () => screen?.components?.find((item) => item.id === selectedComponentId) || null,
+    () =>
+      screen?.components?.find((item) => item.id === selectedComponentId) ||
+      null,
     [screen, selectedComponentId],
   );
   const externalTarget = getExternalTarget(screen);
@@ -175,6 +204,13 @@ export function AiBigScreenPanel() {
       setPlugins(pluginsResponse.items || []);
     } catch (requestError) {
       setError(extractErrorMessage(requestError) || "加载 AI 大屏工坊失败");
+    }
+    // generation quality is supplementary — its failure never blocks the
+    // catalog, so it is loaded separately and swallowed on error.
+    try {
+      setMetrics(await getAiBigScreenMetrics());
+    } catch {
+      setMetrics(null);
     }
   };
 
@@ -260,12 +296,18 @@ export function AiBigScreenPanel() {
     try {
       const saved = await persistScreen(screen);
       const response = await patchAiBigScreen(saved.id, {
-        baseVersionId: saved.versions?.[saved.versions.length - 1]?.versionId || "",
+        baseVersionId:
+          saved.versions?.[saved.versions.length - 1]?.versionId || "",
         selectedComponentId,
         selectedComponentIds,
         selectionContext: {
           selectedTitles: selectedComponentIds
-            .map((componentId) => saved.components?.find((component) => component.id === componentId)?.title)
+            .map(
+              (componentId) =>
+                saved.components?.find(
+                  (component) => component.id === componentId,
+                )?.title,
+            )
             .filter(Boolean),
         },
         instruction: editInstruction.trim(),
@@ -273,6 +315,7 @@ export function AiBigScreenPanel() {
       });
       setScreen(response.screen);
       setEditInstruction("");
+      setPreviewLines([]);
       setRegionEditorOpen(false);
       setNotice(response.summary || "组件已按自然语言要求修改。");
       await loadCatalog();
@@ -280,6 +323,50 @@ export function AiBigScreenPanel() {
       setError(extractErrorMessage(requestError) || "修改组件失败");
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handlePreviewPatch = async () => {
+    if (!screen || !selectedComponentId || !editInstruction.trim()) {
+      setError("请先选择组件并输入修改要求");
+      return;
+    }
+    setPreviewing(true);
+    setError("");
+    setNotice("");
+    setPreviewLines([]);
+    try {
+      const saved = await persistScreen(screen);
+      const response = await patchAiBigScreen(saved.id, {
+        baseVersionId:
+          saved.versions?.[saved.versions.length - 1]?.versionId || "",
+        selectedComponentId,
+        selectedComponentIds,
+        selectionContext: {
+          selectedTitles: selectedComponentIds
+            .map(
+              (componentId) =>
+                saved.components?.find(
+                  (component) => component.id === componentId,
+                )?.title,
+            )
+            .filter(Boolean),
+        },
+        instruction: editInstruction.trim(),
+        requestedBy: "portal",
+        preview: true,
+      });
+      const lines = summarizePatchDiff(response.diff);
+      setPreviewLines(lines);
+      setNotice(
+        lines.length
+          ? `预览：将产生 ${lines.length} 项变更，确认后再应用。`
+          : "预览：AI 未生成可执行的变更。",
+      );
+    } catch (requestError) {
+      setError(extractErrorMessage(requestError) || "预览变更失败");
+    } finally {
+      setPreviewing(false);
     }
   };
 
@@ -298,14 +385,16 @@ export function AiBigScreenPanel() {
     try {
       const saved = await persistScreen(screen);
       const response = await patchAiBigScreen(saved.id, {
-        baseVersionId: saved.versions?.[saved.versions.length - 1]?.versionId || "",
+        baseVersionId:
+          saved.versions?.[saved.versions.length - 1]?.versionId || "",
         selectedComponentId: "",
         instruction: prompt.trim(),
         requestedBy: "portal",
       });
       const nextComponents = response.screen.components || [];
       setScreen(response.screen);
-      const appendedComponentId = nextComponents[nextComponents.length - 1]?.id || "";
+      const appendedComponentId =
+        nextComponents[nextComponents.length - 1]?.id || "";
       setSelectedComponentId(appendedComponentId);
       setSelectedComponentIds(appendedComponentId ? [appendedComponentId] : []);
       setRegionEditorOpen(false);
@@ -332,7 +421,9 @@ export function AiBigScreenPanel() {
         visibility: "internal",
       });
       setScreen(response.screen);
-      setNotice("大屏已发布，已进入展示中心，也可以通过链接打开或嵌入其他系统。");
+      setNotice(
+        "大屏已发布，已进入展示中心，也可以通过链接打开或嵌入其他系统。",
+      );
       await loadCatalog();
     } catch (requestError) {
       setError(extractErrorMessage(requestError) || "发布大屏失败");
@@ -379,7 +470,10 @@ export function AiBigScreenPanel() {
     setEditInstruction("");
   };
 
-  const handleSelectComponent = (componentId: string, options?: { additive?: boolean }) => {
+  const handleSelectComponent = (
+    componentId: string,
+    options?: { additive?: boolean },
+  ) => {
     setSelectedComponentId(componentId);
     setSelectedComponentIds((current) => {
       if (!options?.additive) {
@@ -396,7 +490,9 @@ export function AiBigScreenPanel() {
   };
 
   const handleDeleteScreen = async (item: AiBigScreenApp) => {
-    const confirmed = window.confirm(`删除「${item.name}」？删除后该大屏不会再出现在管理台。`);
+    const confirmed = window.confirm(
+      `删除「${item.name}」？删除后该大屏不会再出现在管理台。`,
+    );
     if (!confirmed) {
       return;
     }
@@ -498,7 +594,12 @@ export function AiBigScreenPanel() {
                 disabled={loading || extending}
                 onClick={() => void handleGenerateDraft()}
               >
-                <i className={`fas ${loading ? "fa-spinner fa-spin" : "fa-wand-magic-sparkles"}`} aria-hidden="true" />
+                <i
+                  className={`fas ${
+                    loading ? "fa-spinner fa-spin" : "fa-wand-magic-sparkles"
+                  }`}
+                  aria-hidden="true"
+                />
                 {loading ? "生成中..." : "确认生成大屏"}
                 <i className="fas fa-arrow-right" aria-hidden="true" />
               </button>
@@ -508,7 +609,12 @@ export function AiBigScreenPanel() {
                 disabled={!screen || loading || extending || !prompt.trim()}
                 onClick={() => void handleAppendPrompt()}
               >
-                <i className={`fas ${extending ? "fa-spinner fa-spin" : "fa-layer-group"}`} aria-hidden="true" />
+                <i
+                  className={`fas ${
+                    extending ? "fa-spinner fa-spin" : "fa-layer-group"
+                  }`}
+                  aria-hidden="true"
+                />
                 {extending ? "追加中..." : "追加到当前大屏"}
               </button>
             </div>
@@ -527,7 +633,9 @@ export function AiBigScreenPanel() {
             <section className="ai-big-screen-actions">
               <div className="ai-big-screen-action-head">
                 <span>当前资产</span>
-                <strong>{screen ? getStatusLabel(screen.status) : "未生成"}</strong>
+                <strong>
+                  {screen ? getStatusLabel(screen.status) : "未生成"}
+                </strong>
               </div>
               <button
                 type="button"
@@ -562,7 +670,10 @@ export function AiBigScreenPanel() {
                 disabled={!externalTarget?.url}
                 onClick={handleOpenPublished}
               >
-                <i className="fas fa-arrow-up-right-from-square" aria-hidden="true" />
+                <i
+                  className="fas fa-arrow-up-right-from-square"
+                  aria-hidden="true"
+                />
                 打开发布链接
               </button>
               <button
@@ -575,8 +686,12 @@ export function AiBigScreenPanel() {
               </button>
             </section>
 
-            {notice ? <div className="ai-big-screen-notice">{notice}</div> : null}
-            {error ? <div className="ai-big-screen-notice error">{error}</div> : null}
+            {notice ? (
+              <div className="ai-big-screen-notice">{notice}</div>
+            ) : null}
+            {error ? (
+              <div className="ai-big-screen-notice error">{error}</div>
+            ) : null}
 
             <section className="ai-big-screen-library ai-big-screen-admin">
               <div className="ai-big-screen-section-head">
@@ -597,12 +712,52 @@ export function AiBigScreenPanel() {
                   草稿
                 </span>
               </div>
+              {hasMetrics(metrics ?? undefined) && metrics ? (
+                <div className="ai-big-screen-quality">
+                  <div className="ai-big-screen-quality-head">
+                    <span>生成质量</span>
+                    <span>近 {metrics.total} 次</span>
+                  </div>
+                  <div className="ai-big-screen-quality-row">
+                    <span>
+                      <strong>{formatPercent(metrics.successRate)}</strong>
+                      成功率
+                    </span>
+                    <span>
+                      <strong>{formatPercent(metrics.degradedRate)}</strong>
+                      降级率
+                    </span>
+                    <span>
+                      <strong>{formatDurationMs(metrics.avgDurationMs)}</strong>
+                      平均耗时
+                    </span>
+                  </div>
+                  {topFailingCapabilities(metrics.capabilityFailureRates, 3)
+                    .length ? (
+                    <ul className="ai-big-screen-quality-fail">
+                      {topFailingCapabilities(
+                        metrics.capabilityFailureRates,
+                        3,
+                      ).map((item) => (
+                        <li key={item.capabilityId}>
+                          {item.capabilityId}
+                          <em>{formatPercent(item.rate)} 失败</em>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : null}
+                </div>
+              ) : null}
               {screens.length ? (
                 <div className="ai-big-screen-list">
                   {screens.map((item) => (
                     <article
                       key={item.id}
-                      className={screen?.id === item.id ? "ai-big-screen-asset active" : "ai-big-screen-asset"}
+                      className={
+                        screen?.id === item.id
+                          ? "ai-big-screen-asset active"
+                          : "ai-big-screen-asset"
+                      }
                     >
                       <button
                         type="button"
@@ -611,7 +766,9 @@ export function AiBigScreenPanel() {
                       >
                         <span>{item.name}</span>
                         <small>
-                          {getStatusLabel(item.status)} · {getComponentCount(item)} 组件 · {formatFriendlyDateTime(item.updatedAt || "")}
+                          {getStatusLabel(item.status)} ·{" "}
+                          {getComponentCount(item)} 组件 ·{" "}
+                          {formatFriendlyDateTime(item.updatedAt || "")}
                         </small>
                       </button>
                       <div className="ai-big-screen-asset-actions">
@@ -645,7 +802,11 @@ export function AiBigScreenPanel() {
                           onClick={() => {
                             const target = getExternalTarget(item);
                             if (target?.url) {
-                              window.open(target.url, "_blank", "noopener,noreferrer");
+                              window.open(
+                                target.url,
+                                "_blank",
+                                "noopener,noreferrer",
+                              );
                             }
                           }}
                         >
@@ -687,7 +848,13 @@ export function AiBigScreenPanel() {
           </div>
         </aside>
 
-        <main className={loading ? "ai-big-screen-preview generating" : "ai-big-screen-preview"}>
+        <main
+          className={
+            loading
+              ? "ai-big-screen-preview generating"
+              : "ai-big-screen-preview"
+          }
+        >
           {loading ? (
             <AiBigScreenGenerationStage task={generationTask} />
           ) : screen ? (
@@ -738,8 +905,11 @@ export function AiBigScreenPanel() {
                   <span>选中区域</span>
                   <strong>{selectedComponent.title}</strong>
                   <small>
-                    {selectedComponent.type} · {selectedComponent.pluginId || "local"}
-                    {selectedComponentIds.length > 1 ? ` · 已选 ${selectedComponentIds.length} 个区域` : ""}
+                    {selectedComponent.type} ·{" "}
+                    {selectedComponent.pluginId || "local"}
+                    {selectedComponentIds.length > 1
+                      ? ` · 已选 ${selectedComponentIds.length} 个区域`
+                      : ""}
                   </small>
                 </div>
                 <button
@@ -754,20 +924,55 @@ export function AiBigScreenPanel() {
               <div className="ai-big-screen-region-editor-body">
                 <textarea
                   value={editInstruction}
-                  onChange={(event) => setEditInstruction(event.target.value)}
+                  onChange={(event) => {
+                    setEditInstruction(event.target.value);
+                    if (previewLines.length) setPreviewLines([]);
+                  }}
                   placeholder="例如：这个区域颜色太冷，换成更有温度的风格"
                   rows={3}
                   autoFocus
                 />
-                <button
-                  type="button"
-                  className="ai-big-screen-region-submit"
-                  disabled={!editInstruction.trim() || saving}
-                  onClick={() => void handlePatch()}
-                >
-                  <i className={`fas ${saving ? "fa-spinner fa-spin" : "fa-paper-plane"}`} aria-hidden="true" />
-                  {saving ? "修改中..." : "应用修改"}
-                </button>
+                {previewLines.length ? (
+                  <ul className="ai-big-screen-preview-diff">
+                    {previewLines.map((line, index) => (
+                      <li key={index}>{line}</li>
+                    ))}
+                  </ul>
+                ) : null}
+                <div className="ai-big-screen-region-actions">
+                  <button
+                    type="button"
+                    className="ai-big-screen-region-preview"
+                    disabled={!editInstruction.trim() || previewing || saving}
+                    onClick={() => void handlePreviewPatch()}
+                  >
+                    <i
+                      className={`fas ${
+                        previewing ? "fa-spinner fa-spin" : "fa-eye"
+                      }`}
+                      aria-hidden="true"
+                    />
+                    {previewing ? "预览中..." : "预览变更"}
+                  </button>
+                  <button
+                    type="button"
+                    className="ai-big-screen-region-submit"
+                    disabled={!editInstruction.trim() || saving}
+                    onClick={() => void handlePatch()}
+                  >
+                    <i
+                      className={`fas ${
+                        saving ? "fa-spinner fa-spin" : "fa-paper-plane"
+                      }`}
+                      aria-hidden="true"
+                    />
+                    {saving
+                      ? "修改中..."
+                      : previewLines.length
+                      ? "确认应用"
+                      : "应用修改"}
+                  </button>
+                </div>
               </div>
             </section>
           ) : null}
