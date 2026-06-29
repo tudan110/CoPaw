@@ -1331,6 +1331,41 @@ function assert(cond, msg) {
   )
   assert(a2Asked.length === 1 && a2Asked[0] === '目标地址', 'A2: open 表单只逐项引导【必填】(目标地址),不骚扰选填(备注)')
 
+  // ---- 复合指令 open+fill:已给值(目标地址/端口)直接填进弹窗、不再追问;缺的必填项才引导 ----
+  const cfAddr = new FakeEl({})
+  cfAddr.dispatchEvent = () => {}
+  const cfPort = new FakeEl({})
+  cfPort.dispatchEvent = () => {}
+  const cfRemark = new FakeEl({})
+  cfRemark.dispatchEvent = () => {}
+  const cfItem = (label, inp, required) =>
+    new FakeEl({
+      className: required ? 'el-form-item is-required' : 'el-form-item',
+      q: {
+        '.el-form-item__label': [new FakeEl({ text: label })],
+        input: [inp],
+        '.el-form-item__content input, .el-form-item__content textarea': [inp]
+      }
+    })
+  const cfDialog = new FakeEl({
+    q: { '.el-form-item': [cfItem('目标地址', cfAddr, true), cfItem('端口', cfPort, true), cfItem('备注', cfRemark, true)] }
+  })
+  let cfAsked = []
+  await runner._fillDialogFields(
+    { form: {} },
+    cfDialog,
+    {
+      requestInput: (f) => {
+        cfAsked.push(f.label)
+        return Promise.resolve('用户补的')
+      }
+    },
+    { requiredOnly: true, provided: [{ label: '目标地址', value: '192.168.1.1' }, { label: '端口', value: '80' }] }
+  )
+  assert(cfAddr.value === '192.168.1.1' && cfPort.value === '80', '复合: 已给值(目标地址/端口)直接填进弹窗')
+  assert(cfAsked.indexOf('目标地址') === -1 && cfAsked.indexOf('端口') === -1, '复合: 已给值的字段不再追问')
+  assert(cfAsked.indexOf('备注') !== -1, '复合: 缺的必填项「备注」→ 引导用户输入')
+
   console.log(failed === 0 ? '\nFRONTEND-EXECUTOR-SELFTEST: PASS' : `\nFRONTEND-EXECUTOR-SELFTEST: FAIL (${failed})`)
   process.exitCode = failed === 0 ? 0 : 1
 })().catch((e) => {
