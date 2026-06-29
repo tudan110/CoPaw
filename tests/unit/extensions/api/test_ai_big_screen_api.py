@@ -7,6 +7,7 @@ ai_big_screen/. These tests pin the HTTP-facing contract: route
 wiring, the legacy AiBigScreenApp wire shape, the draft-task polling
 protocol, and asset CRUD over the registry.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -23,6 +24,7 @@ from qwenpaw.extensions.api.ai_big_screen_api import (
     duplicate_ai_big_screen,
     generate_ai_big_screen_draft,
     get_ai_big_screen,
+    get_ai_big_screen_capability_config,
     get_ai_big_screen_draft_task,
     get_ai_big_screen_metrics,
     list_ai_big_screen_plugins,
@@ -253,6 +255,40 @@ class TestMetricsEndpoint:
         assert response.kinds.get("draft", 0) >= 1
         assert response.kinds.get("refresh", 0) == 1
         assert response.successRate == 1.0
+
+
+class TestCapabilityConfigEndpoint:
+    def test_lists_capabilities_with_domain_and_health(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        # INOE configured, n9e/zgops not → mixed health
+        for var in (
+            "N9E_API_BASE_URL",
+            "N9E_USER_TOKEN",
+            "ZGOPS_BASE_URL",
+            "ZGOPS_USERNAME",
+            "ZGOPS_PASSWORD",
+        ):
+            monkeypatch.delenv(var, raising=False)
+        monkeypatch.setenv("INOE_API_BASE_URL", "http://82.156.83.38:30080")
+        monkeypatch.setenv("INOE_API_TOKEN", "tok")
+
+        response = get_ai_big_screen_capability_config()
+        by_id = {item.id: item for item in response.items}
+
+        # the planning-only gap capability is not a data source
+        assert "capability-gap" not in by_id
+        # functional-domain + connection are surfaced per capability
+        assert by_id["real-alarms"].category == "alarm"
+        assert by_id["real-alarms"].connection == "inoe"
+        assert by_id["real-alarms"].configured is True
+        # n9e-backed logs report unconfigured + the tab to fix it
+        assert by_id["system-logs"].configured is False
+        assert by_id["system-logs"].settingsTab == "n9e"
+        assert by_id["system-logs"].reason
+        # web capability never needs a connection
+        assert by_id["web-live-data"].configured is True
 
 
 class TestPatchEndpoint:

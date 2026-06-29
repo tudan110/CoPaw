@@ -6,6 +6,7 @@ from typing import Annotated
 from fastapi import APIRouter, HTTPException, Query
 
 from qwenpaw.extensions.api.ai_big_screen_models import (
+    AiBigScreenCapabilityConfigResponse,
     AiBigScreenDeleteResponse,
     AiBigScreenDuplicateRequest,
     AiBigScreenDraftRequest,
@@ -35,6 +36,7 @@ from qwenpaw.extensions.api.ai_big_screen_service import (
     refresh_screen_asset,
     rename_screen_asset,
     save_screen_asset,
+    summarize_capability_config,
     summarize_generation_metrics,
 )
 
@@ -56,6 +58,20 @@ def get_ai_big_screen_metrics(
         **summarize_generation_metrics(
             limit=limit,
         ),
+    )
+
+
+# NOTE: must be registered before the catch-all "/{screen_id}" route.
+@router.get(
+    "/capability-config",
+    response_model=AiBigScreenCapabilityConfigResponse,
+)
+def get_ai_big_screen_capability_config() -> (
+    AiBigScreenCapabilityConfigResponse
+):
+    """Each capability's functional domain + backing-connection health."""
+    return AiBigScreenCapabilityConfigResponse(
+        **summarize_capability_config(),
     )
 
 

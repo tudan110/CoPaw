@@ -1,6 +1,7 @@
 import { requestPortalApi } from "./portalWorkorders";
 import type {
   AiBigScreenApp,
+  AiBigScreenCapabilityConfigResponse,
   AiBigScreenDeleteResponse,
   AiBigScreenListResponse,
   AiBigScreenMetricsResponse,
@@ -25,6 +26,14 @@ export function listAiBigScreenPlugins() {
 export function getAiBigScreenMetrics(limit = 100) {
   return requestPortalApi<AiBigScreenMetricsResponse>(
     `/ai-big-screens/metrics?limit=${encodeURIComponent(String(limit))}`,
+    {},
+    AI_BIG_SCREEN_TIMEOUT_MS,
+  );
+}
+
+export function getAiBigScreenCapabilityConfig() {
+  return requestPortalApi<AiBigScreenCapabilityConfigResponse>(
+    "/ai-big-screens/capability-config",
     {},
     AI_BIG_SCREEN_TIMEOUT_MS,
   );

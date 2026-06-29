@@ -135,6 +135,8 @@ def _metadata(workspace: str, skill: str, block: Mapping[str, Any]) -> dict:
         "id": capability_id,
         "name": str(block.get("name") or skill),
         "domain": str(block.get("domain") or "skill"),
+        "category": str(block.get("domain") or "skill"),
+        "connection": str(block.get("connection") or "inoe"),
         "description": str(
             block.get("description") or f"技能「{skill}」提供的大屏数据能力",
         ),

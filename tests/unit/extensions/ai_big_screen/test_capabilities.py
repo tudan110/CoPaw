@@ -214,6 +214,24 @@ class TestRegistry:
         assert descriptor is not None
         assert descriptor.is_gap is True
 
+    def test_metadata_carries_category_and_connection(self) -> None:
+        by_id = {item["id"]: item for item in list_capability_metadata()}
+        # every capability declares both classification keys
+        for item in by_id.values():
+            assert "category" in item
+            assert "connection" in item
+        # functional-domain mapping is honest about the backing connection
+        assert by_id["real-alarms"]["category"] == "alarm"
+        assert by_id["real-alarms"]["connection"] == "inoe"
+        assert by_id["workorders"]["category"] == "workorder"
+        assert by_id["workorders"]["connection"] == "inoe"
+        assert by_id["cmdb-resources"]["category"] == "cmdb"
+        assert by_id["system-logs"]["category"] == "logs"
+        assert by_id["system-logs"]["connection"] == "n9e"
+        # web/gap need no connection
+        assert by_id["web-live-data"]["connection"] == ""
+        assert by_id["capability-gap"]["connection"] == ""
+
 
 class TestHonestIntegrationWiring:
     async def test_real_alarms_failure_is_failed(

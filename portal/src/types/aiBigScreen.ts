@@ -47,13 +47,7 @@ export interface AiBigScreenVisualSpec {
   motion?: "none" | "pulse" | "scan" | "flow" | "stagger" | string;
   density?: "compact" | "balanced" | "showcase" | string;
   layoutPattern?:
-    | "grid"
-    | "focus"
-    | "split"
-    | "timeline"
-    | "matrix"
-    | "flow"
-    | string;
+    "grid" | "focus" | "split" | "timeline" | "matrix" | "flow" | string;
   composition?: "primary" | "secondary" | "supporting" | string;
   bindings?: Record<string, string>;
   highlightRules?: AiBigScreenVisualRule[];
@@ -169,6 +163,23 @@ export interface AiBigScreenMetricsResponse {
   avgDurationMs: number;
   capabilityFailureRates: Record<string, number>;
   kinds: Record<string, number>;
+}
+
+export interface AiBigScreenCapabilityConfigItem {
+  id: string;
+  name: string;
+  /** functional domain: alarm / workorder / cmdb / logs / inspection / … */
+  category: string;
+  /** backing connection: inoe / n9e / zgops / proxy:<id> / skill:<…> / "" */
+  connection: string;
+  configured: boolean;
+  /** settings page tab that fixes an unconfigured connection */
+  settingsTab: string;
+  reason: string;
+}
+
+export interface AiBigScreenCapabilityConfigResponse {
+  items: AiBigScreenCapabilityConfigItem[];
 }
 
 export interface AiBigScreenPatchResponse {

@@ -80,6 +80,24 @@ class AiBigScreenMetricsResponse(BaseModel):
     kinds: dict[str, int] = Field(default_factory=dict)
 
 
+class AiBigScreenCapabilityConfigItem(BaseModel):
+    """One capability's functional domain + backing-connection health."""
+
+    id: str
+    name: str = ""
+    category: str = ""
+    connection: str = ""
+    configured: bool = True
+    settingsTab: str = ""
+    reason: str = ""
+
+
+class AiBigScreenCapabilityConfigResponse(BaseModel):
+    items: list[AiBigScreenCapabilityConfigItem] = Field(
+        default_factory=list,
+    )
+
+
 class AiBigScreenPublishResponse(BaseModel):
     screen: dict[str, Any]
     publishTargets: list[dict[str, Any]] = Field(default_factory=list)

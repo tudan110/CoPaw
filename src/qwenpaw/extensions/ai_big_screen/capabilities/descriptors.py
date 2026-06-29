@@ -873,6 +873,29 @@ CAPABILITY_METADATA: list[dict[str, Any]] = [
 ]
 
 
+# Functional domain + backing connection per built-in capability, so the
+# config center can group by domain (告警/工单/CMDB/日志…) and show which
+# connection each capability needs. Injected into CAPABILITY_METADATA below.
+_CAPABILITY_CLASSIFICATION: dict[str, tuple[str, str]] = {
+    "system-logs": ("logs", "n9e"),
+    "real-alarms": ("alarm", "inoe"),
+    "cmdb-resources": ("cmdb", "inoe"),
+    "workorders": ("workorder", "inoe"),
+    "alarm-top5": ("alarm", "inoe"),
+    "topology-impact": ("cmdb", "inoe"),
+    "web-live-data": ("web", ""),
+    "capability-gap": ("", ""),
+}
+
+for _meta in CAPABILITY_METADATA:
+    _category, _connection = _CAPABILITY_CLASSIFICATION.get(
+        str(_meta.get("id") or ""),
+        ("", ""),
+    )
+    _meta.setdefault("category", _category)
+    _meta.setdefault("connection", _connection)
+
+
 def fetch_web_live(query_params: Mapping[str, Any]) -> dict[str, Any]:
     from qwenpaw.extensions.ai_big_screen.capabilities import web_live
 

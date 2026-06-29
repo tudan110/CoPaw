@@ -53,6 +53,7 @@ __all__ = [
     "patch_screen_asset",
     "refresh_screen_asset",
     "summarize_generation_metrics",
+    "summarize_capability_config",
 ]
 
 AI_BIG_SCREEN_CONFIGURE_LLM_MESSAGE = CONFIGURE_LLM_MESSAGE
@@ -69,6 +70,37 @@ def list_builtin_plugins() -> list[dict[str, Any]]:
 def summarize_generation_metrics(*, limit: int = 100) -> dict[str, Any]:
     """Quality signals over the recent generation window (M2)."""
     return telemetry.summarize(limit=limit)
+
+
+def summarize_capability_config() -> dict[str, Any]:
+    """Per-capability functional domain + backing-connection health.
+
+    Lets the config center group capabilities by domain (告警/工单/
+    CMDB/日志…) and flag which connection each needs and whether it is
+    configured. ``capability-gap`` is internal planning, not a data
+    source, so it is excluded.
+    """
+    from qwenpaw.extensions.ai_big_screen import connection_status
+
+    items: list[dict[str, Any]] = []
+    for meta in list_capability_metadata():
+        capability_id = str(meta.get("id") or "")
+        if capability_id == "capability-gap":
+            continue
+        connection = str(meta.get("connection") or "")
+        status = connection_status.connection_status(connection)
+        items.append(
+            {
+                "id": capability_id,
+                "name": str(meta.get("name") or capability_id),
+                "category": str(meta.get("category") or ""),
+                "connection": connection,
+                "configured": bool(status["configured"]),
+                "settingsTab": str(status["settingsTab"]),
+                "reason": str(status["reason"]),
+            },
+        )
+    return {"items": items}
 
 
 def _extract_exception_message(exc: Exception) -> str:
