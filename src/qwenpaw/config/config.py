@@ -458,6 +458,32 @@ class WeChatConfig(BaseChannelConfig):
     message_merge_delay_ms: Optional[int] = 0
 
 
+class SlackConfig(BaseChannelConfig):
+    """Slack channel: Socket Mode connection with edit-in-place streaming.
+
+    Uses slack-bolt AsyncSocketModeHandler (aiohttp WebSocket) to connect
+    to a single Slack workspace. Supports incremental message rendering
+    via chat.postMessage + chat.update (edit-in-place) when streaming is
+    enabled.
+    """
+
+    bot_token: str = ""
+    app_token: str = ""
+    bot_prefix: str = ""
+    proxy: Optional[str] = None
+    streaming_enabled: bool = False
+    require_mention: bool = True
+    media_dir: Optional[str] = None
+    dm_policy: str = "open"
+    group_policy: str = "open"
+    allow_from: Optional[list] = None
+    deny_message: str = ""
+    access_control_dm: bool = False
+    access_control_group: bool = False
+    dm_disabled: bool = False
+    group_disabled: bool = False
+
+
 class ChannelConfig(BaseModel):
     """Built-in channel configs; extra keys allowed for plugin channels."""
 
@@ -479,6 +505,7 @@ class ChannelConfig(BaseModel):
     xiaoyi: XiaoYiConfig = XiaoYiConfig()
     yuanbao: YuanbaoConfig = YuanbaoConfig()
     wechat: WeChatConfig = WeChatConfig()
+    slack: SlackConfig = SlackConfig()
     onebot: OneBotConfig = OneBotConfig()
 
     @model_validator(mode="before")
@@ -1945,6 +1972,7 @@ ChannelConfigUnion = Union[
     MatrixConfig,
     VoiceChannelConfig,
     SIPChannelConfig,
+    SlackConfig,
     WecomConfig,
     XiaoYiConfig,
     WeChatConfig,
