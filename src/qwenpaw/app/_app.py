@@ -848,6 +848,15 @@ from ..extensions.security import install_security_hardening  # noqa: E402
 
 install_security_hardening()  # never raises; logs on failure
 
+# Traceability: re-attach Runtime 2.0 trace hooks (tool_call / user_message
+# / agent_reply / error) that the upstream refactor removed from core.
+# Same non-invasive install pattern as security hardening above — all logic
+# lives in extensions/traceability; this is the only core touch-point.
+# pylint: disable-next=wrong-import-position
+from ..extensions.traceability import install_traceability  # noqa: E402
+
+install_traceability()  # never raises; logs on failure
+
 # Console static files and SPA fallback
 # Register these AFTER API routes to ensure proper routing priority
 if os.path.isdir(_CONSOLE_STATIC_DIR):
