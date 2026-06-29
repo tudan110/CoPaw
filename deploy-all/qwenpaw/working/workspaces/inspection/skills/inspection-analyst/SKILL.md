@@ -4,6 +4,17 @@ category: inspection
 tags: [inspection, health-check, cmdb, topology, metrics, database, middleware, resource]
 triggers: [巡检, 资源巡检, 健康检查, 数据库巡检, 帮我巡检一下数据库, 帮我巡检一下中间件]
 description: 资源巡检技能。当用户要求巡检、健康检查、查看指标数据时使用。覆盖 CMDB 拓扑确认、全量指标批量查询、阈值判定、多渠道通知推送（飞书/钉钉/应用）。即使用户只说"看看数据库状态"也应触发此技能。
+bigscreen:
+  name: 资源巡检指标
+  domain: inspection
+  script: scripts/inspect_resource_metrics.py
+  args: ["--output", "json", "--no-notify"]
+  rowsPath: metricDataBatch.metricResults
+  unit: 项
+  params:
+    - {name: metric-type, label: 资源类型(ciType，如 mysql), required: true}
+    - {name: res-id, label: CI ID(CMDB 资源ID), required: true}
+  examplePrompts: ["巡检 res-id=3094 metric-type=mysql 的指标", "看 CI 3094 的巡检指标"]
 ---
 
 # Inspection Analyst
