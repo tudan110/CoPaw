@@ -3,7 +3,7 @@
 // 不自动提交。前端模块由 run.py 拷进 ./_fe/(并补 .js 扩展名)后运行。
 import { extractAction, extractOperate, extractOperateAny, normalizeOperate, canonicalizeOperate } from './_fe/action.js'
 import { registerPage } from './_fe/operator/operableBus.js'
-import runner, { resolveDateRange, actionGroundsInSchema, deriveToolbarAction, isBareWrite } from './_fe/operator/runner.js'
+import runner, { resolveDateRange, actionGroundsInSchema, deriveToolbarAction, isBareWrite, embeddedIframeSrc } from './_fe/operator/runner.js'
 import { describePage, describeForm, isGuidedTaskPage, describeSteps } from './_fe/operator/pageSchema.js'
 import { pageLeaves, resolvePath as resolveLeafPath, resolvePathConfidence, pageCandidates } from './_fe/operator/pageMap.js'
 
@@ -1453,6 +1453,31 @@ function assert(cond, msg) {
     ifBlankRes.filled === false && ifBlankAsked === false,
     '内联: 识别不到字段 → 绝不空点提交'
   )
+
+  // ---- 内嵌独立系统(iframe 外链)识别:真机漏洞扫描=<iframe src=http://82.156.83.38:30020/>,
+  // operator 在外层进不去 → 必须识别出来如实告知,而不是空转/卡住。----
+  const realDoc = globalThis.document
+  const bigIframe = new FakeEl({})
+  bigIframe.getAttribute = (k) => (k === 'src' ? 'http://82.156.83.38:30020/' : null)
+  bigIframe.getBoundingClientRect = () => ({ left: 0, top: 0, width: 1200, height: 700 })
+  globalThis.document = {
+    querySelector: (sel) => (sel === '.app-main' ? new FakeEl({ q: { iframe: [bigIframe] } }) : null),
+    querySelectorAll: () => []
+  }
+  const emb = embeddedIframeSrc()
+  assert(emb && emb.host === '82.156.83.38:30020', 'iframe: 识别主区撑满的外链 iframe → 返回 host(82.156.83.38:30020)')
+  assert(emb && emb.src === 'http://82.156.83.38:30020/', 'iframe: 返回 iframe 真实 src(供如实告知)')
+  const smallIframe = new FakeEl({})
+  smallIframe.getAttribute = () => 'http://x/'
+  smallIframe.getBoundingClientRect = () => ({ left: 0, top: 0, width: 80, height: 60 })
+  globalThis.document = {
+    querySelector: (sel) => (sel === '.app-main' ? new FakeEl({ q: { iframe: [smallIframe] } }) : null),
+    querySelectorAll: () => []
+  }
+  assert(embeddedIframeSrc() === null, 'iframe: 小挂件 iframe(图表)不误判为独立子系统')
+  globalThis.document = { querySelector: () => null, querySelectorAll: () => [] }
+  assert(embeddedIframeSrc() === null, 'iframe: 普通页(无 iframe)→ null,照常操作')
+  globalThis.document = realDoc
 
   console.log(failed === 0 ? '\nFRONTEND-EXECUTOR-SELFTEST: PASS' : `\nFRONTEND-EXECUTOR-SELFTEST: FAIL (${failed})`)
   process.exitCode = failed === 0 ? 0 : 1
