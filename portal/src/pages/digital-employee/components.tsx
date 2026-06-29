@@ -3,6 +3,7 @@ import { employeeStepDescriptions } from "../../data/portalData";
 import { DeferredEChartsBlock } from "../../components/DeferredVisualizationBlocks";
 import { PortalVisualizationBlock } from "../../components/PortalVisualizationBlock";
 import { PortalQwenPawMarkdown } from "../../components/PortalQwenPawMarkdown";
+import TurnUsageRing from "../../components/TurnUsageRing";
 import {
   getPortalOrderDetailMarkdownContent,
   hasPortalOrderDetailPayloadContent,
@@ -1030,6 +1031,12 @@ export const ChatMessageItem = memo(function ChatMessageItem({
         && !isStreamingMessage
         ? (
           <div className="message-copy-row">
+            {message.turnUsage ? (
+              <TurnUsageRing
+                usage={message.turnUsage.usage}
+                context_usage={message.turnUsage.context_usage}
+              />
+            ) : null}
             <CopyActionButton
               text={String(copyableContent || "").trim()}
               label="复制回复"

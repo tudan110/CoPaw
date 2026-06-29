@@ -6964,6 +6964,8 @@
 .portal-digital-employee .message-copy-row {
   display: flex;
   justify-content: flex-start;
+  align-items: center;
+  gap: 8px;
   margin-top: 6px;
   padding-left: 2px;
 }
