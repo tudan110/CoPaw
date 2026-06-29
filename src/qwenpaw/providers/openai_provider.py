@@ -228,6 +228,10 @@ class OpenAIProvider(Provider):
         # short for slow-handshake endpoints (e.g. ctyun ~8s), and the default
         # 5s keepalive drops idle connections between ReAct rounds, forcing a
         # fresh slow handshake every call. See CHAT_CLIENT_* above.
+        # NOTE: forwarded to openai.AsyncClient via OpenAIChatModel's
+        # ``client_kwargs`` param (agentscope 2.0). ``default_headers`` is
+        # handled separately by OpenAIChatModelCompat, so keep it out of here.
+        client_kwargs: dict = {}
         client_kwargs["timeout"] = httpx.Timeout(
             connect=CHAT_CLIENT_CONNECT_TIMEOUT,
             read=CHAT_CLIENT_READ_TIMEOUT,
@@ -254,6 +258,7 @@ class OpenAIProvider(Provider):
             stream=True,
             default_headers=merged_headers or None,
             extra_generate_kwargs=gen_kwargs or None,
+            client_kwargs=client_kwargs or None,
             context_size=self._get_context_size(model_id),
             formatter=_CappingOpenAIFormatter(
                 max_bytes=self.max_inline_media_bytes,

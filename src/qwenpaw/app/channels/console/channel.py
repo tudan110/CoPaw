@@ -326,6 +326,27 @@ class ConsoleChannel(BaseChannel):
                 media_message.object = "message"
         return media_message
 
+    def _extract_token_usage(
+        self,
+        session_id: Optional[str] = None,
+    ) -> Optional[Dict[str, Any]]:
+        """Pop and attach the recorded token usage for a finished turn.
+
+        Restored after the Runtime 2.0 merge dropped this definition while
+        keeping its call site in ``stream_one``. Same API as the ACP
+        channel (``agents/acp/server.py``).
+        """
+        from ....token_usage import TokenRecordingModelWrapper
+
+        if not session_id:
+            return None
+
+        usage = TokenRecordingModelWrapper.pop_usage_for_session(session_id)
+        logger.info(
+            "Usage for session %s (cleaned up): %s", session_id, usage
+        )
+        return usage
+
     def _build_trailing_usage_sse(self, session_id: str) -> str | None:
         """Return one trailing turn_usage SSE block for the console UI."""
         from ....token_usage import get_pending_usage_for_stream
@@ -392,7 +413,8 @@ class ConsoleChannel(BaseChannel):
         if retry_count is not None:
             payload["retry_count"] = retry_count
         payload = self._sanitize_for_json(payload)
-        return f"data: {_json.dumps(payload, ensure_ascii=True, default=str)}\n\n"
+        dumped = _json.dumps(payload, ensure_ascii=True, default=str)
+        return f"data: {dumped}\n\n"
 
     async def stream_one(self, payload: Any) -> AsyncGenerator[str, None]:
         """Process one payload and yield SSE-formatted events"""
