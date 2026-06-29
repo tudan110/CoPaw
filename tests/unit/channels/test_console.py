@@ -474,7 +474,7 @@ class TestConsoleStreaming:
 
     async def test_stream_one_yields_events(self, stream_channel):
         """stream_one should yield SSE-formatted events."""
-        from agentscope_runtime.engine.schemas.agent_schemas import (
+        from qwenpaw.schemas import (
             RunStatus,
             Event,
             Message,
@@ -526,7 +526,7 @@ class TestConsoleStreaming:
 
     async def test_stream_one_handles_dict_payload(self, stream_channel):
         """stream_one should handle dict payload with debounce."""
-        from agentscope_runtime.engine.schemas.agent_schemas import (
+        from qwenpaw.schemas import (
             RunStatus,
             Event,
             Message,
@@ -579,7 +579,7 @@ class TestConsoleStreaming:
         stream_channel,
     ):
         """stream_one should fallback instead of crashing on bad surrogate."""
-        from agentscope_runtime.engine.schemas.agent_schemas import (
+        from qwenpaw.schemas import (
             RunStatus,
             TextContent,
             ContentType,

@@ -15,7 +15,7 @@ from pydantic import (
     model_validator,
 )
 import shortuuid
-from agentscope_runtime.engine.schemas.exception import (
+from qwenpaw.exceptions import (
     ConfigurationException,
 )
 
@@ -224,6 +224,8 @@ class DiscordConfig(BaseChannelConfig):
     http_proxy: str = ""
     http_proxy_auth: str = ""
     accept_bot_messages: bool = False
+    streaming_enabled: bool = False
+    media_dir: Optional[str] = None
 
 
 class DingTalkConfig(BaseChannelConfig):
@@ -238,6 +240,7 @@ class DingTalkConfig(BaseChannelConfig):
     card_auto_layout: bool = False
     at_sender_on_reply: bool = False
     streaming_enabled: bool = False
+    endpoint: str = ""
 
 
 class FeishuConfig(BaseChannelConfig):
@@ -411,7 +414,6 @@ class XiaoYiConfig(BaseChannelConfig):
     ak: str = ""  # Access Key
     sk: str = ""  # Secret Key
     agent_id: str = ""  # Agent ID from XiaoYi platform
-    ws_url: str = "wss://hag.cloud.huawei.com/openclaw/v1/ws/link"
     task_timeout_ms: int = 3600000  # 1 hour task timeout
 
 
@@ -426,6 +428,7 @@ class YuanbaoConfig(BaseChannelConfig):
     app_secret: str = ""
     api_domain: str = "bot.yuanbao.tencent.com"
     media_dir: Optional[str] = None
+    accept_bot_messages: bool = False
 
 
 class WeChatConfig(BaseChannelConfig):
@@ -455,6 +458,32 @@ class WeChatConfig(BaseChannelConfig):
     message_merge_delay_ms: Optional[int] = 0
 
 
+class SlackConfig(BaseChannelConfig):
+    """Slack channel: Socket Mode connection with edit-in-place streaming.
+
+    Uses slack-bolt AsyncSocketModeHandler (aiohttp WebSocket) to connect
+    to a single Slack workspace. Supports incremental message rendering
+    via chat.postMessage + chat.update (edit-in-place) when streaming is
+    enabled.
+    """
+
+    bot_token: str = ""
+    app_token: str = ""
+    bot_prefix: str = ""
+    proxy: Optional[str] = None
+    streaming_enabled: bool = False
+    require_mention: bool = True
+    media_dir: Optional[str] = None
+    dm_policy: str = "open"
+    group_policy: str = "open"
+    allow_from: Optional[list] = None
+    deny_message: str = ""
+    access_control_dm: bool = False
+    access_control_group: bool = False
+    dm_disabled: bool = False
+    group_disabled: bool = False
+
+
 class ChannelConfig(BaseModel):
     """Built-in channel configs; extra keys allowed for plugin channels."""
 
@@ -476,6 +505,7 @@ class ChannelConfig(BaseModel):
     xiaoyi: XiaoYiConfig = XiaoYiConfig()
     yuanbao: YuanbaoConfig = YuanbaoConfig()
     wechat: WeChatConfig = WeChatConfig()
+    slack: SlackConfig = SlackConfig()
     onebot: OneBotConfig = OneBotConfig()
 
     @model_validator(mode="before")
@@ -545,13 +575,11 @@ class AutoMemorySearchConfig(BaseModel):
         ),
     )
 
-    min_score: float = Field(
-        default=0.3,
-        ge=0.0,
-        le=1.0,
+    persist_to_context: bool = Field(
+        default=False,
         description=(
-            "Minimum relevance score for results when auto memory"
-            " search is enabled"
+            "Whether to persist auto memory search tool_call/tool_result "
+            "messages into the conversation context"
         ),
     )
 
@@ -580,7 +608,10 @@ class EmbeddingModelConfig(BaseModel):
         default=False,
         description="Whether to use custom dimensions",
     )
-    max_cache_size: int = Field(default=3000, description="Maximum cache size")
+    max_cache_size: int = Field(
+        default=10000,
+        description="Maximum cache size",
+    )
     max_input_length: int = Field(
         default=8192,
         description="Maximum input length for embedding",
@@ -637,18 +668,43 @@ class ReMeLightMemoryConfig(BaseModel):
 
     model_config = ConfigDict(extra="ignore")
 
+    metadata_dir: str = Field(
+        default="mem_metadata",
+        description="Subdirectory for ReMe persistent state",
+    )
+    session_dir: str = Field(
+        default="mem_session",
+        description="Subdirectory for persisted agent sessions",
+    )
+    resource_dir: str = Field(
+        default="resource",
+        description="Subdirectory for external assets",
+    )
+    daily_dir: str = Field(
+        default="memory",
+        description="Subdirectory for daily memory",
+    )
+    digest_dir: str = Field(
+        default="digest",
+        description="Subdirectory for digest memory",
+    )
+    enable_search_raw_log: bool = Field(
+        default=False,
+        description="Whether to enable raw log search",
+    )
+
     summarize_when_compact: bool = Field(
         default=True,
         description="Whether to enable memory summarization during compaction",
     )
 
     auto_memory_interval: int | None = Field(
-        default=None,
-        description="Auto memory every N user queries. None disables "
-        "periodic auto memory, 1 means auto memory after every user "
-        "query, 2 means every 2 queries, etc. WARNING: Setting too "
-        "small (e.g., 1-3) may cause high token usage and heavy "
-        "background task burden. Recommended: 5 or 10.",
+        default=5,
+        description="Auto memory every N user queries. 1 means auto "
+        "memory after every user query, 2 means every 2 queries, etc. "
+        "None or <= 0 disables periodic auto memory. WARNING: Setting "
+        "too small (e.g., 1-3) may cause high token usage and heavy "
+        "background task burden.",
     )
 
     dream_cron: str = Field(
@@ -671,15 +727,6 @@ class ReMeLightMemoryConfig(BaseModel):
             "Whether to clear and rebuild the memory search index when the"
             " agent starts. Set to False to skip re-indexing and only monitor"
             " new file changes."
-        ),
-    )
-
-    recursive_file_watcher: bool = Field(
-        default=False,
-        description=(
-            "Whether to watch memory directory recursively. "
-            "Set to True to include subdirectories like memory/subdirectory/* "
-            "in vector search indexing."
         ),
     )
 
@@ -706,17 +753,12 @@ class ContextCompactConfig(BaseModel):
 
     reserve_threshold_ratio: float = Field(
         default=0.1,
-        ge=0,
+        gt=0,
         le=0.3,
         description=(
             "Context reserve threshold ratio: the most recent fraction of the "
             "context is preserved after compaction to maintain continuity"
         ),
-    )
-
-    compact_with_thinking_block: bool = Field(
-        default=True,
-        description="Whether to include thinking blocks when compacting",
     )
 
 
@@ -1930,6 +1972,7 @@ ChannelConfigUnion = Union[
     MatrixConfig,
     VoiceChannelConfig,
     SIPChannelConfig,
+    SlackConfig,
     WecomConfig,
     XiaoYiConfig,
     WeChatConfig,

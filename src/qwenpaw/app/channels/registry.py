@@ -28,6 +28,7 @@ _BUILTIN_SPECS: dict[str, tuple[str, str]] = {
     "mqtt": (".mqtt", "MQTTChannel"),
     "console": (".console", "ConsoleChannel"),
     "matrix": (".matrix", "MatrixChannel"),
+    "slack": (".slack", "SlackChannel"),
     "voice": (".voice", "VoiceChannel"),
     "sip": (".sip", "SIPChannel"),
     "wecom": (".wecom", "WecomChannel"),
@@ -173,9 +174,19 @@ def register_custom_channel_routes(app) -> None:
             hook = getattr(mod, "register_app_routes", None)
             if not callable(hook):
                 continue
-            prev_routes = {r.path for r in app.routes}
+            # FastAPI >=0.13x keeps included routers as ``_IncludedRouter``
+            # objects in ``app.routes`` that have no ``.path``. Skip them so
+            # this introspection doesn't raise and abort the hook — aborting
+            # would block custom channels like portal_api, whose
+            # ``register_app_routes`` installs the ``/portal-api`` compat
+            # middleware the portal frontend needs locally (no nginx).
+            prev_routes = {
+                r.path for r in app.routes if hasattr(r, "path")
+            }
             hook(app)
-            new_routes = {r.path for r in app.routes} - prev_routes
+            new_routes = {
+                r.path for r in app.routes if hasattr(r, "path")
+            } - prev_routes
             non_api = {p for p in new_routes if not p.startswith("/api/")}
             if non_api:
                 logger.warning(

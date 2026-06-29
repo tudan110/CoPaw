@@ -2,9 +2,19 @@
 # Baked into the Docker image at build time (Dockerfile: find -name
 # requirements.txt | uv pip install -r). Runs via plain python3 (see
 # SKILL.md); deps must live in the app venv, not a uv-run ephemeral env.
-requests>=2.32.0
-python-dotenv>=1.0.0
-drain3>=0.9.11
-# drain3 pins cachetools==4.2.1 but only uses LRUCache/Cache/cachedmethod,
-# all of which exist in every cachetools version. Override to unblock fastmcp.
-cachetools>=7
+# ⚠️ TEMPORARILY DISABLED (2026-06-26): this skill is not in use right now.
+# Its drain3 dep hard-pins cachetools==4.2.1, which lacks TLRUCache and breaks
+# fastmcp's MemoryStore (needs cachetools>=5). Keeping the deps commented out
+# leaves drain3 out of the env entirely, so cachetools stays modern and the
+# whole override dance is unnecessary. `uv pip install -r` on an all-comment
+# file is a harmless no-op.
+#
+# TO RE-ENABLE: uncomment the three lines below, AND re-add a cachetools>=7
+# bump AFTER the skill-deps install step — both in start-qwenpaw.sh (its
+# post-step was removed once this skill was disabled) and in the Dockerfile
+# (plain `pip install cachetools>=7` after the skill-reqs step). Do NOT put
+# `cachetools>=7` in this file — same-file with drain3 makes
+# `uv pip install -r` unsatisfiable.
+# requests>=2.32.0
+# python-dotenv>=1.0.0
+# drain3>=0.9.11
