@@ -277,7 +277,7 @@
     "session_id": "portal-query-1776217267524-vqxqx9"
   },
   "running": {
-    "max_iters": 100,
+    "max_iters": 20,
     "llm_retry_enabled": true,
     "llm_max_retries": 3,
     "llm_backoff_base": 1.0,

@@ -119,6 +119,10 @@ PROJECT_NAME = "QwenPaw"
 QWENPAW_MESSAGE_TAG_KEY = "qwenpaw_tag"
 AUTO_MEMORY_SEARCH_MESSAGE_TAG = "auto_memory_search"
 AUTO_CONTINUE_MESSAGE_TAG = "auto_continue"
+# Tag for the fast-fail convergence hint injected when the agent is stuck in a
+# tool-call storm (repeated identical calls / consecutive empty-or-error
+# results). See ``QwenPawAgent._detect_non_convergence``.
+FASTFAIL_CONVERGE_MESSAGE_TAG = "fastfail_converge"
 AUTO_MEMORY_SEARCH_TEXT = (
     "Find memory relevant to the latest user request and conversation context."
 )

@@ -67,6 +67,8 @@ python3 scripts/resource_insight.py top-metric --resource_type database --output
 - “数据库性能 Top / 数据库磁盘使用率排行”：执行 `top-metric --resource_type database`，默认 `order_code=diskRate`。
 - “网络设备性能 / 网络设备 CPU 排行”：执行 `top-metric --resource_type network --order_code cpuRate`。
 - “操作系统性能 / 服务器性能”：分别使用 `resource_type os` 或 `resource_type server`。
+- “主机磁盘使用率排行 / 主机磁盘 Top / 服务器磁盘使用率”：执行 `top-metric --resource_type host --order_code diskRate`（`host`/`主机` 已映射到「操作系统」维度，默认按磁盘排行）；服务器口径用 `--resource_type server --order_code diskRate`。
+- “列出磁盘使用率超 80% 的主机 / CPU 超 90% 的服务器 / 超阈值的资源”：在对应 `top-metric` 命令上追加 `--min_rate 80`（阈值取用户给的百分比），脚本会服务端取回后按该指标 **一次性筛出 ≥ 阈值** 的行，无需自己再过滤；topN 不够时调大 `--top_num`。
 - “帮我进行设备状态的统计”：如果用户没有指定资源类型，先用 `summary --resource_type database` 展示已封装的数据库状态，并说明其他资源状态统计后续由 CMDB count 类接口在 `zgops-cmdb` 中承载。
 
 ## 已封装接口

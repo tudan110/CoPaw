@@ -24,6 +24,7 @@ from .skill_system import get_workspace_skills_dir
 from ..modes.coding import CodingModeMixin
 from ..constant import (
     AUTO_CONTINUE_MESSAGE_TAG,
+    FASTFAIL_CONVERGE_MESSAGE_TAG,
     MEDIA_UNSUPPORTED_PLACEHOLDER,
     QWENPAW_MESSAGE_TAG_KEY,
     WORKING_DIR,
@@ -406,6 +407,9 @@ class QwenPawAgent(CodingModeMixin, Agent):
         stripping, passive bad-request retry, and auto-continue on
         text-only responses."""
 
+        # ── Fast-fail: break tool-call storms before model call ──
+        self._maybe_inject_convergence_hint()
+
         # ── Proactive media stripping ──
         from .model_factory import _supports_multimodal_for_current_model
 
@@ -529,6 +533,251 @@ class QwenPawAgent(CodingModeMixin, Agent):
             return False
 
         return True
+
+    # ------------------------------------------------------------------
+    # Fast-fail: detect tool-call storms (repeated identical calls or a
+    # run of empty/error tool results) and nudge the model to converge
+    # instead of flailing until max_iters / timeout. Safe to run on every
+    # agent: it only fires on pathological loops, so legitimate deep
+    # reasoning (coding, multi-step ops) is untouched.
+    # ------------------------------------------------------------------
+
+    # Same (tool, args) seen this many times within the scan window → storm.
+    _FASTFAIL_DUP_THRESHOLD = 3
+    # This many trailing empty/error results in a row → data unavailable.
+    _FASTFAIL_EMPTY_STREAK = 4
+    # How many recent tool calls/results to look back over.
+    _FASTFAIL_SCAN_WINDOW = 12
+    # Iterations to wait before re-injecting after a trigger (anti-spam).
+    _FASTFAIL_COOLDOWN = 1
+
+    # Substrings that mark an "empty / not-found" tool result. Matched
+    # case-insensitively against the result's flattened text.
+    _FASTFAIL_EMPTY_MARKERS = (
+        "暂无数据",
+        "接口返回空",
+        "返回空响应",
+        "未查询到",
+        "未找到",
+        "无数据",
+        "查询为空",
+        "no result",
+        "not found",
+        "no data",
+        "empty result",
+        '"data":null',
+        '"data": null',
+        '"count":0',
+        '"count": 0',
+        '"total":0',
+        '"total": 0',
+    )
+
+    _FASTFAIL_HINT_ZH = (
+        "<system-hint>"
+        "检测到你{reason}。请**立即停止重试**：基于已经掌握的信息直接给出"
+        "结论；若数据确实查不到，明确告知用户「未查询到该数据 / 数据源暂不"
+        "可用」并简述你已尝试的途径与可能原因，**不要再调用工具**。"
+        "</system-hint>"
+    )
+    _FASTFAIL_HINT_EN = (
+        "<system-hint>"
+        "Detected that you {reason}. **Stop retrying now**: answer directly "
+        "from what you already have; if the data is genuinely unavailable, "
+        "tell the user plainly that it could not be found / the data source "
+        "is unavailable, briefly note what you tried, and **do not call any "
+        "more tools**."
+        "</system-hint>"
+    )
+
+    @staticmethod
+    def _block_field(block: Any, key: str, default: Any = None) -> Any:
+        """Read *key* from a content block in dict or pydantic form."""
+        if isinstance(block, dict):
+            return block.get(key, default)
+        return getattr(block, key, default)
+
+    def _block_type(self, block: Any) -> Any:
+        return self._block_field(block, "type")
+
+    def _result_text(self, output: Any) -> str:
+        """Flatten a ToolResultBlock ``output`` into searchable text."""
+        if output is None:
+            return ""
+        if isinstance(output, str):
+            return output
+        if isinstance(output, list):
+            parts: list[str] = []
+            for item in output:
+                btype = self._block_type(item)
+                if btype == "text":
+                    parts.append(str(self._block_field(item, "text", "") or ""))
+                elif btype in (None, "data"):
+                    parts.append(str(self._block_field(item, "data", "") or ""))
+            return "\n".join(p for p in parts if p)
+        return str(output)
+
+    def _is_empty_or_error_result(self, block: Any) -> bool:
+        """Heuristic: did this tool result carry no usable data?"""
+        state = self._block_field(block, "state")
+        state_str = str(state).upper() if state is not None else ""
+        if any(s in state_str for s in ("ERROR", "DENIED", "INTERRUPTED")):
+            return True
+
+        text = self._result_text(self._block_field(block, "output")).strip()
+        if not text:
+            return True
+
+        low = text.lower()
+        for marker in self._FASTFAIL_EMPTY_MARKERS:
+            if marker.lower() in low:
+                return True
+
+        # Best-effort: a well-formed JSON envelope with a failure code or
+        # an empty ``data`` payload counts as empty.
+        import json
+
+        try:
+            payload = json.loads(text)
+        except Exception:
+            payload = None
+        if isinstance(payload, dict):
+            code = payload.get("code")
+            if code is not None and str(code) not in ("200", "0", "True"):
+                return True
+            if "data" in payload and payload.get("data") in (None, [], {}, ""):
+                return True
+        return False
+
+    @staticmethod
+    def _normalize_tool_input(raw: Any) -> str:
+        """Canonicalize tool-call args so trivially-different reorderings of
+        the same call compare equal."""
+        if raw is None:
+            return ""
+        if isinstance(raw, str):
+            text = raw.strip()
+            import json
+
+            try:
+                parsed = json.loads(text)
+            except Exception:
+                return text
+        else:
+            parsed = raw
+        try:
+            import json
+
+            return json.dumps(parsed, sort_keys=True, ensure_ascii=False)
+        except Exception:
+            return str(parsed)
+
+    def _detect_non_convergence(self) -> str | None:
+        """Scan the recent context tail; return a convergence hint (or None).
+
+        Triggers when, within the last ``_FASTFAIL_SCAN_WINDOW`` tool calls,
+        either the same ``(name, args)`` repeats ``_FASTFAIL_DUP_THRESHOLD``+
+        times, or the last ``_FASTFAIL_EMPTY_STREAK``+ tool results in a row
+        were empty/error.
+        """
+        context = getattr(self.state, "context", None)
+        if not context:
+            return None
+
+        calls: list[tuple[str, str]] = []
+        results_empty: list[bool] = []
+        for msg in context:
+            content = getattr(msg, "content", None)
+            if not isinstance(content, list):
+                continue
+            for block in content:
+                btype = self._block_type(block)
+                if btype == "tool_call":
+                    name = str(self._block_field(block, "name", "") or "")
+                    args = self._normalize_tool_input(
+                        self._block_field(block, "input"),
+                    )
+                    calls.append((name, args))
+                elif btype == "tool_result":
+                    results_empty.append(
+                        self._is_empty_or_error_result(block),
+                    )
+
+        if not calls:
+            return None
+
+        # Duplicate-call storm within the recent window.
+        recent_calls = calls[-self._FASTFAIL_SCAN_WINDOW:]
+        from collections import Counter
+
+        dup_name, dup_count = "", 0
+        if recent_calls:
+            (dup_key, dup_count) = Counter(recent_calls).most_common(1)[0]
+            dup_name = dup_key[0]
+
+        # Trailing run of empty/error results.
+        empty_streak = 0
+        for is_empty in reversed(results_empty[-self._FASTFAIL_SCAN_WINDOW:]):
+            if is_empty:
+                empty_streak += 1
+            else:
+                break
+
+        is_zh = (self._language or "").strip().lower() == "zh"
+        if dup_count >= self._FASTFAIL_DUP_THRESHOLD:
+            reason = (
+                f"已重复 {dup_count} 次调用同一工具 `{dup_name}`（参数相同）"
+                if is_zh
+                else (
+                    f"have called the same tool `{dup_name}` {dup_count} "
+                    "times with identical arguments"
+                )
+            )
+        elif empty_streak >= self._FASTFAIL_EMPTY_STREAK:
+            reason = (
+                f"已连续 {empty_streak} 次得到空 / 错误的工具结果"
+                if is_zh
+                else (
+                    f"have gotten {empty_streak} empty/error tool results "
+                    "in a row"
+                )
+            )
+        else:
+            return None
+
+        template = self._FASTFAIL_HINT_ZH if is_zh else self._FASTFAIL_HINT_EN
+        return template.format(reason=reason)
+
+    def _maybe_inject_convergence_hint(self) -> None:
+        """Inject a fast-fail convergence hint if a tool-call storm is
+        detected (with a short cooldown to avoid spamming)."""
+        try:
+            guidance = self._detect_non_convergence()
+        except Exception:
+            logger.debug("fast-fail detection failed", exc_info=True)
+            return
+        if not guidance:
+            return
+
+        cur_iter = getattr(self.state, "cur_iter", 0)
+        last_iter = getattr(self, "_fastfail_last_trigger_iter", -10)
+        if cur_iter <= last_iter + self._FASTFAIL_COOLDOWN:
+            return
+        self._fastfail_last_trigger_iter = cur_iter
+
+        self.state.context.append(
+            Msg(
+                name="user",
+                role="user",
+                content=[TextBlock(type="text", text=guidance)],
+                metadata={
+                    QWENPAW_MESSAGE_TAG_KEY: FASTFAIL_CONVERGE_MESSAGE_TAG,
+                },
+            ),
+        )
+        logger.info(
+            "Fast-fail: injected convergence hint at iter=%s", cur_iter,
+        )
 
     @staticmethod
     def _is_content_safety_error(exc: Exception) -> bool:
