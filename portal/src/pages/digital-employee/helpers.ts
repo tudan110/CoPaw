@@ -1,4 +1,5 @@
 import { digitalEmployees } from "../../data/portalData.ts";
+import { extractTurnUsageFromMetadata } from "../../components/turnUsage";
 
 const TIMEOUT_ALARM_TITLE = "应用接口响应超时";
 export const ALARM_WORKORDER_ENTRY = "alarm-workorders";
@@ -595,6 +596,11 @@ export function normalizeRemoteHistoryMessages(
         activeAgentMessage.processBlocks,
         [responseBlock],
       );
+      // Restore the persisted per-turn usage so the ring shows on history.
+      const histTurnUsage = extractTurnUsageFromMetadata(message.metadata);
+      if (histTurnUsage) {
+        activeAgentMessage.turnUsage = histTurnUsage;
+      }
     }
   }
 

@@ -7,7 +7,7 @@
     python scripts/inspect_resource_metrics.py --res-id 3094 --metric-type mysql --output markdown
 
 说明:
-    - 优先环境变量/共享 secrets，回退当前 skill 目录下的 .env
+    - 优先环境变量/共享 secrets（由设置页统一管理）
     - 复用 fault/alarm-analyst 的指标接口访问与 HTTP fallback 能力
     - 先查询全部指标定义，再提取全部 metric codes
     - 再以一次批量请求把全部 metric codes 传给 /resource/pm/getMetricData
@@ -53,10 +53,6 @@ def _load_skill_env() -> None:
     if not HAS_DOTENV:
         return
 
-    skill_dir = Path(__file__).resolve().parents[1]
-    skill_env_file = skill_dir / ".env"
-    if skill_env_file.exists():
-        load_dotenv(skill_env_file, override=False)
 
 
 _load_skill_env()
@@ -1889,10 +1885,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--res-id", required=True, help="CMDB 返回的 CI ID")
     parser.add_argument("--inspection-object", default="", help="用户输入的巡检对象")
     parser.add_argument("--resource-name", default="", help="CMDB 确认的资源名称")
-    parser.add_argument("--page-size", type=int, default=None, help="每页指标定义数量，默认从 .env 读取")
-    parser.add_argument("--api-base-url", help="API 基础地址，默认从 .env 读取")
+    parser.add_argument("--page-size", type=int, default=None, help="每页指标定义数量，默认读取环境变量/设置页配置")
+    parser.add_argument("--api-base-url", help="API 基础地址，默认读取环境变量/设置页配置")
     parser.add_argument("--token", help="Bearer Token，默认从环境变量 INOE_API_TOKEN 读取")
-    parser.add_argument("--timeout-seconds", type=int, default=None, help="超时时间，默认从 .env 读取")
+    parser.add_argument("--timeout-seconds", type=int, default=None, help="超时时间，默认读取环境变量/设置页配置")
     parser.add_argument("--query-type", default="0", help="指标查询类型，0 表示查询最近一次")
     parser.add_argument("--start-time", help="开始时间，queryType != 0 时必填")
     parser.add_argument("--end-time", help="结束时间，queryType != 0 时必填")

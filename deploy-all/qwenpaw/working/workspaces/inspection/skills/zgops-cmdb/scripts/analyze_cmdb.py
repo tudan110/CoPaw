@@ -9,7 +9,7 @@ CMDB 汇总与图表脚本
     python3 scripts/analyze_cmdb.py --mode app-relations --output markdown-echarts-only
 
 说明：
-    - 默认读取技能目录下的 .env
+    - 从设置页「CMDB / 资源导入」物化的 ZGOPS_* 环境变量读取（无 .env 回退）
     - 通过后台 HTTP 会话登录并读取接口，不打开浏览器
     - 分布类输出支持 ECharts 代码块，适合页面直接渲染
 """
@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import subprocess
 import sys
 from collections import Counter
@@ -71,17 +72,6 @@ GROUP_MAP = {
     "circuit": "数据中心",
     "Contract": "Other",
 }
-
-
-def parse_env(path: Path) -> Dict[str, str]:
-    env: Dict[str, str] = {}
-    for line in path.read_text(encoding="utf-8").splitlines():
-        stripped = line.strip()
-        if not stripped or stripped.startswith("#") or "=" not in stripped:
-            continue
-        key, value = stripped.split("=", 1)
-        env[key.strip()] = value.strip()
-    return env
 
 
 def run_command(command: List[str], cwd: Path) -> str:
@@ -459,20 +449,27 @@ def main() -> int:
 
     script_path = Path(__file__).resolve()
     skill_root = script_path.parent.parent
-    env_path = skill_root / ".env"
-    if not env_path.exists():
+    env = {
+        key: os.environ.get(key, "")
+        for key in (
+            "ZGOPS_BASE_URL",
+            "ZGOPS_USERNAME",
+            "ZGOPS_PASSWORD",
+            "ZGOPS_SESSION_NAME",
+        )
+    }
+    if not env.get("ZGOPS_BASE_URL"):
         print(
             "\n".join(
                 [
                     "# 分析失败",
                     "",
-                    f"- 错误信息：缺少环境变量文件 {env_path}",
+                    "- 错误信息：未配置 ZGOPS_BASE_URL"
+                    "（请在设置页「CMDB / 资源导入」配置）",
                 ]
             )
         )
         return 1
-
-    env = parse_env(env_path)
     try:
         result = analyze(args.mode, skill_root, env)
     except Exception as exc:  # noqa: BLE001

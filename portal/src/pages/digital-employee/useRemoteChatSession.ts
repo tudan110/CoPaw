@@ -996,6 +996,29 @@ export function useRemoteChatSession({
   }, [hydrateAlarmAnalystCardsForHistory, reconnectRunningChat, stopActiveStream]);
 
   const handleRemoteStreamEvent = (event: any, employee: any) => {
+    if (event?.type === "turn_usage") {
+      // Trailing per-turn usage event (sent after the response completes).
+      // Attach it to the closing assistant message so ChatMessageItem can
+      // render the token / context-usage ring + popover.
+      setMessages((prevMessages) => {
+        for (let i = prevMessages.length - 1; i >= 0; i--) {
+          if (prevMessages[i]?.type === "agent") {
+            const next = prevMessages.slice();
+            next[i] = {
+              ...next[i],
+              turnUsage: {
+                usage: event.usage ?? null,
+                context_usage: event.context_usage ?? null,
+              },
+            };
+            return next;
+          }
+        }
+        return prevMessages;
+      });
+      return;
+    }
+
     if (event.object === "portal_progress") {
       const frontendMessageId = activeAssistantMessageIdRef.current || ensureAgentContainer(employee);
       clearRemoteWaitNoticeTimers();

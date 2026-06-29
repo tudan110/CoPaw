@@ -35,7 +35,9 @@ from typing import Optional
 
 from qwenpaw.constant import WORKING_DIR
 
-SHARED_SECRET_FILES = ("n9e.env", "zgops-cmdb.env")
+# zgops-cmdb.env removed: ZGOPS_* is now materialized from the settings
+# store (see materialize_zgops_to_environ) like INOE — no static file.
+SHARED_SECRET_FILES = ("n9e.env",)
 
 # settings-store field key -> resolver attribute on inoe_settings_store.
 # The resolved value is written to the field's ``env_var`` (the name skills

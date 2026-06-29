@@ -654,7 +654,7 @@ async def _ensure_portal_inspection_session(
         )
         result["chatId"] = chat.id
 
-        existing_state = await workspace.runner.session.get_session_state_dict(
+        existing_state = await workspace.session.get_session_state_dict(
             chat.session_id,
             chat.user_id,
         )
@@ -772,7 +772,7 @@ async def _ensure_portal_real_alarm_sessions(
                 )
                 if current_status == "idle":
                     state = (
-                        await workspace.runner.session.get_session_state_dict(
+                        await workspace.session.get_session_state_dict(
                             chat.session_id,
                             chat.user_id,
                         )
@@ -2034,7 +2034,7 @@ async def _get_workspace_and_session(request: Request):
     from qwenpaw.app.agent_context import get_agent_for_request
 
     workspace = await get_agent_for_request(request)
-    return workspace, workspace.runner.session
+    return workspace, workspace.session
 
 
 def _datetime_to_iso(value: Any) -> str:
@@ -2505,10 +2505,15 @@ def _extract_text_from_sse_message_content(content: Any) -> str:
     return ""
 
 
-def _collect_sse_report_markdown(chunks: list[str]) -> str:
-    """Parse collected SSE event strings and return the full text of the last
-    completed assistant message (the alarm analyst report)."""
-    texts = []
+def _collect_sse_report_messages(
+    chunks: list[str],
+) -> list[tuple[str, str]]:
+    """Parse collected SSE event strings and return ``(message_id, text)``
+    for every completed assistant message. The alarm analyst report is the
+    last candidate among them; keeping each message's real ``id`` lets the
+    eagerly-saved card de-duplicate with any later frontend backfill (the
+    frontend matches cards by that same backend message id)."""
+    messages: list[tuple[str, str]] = []
     for chunk in chunks:
         chunk = chunk.strip()
         if not chunk.startswith("data:"):
@@ -2528,8 +2533,8 @@ def _collect_sse_report_markdown(chunks: list[str]) -> str:
                 event.get("content"),
             )
             if text:
-                texts.append(text)
-    return "\n\n".join(texts).strip()
+                messages.append((str(event.get("id") or ""), text.strip()))
+    return messages
 
 
 def _try_persist_analysis_result_from_stream(
@@ -2539,21 +2544,32 @@ def _try_persist_analysis_result_from_stream(
     session_id: str,
 ) -> None:
     """After agent streaming ends, parse SSE chunks to extract the alarm
-    analyst report, build a card, and persist it so external callers get
-    data without requiring the frontend to open the conversation."""
+    analyst report, build a card, and persist it to BOTH the alarm registry
+    (for external callers) AND the card DB the portal frontend reads — so the
+    card shows up immediately without the frontend having to open the
+    conversation and backfill it."""
     try:
         if not session_id.startswith(PORTAL_REAL_ALARM_SESSION_PREFIX):
             return
-        report_markdown = _collect_sse_report_markdown(chunks)
+        # Pick the last completed assistant message that looks like an alarm
+        # analyst report, and keep its real message id (the same id the
+        # frontend matches cards by) so the eager card de-dupes with any
+        # later frontend backfill.
+        chosen_id = ""
+        report_markdown = ""
+        for message_id, text in _collect_sse_report_messages(chunks):
+            if is_alarm_analyst_card_candidate(
+                employee_id="fault",
+                report_markdown=text,
+                process_blocks=[],
+            ):
+                chosen_id = message_id
+                report_markdown = text
         if not report_markdown:
             return
-        if not is_alarm_analyst_card_candidate(
-            employee_id="fault",
-            report_markdown=report_markdown,
-            process_blocks=[],
-        ):
-            return
-        message_id = f"auto-stream-{chat_id}"
+        # Synthetic id only when the stream carried none (frontend then
+        # falls back to rawReportMarkdown-hash matching).
+        message_id = chosen_id or f"auto-stream-{chat_id}"
         card = build_alarm_analyst_card(
             chat_id=chat_id,
             message_id=message_id,
@@ -2561,9 +2577,18 @@ def _try_persist_analysis_result_from_stream(
             report_markdown=report_markdown,
             process_blocks=[],
         )
+        card_payload = card.model_dump(by_alias=True)
         _persist_analysis_result_to_registry(
             session_id=session_id,
-            card=card.model_dump(by_alias=True),
+            card=card_payload,
+        )
+        # Eagerly upsert into the card DB the frontend GET reads, keyed by
+        # the real message id (idempotent on (chat_id, message_id)).
+        _save_card_to_db(
+            chat_id=chat_id,
+            message_id=message_id,
+            card=card_payload,
+            session_id=session_id,
         )
     except Exception as exc:
         print(
