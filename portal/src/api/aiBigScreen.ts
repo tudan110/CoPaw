@@ -73,7 +73,10 @@ export function getAiBigScreenDraftTask(taskId: string) {
   );
 }
 
-export function saveAiBigScreen(screen: AiBigScreenApp, requestedBy = "portal") {
+export function saveAiBigScreen(
+  screen: AiBigScreenApp,
+  requestedBy = "portal",
+) {
   return requestPortalApi<AiBigScreenResponse>(
     "/ai-big-screens",
     {
@@ -168,6 +171,8 @@ export function patchAiBigScreen(
     selectionContext?: Record<string, unknown>;
     instruction: string;
     requestedBy?: string;
+    /** dry-run: compute the diff on a copy without persisting/versioning. */
+    preview?: boolean;
   },
 ) {
   return requestPortalApi<AiBigScreenPatchResponse>(

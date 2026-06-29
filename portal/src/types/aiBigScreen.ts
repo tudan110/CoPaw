@@ -7,7 +7,15 @@ export interface AiBigScreenLayoutPosition {
 
 export interface AiBigScreenComponent {
   id: string;
-  type: "metric-card" | "line-chart" | "bar-chart" | "table" | "topology" | "text" | "group" | string;
+  type:
+    | "metric-card"
+    | "line-chart"
+    | "bar-chart"
+    | "table"
+    | "topology"
+    | "text"
+    | "group"
+    | string;
   title: string;
   description?: string;
   layoutPosition?: AiBigScreenLayoutPosition;
@@ -29,10 +37,23 @@ export interface AiBigScreenVisualRule {
 }
 
 export interface AiBigScreenVisualSpec {
-  kind?: "risk-field" | "signal-stream" | "timeline" | "heatmap-matrix" | "metric-cluster" | string;
+  kind?:
+    | "risk-field"
+    | "signal-stream"
+    | "timeline"
+    | "heatmap-matrix"
+    | "metric-cluster"
+    | string;
   motion?: "none" | "pulse" | "scan" | "flow" | "stagger" | string;
   density?: "compact" | "balanced" | "showcase" | string;
-  layoutPattern?: "grid" | "focus" | "split" | "timeline" | "matrix" | "flow" | string;
+  layoutPattern?:
+    | "grid"
+    | "focus"
+    | "split"
+    | "timeline"
+    | "matrix"
+    | "flow"
+    | string;
   composition?: "primary" | "secondary" | "supporting" | string;
   bindings?: Record<string, string>;
   highlightRules?: AiBigScreenVisualRule[];
@@ -71,7 +92,13 @@ export interface AiBigScreenVersion {
 }
 
 export interface AiBigScreenPublishTarget {
-  type: "portal-route" | "portal-menu" | "external-link" | "iframe" | "signed-link" | string;
+  type:
+    | "portal-route"
+    | "portal-menu"
+    | "external-link"
+    | "iframe"
+    | "signed-link"
+    | string;
   url: string;
   visibility?: string;
   expiresAt?: string | null;
@@ -128,10 +155,20 @@ export interface AiBigScreenPluginsResponse {
   items: AiBigScreenPlugin[];
 }
 
+export interface AiBigScreenDiffEntry {
+  componentId: string;
+  field: string;
+  before: unknown;
+  after: unknown;
+}
+
 export interface AiBigScreenPatchResponse {
   screen: AiBigScreenApp;
-  version: AiBigScreenVersion;
+  version: AiBigScreenVersion | null;
   summary: string;
+  /** preview-mode response: changes computed on a copy, not persisted. */
+  preview?: boolean;
+  diff?: AiBigScreenDiffEntry[];
 }
 
 export interface AiBigScreenPublishResponse {

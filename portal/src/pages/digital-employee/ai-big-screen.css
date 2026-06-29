@@ -928,3 +928,61 @@
     min-height: 44px;
   }
 }
+
+/* patch preview diff (M3 frontend) — stack editor as a column */
+.ai-big-screen-region-editor-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.ai-big-screen-region-editor-body .ai-big-screen-region-submit {
+  min-height: 38px;
+}
+
+.ai-big-screen-region-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
+.ai-big-screen-preview-diff {
+  margin: 0;
+  padding: 8px 12px;
+  list-style: none;
+  max-height: 160px;
+  overflow-y: auto;
+  border: 1px dashed rgba(111, 255, 220, 0.28);
+  border-radius: 8px;
+  background: rgba(4, 12, 11, 0.6);
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--ai-text);
+}
+
+.ai-big-screen-region-preview {
+  position: relative;
+  z-index: 1;
+  min-height: 38px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 0 14px;
+  border: 1px solid rgba(111, 255, 220, 0.18);
+  border-radius: 8px;
+  color: var(--ai-text);
+  background: rgba(4, 12, 11, 0.7);
+  font-weight: 700;
+  cursor: pointer;
+  transition: border-color 0.18s ease, opacity 0.18s ease;
+}
+
+.ai-big-screen-region-preview:not(:disabled):hover {
+  border-color: rgba(111, 255, 220, 0.4);
+}
+
+.ai-big-screen-region-preview:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
