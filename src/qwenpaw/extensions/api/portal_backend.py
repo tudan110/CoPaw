@@ -654,7 +654,7 @@ async def _ensure_portal_inspection_session(
         )
         result["chatId"] = chat.id
 
-        existing_state = await workspace.runner.session.get_session_state_dict(
+        existing_state = await workspace.session.get_session_state_dict(
             chat.session_id,
             chat.user_id,
         )
@@ -772,7 +772,7 @@ async def _ensure_portal_real_alarm_sessions(
                 )
                 if current_status == "idle":
                     state = (
-                        await workspace.runner.session.get_session_state_dict(
+                        await workspace.session.get_session_state_dict(
                             chat.session_id,
                             chat.user_id,
                         )
@@ -2034,7 +2034,7 @@ async def _get_workspace_and_session(request: Request):
     from qwenpaw.app.agent_context import get_agent_for_request
 
     workspace = await get_agent_for_request(request)
-    return workspace, workspace.runner.session
+    return workspace, workspace.session
 
 
 def _datetime_to_iso(value: Any) -> str:
