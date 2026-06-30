@@ -118,7 +118,7 @@ class OrderWorkflowConfig:
         )
         cookie = os.getenv("ORDER_COOKIE", "").strip()
         serial_no = os.getenv("ORDER_SERIAL_NO", "").strip()
-        timeout_seconds = int(os.getenv("ORDER_TIMEOUT_SECONDS", "20").strip() or "20")
+        timeout_seconds = int(float(os.getenv("ORDER_TIMEOUT_SECONDS", "20").strip() or "20"))
         verify_ssl = os.getenv("ORDER_VERIFY_SSL", "true").strip().lower() not in {
             "0",
             "false",
