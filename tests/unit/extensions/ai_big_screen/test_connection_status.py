@@ -16,6 +16,8 @@ def _clear_conn_env(monkeypatch: pytest.MonkeyPatch) -> None:
         "ZGOPS_BASE_URL",
         "ZGOPS_USERNAME",
         "ZGOPS_PASSWORD",
+        "ORDER_API_BASE_URL",
+        "ORDER_AUTHORIZATION",
     ):
         monkeypatch.delenv(var, raising=False)
 
@@ -104,4 +106,48 @@ class TestOthers:
 
         monkeypatch.setattr(svc, "get_datasource", lambda _did: None)
         status = cs.connection_status("proxy:nope")
+        assert status["configured"] is False
+
+
+class TestOrder:
+    def test_own_ferry_config_is_configured(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.setenv(
+            "ORDER_API_BASE_URL", "http://192.168.132.66:30080/ferry"
+        )
+        monkeypatch.setenv("ORDER_AUTHORIZATION", "Bearer x")
+        status = cs.connection_status("order")
+        assert status["configured"] is True
+        assert status["label"] == "工单 / ferry"
+        assert status["settingsTab"] == "order"
+        assert status["reason"] == ""
+
+    def test_falls_back_to_inoe_when_order_unset(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        # no ORDER_*; but INOE is configured → fallback keeps it usable
+        monkeypatch.setenv("INOE_API_BASE_URL", "http://82.156.83.38:30080")
+        monkeypatch.setenv("INOE_API_TOKEN", "tok")
+        status = cs.connection_status("order")
+        assert status["configured"] is True
+        assert "回退" in status["reason"]
+
+    def test_unconfigured_when_neither_order_nor_inoe(self) -> None:
+        status = cs.connection_status("order")
+        assert status["configured"] is False
+        assert status["settingsTab"] == "order"
+        assert status["reason"]
+
+    def test_own_ferry_ignores_placeholder_host(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        # cluster-internal default host is not "configured" on its own,
+        # and with no INOE fallback the connection is unconfigured
+        monkeypatch.setenv("ORDER_API_BASE_URL", "http://gateway:8080/ferry")
+        monkeypatch.setenv("ORDER_AUTHORIZATION", "Bearer x")
+        status = cs.connection_status("order")
         assert status["configured"] is False

@@ -33,6 +33,7 @@ _CONNECTION_META: dict[str, tuple[str, str]] = {
     "inoe": ("INOE 网关", "inoe"),
     "n9e": ("夜莺日志", "n9e"),
     "zgops": ("ZGOPS CMDB", "cmdb"),
+    "order": ("工单 / ferry", "order"),
 }
 
 
@@ -72,6 +73,24 @@ def _zgops_status() -> tuple[bool, str]:
     if not has_cred:
         return False, "缺少 CMDB 账号/密码"
     return True, ""
+
+
+def _order_status() -> tuple[bool, str]:
+    """Work-order (ferry) health, honouring the client's INOE fallback.
+
+    The order-workflow client uses ``ORDER_API_BASE_URL`` /
+    ``ORDER_AUTHORIZATION`` and falls back to the INOE connection when
+    they are empty, so 工单 is "configured" if either its own ferry
+    endpoint is set or the shared INOE connection is usable.
+    """
+    base = _env("ORDER_API_BASE_URL")
+    auth = _env("ORDER_AUTHORIZATION")
+    if base and not _looks_placeholder(base) and auth:
+        return True, ""
+    inoe_ok, _ = _inoe_status()
+    if inoe_ok:
+        return True, "工单接口未单独配置，回退平台 INOE 连接"
+    return False, "工单接口未配置，且平台 INOE 也未配置"
 
 
 def _proxy_status(connection: str) -> tuple[bool, str, str, str]:
@@ -125,6 +144,7 @@ def connection_status(connection: str) -> dict[str, Any]:
         "inoe": _inoe_status,
         "n9e": _n9e_status,
         "zgops": _zgops_status,
+        "order": _order_status,
     }.get(underlying)
     if checker is None:
         return {

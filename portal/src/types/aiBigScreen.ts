@@ -47,7 +47,13 @@ export interface AiBigScreenVisualSpec {
   motion?: "none" | "pulse" | "scan" | "flow" | "stagger" | string;
   density?: "compact" | "balanced" | "showcase" | string;
   layoutPattern?:
-    "grid" | "focus" | "split" | "timeline" | "matrix" | "flow" | string;
+    | "grid"
+    | "focus"
+    | "split"
+    | "timeline"
+    | "matrix"
+    | "flow"
+    | string;
   composition?: "primary" | "secondary" | "supporting" | string;
   bindings?: Record<string, string>;
   highlightRules?: AiBigScreenVisualRule[];

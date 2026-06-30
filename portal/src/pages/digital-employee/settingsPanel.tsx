@@ -15,6 +15,8 @@ import {
   qimingSettingsApi,
   xingchenSettingsApi,
   zgopsSettingsApi,
+  operatorSettingsApi,
+  orderSettingsApi,
   n9eSettingsApi,
   DIAGNOSIS_TOKEN_CLEAR,
   type NotificationChannelScopeConfig,
@@ -206,7 +208,8 @@ const DIAGNOSIS_GROUP_META: {
   {
     id: "alarm_analyst",
     title: "指标拉取（告警分析 / 巡检）",
-    description: "告警分析与巡检 skill 从平台拉取指标定义的请求超时与分页大小。",
+    description:
+      "告警分析与巡检 skill 从平台拉取指标定义的请求超时与分页大小。",
   },
 ];
 
@@ -274,6 +277,12 @@ const SETTINGS_TABS = [
     description: "zgops CMDB 连接与资源导入 LLM 池",
   },
   {
+    id: "order",
+    label: "工单",
+    iconClass: "fa-clipboard-list",
+    description: "工单（ferry）接口连接，留空回退平台 INOE",
+  },
+  {
     id: "n9e",
     label: "日志",
     iconClass: "fa-file-lines",
@@ -284,6 +293,12 @@ const SETTINGS_TABS = [
     label: "模型适配",
     iconClass: "fa-robot",
     description: "启明、星辰等大模型 adapter 的网关、凭证与模型",
+  },
+  {
+    id: "operator",
+    label: "操作",
+    iconClass: "fa-hand-pointer",
+    description: "页面操作助手（operator）的菜单接口连接",
   },
 ] as const;
 
@@ -335,6 +350,105 @@ const ZGOPS_FIELDS: ProviderFieldDesc[] = [
     key: "zgops_session_name",
     label: "Session 名",
     hint: "会话标识（可选）。",
+  },
+];
+
+// Menu / page-navigation API fields (page-navigator getRouters). They live in
+// the same `inoe` namespace as the platform connection, so they render as a
+// second section on the 平台 tab via the shared inoeSettingsApi. Empty
+// base_url / token fall back to the INOE connection above.
+const INOE_MENU_FIELDS: ProviderFieldDesc[] = [
+  {
+    key: "inoe_menu_base_url",
+    label: "菜单接口地址（可选）",
+    hint: "页面导航 getRouters 接口的 base URL，留空则复用上面的 INOE 网关地址。",
+    placeholder: "http://host:port",
+  },
+  {
+    key: "inoe_menu_token",
+    label: "菜单接口令牌（可选）",
+    sensitive: true,
+    hint: "留空则复用上面的 INOE 访问令牌。",
+  },
+  {
+    key: "inoe_menu_app_code",
+    label: "应用编码（app）",
+    hint: "getRouters/{app}，默认 inoe。",
+  },
+  {
+    key: "inoe_menu_timeout_seconds",
+    label: "菜单接口超时（秒）",
+    hint: "拉取菜单的请求超时，默认 20。",
+  },
+  {
+    key: "inoe_menu_cache_ttl_seconds",
+    label: "菜单缓存 TTL（秒）",
+    hint: "菜单内存缓存时长，默认 600。",
+  },
+];
+
+// Operator (page-operator) menu connection — its own OPERATOR_MENU_* env vars,
+// independent of page-navigator. Keys match operator_settings_store.
+const OPERATOR_FIELDS: ProviderFieldDesc[] = [
+  {
+    key: "operator_menu_base_url",
+    label: "菜单接口地址（可选）",
+    hint: "操作助手 getRouters 接口的 base URL，留空则回退共享 INOE 菜单 / 网关地址。",
+    placeholder: "http://host:port",
+  },
+  {
+    key: "operator_menu_token",
+    label: "菜单接口令牌（可选）",
+    sensitive: true,
+    hint: "留空则回退共享 INOE 访问令牌。",
+  },
+  {
+    key: "operator_menu_app_code",
+    label: "应用编码（app）",
+    hint: "getRouters/{app}，默认 inoe。",
+  },
+  {
+    key: "operator_menu_timeout_seconds",
+    label: "菜单接口超时（秒）",
+    hint: "拉取菜单的请求超时，默认 20。",
+  },
+  {
+    key: "operator_menu_cache_ttl_seconds",
+    label: "菜单缓存 TTL（秒）",
+    hint: "菜单内存缓存时长，默认 600。",
+  },
+];
+
+// Work-order (order-workflow / ferry) connection — its own ORDER_* env vars.
+// Keys match order_settings_store. Empty 地址 / 令牌 fall back to the shared
+// INOE connection (平台 tab).
+const ORDER_FIELDS: ProviderFieldDesc[] = [
+  {
+    key: "order_api_base_url",
+    label: "工单接口地址（可选）",
+    hint: "ferry 工单 API 的 base URL（如 http://host:port/ferry），留空则回退平台 INOE 地址。",
+    placeholder: "http://host:port/ferry",
+  },
+  {
+    key: "order_authorization",
+    label: "工单接口令牌（可选）",
+    sensitive: true,
+    hint: "ferry 的 Authorization（含 Bearer 前缀），留空则回退平台 INOE 令牌。",
+  },
+  {
+    key: "order_timeout_seconds",
+    label: "工单接口超时（秒）",
+    hint: "工单请求超时，默认 20。",
+  },
+  {
+    key: "order_verify_ssl",
+    label: "校验 SSL 证书",
+    hint: "是否校验 HTTPS 证书，默认开启（true）。",
+  },
+  {
+    key: "order_enable_curl_fallback",
+    label: "启用 curl 回退",
+    hint: "请求失败时是否回退到 curl，默认开启（true）。",
   },
 ];
 
@@ -408,7 +522,10 @@ const XINGCHEN_FIELDS: ProviderFieldDesc[] = [
 
 type SettingsTabId = (typeof SETTINGS_TABS)[number]["id"];
 type NotificationScopeId = string;
-type NotificationChannelForm = Omit<NotificationChannelScopeConfig, "timeout_seconds"> & {
+type NotificationChannelForm = Omit<
+  NotificationChannelScopeConfig,
+  "timeout_seconds"
+> & {
   timeout_seconds: string;
 };
 
@@ -418,12 +535,15 @@ const BUILTIN_NOTIFICATION_SCOPE_IDS = [
   "order_workflow",
 ] as const;
 
-const NOTIFICATION_SCOPE_META: Record<string, {
-  id: NotificationScopeId;
-  label: string;
-  iconClass: string;
-  description: string;
-}> = {
+const NOTIFICATION_SCOPE_META: Record<
+  string,
+  {
+    id: NotificationScopeId;
+    label: string;
+    iconClass: string;
+    description: string;
+  }
+> = {
   inspection: {
     id: "inspection",
     label: "巡检结果推送",
@@ -440,7 +560,8 @@ const NOTIFICATION_SCOPE_META: Record<string, {
     id: "order_workflow",
     label: "order 工单建单推送",
     iconClass: "fa-sitemap",
-    description: "order-workflow 创建工单成功后推送结果；order 技能会优先读取这里。",
+    description:
+      "order-workflow 创建工单成功后推送结果；order 技能会优先读取这里。",
   },
 };
 
@@ -480,7 +601,9 @@ const EMPTY_NOTIFICATION_SCOPE = (): NotificationChannelForm => ({
   mention_all: false,
 });
 
-function toNotificationForm(config?: NotificationChannelScopeConfig | null): NotificationChannelForm {
+function toNotificationForm(
+  config?: NotificationChannelScopeConfig | null,
+): NotificationChannelForm {
   if (!config) {
     return EMPTY_NOTIFICATION_SCOPE();
   }
@@ -513,21 +636,30 @@ function getNotificationScopeLabel(scope: NotificationScopeId) {
 }
 
 function getNotificationScopeMeta(scope: NotificationScopeId) {
-  return NOTIFICATION_SCOPE_META[scope] || {
-    id: scope,
-    label: scope,
-    iconClass: "fa-paper-plane",
-    description: `自定义通知作用位置：${scope}`,
-  };
+  return (
+    NOTIFICATION_SCOPE_META[scope] || {
+      id: scope,
+      label: scope,
+      iconClass: "fa-paper-plane",
+      description: `自定义通知作用位置：${scope}`,
+    }
+  );
 }
 
 function getSortedNotificationScopes(
   forms: Record<NotificationScopeId, NotificationChannelForm>,
 ) {
   const existing = new Set(Object.keys(forms));
-  const builtinScopes = BUILTIN_NOTIFICATION_SCOPE_IDS.filter((scope) => existing.has(scope));
+  const builtinScopes = BUILTIN_NOTIFICATION_SCOPE_IDS.filter((scope) =>
+    existing.has(scope),
+  );
   const customScopes = Object.keys(forms)
-    .filter((scope) => !BUILTIN_NOTIFICATION_SCOPE_IDS.includes(scope as (typeof BUILTIN_NOTIFICATION_SCOPE_IDS)[number]))
+    .filter(
+      (scope) =>
+        !BUILTIN_NOTIFICATION_SCOPE_IDS.includes(
+          scope as (typeof BUILTIN_NOTIFICATION_SCOPE_IDS)[number],
+        ),
+    )
     .sort((left, right) => left.localeCompare(right));
   return [...builtinScopes, ...customScopes];
 }
@@ -566,14 +698,12 @@ export function SettingsPanel() {
     );
   const [showFaultAnalysisConfidence, setShowFaultAnalysisConfidence] =
     useState(() => readFaultAnalysisConfidenceVisible());
-  const [notificationForms, setNotificationForms] = useState<Record<
-    NotificationScopeId,
-    NotificationChannelForm
-  >>(() => createNotificationForms());
-  const [savedNotificationForms, setSavedNotificationForms] = useState<Record<
-    NotificationScopeId,
-    NotificationChannelForm
-  >>(() => createNotificationForms());
+  const [notificationForms, setNotificationForms] = useState<
+    Record<NotificationScopeId, NotificationChannelForm>
+  >(() => createNotificationForms());
+  const [savedNotificationForms, setSavedNotificationForms] = useState<
+    Record<NotificationScopeId, NotificationChannelForm>
+  >(() => createNotificationForms());
   const [notificationLoading, setNotificationLoading] = useState(true);
   const [notificationNotice, setNotificationNotice] = useState<{
     type: "success" | "error";
@@ -583,13 +713,20 @@ export function SettingsPanel() {
     useState<NotificationScopeId | null>(null);
   const [newNotificationTarget, setNewNotificationTarget] =
     useState<string>("order_workflow");
-  const [newCustomNotificationScope, setNewCustomNotificationScope] = useState("");
+  const [newCustomNotificationScope, setNewCustomNotificationScope] =
+    useState("");
 
-  const handleProcessRecordModeChange = (mode: ConversationProcessRecordDisplayMode) => {
-    setProcessRecordDisplayMode(writeConversationProcessRecordDisplayMode(mode));
+  const handleProcessRecordModeChange = (
+    mode: ConversationProcessRecordDisplayMode,
+  ) => {
+    setProcessRecordDisplayMode(
+      writeConversationProcessRecordDisplayMode(mode),
+    );
   };
   const handleFaultAnalysisConfidenceVisibilityChange = (visible: boolean) => {
-    setShowFaultAnalysisConfidence(writeFaultAnalysisConfidenceVisible(visible));
+    setShowFaultAnalysisConfidence(
+      writeFaultAnalysisConfidenceVisible(visible),
+    );
   };
 
   // --- Alarm diagnosis settings (backend-persisted, DB > env > default) ---
@@ -760,7 +897,10 @@ export function SettingsPanel() {
       }
       const num = Number(raw);
       if (Number.isNaN(num)) {
-        setDiagnosisNotice({ type: "error", text: `${field.label} 必须是数字` });
+        setDiagnosisNotice({
+          type: "error",
+          text: `${field.label} 必须是数字`,
+        });
         return;
       }
       const effective = diagnosisPayload.effective[field.key];
@@ -853,8 +993,7 @@ export function SettingsPanel() {
         if (!cancelled) {
           setInoeNotice({
             type: "error",
-            text:
-              error instanceof Error ? error.message : "平台设置加载失败",
+            text: error instanceof Error ? error.message : "平台设置加载失败",
           });
         }
       } finally {
@@ -892,7 +1031,9 @@ export function SettingsPanel() {
       if (Number.isNaN(num)) {
         return true;
       }
-      if (String(inoePayload.effective[INOE_NUMBER_FIELD.key]) !== String(num)) {
+      if (
+        String(inoePayload.effective[INOE_NUMBER_FIELD.key]) !== String(num)
+      ) {
         return true;
       }
     }
@@ -918,7 +1059,9 @@ export function SettingsPanel() {
         });
         return;
       }
-      if (String(inoePayload.effective[INOE_NUMBER_FIELD.key]) !== String(num)) {
+      if (
+        String(inoePayload.effective[INOE_NUMBER_FIELD.key]) !== String(num)
+      ) {
         body[INOE_NUMBER_FIELD.key] = num;
       }
     }
@@ -1086,9 +1229,10 @@ export function SettingsPanel() {
   };
 
   const handleAddNotificationScope = () => {
-    const scope = newNotificationTarget === CUSTOM_NOTIFICATION_TARGET_ID
-      ? newCustomNotificationScope.trim()
-      : newNotificationTarget;
+    const scope =
+      newNotificationTarget === CUSTOM_NOTIFICATION_TARGET_ID
+        ? newCustomNotificationScope.trim()
+        : newNotificationTarget;
 
     if (!NOTIFICATION_SCOPE_ID_PATTERN.test(scope)) {
       setNotificationNotice({
@@ -1118,7 +1262,11 @@ export function SettingsPanel() {
   };
 
   const handleDeleteNotificationScope = async (scope: NotificationScopeId) => {
-    if (BUILTIN_NOTIFICATION_SCOPE_IDS.includes(scope as (typeof BUILTIN_NOTIFICATION_SCOPE_IDS)[number])) {
+    if (
+      BUILTIN_NOTIFICATION_SCOPE_IDS.includes(
+        scope as (typeof BUILTIN_NOTIFICATION_SCOPE_IDS)[number],
+      )
+    ) {
       return;
     }
     if (!savedNotificationForms[scope]) {
@@ -1166,7 +1314,11 @@ export function SettingsPanel() {
           <div className="settings-layout">
             <aside className="portal-advanced-config-panel settings-tab-panel">
               <div className="settings-tab-panel-title">设置分类</div>
-              <div className="settings-tab-list" role="tablist" aria-label="设置分类">
+              <div
+                className="settings-tab-list"
+                role="tablist"
+                aria-label="设置分类"
+              >
                 {SETTINGS_TABS.map((tab) => {
                   const active = activeTab === tab.id;
                   return (
@@ -1175,7 +1327,9 @@ export function SettingsPanel() {
                       type="button"
                       role="tab"
                       aria-selected={active}
-                      className={active ? "settings-tab active" : "settings-tab"}
+                      className={
+                        active ? "settings-tab active" : "settings-tab"
+                      }
                       onClick={() => setActiveTab(tab.id)}
                     >
                       <span className="settings-tab-icon">
@@ -1207,20 +1361,28 @@ export function SettingsPanel() {
                     <div className="settings-choice-grid">
                       <button
                         type="button"
-                        className={processRecordDisplayMode === "expanded"
-                          ? "portal-managed-config-toggle active"
-                          : "portal-managed-config-toggle"}
-                        onClick={() => handleProcessRecordModeChange("expanded")}
+                        className={
+                          processRecordDisplayMode === "expanded"
+                            ? "portal-managed-config-toggle active"
+                            : "portal-managed-config-toggle"
+                        }
+                        onClick={() =>
+                          handleProcessRecordModeChange("expanded")
+                        }
                       >
                         <i className="fas fa-angles-down" />
                         默认展开
                       </button>
                       <button
                         type="button"
-                        className={processRecordDisplayMode === "collapsed"
-                          ? "portal-managed-config-toggle active"
-                          : "portal-managed-config-toggle"}
-                        onClick={() => handleProcessRecordModeChange("collapsed")}
+                        className={
+                          processRecordDisplayMode === "collapsed"
+                            ? "portal-managed-config-toggle active"
+                            : "portal-managed-config-toggle"
+                        }
+                        onClick={() =>
+                          handleProcessRecordModeChange("collapsed")
+                        }
                       >
                         <i className="fas fa-angles-right" />
                         默认折叠
@@ -1228,7 +1390,10 @@ export function SettingsPanel() {
                     </div>
 
                     <div className="portal-managed-config-hint settings-inline-hint">
-                      当前默认：{processRecordDisplayMode === "expanded" ? "展开过程记录" : "折叠过程记录"}
+                      当前默认：
+                      {processRecordDisplayMode === "expanded"
+                        ? "展开过程记录"
+                        : "折叠过程记录"}
                     </div>
                   </section>
                 </div>
@@ -1241,7 +1406,8 @@ export function SettingsPanel() {
                       <div>
                         <h4>根因分析卡片是否展示置信度</h4>
                         <p>
-                          控制故障根因分析 skill 的卡片里是否展示置信度，包括右上角徽标和“定位置信度”等字段，避免影响用户判断。
+                          控制故障根因分析 skill
+                          的卡片里是否展示置信度，包括右上角徽标和“定位置信度”等字段，避免影响用户判断。
                         </p>
                       </div>
                     </div>
@@ -1249,20 +1415,28 @@ export function SettingsPanel() {
                     <div className="settings-choice-grid">
                       <button
                         type="button"
-                        className={showFaultAnalysisConfidence
-                          ? "portal-managed-config-toggle active"
-                          : "portal-managed-config-toggle"}
-                        onClick={() => handleFaultAnalysisConfidenceVisibilityChange(true)}
+                        className={
+                          showFaultAnalysisConfidence
+                            ? "portal-managed-config-toggle active"
+                            : "portal-managed-config-toggle"
+                        }
+                        onClick={() =>
+                          handleFaultAnalysisConfidenceVisibilityChange(true)
+                        }
                       >
                         <i className="fas fa-eye" />
                         展示置信度
                       </button>
                       <button
                         type="button"
-                        className={!showFaultAnalysisConfidence
-                          ? "portal-managed-config-toggle active"
-                          : "portal-managed-config-toggle"}
-                        onClick={() => handleFaultAnalysisConfidenceVisibilityChange(false)}
+                        className={
+                          !showFaultAnalysisConfidence
+                            ? "portal-managed-config-toggle active"
+                            : "portal-managed-config-toggle"
+                        }
+                        onClick={() =>
+                          handleFaultAnalysisConfidenceVisibilityChange(false)
+                        }
                       >
                         <i className="fas fa-eye-slash" />
                         隐藏置信度
@@ -1270,7 +1444,10 @@ export function SettingsPanel() {
                     </div>
 
                     <div className="portal-managed-config-hint settings-inline-hint">
-                      当前默认：{showFaultAnalysisConfidence ? "展示根因分析置信度" : "隐藏根因分析置信度"}
+                      当前默认：
+                      {showFaultAnalysisConfidence
+                        ? "展示根因分析置信度"
+                        : "隐藏根因分析置信度"}
                     </div>
                   </section>
 
@@ -1324,7 +1501,11 @@ export function SettingsPanel() {
                     <div className="portal-managed-config-hint settings-inline-hint">
                       {diagnosisLoading
                         ? "正在加载告警设置…"
-                        : `当前：${diagnosisEnabled ? "实时分析进行中" : "实时分析已暂停"}` +
+                        : `当前：${
+                            diagnosisEnabled
+                              ? "实时分析进行中"
+                              : "实时分析已暂停"
+                          }` +
                           `（${
                             diagnosisPayload?.overrides.auto_takeover_enabled
                               ? "页面已设置"
@@ -1358,8 +1539,12 @@ export function SettingsPanel() {
                                   ? "portal-managed-config-toggle active"
                                   : "portal-managed-config-toggle"
                               }
-                              disabled={diagnosisLoading || diagnosisTogglePending}
-                              onClick={() => handleRecoveryVerificationToggle(true)}
+                              disabled={
+                                diagnosisLoading || diagnosisTogglePending
+                              }
+                              onClick={() =>
+                                handleRecoveryVerificationToggle(true)
+                              }
                             >
                               <i className="fas fa-shield-halved" />
                               开启恢复验证
@@ -1371,8 +1556,12 @@ export function SettingsPanel() {
                                   ? "portal-managed-config-toggle active"
                                   : "portal-managed-config-toggle"
                               }
-                              disabled={diagnosisLoading || diagnosisTogglePending}
-                              onClick={() => handleRecoveryVerificationToggle(false)}
+                              disabled={
+                                diagnosisLoading || diagnosisTogglePending
+                              }
+                              onClick={() =>
+                                handleRecoveryVerificationToggle(false)
+                              }
                             >
                               <i className="fas fa-pause" />
                               暂停恢复验证
@@ -1455,221 +1644,233 @@ export function SettingsPanel() {
               ) : null}
 
               {activeTab === "inoe" ? (
-                <div className="portal-model-shell">
-                  <section className="settings-section">
-                    <div className="portal-model-block-head">
-                      <div>
-                        <h4>平台连接（INOE）</h4>
-                        <p>
-                          平台网关地址、访问令牌与请求超时。监控总览、实时告警、工单桥接等都通过这里的网关访问
-                          INOE；修改即时生效，无需重启。未在此设置的项会回退到 `.env`
-                          / 部署环境变量。
-                        </p>
-                      </div>
-                    </div>
-
-                    {inoeNotice ? (
-                      <div className={`settings-notice ${inoeNotice.type}`}>
-                        {inoeNotice.text}
-                      </div>
-                    ) : null}
-
-                    <div className="settings-form-grid">
-                      <div className="portal-form-group settings-field">
-                        <label htmlFor="inoe-base-url">
-                          {INOE_TEXT_FIELD.label}
-                        </label>
-                        <input
-                          id="inoe-base-url"
-                          type="text"
-                          value={inoeDraft[INOE_TEXT_FIELD.key] ?? ""}
-                          disabled={inoeLoading || inoeSaving}
-                          placeholder={INOE_TEXT_FIELD.placeholder}
-                          onChange={(event) =>
-                            handleInoeFieldChange(
-                              INOE_TEXT_FIELD.key,
-                              event.target.value,
-                            )
-                          }
-                        />
-                        <small>
-                          {INOE_TEXT_FIELD.hint}
-                          {!isMaskedSecret(inoePayload?.env[INOE_TEXT_FIELD.key])
-                            ? `　环境默认：${String(
-                                inoePayload?.env[INOE_TEXT_FIELD.key] ?? "",
-                              )}`
-                            : ""}
-                          {inoePayload?.overrides[INOE_TEXT_FIELD.key] ? (
-                            <>
-                              {"　"}
-                              <button
-                                type="button"
-                                className="settings-link-btn"
-                                disabled={inoeSaving}
-                                onClick={() =>
-                                  handleResetInoeField(INOE_TEXT_FIELD.key)
-                                }
-                              >
-                                恢复默认
-                              </button>
-                            </>
-                          ) : null}
-                        </small>
+                <>
+                  <div className="portal-model-shell">
+                    <section className="settings-section">
+                      <div className="portal-model-block-head">
+                        <div>
+                          <h4>平台连接（INOE）</h4>
+                          <p>
+                            平台网关地址、访问令牌与请求超时。监控总览、实时告警、工单桥接等都通过这里的网关访问
+                            INOE；修改即时生效，无需重启。未在此设置的项会回退到
+                            `.env` / 部署环境变量。
+                          </p>
+                        </div>
                       </div>
 
-                      <div className="portal-form-group settings-field">
-                        <label htmlFor="inoe-token">INOE 访问令牌</label>
-                        <input
-                          id="inoe-token"
-                          type="password"
-                          autoComplete="new-password"
-                          value={inoeTokenDraft}
-                          disabled={inoeLoading || inoeSaving}
-                          placeholder={
-                            isMaskedSecret(
-                              inoePayload?.effective[INOE_TOKEN_KEY],
-                            ) &&
-                            (
-                              inoePayload?.effective[
-                                INOE_TOKEN_KEY
-                              ] as MaskedSecret
-                            ).is_set
-                              ? `已设置（${
-                                  (
-                                    inoePayload?.effective[
-                                      INOE_TOKEN_KEY
-                                    ] as MaskedSecret
-                                  ).masked
-                                }），留空则不修改`
-                              : "未设置，留空则不修改"
-                          }
-                          onChange={(event) =>
-                            setInoeTokenDraft(event.target.value)
-                          }
-                        />
-                        <small>
-                          Bearer 令牌；出于安全不会回显原文。
-                          {inoePayload?.overrides[INOE_TOKEN_KEY] ? (
-                            <>
-                              {"　"}
-                              <button
-                                type="button"
-                                className="settings-link-btn"
-                                disabled={inoeSaving}
-                                onClick={() =>
-                                  handleResetInoeField(INOE_TOKEN_KEY)
-                                }
-                              >
-                                清除并恢复默认
-                              </button>
-                            </>
-                          ) : null}
-                        </small>
-                      </div>
+                      {inoeNotice ? (
+                        <div className={`settings-notice ${inoeNotice.type}`}>
+                          {inoeNotice.text}
+                        </div>
+                      ) : null}
 
-                      <div className="portal-form-group settings-field">
-                        <label htmlFor="inoe-timeout">
-                          {INOE_NUMBER_FIELD.label}
-                        </label>
-                        <input
-                          id="inoe-timeout"
-                          type="number"
-                          min={INOE_NUMBER_FIELD.min}
-                          step={INOE_NUMBER_FIELD.step}
-                          value={inoeDraft[INOE_NUMBER_FIELD.key] ?? ""}
-                          disabled={inoeLoading || inoeSaving}
-                          onChange={(event) =>
-                            handleInoeFieldChange(
-                              INOE_NUMBER_FIELD.key,
-                              event.target.value,
-                            )
-                          }
-                        />
-                        <small>
-                          {INOE_NUMBER_FIELD.hint}
-                          {!isMaskedSecret(
-                            inoePayload?.env[INOE_NUMBER_FIELD.key],
-                          )
-                            ? `　环境默认：${String(
-                                inoePayload?.env[INOE_NUMBER_FIELD.key] ?? "",
-                              )}`
-                            : ""}
-                          {inoePayload?.overrides[INOE_NUMBER_FIELD.key] ? (
-                            <>
-                              {"　"}
-                              <button
-                                type="button"
-                                className="settings-link-btn"
-                                disabled={inoeSaving}
-                                onClick={() =>
-                                  handleResetInoeField(INOE_NUMBER_FIELD.key)
-                                }
-                              >
-                                恢复默认
-                              </button>
-                            </>
-                          ) : null}
-                        </small>
-                      </div>
-
-                      <div className="portal-form-group settings-field">
-                        <label htmlFor="inoe-curl-fallback">
-                          {INOE_BOOL_FIELD.label}
-                        </label>
-                        <label
-                          className="settings-checkbox-row"
-                          htmlFor="inoe-curl-fallback"
-                        >
+                      <div className="settings-form-grid">
+                        <div className="portal-form-group settings-field">
+                          <label htmlFor="inoe-base-url">
+                            {INOE_TEXT_FIELD.label}
+                          </label>
                           <input
-                            id="inoe-curl-fallback"
-                            type="checkbox"
-                            checked={inoeFallbackDraft}
+                            id="inoe-base-url"
+                            type="text"
+                            value={inoeDraft[INOE_TEXT_FIELD.key] ?? ""}
                             disabled={inoeLoading || inoeSaving}
+                            placeholder={INOE_TEXT_FIELD.placeholder}
                             onChange={(event) =>
-                              setInoeFallbackDraft(event.target.checked)
+                              handleInoeFieldChange(
+                                INOE_TEXT_FIELD.key,
+                                event.target.value,
+                              )
                             }
                           />
-                          <span>{inoeFallbackDraft ? "已启用" : "已关闭"}</span>
-                        </label>
-                        <small>
-                          {INOE_BOOL_FIELD.hint}
-                          {`　环境默认：${
-                            (inoePayload?.env[INOE_BOOL_FIELD.key] ?? true)
-                              ? "开"
-                              : "关"
-                          }`}
-                          {inoePayload?.overrides[INOE_BOOL_FIELD.key] ? (
-                            <>
-                              {"　"}
-                              <button
-                                type="button"
-                                className="settings-link-btn"
-                                disabled={inoeSaving}
-                                onClick={() =>
-                                  handleResetInoeField(INOE_BOOL_FIELD.key)
-                                }
-                              >
-                                恢复默认
-                              </button>
-                            </>
-                          ) : null}
-                        </small>
-                      </div>
-                    </div>
+                          <small>
+                            {INOE_TEXT_FIELD.hint}
+                            {!isMaskedSecret(
+                              inoePayload?.env[INOE_TEXT_FIELD.key],
+                            )
+                              ? `　环境默认：${String(
+                                  inoePayload?.env[INOE_TEXT_FIELD.key] ?? "",
+                                )}`
+                              : ""}
+                            {inoePayload?.overrides[INOE_TEXT_FIELD.key] ? (
+                              <>
+                                {"　"}
+                                <button
+                                  type="button"
+                                  className="settings-link-btn"
+                                  disabled={inoeSaving}
+                                  onClick={() =>
+                                    handleResetInoeField(INOE_TEXT_FIELD.key)
+                                  }
+                                >
+                                  恢复默认
+                                </button>
+                              </>
+                            ) : null}
+                          </small>
+                        </div>
 
-                    <div className="portal-model-form-actions compact-row">
-                      <button
-                        type="button"
-                        className="portal-model-btn compact"
-                        disabled={inoeLoading || inoeSaving || !inoeDirty}
-                        onClick={handleSaveInoeSettings}
-                      >
-                        <i className="fas fa-floppy-disk" />
-                        {inoeSaving ? "保存中…" : "保存"}
-                      </button>
-                    </div>
-                  </section>
-                </div>
+                        <div className="portal-form-group settings-field">
+                          <label htmlFor="inoe-token">INOE 访问令牌</label>
+                          <input
+                            id="inoe-token"
+                            type="password"
+                            autoComplete="new-password"
+                            value={inoeTokenDraft}
+                            disabled={inoeLoading || inoeSaving}
+                            placeholder={
+                              isMaskedSecret(
+                                inoePayload?.effective[INOE_TOKEN_KEY],
+                              ) &&
+                              (
+                                inoePayload?.effective[
+                                  INOE_TOKEN_KEY
+                                ] as MaskedSecret
+                              ).is_set
+                                ? `已设置（${
+                                    (
+                                      inoePayload?.effective[
+                                        INOE_TOKEN_KEY
+                                      ] as MaskedSecret
+                                    ).masked
+                                  }），留空则不修改`
+                                : "未设置，留空则不修改"
+                            }
+                            onChange={(event) =>
+                              setInoeTokenDraft(event.target.value)
+                            }
+                          />
+                          <small>
+                            Bearer 令牌；出于安全不会回显原文。
+                            {inoePayload?.overrides[INOE_TOKEN_KEY] ? (
+                              <>
+                                {"　"}
+                                <button
+                                  type="button"
+                                  className="settings-link-btn"
+                                  disabled={inoeSaving}
+                                  onClick={() =>
+                                    handleResetInoeField(INOE_TOKEN_KEY)
+                                  }
+                                >
+                                  清除并恢复默认
+                                </button>
+                              </>
+                            ) : null}
+                          </small>
+                        </div>
+
+                        <div className="portal-form-group settings-field">
+                          <label htmlFor="inoe-timeout">
+                            {INOE_NUMBER_FIELD.label}
+                          </label>
+                          <input
+                            id="inoe-timeout"
+                            type="number"
+                            min={INOE_NUMBER_FIELD.min}
+                            step={INOE_NUMBER_FIELD.step}
+                            value={inoeDraft[INOE_NUMBER_FIELD.key] ?? ""}
+                            disabled={inoeLoading || inoeSaving}
+                            onChange={(event) =>
+                              handleInoeFieldChange(
+                                INOE_NUMBER_FIELD.key,
+                                event.target.value,
+                              )
+                            }
+                          />
+                          <small>
+                            {INOE_NUMBER_FIELD.hint}
+                            {!isMaskedSecret(
+                              inoePayload?.env[INOE_NUMBER_FIELD.key],
+                            )
+                              ? `　环境默认：${String(
+                                  inoePayload?.env[INOE_NUMBER_FIELD.key] ?? "",
+                                )}`
+                              : ""}
+                            {inoePayload?.overrides[INOE_NUMBER_FIELD.key] ? (
+                              <>
+                                {"　"}
+                                <button
+                                  type="button"
+                                  className="settings-link-btn"
+                                  disabled={inoeSaving}
+                                  onClick={() =>
+                                    handleResetInoeField(INOE_NUMBER_FIELD.key)
+                                  }
+                                >
+                                  恢复默认
+                                </button>
+                              </>
+                            ) : null}
+                          </small>
+                        </div>
+
+                        <div className="portal-form-group settings-field">
+                          <label htmlFor="inoe-curl-fallback">
+                            {INOE_BOOL_FIELD.label}
+                          </label>
+                          <label
+                            className="settings-checkbox-row"
+                            htmlFor="inoe-curl-fallback"
+                          >
+                            <input
+                              id="inoe-curl-fallback"
+                              type="checkbox"
+                              checked={inoeFallbackDraft}
+                              disabled={inoeLoading || inoeSaving}
+                              onChange={(event) =>
+                                setInoeFallbackDraft(event.target.checked)
+                              }
+                            />
+                            <span>
+                              {inoeFallbackDraft ? "已启用" : "已关闭"}
+                            </span>
+                          </label>
+                          <small>
+                            {INOE_BOOL_FIELD.hint}
+                            {`　环境默认：${
+                              inoePayload?.env[INOE_BOOL_FIELD.key] ?? true
+                                ? "开"
+                                : "关"
+                            }`}
+                            {inoePayload?.overrides[INOE_BOOL_FIELD.key] ? (
+                              <>
+                                {"　"}
+                                <button
+                                  type="button"
+                                  className="settings-link-btn"
+                                  disabled={inoeSaving}
+                                  onClick={() =>
+                                    handleResetInoeField(INOE_BOOL_FIELD.key)
+                                  }
+                                >
+                                  恢复默认
+                                </button>
+                              </>
+                            ) : null}
+                          </small>
+                        </div>
+                      </div>
+
+                      <div className="portal-model-form-actions compact-row">
+                        <button
+                          type="button"
+                          className="portal-model-btn compact"
+                          disabled={inoeLoading || inoeSaving || !inoeDirty}
+                          onClick={handleSaveInoeSettings}
+                        >
+                          <i className="fas fa-floppy-disk" />
+                          {inoeSaving ? "保存中…" : "保存"}
+                        </button>
+                      </div>
+                    </section>
+                  </div>
+                  <ProviderSettingsSection
+                    api={inoeSettingsApi}
+                    title="菜单 / 页面导航接口"
+                    description="page-navigator 解析门户路由用的 getRouters 接口。地址 / 令牌留空则复用上面的平台连接；修改即时生效，无需重启。"
+                    fields={INOE_MENU_FIELDS}
+                  />
+                </>
               ) : null}
 
               {activeTab === "model-adapters" ? (
@@ -1701,12 +1902,30 @@ export function SettingsPanel() {
                 </>
               ) : null}
 
+              {activeTab === "order" ? (
+                <ProviderSettingsSection
+                  api={orderSettingsApi}
+                  title="工单（ferry）连接"
+                  description="工单查询 / 建单走的 ferry 工单接口，独立于平台 INOE。地址 / 令牌留空则回退共享 INOE 连接；修改即时生效，无需重启。"
+                  fields={ORDER_FIELDS}
+                />
+              ) : null}
+
               {activeTab === "n9e" ? (
                 <ProviderSettingsSection
                   api={n9eSettingsApi}
                   title="夜莺日志（N9E）连接"
                   description="夜莺日志网关地址、令牌、数据源与索引。供日志隐患检测、安全扫描、日志查询等技能使用，修改即时生效。"
                   fields={N9E_FIELDS}
+                />
+              ) : null}
+
+              {activeTab === "operator" ? (
+                <ProviderSettingsSection
+                  api={operatorSettingsApi}
+                  title="操作助手菜单连接"
+                  description="页面操作助手（operator / page-operator）解析门户路由用的 getRouters 接口，独立于 page-navigator。地址 / 令牌留空则回退共享 INOE 菜单 / 网关连接；修改即时生效，无需重启。"
+                  fields={OPERATOR_FIELDS}
                 />
               ) : null}
 
@@ -1717,14 +1936,17 @@ export function SettingsPanel() {
                       <div>
                         <h4>通知推送配置</h4>
                         <p>
-                          将巡检结果与自动建单结果直接推送到应用、钉钉和飞书。相关 skill
-                          会优先读取这里的设置，未设置时再回退到原有 `.env` 配置。
+                          将巡检结果与自动建单结果直接推送到应用、钉钉和飞书。相关
+                          skill 会优先读取这里的设置，未设置时再回退到原有
+                          `.env` 配置。
                         </p>
                       </div>
                     </div>
 
                     {notificationNotice ? (
-                      <div className={`settings-notice ${notificationNotice.type}`}>
+                      <div
+                        className={`settings-notice ${notificationNotice.type}`}
+                      >
                         {notificationNotice.text}
                       </div>
                     ) : null}
@@ -1733,23 +1955,32 @@ export function SettingsPanel() {
                       <div className="portal-model-block-head">
                         <div>
                           <h4>
-                            <i className="fas fa-plus-circle" /> 新增通知作用位置
+                            <i className="fas fa-plus-circle" />{" "}
+                            新增通知作用位置
                           </h4>
                           <p>
                             选择这组 webhook 要作用的业务位置。当前 order 使用
-                            `order_workflow`，后续新 skill 可用自定义标识接入同一配置文件。
+                            `order_workflow`，后续新 skill
+                            可用自定义标识接入同一配置文件。
                           </p>
                         </div>
                       </div>
 
                       <div className="settings-form-grid">
                         <div className="portal-form-group settings-field">
-                          <label htmlFor="notification-target-scope">作用位置</label>
+                          <label htmlFor="notification-target-scope">
+                            作用位置
+                          </label>
                           <select
                             id="notification-target-scope"
                             value={newNotificationTarget}
-                            disabled={notificationLoading || Boolean(savingNotificationScope)}
-                            onChange={(event) => setNewNotificationTarget(event.target.value)}
+                            disabled={
+                              notificationLoading ||
+                              Boolean(savingNotificationScope)
+                            }
+                            onChange={(event) =>
+                              setNewNotificationTarget(event.target.value)
+                            }
                           >
                             {NOTIFICATION_TARGET_OPTIONS.map((option) => (
                               <option key={option.id} value={option.id}>
@@ -1758,23 +1989,36 @@ export function SettingsPanel() {
                             ))}
                           </select>
                           <small>
-                            {NOTIFICATION_TARGET_OPTIONS.find((option) => option.id === newNotificationTarget)
-                              ?.description || "选择通知配置生效的业务位置。"}
+                            {NOTIFICATION_TARGET_OPTIONS.find(
+                              (option) => option.id === newNotificationTarget,
+                            )?.description || "选择通知配置生效的业务位置。"}
                           </small>
                         </div>
 
-                        {newNotificationTarget === CUSTOM_NOTIFICATION_TARGET_ID ? (
+                        {newNotificationTarget ===
+                        CUSTOM_NOTIFICATION_TARGET_ID ? (
                           <div className="portal-form-group settings-field">
-                            <label htmlFor="notification-custom-scope">自定义标识</label>
+                            <label htmlFor="notification-custom-scope">
+                              自定义标识
+                            </label>
                             <input
                               id="notification-custom-scope"
                               type="text"
                               value={newCustomNotificationScope}
-                              disabled={notificationLoading || Boolean(savingNotificationScope)}
-                              onChange={(event) => setNewCustomNotificationScope(event.target.value)}
+                              disabled={
+                                notificationLoading ||
+                                Boolean(savingNotificationScope)
+                              }
+                              onChange={(event) =>
+                                setNewCustomNotificationScope(
+                                  event.target.value,
+                                )
+                              }
                               placeholder="例如 web_monitor 或 change_workflow"
                             />
-                            <small>只能使用字母、数字、下划线、短横线和点号，并且以字母开头。</small>
+                            <small>
+                              只能使用字母、数字、下划线、短横线和点号，并且以字母开头。
+                            </small>
                           </div>
                         ) : null}
                       </div>
@@ -1783,7 +2027,10 @@ export function SettingsPanel() {
                         <button
                           type="button"
                           className="portal-model-btn compact"
-                          disabled={notificationLoading || Boolean(savingNotificationScope)}
+                          disabled={
+                            notificationLoading ||
+                            Boolean(savingNotificationScope)
+                          }
                           onClick={handleAddNotificationScope}
                         >
                           <i className="fas fa-plus" />
@@ -1795,13 +2042,18 @@ export function SettingsPanel() {
                     <div className="settings-notification-stack">
                       {notificationScopeIds.map((scopeId) => {
                         const scope = getNotificationScopeMeta(scopeId);
-                        const form = notificationForms[scopeId] || EMPTY_NOTIFICATION_SCOPE();
+                        const form =
+                          notificationForms[scopeId] ||
+                          EMPTY_NOTIFICATION_SCOPE();
                         const dirty = notificationDirty[scopeId];
                         const saving = savingNotificationScope === scopeId;
-                        const disabled = notificationLoading || Boolean(savingNotificationScope);
-                        const isBuiltin = BUILTIN_NOTIFICATION_SCOPE_IDS.includes(
-                          scopeId as (typeof BUILTIN_NOTIFICATION_SCOPE_IDS)[number],
-                        );
+                        const disabled =
+                          notificationLoading ||
+                          Boolean(savingNotificationScope);
+                        const isBuiltin =
+                          BUILTIN_NOTIFICATION_SCOPE_IDS.includes(
+                            scopeId as (typeof BUILTIN_NOTIFICATION_SCOPE_IDS)[number],
+                          );
 
                         return (
                           <section
@@ -1811,7 +2063,8 @@ export function SettingsPanel() {
                             <div className="portal-model-block-head">
                               <div>
                                 <h4>
-                                  <i className={`fas ${scope.iconClass}`} /> {scope.label}
+                                  <i className={`fas ${scope.iconClass}`} />{" "}
+                                  {scope.label}
                                 </h4>
                                 <p>{scope.description}</p>
                               </div>
@@ -1819,7 +2072,9 @@ export function SettingsPanel() {
 
                             <div className="settings-form-grid">
                               <div className="portal-form-group settings-field">
-                                <label htmlFor={`${scopeId}-push-url`}>消息中心推送地址</label>
+                                <label htmlFor={`${scopeId}-push-url`}>
+                                  消息中心推送地址
+                                </label>
                                 <input
                                   id={`${scopeId}-push-url`}
                                   type="url"
@@ -1834,11 +2089,16 @@ export function SettingsPanel() {
                                   }}
                                   placeholder="http://ip:port/api/push/your-token"
                                 />
-                                <small>消息中心 `/api/push/{'{token}'}` 应用推送接口。</small>
+                                <small>
+                                  消息中心 `/api/push/{"{token}"}`
+                                  应用推送接口。
+                                </small>
                               </div>
 
                               <div className="portal-form-group settings-field">
-                                <label htmlFor={`${scopeId}-timeout`}>通知超时（秒）</label>
+                                <label htmlFor={`${scopeId}-timeout`}>
+                                  通知超时（秒）
+                                </label>
                                 <input
                                   id={`${scopeId}-timeout`}
                                   type="number"
@@ -1855,11 +2115,15 @@ export function SettingsPanel() {
                                   }}
                                   placeholder="8"
                                 />
-                                <small>超时时间会同时作用于应用、钉钉、飞书通知请求。</small>
+                                <small>
+                                  超时时间会同时作用于应用、钉钉、飞书通知请求。
+                                </small>
                               </div>
 
                               <div className="portal-form-group settings-field">
-                                <label htmlFor={`${scopeId}-dingtalk-webhook`}>钉钉 Webhook</label>
+                                <label htmlFor={`${scopeId}-dingtalk-webhook`}>
+                                  钉钉 Webhook
+                                </label>
                                 <input
                                   id={`${scopeId}-dingtalk-webhook`}
                                   type="url"
@@ -1878,7 +2142,9 @@ export function SettingsPanel() {
                               </div>
 
                               <div className="portal-form-group settings-field">
-                                <label htmlFor={`${scopeId}-dingtalk-secret`}>钉钉加签 Secret</label>
+                                <label htmlFor={`${scopeId}-dingtalk-secret`}>
+                                  钉钉加签 Secret
+                                </label>
                                 <input
                                   id={`${scopeId}-dingtalk-secret`}
                                   type="password"
@@ -1893,11 +2159,15 @@ export function SettingsPanel() {
                                   }}
                                   placeholder="SEC..."
                                 />
-                                <small>开启钉钉机器人加签时填写；未启用可留空。</small>
+                                <small>
+                                  开启钉钉机器人加签时填写；未启用可留空。
+                                </small>
                               </div>
 
                               <div className="portal-form-group settings-field">
-                                <label htmlFor={`${scopeId}-feishu-webhook`}>飞书 Webhook</label>
+                                <label htmlFor={`${scopeId}-feishu-webhook`}>
+                                  飞书 Webhook
+                                </label>
                                 <input
                                   id={`${scopeId}-feishu-webhook`}
                                   type="url"
@@ -1912,11 +2182,15 @@ export function SettingsPanel() {
                                   }}
                                   placeholder="https://open.feishu.cn/open-apis/bot/v2/hook/..."
                                 />
-                                <small>用于发送 interactive 卡片通知消息。</small>
+                                <small>
+                                  用于发送 interactive 卡片通知消息。
+                                </small>
                               </div>
 
                               <div className="portal-form-group settings-field">
-                                <label htmlFor={`${scopeId}-feishu-secret`}>飞书签名 Secret</label>
+                                <label htmlFor={`${scopeId}-feishu-secret`}>
+                                  飞书签名 Secret
+                                </label>
                                 <input
                                   id={`${scopeId}-feishu-secret`}
                                   type="password"
@@ -1931,40 +2205,60 @@ export function SettingsPanel() {
                                   }}
                                   placeholder="your-feishu-secret"
                                 />
-                                <small>开启飞书签名校验时填写；未启用可留空。</small>
+                                <small>
+                                  开启飞书签名校验时填写；未启用可留空。
+                                </small>
                               </div>
                             </div>
 
                             <div className="settings-choice-block">
-                              <div className="settings-choice-title">是否 @ 所有人</div>
+                              <div className="settings-choice-title">
+                                是否 @ 所有人
+                              </div>
                               <div className="settings-choice-grid">
                                 <button
                                   type="button"
-                                  className={form.mention_all
-                                    ? "portal-managed-config-toggle active"
-                                    : "portal-managed-config-toggle"}
+                                  className={
+                                    form.mention_all
+                                      ? "portal-managed-config-toggle active"
+                                      : "portal-managed-config-toggle"
+                                  }
                                   disabled={disabled}
-                                  onClick={() => handleNotificationFieldChange(scopeId, "mention_all", true)}
+                                  onClick={() =>
+                                    handleNotificationFieldChange(
+                                      scopeId,
+                                      "mention_all",
+                                      true,
+                                    )
+                                  }
                                 >
                                   <i className="fas fa-at" />
                                   开启 @所有人
                                 </button>
                                 <button
                                   type="button"
-                                  className={!form.mention_all
-                                    ? "portal-managed-config-toggle active"
-                                    : "portal-managed-config-toggle"}
+                                  className={
+                                    !form.mention_all
+                                      ? "portal-managed-config-toggle active"
+                                      : "portal-managed-config-toggle"
+                                  }
                                   disabled={disabled}
-                                  onClick={() => handleNotificationFieldChange(scopeId, "mention_all", false)}
+                                  onClick={() =>
+                                    handleNotificationFieldChange(
+                                      scopeId,
+                                      "mention_all",
+                                      false,
+                                    )
+                                  }
                                 >
-                                  <i className="fas fa-user-minus" />
-                                  不 @所有人
+                                  <i className="fas fa-user-minus" />不 @所有人
                                 </button>
                               </div>
                             </div>
 
                             <div className="portal-managed-config-hint settings-inline-hint">
-                              当前状态：{dirty ? "有未保存修改" : "已与工作空间设置同步"}
+                              当前状态：
+                              {dirty ? "有未保存修改" : "已与工作空间设置同步"}
                             </div>
 
                             <div className="portal-model-form-actions compact-row">
@@ -1972,7 +2266,9 @@ export function SettingsPanel() {
                                 type="button"
                                 className="portal-model-btn secondary compact"
                                 disabled={disabled || !dirty}
-                                onClick={() => handleResetNotificationScope(scopeId)}
+                                onClick={() =>
+                                  handleResetNotificationScope(scopeId)
+                                }
                               >
                                 重置
                               </button>
@@ -1981,7 +2277,9 @@ export function SettingsPanel() {
                                   type="button"
                                   className="portal-model-btn secondary compact"
                                   disabled={disabled}
-                                  onClick={() => void handleDeleteNotificationScope(scopeId)}
+                                  onClick={() =>
+                                    void handleDeleteNotificationScope(scopeId)
+                                  }
                                 >
                                   删除
                                 </button>
@@ -1990,9 +2288,17 @@ export function SettingsPanel() {
                                 type="button"
                                 className="portal-model-btn compact"
                                 disabled={disabled || !dirty}
-                                onClick={() => void handleSaveNotificationScope(scopeId)}
+                                onClick={() =>
+                                  void handleSaveNotificationScope(scopeId)
+                                }
                               >
-                                <i className={`fas ${saving ? "fa-spinner fa-spin" : "fa-floppy-disk"}`} />
+                                <i
+                                  className={`fas ${
+                                    saving
+                                      ? "fa-spinner fa-spin"
+                                      : "fa-floppy-disk"
+                                  }`}
+                                />
                                 {saving ? "保存中" : "保存"}
                               </button>
                             </div>

@@ -250,6 +250,35 @@ def build_real_alarm_list_query_params(
     return params
 
 
+# INOE/RuoYi gateways answer with HTTP 200 even for application-level
+# errors, carrying the real status in the body envelope — e.g.
+# ``{"code": 500, "msg": "服务未找到"}`` when the alarm service is not
+# routed on the configured gateway, or ``{"code": 401, "msg": "登录状态已
+# 过期"}`` when the token is stale. ``raise_for_status()`` cannot see these,
+# and the row parser would read a missing ``rows`` key as "0 alarms" —
+# turning an outage or an expired token into a misleading "no data". Raise
+# so honest callers (``raise_on_error=True``, the AI big-screen) adjudicate
+# it as ``sourceStatus="failed"`` with the real reason instead of "暂无数据".
+_ALARM_OK_CODES = {0, 200}
+
+
+def _raise_for_alarm_envelope(result: dict[str, Any]) -> dict[str, Any]:
+    if isinstance(result, dict) and "code" in result:
+        try:
+            code_ok = int(result["code"]) in _ALARM_OK_CODES
+        except (TypeError, ValueError):
+            code_ok = True  # non-numeric code → don't second-guess it
+        if not code_ok:
+            message = str(
+                result.get("msg") or result.get("message") or "",
+            ).strip()
+            raise RuntimeError(
+                f"告警网关返回错误 code={result.get('code')}"
+                + (f"：{message}" if message else ""),
+            )
+    return result
+
+
 # Name kept (``_post_*``) for back-compat with test mocks; the endpoint
 # is now a GET. INOE ``hisAlarmList`` requires a begin/end window, so a
 # default is filled when the caller did not compute one.
@@ -285,14 +314,16 @@ def _post_real_alarm_list(
             timeout=timeout_seconds,
         )
     except requests.exceptions.ConnectionError:
-        return _curl_get_real_alarm_json(
-            url=url,
-            headers=headers,
-            params=params,
-            timeout_seconds=timeout_seconds,
+        return _raise_for_alarm_envelope(
+            _curl_get_real_alarm_json(
+                url=url,
+                headers=headers,
+                params=params,
+                timeout_seconds=timeout_seconds,
+            )
         )
     response.raise_for_status()
-    return response.json()
+    return _raise_for_alarm_envelope(response.json())
 
 
 def _curl_get_real_alarm_json(

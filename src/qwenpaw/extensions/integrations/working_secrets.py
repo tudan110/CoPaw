@@ -47,6 +47,14 @@ _INOE_GETTERS = {
     "inoe_api_token": "get_token",
     "inoe_api_timeout_seconds": "get_timeout_seconds",
     "inoe_enable_curl_fallback": "get_enable_curl_fallback",
+    # Menu / page-navigation API (page-navigator getRouters). Resolved from
+    # the same ``inoe`` namespace and written to the INOE_MENU_* env vars the
+    # skill subprocess reads.
+    "inoe_menu_base_url": "get_menu_base_url",
+    "inoe_menu_token": "get_menu_token",
+    "inoe_menu_app_code": "get_menu_app_code",
+    "inoe_menu_timeout_seconds": "get_menu_timeout_seconds",
+    "inoe_menu_cache_ttl_seconds": "get_menu_cache_ttl_seconds",
 }
 
 _LOADED = False
@@ -220,6 +228,81 @@ def refresh_zgops_environ(*, db_path: Optional[Path] = None) -> None:
     materialize_zgops_to_environ(force=True, db_path=db_path)
 
 
+def materialize_operator_to_environ(
+    *,
+    force: bool = False,
+    db_path: Optional[Path] = None,
+) -> None:
+    """Push the operator (page-operator) menu connection into ``os.environ``.
+
+    The page-operator skill reads ``OPERATOR_MENU_*`` via ``os.getenv`` in a
+    subprocess (falling back to ``INOE_MENU_*`` / ``INOE_API_*``), so the
+    settings-page values only reach it once materialised here. Same precedence
+    as :func:`materialize_inoe_to_environ`: override forced, otherwise
+    ``setdefault``; empty values skipped.
+    """
+    try:
+        from qwenpaw.extensions.api import operator_settings_store as op
+    except Exception:  # noqa: BLE001 - never break secret loading
+        return
+
+    kwargs = {} if db_path is None else {"db_path": db_path}
+    for key, spec in op.OPERATOR_FIELD_SPECS.items():
+        try:
+            value = op.resolve_text(spec.env_var, **kwargs).strip()
+        except Exception:  # noqa: BLE001 - one bad field must not block rest
+            continue
+        if not value:
+            continue
+        if force or op.has_override(key, **kwargs):
+            os.environ[spec.env_var] = value
+        else:
+            os.environ.setdefault(spec.env_var, value)
+
+
+def refresh_operator_environ(*, db_path: Optional[Path] = None) -> None:
+    """Re-materialise operator settings after a save/reset."""
+    materialize_operator_to_environ(force=True, db_path=db_path)
+
+
+def materialize_order_to_environ(
+    *,
+    force: bool = False,
+    db_path: Optional[Path] = None,
+) -> None:
+    """Push the work-order (ferry) connection into ``os.environ``.
+
+    The order-workflow skill reads ``ORDER_API_BASE_URL`` / ``ORDER_*`` via
+    ``os.getenv`` in a subprocess (falling back to ``INOE_API_BASE_URL`` /
+    ``INOE_API_TOKEN`` when unset), so the settings-page values only reach it
+    once materialised here. Same precedence as
+    :func:`materialize_inoe_to_environ`: override forced, otherwise
+    ``setdefault``; empty values skipped so the INOE fallback still applies.
+    """
+    try:
+        from qwenpaw.extensions.api import order_settings_store as order
+    except Exception:  # noqa: BLE001 - never break secret loading
+        return
+
+    kwargs = {} if db_path is None else {"db_path": db_path}
+    for key, spec in order.ORDER_FIELD_SPECS.items():
+        try:
+            value = order.resolve_text(spec.env_var, **kwargs).strip()
+        except Exception:  # noqa: BLE001 - one bad field must not block rest
+            continue
+        if not value:
+            continue
+        if force or order.has_override(key, **kwargs):
+            os.environ[spec.env_var] = value
+        else:
+            os.environ.setdefault(spec.env_var, value)
+
+
+def refresh_order_environ(*, db_path: Optional[Path] = None) -> None:
+    """Re-materialise work-order settings after a save/reset."""
+    materialize_order_to_environ(force=True, db_path=db_path)
+
+
 _RIL_SUFFIXES = ("_BASE_URL", "_API_KEY", "_MODEL", "_VISION_MODEL")
 
 
@@ -344,5 +427,7 @@ def ensure_working_secrets_loaded() -> None:
     materialize_inoe_to_environ(force=False)
     materialize_alarm_analyst_to_environ(force=False)
     materialize_zgops_to_environ(force=False)
+    materialize_operator_to_environ(force=False)
+    materialize_order_to_environ(force=False)
     materialize_resource_import_llm_to_environ(force=False)
     materialize_n9e_to_environ(force=False)

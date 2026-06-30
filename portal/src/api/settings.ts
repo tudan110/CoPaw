@@ -21,7 +21,8 @@ async function requestSettings<T>(
   return requestPortalApi<T>(path, {
     ...options,
     headers: {
-      ...(options.method && !["GET", "HEAD"].includes(options.method.toUpperCase())
+      ...(options.method &&
+      !["GET", "HEAD"].includes(options.method.toUpperCase())
         ? { "Content-Type": "application/json" }
         : {}),
       ...(options.headers || {}),
@@ -31,13 +32,18 @@ async function requestSettings<T>(
 
 export const settingsApi = {
   getNotificationChannels: () =>
-    requestSettings<NotificationChannelSettings>("/settings/notification-channels"),
+    requestSettings<NotificationChannelSettings>(
+      "/settings/notification-channels",
+    ),
 
   updateNotificationChannels: (body: Partial<NotificationChannelSettings>) =>
-    requestSettings<NotificationChannelSettings>("/settings/notification-channels", {
-      method: "PUT",
-      body: JSON.stringify(body),
-    }),
+    requestSettings<NotificationChannelSettings>(
+      "/settings/notification-channels",
+      {
+        method: "PUT",
+        body: JSON.stringify(body),
+      },
+    ),
 
   deleteNotificationChannel: (scope: string) =>
     requestSettings<NotificationChannelSettings>(
@@ -73,8 +79,7 @@ export interface DiagnosisSettingsPayload {
 export const DIAGNOSIS_TOKEN_CLEAR = "__CLEAR__";
 
 export const diagnosisSettingsApi = {
-  get: () =>
-    requestSettings<DiagnosisSettingsPayload>("/diagnosis-settings"),
+  get: () => requestSettings<DiagnosisSettingsPayload>("/diagnosis-settings"),
 
   update: (body: Record<string, number | boolean | string>) =>
     requestSettings<DiagnosisSettingsPayload>("/diagnosis-settings", {
@@ -145,6 +150,21 @@ export const xingchenSettingsApi =
   makeProviderSettingsApi("/xingchen-settings");
 export const zgopsSettingsApi = makeProviderSettingsApi("/zgops-settings");
 export const n9eSettingsApi = makeProviderSettingsApi("/n9e-settings");
+
+// --- Operator (page-operator) menu connection ---
+//
+// The 操作 agent's page-operator skill resolves portal routes from an INOE
+// menu endpoint via its own OPERATOR_MENU_* env vars, independent of the 平台
+// (INOE) tab that drives page-navigator. Same payload shape as the providers.
+export const operatorSettingsApi =
+  makeProviderSettingsApi("/operator-settings");
+
+// --- Work-order (order-workflow / ferry) connection ---
+//
+// The 工单 path resolves the ferry work-order API from its own ORDER_* env
+// vars, falling back to the shared INOE connection (平台 tab) when left empty.
+// Same payload shape as the other providers.
+export const orderSettingsApi = makeProviderSettingsApi("/order-settings");
 
 // --- Resource-import LLM pool (zgops-cmdb) ---
 //
