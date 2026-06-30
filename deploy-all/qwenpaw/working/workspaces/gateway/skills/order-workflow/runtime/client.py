@@ -18,40 +18,52 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 from urllib.parse import quote_plus, urlencode
+import urllib.error
+import urllib.request
+import ssl
 
-import requests
 
-try:
-    from dotenv import load_dotenv
-
-    HAS_DOTENV = True
-except ImportError:
-    HAS_DOTENV = False
+def _load_env_file(path: Path) -> None:
+    """把 .env 风格文件的 KEY=VALUE 注入 os.environ（不覆盖已有值）。"""
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError:
+        return
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        if line.startswith("export "):
+            line = line[len("export "):].lstrip()
+        key, _, value = line.partition("=")
+        key = key.strip()
+        value = value.strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in ("'", '"'):
+            value = value[1:-1]
+        if key and key not in os.environ:
+            os.environ[key] = value
 
 
 def _load_skill_env() -> None:
     """加载配置，优先级：进程环境变量 > 共享 secrets/inoe.env > 技能 .env。
 
-    用 override=False（先到先得，不覆盖已有值）。关键点：脚本会**自己**
-    向上层找到工作根的 `secrets/inoe.env` 并加载，所以直接 `python
-    scripts/order_workflow.py ...` 就能读到 ORDER_* 配置，无需手动传环境
-    变量、也无需技能目录下的 .env。
+    纯标准库实现（不依赖 python-dotenv）。脚本会自己向上找到工作根的
+    `secrets/inoe.env` 加载，所以直接 `python scripts/order_workflow.py ...`
+    就能读到 ORDER_* 配置，无需手动传环境变量、也无需技能目录下的 .env。
     """
-    if not HAS_DOTENV:
-        return
     here = Path(__file__).resolve()
     # 1) 共享 secrets/inoe.env（与后端注入的是同一份）
     for parent in here.parents:
         shared = parent / "secrets" / "inoe.env"
         if shared.exists():
-            load_dotenv(shared, override=False)
+            _load_env_file(shared)
             break
         if (parent / "workspaces").is_dir() and (parent / "secrets").is_dir():
             break  # 到工作根仍没有就停，别一路找到文件系统根
     # 2) 技能目录自身 .env（可选覆盖，最低优先级）
     env_file = here.parents[1] / ".env"
     if env_file.exists():
-        load_dotenv(env_file, override=False)
+        _load_env_file(env_file)
 
 
 _load_skill_env()
@@ -402,32 +414,90 @@ class OrderWorkflowClient:
             raise RuntimeError("ORDER_AUTHORIZATION is required")
 
         url = f"{self.config.base_url}{path}"
+        if params:
+            url = f"{url}?{urlencode(params, doseq=True)}"
         headers = self._build_headers()
+        data: bytes | None = None
+        if json_body is not None:
+            data = json.dumps(json_body, ensure_ascii=False).encode("utf-8")
+            headers = {**headers, "Content-Type": "application/json;charset=utf-8"}
 
         try:
-            response = requests.request(
-                method=method,
-                url=url,
-                params=params,
-                json=json_body,
-                headers=headers,
-                timeout=self.config.timeout_seconds,
-                verify=self.config.verify_ssl,
-            )
-            response.raise_for_status()
-            return response.json()
-        except requests.exceptions.RequestException as exc:
-            if not self.config.enable_curl_fallback:
-                raise RuntimeError(self._format_request_error(exc)) from exc
-            return self._curl_request(
-                method=method,
-                url=url,
-                headers=headers,
-                params=params,
-                json_body=json_body,
-            )
+            return self._urlopen_json(method.upper(), url, headers, data)
+        except urllib.error.HTTPError as exc:
+            body = self._read_error_body(exc)
+            if self.config.enable_curl_fallback:
+                return self._curl_request(
+                    method=method, url=url, headers=headers,
+                    params=None, json_body=json_body,
+                )
+            try:
+                return json.loads(body)
+            except (ValueError, TypeError):
+                raise RuntimeError(
+                    f"HTTP {exc.code}: {body[:300] or exc.reason}"
+                ) from exc
+        except (urllib.error.URLError, OSError, TimeoutError) as exc:
+            if self.config.enable_curl_fallback:
+                return self._curl_request(
+                    method=method, url=url, headers=headers,
+                    params=None, json_body=json_body,
+                )
+            raise RuntimeError(self._format_request_error(exc)) from exc
         except ValueError as exc:
             raise RuntimeError(f"Invalid JSON response from {url}") from exc
+
+    def _ssl_context(self) -> "ssl.SSLContext | None":
+        if self.config.verify_ssl:
+            return None
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+        return ctx
+
+    def _urlopen_json(
+        self,
+        method: str,
+        url: str,
+        headers: dict[str, str],
+        data: bytes | None,
+    ) -> dict[str, Any]:
+        req = urllib.request.Request(
+            url, data=data, headers=headers, method=method
+        )
+        with urllib.request.urlopen(
+            req,
+            timeout=self.config.timeout_seconds,
+            context=self._ssl_context(),
+        ) as resp:
+            body = resp.read().decode("utf-8", "replace")
+        return json.loads(body or "{}")
+
+    @staticmethod
+    def _read_error_body(exc: "urllib.error.HTTPError") -> str:
+        try:
+            return exc.read().decode("utf-8", "replace")
+        except Exception:
+            return ""
+
+    def _post_json(
+        self, url: str, payload: dict[str, Any], timeout: float
+    ) -> dict[str, Any]:
+        data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+        req = urllib.request.Request(
+            url,
+            data=data,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(
+            req, timeout=timeout, context=self._ssl_context()
+        ) as resp:
+            body = resp.read().decode("utf-8", "replace")
+        try:
+            return json.loads(body or "{}")
+        except ValueError:
+            return {}
 
     def _list_workorders(
         self,
@@ -1100,25 +1170,17 @@ class OrderWorkflowClient:
         payload: dict[str, Any],
     ) -> dict[str, Any]:
         try:
-            response = requests.post(
+            response_json = self._post_json(
                 push_url,
-                json=payload,
-                headers={"Content-Type": "application/json"},
-                timeout=self.config.create_notify_timeout_seconds,
-                verify=self.config.verify_ssl,
+                payload,
+                self.config.create_notify_timeout_seconds,
             )
-            response.raise_for_status()
         except Exception as exc:
             return {
                 "channel": channel_name,
                 "status": "failed",
                 "reason": str(exc),
             }
-
-        try:
-            response_json = response.json()
-        except (AttributeError, ValueError):
-            response_json = {}
 
         if self._is_successful_push_response(response_json):
             return {
@@ -1145,15 +1207,11 @@ class OrderWorkflowClient:
         success_predicate: Any,
     ) -> dict[str, Any]:
         try:
-            response = requests.post(
+            response_json = self._post_json(
                 webhook_url,
-                json=payload,
-                headers={"Content-Type": "application/json"},
-                timeout=self.config.create_notify_timeout_seconds,
-                verify=self.config.verify_ssl,
+                payload,
+                self.config.create_notify_timeout_seconds,
             )
-            response.raise_for_status()
-            response_json = response.json()
             if success_predicate(response_json):
                 return {
                     "channel": channel_name,
@@ -1191,14 +1249,9 @@ class OrderWorkflowClient:
         return summary or "人工处置工单已创建"
 
     @staticmethod
-    def _format_request_error(exc: requests.exceptions.RequestException) -> str:
-        response = getattr(exc, "response", None)
-        if response is None:
-            return f"{type(exc).__name__}: {exc}"
-        text = response.text.strip()
-        if text:
-            return f"HTTP {response.status_code}: {text}"
-        return f"HTTP {response.status_code}: {response.reason}"
+    def _format_request_error(exc: Exception) -> str:
+        reason = getattr(exc, "reason", None)
+        return f"{type(exc).__name__}: {reason if reason is not None else exc}"
 
     def _curl_request(
         self,

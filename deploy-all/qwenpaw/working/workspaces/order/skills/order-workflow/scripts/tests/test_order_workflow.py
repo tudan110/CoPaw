@@ -425,8 +425,9 @@ class OrderWorkflowTests(unittest.TestCase):
                 "code": 200,
                 "data": {"workOrderId": "wo-1", "processId": "p-1"},
             },
-        ), mock.patch(
-            "runtime.client.requests.post",
+        ), mock.patch.object(
+            client,
+            "_post_json",
             side_effect=RuntimeError("notify down"),
         ):
             payload = client.create_disposal_workorder(
