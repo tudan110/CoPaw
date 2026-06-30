@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from qwenpaw.extensions.ai_big_screen.sanitizer import (
     safe_visual_token,
+    sanitize_component_style,
     sanitize_visual_spec,
 )
 
@@ -352,3 +353,48 @@ class TestSanitizeVisualSpec:
             },
         )
         assert spec["emphasisRules"][0]["field"] == "level"
+
+
+class TestComponentStyle:
+    def test_clamps_and_whitelists(self) -> None:
+        style = sanitize_component_style(
+            {
+                "sizeScale": 9,
+                "lineOpacity": 250,
+                "labelBrightness": -500,
+                "palette": "warm",
+                "emphasis": "strong",
+                "accentColor": "gold",
+                "bogus": "x",
+            },
+        )
+        assert style == {
+            "sizeScale": 2.0,
+            "lineOpacity": 100,
+            "labelBrightness": -100,
+            "palette": "warm",
+            "emphasis": "strong",
+            "accentColor": "gold",
+        }
+
+    def test_rejects_bad_palette_emphasis_accent(self) -> None:
+        style = sanitize_component_style(
+            {
+                "palette": "neon",  # not whitelisted
+                "emphasis": "loud",  # not whitelisted
+                "accentColor": "url(http://x)",  # not a colour
+                "sizeScale": "big",  # not a number
+            },
+        )
+        assert style == {}
+
+    def test_accepts_hex_accent(self) -> None:
+        style = sanitize_component_style({"accentColor": "#22d3ee"})
+        assert style == {"accentColor": "#22d3ee"}
+
+    def test_flows_through_visual_spec(self) -> None:
+        spec = sanitize_visual_spec(
+            {"composition": "primary", "style": {"sizeScale": 1.5}},
+        )
+        assert spec["composition"] == "primary"
+        assert spec["style"] == {"sizeScale": 1.5}

@@ -11,6 +11,7 @@ Token whitelists are unchanged and stay aligned with
 """
 from __future__ import annotations
 
+import re
 from typing import Any, Callable, Mapping
 
 from qwenpaw.extensions.ai_big_screen.capabilities.fields import safe_int
@@ -33,6 +34,27 @@ ALLOWED_LAYOUT_PATTERNS = {
     "flow",
 }
 ALLOWED_COMPOSITIONS = {"primary", "secondary", "supporting"}
+#: Canonical palette whitelist. Lives here (the leaf sanitizer) so both
+#: ``intent`` (generation) and ``patch`` (editing) import the same set
+#: without a circular import; mirrors the frontend ``PALETTES`` keys.
+ALLOWED_PALETTES = {
+    "professional",
+    "warm",
+    "cool",
+    "executive",
+    "industrial",
+    "aurora",
+    "mono",
+}
+ALLOWED_EMPHASIS = {"standard", "strong"}
+#: component-level presentation style (visualSpec.style) bounds.
+STYLE_SIZE_MIN = 0.5
+STYLE_SIZE_MAX = 2.0
+#: accentColor must be a bare hex colour or a plain colour name — never
+#: an arbitrary CSS value (defence in depth on top of safe_visual_token).
+_ACCENT_COLOR_RE = re.compile(
+    r"^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$|^[a-zA-Z]{3,20}$",
+)
 ALLOWED_BINDING_KEYS = {
     "time",
     "title",
@@ -378,6 +400,60 @@ def sanitize_blueprint(raw: Any, *, depth: int = 0) -> dict[str, Any]:
     return blueprint
 
 
+def _clamp_number(value: Any, low: float, high: float) -> float | None:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    return max(low, min(high, float(value)))
+
+
+def sanitize_component_style(raw_style: Any) -> dict[str, Any]:
+    """Whitelist + clamp a component-level presentation style block.
+
+    Lives on ``visualSpec.style`` — the single controlled vocabulary the
+    LLM generator and the natural-language edit loop both use for size /
+    colour / brightness / emphasis. Enums and clamped numbers only;
+    ``accentColor`` must match a strict colour pattern. No raw CSS, URL or
+    code can survive — the renderer interprets these, never executes them.
+    """
+    if not isinstance(raw_style, dict):
+        return {}
+    style: dict[str, Any] = {}
+
+    size_scale = _clamp_number(
+        raw_style.get("sizeScale"),
+        STYLE_SIZE_MIN,
+        STYLE_SIZE_MAX,
+    )
+    if size_scale is not None:
+        style["sizeScale"] = size_scale
+
+    palette = str(raw_style.get("palette") or "").strip()
+    if palette in ALLOWED_PALETTES:
+        style["palette"] = palette
+
+    line_opacity = _clamp_number(raw_style.get("lineOpacity"), 0, 100)
+    if line_opacity is not None:
+        style["lineOpacity"] = int(line_opacity)
+
+    label_brightness = _clamp_number(
+        raw_style.get("labelBrightness"),
+        -100,
+        100,
+    )
+    if label_brightness is not None:
+        style["labelBrightness"] = int(label_brightness)
+
+    emphasis = str(raw_style.get("emphasis") or "").strip()
+    if emphasis in ALLOWED_EMPHASIS:
+        style["emphasis"] = emphasis
+
+    accent = safe_visual_token(raw_style.get("accentColor"), max_length=20)
+    if accent and _ACCENT_COLOR_RE.match(accent):
+        style["accentColor"] = accent
+
+    return style
+
+
 def sanitize_visual_spec(raw_visual_spec: Any) -> dict[str, Any]:
     """Whitelist-sanitize an AI-supplied ``visualSpec``.
 
@@ -432,5 +508,9 @@ def sanitize_visual_spec(raw_visual_spec: Any) -> dict[str, Any]:
     blueprint = sanitize_blueprint(raw_visual_spec.get("blueprint"))
     if blueprint:
         visual_spec["blueprint"] = blueprint
+
+    style = sanitize_component_style(raw_visual_spec.get("style"))
+    if style:
+        visual_spec["style"] = style
 
     return visual_spec

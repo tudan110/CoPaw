@@ -122,17 +122,28 @@ function compositionScale(vs: VisualSpec | undefined): {
   }
 }
 
+/** Explicit user/LLM size knob (visualSpec.style.sizeScale), clamped. */
+function styleSizeScale(vs: VisualSpec | undefined): number {
+  const s = vs?.style?.sizeScale;
+  return typeof s === "number" && Number.isFinite(s) ? clamp(s, 0.5, 2) : 1;
+}
+
 /**
- * Content-aware size for one component, after folding in its importance.
- * Always finite and clamped to sane card bounds.
+ * Content-aware size for one component, after folding in its importance and
+ * any explicit sizeScale. Always finite and clamped to sane card bounds.
  */
 export function intrinsicSize(component: ScreenComponent): IntrinsicSize {
   const base = baseSize(component);
   const scale = compositionScale(component.visualSpec);
+  const size = styleSizeScale(component.visualSpec);
   return {
     widthUnits:
-      clamp(base.widthUnits * scale.w * UNIT_PX, WIDTH_MIN, WIDTH_MAX) /
+      clamp(base.widthUnits * scale.w * size * UNIT_PX, WIDTH_MIN, WIDTH_MAX) /
       UNIT_PX,
-    naturalHeight: clamp(base.naturalHeight * scale.h, HEIGHT_MIN, HEIGHT_MAX),
+    naturalHeight: clamp(
+      base.naturalHeight * scale.h * size,
+      HEIGHT_MIN,
+      HEIGHT_MAX,
+    ),
   };
 }

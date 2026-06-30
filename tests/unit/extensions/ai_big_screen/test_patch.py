@@ -544,3 +544,136 @@ class TestVersioningAndContext:
                 instruction="  ",
                 model=FakeModel([]),
             )
+
+
+def _component(outcome: dict[str, Any], component_id: str) -> dict[str, Any]:
+    return next(
+        c for c in outcome["screen"]["components"] if c["id"] == component_id
+    )
+
+
+class TestStyleAndPositionPatch:
+    async def test_set_component_style_writes_visualspec_style(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        _block_all_fetches(monkeypatch)
+        outcome = await apply_patch(
+            screen=_screen(),
+            instruction="把告警流放大并提亮",
+            selected_component_ids=["comp-alarms"],
+            model=FakeModel(
+                [
+                    _ops(
+                        [
+                            {
+                                "op": "setComponentStyle",
+                                "componentId": "comp-alarms",
+                                "value": {
+                                    "sizeScale": 9,  # clamps to 2.0
+                                    "lineOpacity": 88,
+                                    "emphasis": "strong",
+                                    "accentColor": "#ff8800",
+                                },
+                            },
+                        ],
+                    ),
+                ],
+            ),
+        )
+        style = _component(outcome, "comp-alarms")["visualSpec"]["style"]
+        assert style["sizeScale"] == 2.0
+        assert style["lineOpacity"] == 88
+        assert style["emphasis"] == "strong"
+        assert style["accentColor"] == "#ff8800"
+
+    async def test_set_component_style_rejects_injection_accent(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        _block_all_fetches(monkeypatch)
+        outcome = await apply_patch(
+            screen=_screen(),
+            instruction="改强调色",
+            selected_component_ids=["comp-alarms"],
+            model=FakeModel(
+                [
+                    _ops(
+                        [
+                            {
+                                "op": "setComponentStyle",
+                                "componentId": "comp-alarms",
+                                "value": {
+                                    "sizeScale": 1.2,
+                                    "accentColor": (
+                                        "red;url(javascript:alert(1))"
+                                    ),
+                                },
+                            },
+                        ],
+                    ),
+                ],
+            ),
+        )
+        style = _component(outcome, "comp-alarms")["visualSpec"]["style"]
+        assert style["sizeScale"] == 1.2
+        assert "accentColor" not in style  # injection dropped
+
+    async def test_set_layout_pins_position(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        _block_all_fetches(monkeypatch)
+        outcome = await apply_patch(
+            screen=_screen(),
+            instruction="把告警流移到左上角",
+            selected_component_ids=["comp-alarms"],
+            model=FakeModel(
+                [
+                    _ops(
+                        [
+                            {
+                                "op": "setComponentLayout",
+                                "componentId": "comp-alarms",
+                                "value": {"x": 0, "y": 0, "w": 6, "h": 5},
+                            },
+                        ],
+                    ),
+                ],
+            ),
+        )
+        layout = _component(outcome, "comp-alarms")["layoutPosition"]
+        assert layout["pinned"] is True
+        assert layout["x"] == 0
+
+    async def test_set_palette_mirrors_into_visualspec_style(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        _block_all_fetches(monkeypatch)
+        outcome = await apply_patch(
+            screen=_screen(),
+            instruction="把告警流换成暖色",
+            selected_component_ids=["comp-alarms"],
+            model=FakeModel(
+                [
+                    _ops(
+                        [
+                            {
+                                "op": "setComponentPalette",
+                                "componentId": "comp-alarms",
+                                "value": {
+                                    "palette": "warm",
+                                    "emphasis": "strong",
+                                },
+                            },
+                        ],
+                    ),
+                ],
+            ),
+        )
+        comp = _component(outcome, "comp-alarms")
+        # legacy visualConfig still set AND mirrored into the rendered home
+        assert comp["visualConfig"]["palette"] == "warm"
+        assert comp["visualSpec"]["style"]["palette"] == "warm"
+        assert comp["visualSpec"]["style"]["emphasis"] == "strong"

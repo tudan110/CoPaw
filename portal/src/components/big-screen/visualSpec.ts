@@ -22,5 +22,6 @@ export function visualSpecClassTokens(vs: VisualSpec | undefined): string[] {
   if (vs.density && DENSITIES.has(vs.density)) out.push(`bs-density-${vs.density}`);
   if (vs.layoutPattern && LAYOUTS.has(vs.layoutPattern)) out.push(`bs-layout-${vs.layoutPattern}`);
   if (vs.composition && COMPS.has(vs.composition)) out.push(`bs-comp-${vs.composition}`);
+  if (vs.style?.emphasis === "strong") out.push("bs-emphasis-strong");
   return out;
 }

@@ -134,6 +134,34 @@ class TestLlmPathNormalization:
             "kubernetes-metrics"
         )
 
+    def test_topology_component_born_with_visible_style(self) -> None:
+        component = intent.normalize_plan_component(
+            {
+                "title": "应用拓扑",
+                "capabilityId": "topology-impact",
+                "visualType": "graph",
+            },
+            index=0,
+            inferred_lookback_minutes=15,
+        )
+        style = component.visual_spec.get("style", {})
+        assert style.get("sizeScale") == 1.3
+        assert style.get("lineOpacity") == 75
+        assert style.get("emphasis") == "strong"
+
+    def test_explicit_style_is_preserved_not_overridden(self) -> None:
+        component = intent.normalize_plan_component(
+            {
+                "title": "应用拓扑",
+                "capabilityId": "topology-impact",
+                "visualType": "graph",
+                "visualSpec": {"style": {"sizeScale": 1.1}},
+            },
+            index=0,
+            inferred_lookback_minutes=15,
+        )
+        assert component.visual_spec["style"]["sizeScale"] == 1.1
+
     async def test_title_keyword_overrides_wrong_capability(self) -> None:
         model = SpyModel(
             [

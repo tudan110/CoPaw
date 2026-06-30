@@ -73,6 +73,70 @@ function ComponentBody({ component }: { component: ScreenComponent }) {
 
 const DEFAULT_POS = { x: 0, y: 0, w: 480, h: 280 };
 
+const LAYOUT_MARGIN = 24;
+const GRID_COLS = 12;
+
+interface Rect {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+/** Convert a pinned 12-col grid position (backend units) to design pixels. */
+function gridToPx(
+  lp: { x: number; y: number; w: number; h: number },
+  design: { designWidth: number; designHeight: number },
+): Rect {
+  const colW = (design.designWidth - 2 * LAYOUT_MARGIN) / GRID_COLS;
+  const rowH = (design.designHeight - 2 * LAYOUT_MARGIN) / GRID_COLS;
+  return {
+    x: LAYOUT_MARGIN + Math.max(0, lp.x) * colW,
+    y: LAYOUT_MARGIN + Math.max(0, lp.y) * rowH,
+    w: Math.max(1, lp.w) * colW,
+    h: Math.max(1, lp.h) * rowH,
+  };
+}
+
+/**
+ * Auto-layout for un-pinned components, reserving the vertical band the
+ * pinned components occupy so the two never overlap. v1: auto items flow into
+ * the larger free band above or below the pinned span — overlap-safe and
+ * predictable. With no pinned components this is identical to plain
+ * auto-layout (zero change to generated screens).
+ */
+function layoutAutoAroundPinned(
+  autoComponents: ScreenComponent[],
+  pinnedRects: Rect[],
+  design: { designWidth: number; designHeight: number },
+): Map<string, Rect> {
+  const items = autoComponents.map((c) => ({ id: c.id, ...intrinsicSize(c) }));
+  if (items.length === 0) return new Map();
+  if (pinnedRects.length === 0) {
+    return new Map(
+      computeAutoLayout(items, {
+        width: design.designWidth,
+        height: design.designHeight,
+      }).map((r) => [r.id, r]),
+    );
+  }
+  const top = LAYOUT_MARGIN;
+  const bottom = design.designHeight - LAYOUT_MARGIN;
+  const pinnedTop = Math.min(...pinnedRects.map((r) => r.y));
+  const pinnedBottom = Math.max(...pinnedRects.map((r) => r.y + r.h));
+  const above = pinnedTop - top;
+  const below = bottom - pinnedBottom;
+  const band =
+    above >= below
+      ? { y: top, height: Math.max(140, above) }
+      : { y: pinnedBottom, height: Math.max(140, below) };
+  const rects = computeAutoLayout(items, {
+    width: design.designWidth,
+    height: band.height,
+  });
+  return new Map(rects.map((r) => [r.id, { ...r, y: r.y + band.y }]));
+}
+
 /**
  * BigScreenRenderer — turns a DashboardSpec into the full D-max screen.
  *
@@ -106,20 +170,25 @@ export function BigScreenRenderer({
     [selectedComponentId, ...selectedComponentIds].filter(Boolean),
   );
 
-  // Coordinate-free specs (AI-generated) carry no layoutPosition → run the
-  // auto-layout engine over each panel's content-aware intrinsic size, so
-  // panels are packed to their content (sparse → compact + whitespace, rich
-  // → fills) with no overlap, for any component count. Fully hand-positioned
-  // specs (e.g. the D-max fixture) are used as authored.
-  const autoPos =
-    s.components.length > 0 && s.components.some((c) => !c.layoutPosition)
-      ? new Map(
-          computeAutoLayout(
-            s.components.map((c) => ({ id: c.id, ...intrinsicSize(c) })),
-            { width: s.layout.designWidth, height: s.layout.designHeight },
-          ).map((r) => [r.id, r]),
-        )
-      : null;
+  // Geometry resolution, three cases:
+  //  • pinned (explicit user "move"): honour its 12-col grid coords (→ px).
+  //  • un-positioned (AI-generated): auto-layout, reserving pinned bands so
+  //    nothing overlaps — packed to content (sparse → compact + whitespace).
+  //  • pixel-positioned (hand-authored fixture): used as authored.
+  const pinnedRects = new Map<string, Rect>();
+  for (const c of s.components) {
+    if (c.layoutPosition?.pinned) {
+      pinnedRects.set(c.id, gridToPx(c.layoutPosition, s.layout));
+    }
+  }
+  const autoComponents = s.components.filter((c) => !c.layoutPosition);
+  const autoPos = autoComponents.length
+    ? layoutAutoAroundPinned(
+        autoComponents,
+        [...pinnedRects.values()],
+        s.layout,
+      )
+    : null;
 
   return (
     <div
@@ -142,7 +211,11 @@ export function BigScreenRenderer({
         }
       >
         {s.components.map((c) => {
-          const pos = c.layoutPosition ?? autoPos?.get(c.id) ?? DEFAULT_POS;
+          const pos =
+            pinnedRects.get(c.id) ??
+            c.layoutPosition ??
+            autoPos?.get(c.id) ??
+            DEFAULT_POS;
           const vsClasses = visualSpecClassTokens(c.visualSpec).join(" ");
           const selected = selectedSet.has(c.id);
           return (

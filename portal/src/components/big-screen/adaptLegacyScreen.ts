@@ -2,6 +2,7 @@ import { isKnownComponentType } from "./registry.ts";
 import type {
   CapabilityResult,
   DashboardSpec,
+  LayoutPosition,
   ScreenComponent,
   SourceStatus,
   VisualSpec,
@@ -168,13 +169,17 @@ export function adaptLegacyScreen(screen: LegacyScreen): DashboardSpec {
     .filter((c) => c && typeof c.id === "string" && c.id.length > 0)
     .map((c) => {
       const vs = (c.visualSpec ?? {}) as VisualSpec;
+      const lp = c.layoutPosition as LayoutPosition | undefined;
       return {
         id: c.id,
         type: mapComponentType(String(c.type ?? "text")),
         title: String(c.title ?? ""),
+        // Generated coordinates are still dropped so auto-layout owns
+        // geometry; only an explicit user "move" (pinned) is honoured —
+        // it carries 12-col grid units the renderer converts to pixels.
+        layoutPosition: lp && lp.pinned ? lp : undefined,
         visualSpec: { ...vs, bindings: normalizeBindings(vs.bindings) },
         data: adaptData(c),
-        // layoutPosition intentionally omitted → renderer runs auto-layout
       };
     });
   return {

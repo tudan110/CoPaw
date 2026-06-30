@@ -33,6 +33,7 @@ PatchOp = Literal[
     "setComponentComposition",
     "setComponentQueryParams",
     "setComponentFields",
+    "setComponentStyle",
 ]
 
 _MAX_ID_LENGTH = 64

@@ -11,6 +11,11 @@ import {
   buildMapFlyOption,
 } from "../charts/options.ts";
 import { ensureChinaMap, isChinaMapReady } from "../charts/chinaGeo.ts";
+import {
+  DEFAULT_CHART_STYLE,
+  resolveChartStyle,
+  type ResolvedChartStyle,
+} from "../charts/chartStyle.ts";
 import { EChart } from "../charts/EChart.tsx";
 import type { WidgetProps } from "../registry.ts";
 import type { CapabilityResult } from "../types.ts";
@@ -19,44 +24,45 @@ function buildOption(
   type: string,
   data: CapabilityResult,
   bindings?: Record<string, string>,
+  style: ResolvedChartStyle = DEFAULT_CHART_STYLE,
 ): Record<string, unknown> | null {
   switch (type) {
     case "line-chart":
       return buildLineOption(data, {
         x: bindings?.["x"],
         y: bindings?.["y"],
-      });
+      }, style);
     case "bar-chart":
       return buildBarOption(data, {
         x: bindings?.["x"],
         y: bindings?.["y"],
-      });
+      }, style);
     case "area-chart":
       return buildAreaOption(data, {
         x: bindings?.["x"],
         y: bindings?.["y"],
-      });
+      }, style);
     case "donut":
       return buildDonutOption(data, {
         name: bindings?.["name"],
         value: bindings?.["value"],
-      });
+      }, style);
     case "gauge":
-      return buildGaugeOption(data, bindings?.["value"]);
+      return buildGaugeOption(data, bindings?.["value"], style);
     case "radar":
-      return buildRadarOption(data);
+      return buildRadarOption(data, style);
     case "heatmap":
       return buildHeatmapOption(data, {
         x: bindings?.["x"],
         y: bindings?.["y"],
         value: bindings?.["value"],
-      });
+      }, style);
     case "graph": {
       // Support explicit links via bindings metadata stored in metrics
       const links = (data as Record<string, unknown>)["links"] as
         | Array<{ source: string; target: string }>
         | undefined;
-      return buildGraphOption({ ...data, links });
+      return buildGraphOption({ ...data, links }, style);
     }
     default:
       return null;
@@ -74,6 +80,7 @@ export function ChartWidget({ component }: WidgetProps) {
     sourceStatus: "empty",
   };
   const bindings = component.visualSpec?.bindings;
+  const style = resolveChartStyle(component.visualSpec?.style);
 
   const isMapFly = type === "map-fly";
   const [mapReady, setMapReady] = useState(isChinaMapReady);
@@ -124,11 +131,12 @@ export function ChartWidget({ component }: WidgetProps) {
     const option = buildMapFlyOption(
       { nodes: nodes as Array<Record<string, unknown>> },
       edges,
+      style,
     );
     return <EChart option={option} />;
   }
 
-  const option = buildOption(type, data, bindings);
+  const option = buildOption(type, data, bindings, style);
 
   if (!option) {
     return (

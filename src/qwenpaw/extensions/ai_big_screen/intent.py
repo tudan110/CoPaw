@@ -31,7 +31,12 @@ from qwenpaw.extensions.ai_big_screen.llm import (
     create_pipeline_model,
     structured_call,
 )
-from qwenpaw.extensions.ai_big_screen.sanitizer import sanitize_visual_spec
+from qwenpaw.extensions.ai_big_screen.sanitizer import (
+    ALLOWED_EMPHASIS,
+    ALLOWED_PALETTES,
+    sanitize_component_style,
+    sanitize_visual_spec,
+)
 from qwenpaw.extensions.ai_big_screen.schemas import (
     PlanComponent,
     ScreenPlan,
@@ -40,15 +45,8 @@ from qwenpaw.extensions.ai_big_screen.schemas import (
 
 DEFAULT_SCREEN_NAME = "AI 实时运维大屏"
 
-ALLOWED_PALETTES = {
-    "professional",
-    "warm",
-    "cool",
-    "executive",
-    "industrial",
-    "aurora",
-    "mono",
-}
+# ALLOWED_PALETTES / ALLOWED_EMPHASIS are now canonical in ``sanitizer`` and
+# re-exported here for backward-compatible imports (e.g. ``patch``).
 ALLOWED_COMPONENT_TYPES = {
     # Legacy types still rendered via the adapter.
     "metric-card",
@@ -361,10 +359,26 @@ def _normalize_visual_config(raw_visual_config: Any) -> dict[str, str]:
     emphasis = str(visual_config.get("emphasis") or "standard").strip()
     return {
         "palette": palette,
-        "emphasis": emphasis
-        if emphasis in {"standard", "strong"}
-        else "standard",
+        "emphasis": emphasis if emphasis in ALLOWED_EMPHASIS else "standard",
     }
+
+
+def _default_style_for_type(component_type: str) -> dict[str, Any]:
+    """Born-visible ``visualSpec.style`` defaults when the LLM omits one.
+
+    Topology / relationship graphs render tiny + faint by default (few
+    nodes → small box, 20%-opacity links); give them a larger size and
+    brighter lines/labels so they are legible out of the box. Still fully
+    editable afterwards via ``setComponentStyle``.
+    """
+    if component_type in {"graph", "topology"}:
+        return {
+            "sizeScale": 1.3,
+            "lineOpacity": 75,
+            "labelBrightness": 25,
+            "emphasis": "strong",
+        }
+    return {}
 
 
 def _remove_real_alarm_builtin_filters(query_params: dict[str, Any]) -> None:
@@ -705,6 +719,14 @@ def normalize_plan_component(
         if not visual_spec:
             visual_spec = default_status_stream_visual_spec()
 
+    if not (isinstance(visual_spec, dict) and visual_spec.get("style")):
+        default_style = _default_style_for_type(component_type)
+        if default_style:
+            visual_spec = {
+                **(visual_spec if isinstance(visual_spec, dict) else {}),
+                "style": sanitize_component_style(default_style),
+            }
+
     return PlanComponent(
         id=f"component-{index + 1}-{uuid.uuid4().hex[:6]}",
         type=component_type,
@@ -999,6 +1021,13 @@ def _build_intent_messages(prompt: str, title: str) -> list[dict[str, str]]:
         "primary(核心，最大) / secondary(次要) / supporting(辅助)；"
         "新版大屏据此自动排版铺满整屏。layoutPosition 仍用 12 列网格 "
         "x,y,w,h，但仅作兜底、不必追求精确。"
+        "用 visualSpec.style 控制组件外观，让大屏更好看、更可读："
+        "sizeScale 0.5-2.0(放大/缩小，关系拓扑/graph 建议 1.3 以上避免太小)、"
+        "palette(同 theme.palette 取值，覆盖单个组件配色)、"
+        "accentColor(强调主色，颜色名或 #十六进制)、"
+        "lineOpacity 0-100(图表线条/区域不透明度，关系拓扑建议 70 以上避免太暗)、"
+        "labelBrightness -100 到 100(文字提亮/压暗)、emphasis standard|strong。"
+        "关系拓扑/graph 默认偏小偏暗，务必配 style 让它够大够亮。"
         "尽量生成 4-8 个主次分明、类型多样的组件，让大屏丰富炫酷而不单薄。"
         "【汇总必配明细】凡是工单/告警/日志这类列表型数据，"
         "汇总数字（flip-number/metric-card）必须配一个同能力的明细组件"
@@ -1051,6 +1080,11 @@ def _build_intent_messages(prompt: str, title: str) -> list[dict[str, str]]:
                 "visualSpec": {
                     "composition": "primary",
                     "bindings": {"value": "total", "unit": "条"},
+                    "style": {
+                        "sizeScale": 1.2,
+                        "emphasis": "strong",
+                        "accentColor": "#22d3ee",
+                    },
                 },
                 "layoutPosition": {"x": 0, "y": 0, "w": 4, "h": 2},
             },
