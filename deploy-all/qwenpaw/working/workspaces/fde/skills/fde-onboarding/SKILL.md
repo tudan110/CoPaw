@@ -28,13 +28,13 @@ description: FDE 交付助手的元技能 —— 把客户/运营方的需求与
    ```bash
    python scripts/fde_tools.py scaffold --name <skill-name> --target-workspace <ws> --brief-file /tmp/brief.json --json
    ```
-   它会从骨架（`references/skeleton/`，镜像 `src/qwenpaw/extensions/templates/skill_scaffold/`）生成到 fde 工作区的 `staged/<skill-name>/` 并顺手自检一次。然后**按访谈拿到的接口信息**用 `edit_file` 把 `staged/<skill-name>/runtime/tool_adapters.py` 的 `mock-or-real` 占位换成真实调用、补 `runtime/playbooks/business_flow.py`、改 `SKILL.md` 的触发/描述、把 `.env.example` 写成真实的 key。
+   它会从骨架（`references/skeleton/`，镜像 `src/qwenpaw/extensions/templates/skill_scaffold/`）生成到 fde 工作区的 `staged/<skill-name>/` 并顺手自检一次。然后**按访谈拿到的接口信息**用 `edit_file` 把 `staged/<skill-name>/runtime/tool_adapters.py` 的 `mock-or-real` 占位换成真实调用、补 `runtime/playbooks/business_flow.py`、改 `SKILL.md` 的触发/描述。连接配置走平台 settings（`settings.db`，materialize 进 `os.environ`、子进程继承）：复用现有连接无需配置；要接新外部系统则新建 settings store 字段（参考 `src/qwenpaw/extensions/api/n9e_settings_store.py`）走设置页，**不要**塞 `.env`。
 4. **自检**：每改动一次跑
    ```bash
    python scripts/fde_tools.py selfcheck --skill-dir staged/<skill-name> --json
    python scripts/fde_tools.py probe     --skill-dir staged/<skill-name> --json   # 沙箱跑一遍 diagnose
    ```
-   `ready_for_review` 必须为 true 才交付（域审查未通过/有语法错/缺 SKILL.md 都会阻塞）。凭证只进 `.env.example` + 待确认项，**绝不写进 SKILL.md/脚本**。
+   `ready_for_review` 必须为 true 才交付（域审查未通过/有语法错/缺 SKILL.md 都会阻塞）。连接凭证走平台 settings（`settings.db`），**绝不写进 SKILL.md/脚本/staged 文件**；新连接在 portal 设置页配，拿不准的字段进待确认项。
 5. **交付**：把"交付方案 + 每个 staged skill 的预览 + 自检结果 + 待确认项"组织清楚给对方，并提示：到 Portal **「交付工作台」** 面板逐个查看代码、（可选）沙箱试跑、然后点「确认安装到 \<目标工作区\>」。真正写入业务工作区由那个人工动作触发（走现有 `POST /api/skills`，含安全扫描），**你不替他按这个键**。
 
 ## 工具速查（`scripts/fde_tools.py`，用 app 自带 python 调，不要 uv）

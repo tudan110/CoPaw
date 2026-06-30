@@ -147,7 +147,7 @@ def scaffold_skill(
         generation_md += [f"- [ ] {item}" for item in todo]
     else:
         generation_md.append("- [ ] 把 `runtime/tool_adapters.py` 的 `mock-or-real` 占位换成真实接口")
-        generation_md.append("- [ ] 复制 `.env.example` 为 `.env` 并填入真实 base_url / token")
+        generation_md.append("- [ ] 确认连接：复用平台 settings 已配的连接，或为新外部系统新建 settings store 字段并在设置页配置（不要塞 .env）")
     generation_md += [
         "",
         "## 安装",

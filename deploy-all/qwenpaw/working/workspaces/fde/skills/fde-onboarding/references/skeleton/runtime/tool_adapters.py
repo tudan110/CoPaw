@@ -1,8 +1,9 @@
 """把所有外部能力调用收口到一个适配层。
 
 生成后请把这里的 `mock-or-real` 占位替换成真实接口调用（直接 HTTP，或复用
-`src/qwenpaw/extensions/integrations/*` 里的适配器）。鉴权凭证从 `.env` 读，
-不要写死在代码里。
+`src/qwenpaw/extensions/integrations/*` 里的适配器）。连接凭证不在 `.env`：由
+平台 settings（`settings.db`）materialize 进 `os.environ`，这里用 `os.getenv`
+读即可，不要写死在代码里。
 """
 from __future__ import annotations
 
@@ -13,7 +14,8 @@ from typing import Any
 
 
 def load_env_file(skill_root: Path | None = None) -> dict[str, str]:
-    """读取技能目录下的 `.env`（如果有）。生成的技能用它拿 base_url / token。"""
+    """读取技能目录下可选的 `.env`（如果有）——仅作本地覆盖参数用。连接 secrets
+    不在这里：由平台 settings materialize 进 `os.environ`（进程环境变量优先）。"""
     root = skill_root or Path(__file__).resolve().parents[1]
     env_path = root / ".env"
     values: dict[str, str] = {}

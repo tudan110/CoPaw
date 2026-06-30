@@ -12,7 +12,7 @@ description: {{description}}
 
 由 FDE 交付助手按 `skill_scaffold` 生成的技能骨架。**上线前**请：
 
-1. 把 `runtime/tool_adapters.py` 里的 `mock-or-real` 占位换成真实接口调用（直接 HTTP，或复用 `src/qwenpaw/extensions/integrations/*`），鉴权从 `.env` 读。
+1. 把 `runtime/tool_adapters.py` 里的 `mock-or-real` 占位换成真实接口调用（直接 HTTP，或复用 `src/qwenpaw/extensions/integrations/*`）。鉴权由平台 settings（`settings.db`）在后端启动时 materialize 进 `os.environ`、子进程继承——复用现有连接（INOE/zgops/n9e/order…）无需任何配置；只有引入**新**外部系统才需新建 settings store 字段（见下方「配置」）。
 2. 按业务场景补 `runtime/playbooks/business_flow.py`（查询/统计类只需 `diagnose`；带"分析→建议动作→执行→恢复验证"闭环的再补 `execute`）。
 3. 需要返回动作按钮 / 图表时，遵循 `src/qwenpaw/extensions/templates/protocols/{portal_action,echarts}.template.md`。
 
@@ -47,4 +47,6 @@ python scripts/chat_skill_bridge.py execute --context-file /tmp/business_context
 
 ## 配置
 
-复制 `.env.example` 为 `.env`，填入真实的 base_url / token。`.env` 不进版本库，真实 secret 走 `secrets/` 级联。
+复用平台已有连接的技能**无需配置**——连接由平台 settings（`settings.db`）统一供给：后端启动时把值 materialize 进 `os.environ`，本技能的脚本/子进程靠 `os.getenv` 继承。
+
+引入**新**外部系统时，优先新建一个 settings store 字段（最简模式参考 `src/qwenpaw/extensions/api/n9e_settings_store.py`：定义 `*_FIELD_SPECS` → 复用 `provider_settings_base` → 在 `working_secrets.py` 加 `materialize_*_to_environ()` → portal 设置页配置），而不是塞 `.env`。`.env` 仅作临时本地覆盖兜底，非首选。
