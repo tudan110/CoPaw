@@ -677,3 +677,50 @@ class TestStyleAndPositionPatch:
         assert comp["visualConfig"]["palette"] == "warm"
         assert comp["visualSpec"]["style"]["palette"] == "warm"
         assert comp["visualSpec"]["style"]["emphasis"] == "strong"
+
+
+class TestEmptyOpsRepair:
+    def test_parser_rejects_empty_ops_accepts_nonempty(self) -> None:
+        from qwenpaw.extensions.ai_big_screen.patch import (
+            _parse_patch_plan_require_ops,
+        )
+
+        plan = _parse_patch_plan_require_ops(
+            _ops([{"op": "setThemePalette", "value": "executive"}]),
+        )
+        assert len(plan.operations) == 1
+        with pytest.raises(ValueError):
+            _parse_patch_plan_require_ops(_ops([], summary="美化并放大"))
+
+    async def test_empty_ops_triggers_repair_then_applies(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        # Model first narrates a summary with NO ops (the reported flake);
+        # the parser rejects it → repair loop re-asks → second reply has ops.
+        _block_all_fetches(monkeypatch)
+        outcome = await apply_patch(
+            screen=_screen(),
+            instruction="样式太丑了，可以变大一些吗",
+            selected_component_ids=["comp-alarms"],
+            model=FakeModel(
+                [
+                    _ops([], summary="美化选中组件样式并放大尺寸"),
+                    _ops(
+                        [
+                            {
+                                "op": "setComponentStyle",
+                                "componentId": "comp-alarms",
+                                "value": {
+                                    "sizeScale": 1.5,
+                                    "emphasis": "strong",
+                                },
+                            },
+                        ],
+                    ),
+                ],
+            ),
+        )
+        assert "降级" not in outcome["summary"]
+        style = _component(outcome, "comp-alarms")["visualSpec"]["style"]
+        assert style["sizeScale"] == 1.5  # the retry's op actually applied

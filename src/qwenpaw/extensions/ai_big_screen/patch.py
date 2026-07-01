@@ -264,6 +264,11 @@ def _build_patch_messages(
         "queryParams.analysisMode=risk_summary。"
         "visualSpec 只能描述数据绑定、动效、高亮和层次，"
         "不允许输出 HTML、CSS、JS、URL 或代码。"
+        "【必须产出操作】只要能理解用户意图，operations 就不能为空，"
+        "必须至少给出一个具体操作；美化/太丑/变大变小/换配色/变亮/移动等"
+        "外观诉求一定能映射到 setComponentStyle、setComponentPalette、"
+        "setComponentLayout 或 setThemePalette，绝不要只返回 summary 而"
+        "operations 为空。"
     )
     output_example = {
         "summary": "放大并提亮拓扑、整体切换高管配色",
@@ -567,6 +572,25 @@ async def _refetch_components(
 # ---------------------------------------------------------------------------
 
 
+def _parse_patch_plan_require_ops(text: str) -> PatchPlan:
+    """Parse a patch plan and reject a summary with no operations.
+
+    The model sometimes narrates its intent (a real summary) but returns an
+    empty ``operations`` array — the user then sees "no executable change"
+    for a request it clearly understood. Raising here routes that case into
+    ``structured_call``'s repair loop, which feeds the error back and asks
+    the model to emit concrete ops (a retry usually succeeds).
+    """
+    plan = parse_patch_plan(text)
+    if not plan.operations:
+        raise ValueError(
+            "operations 为空。你已理解用户意图，必须据此给出至少一个具体"
+            "可执行操作(如 setComponentStyle / setComponentLayout / "
+            "setComponentPalette / setThemePalette)，不能只返回 summary。",
+        )
+    return plan
+
+
 async def apply_patch(
     *,
     screen: dict[str, Any],
@@ -616,7 +640,7 @@ async def apply_patch(
             instruction=normalized_instruction,
             selected_component_ids=selection,
         ),
-        parser=parse_patch_plan,
+        parser=_parse_patch_plan_require_ops,
         max_repair=max_repair,
         timeout=timeout,
         fallback=lambda: PatchPlan(

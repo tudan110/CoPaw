@@ -378,12 +378,17 @@ export function AiBigScreenPanel() {
           }`,
         });
       } else {
-        // Keep the editor open so the user can rephrase — never look dead.
+        // Keep the editor open. Distinguish a model flake (retry-able — not
+        // the user's wording) from a genuine no-op, so we never wrongly tell
+        // the user to "换种说法".
+        const degraded = /降级|未生成可执行/.test(response.summary || "");
         setPatchStatus({
           kind: "warn",
-          text: `指令已收到，但本次没有产生可执行的修改。可以换种说法，或直接调整尺寸/配色/字段/布局等。${
-            response.summary ? `（${response.summary}）` : ""
-          }`,
+          text: degraded
+            ? "AI 本次没能给出具体改动（模型偶发/繁忙）。直接再点一次「应用修改」重试即可，多数情况下重试就成功——不是你的说法问题。"
+            : `本次没有产生可见变化。可以再点一次重试，或把要求说得更具体些（如“放大到 1.5 倍”“换成暖色调”“标题改成运维总览”）。${
+                response.summary ? `（${response.summary}）` : ""
+              }`,
         });
       }
     } catch (requestError) {
