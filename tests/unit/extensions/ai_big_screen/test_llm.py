@@ -154,3 +154,40 @@ async def test_create_pipeline_model_maps_unconfigured_provider(
     assert "默认大模型" in str(excinfo.value) or "模型配置" in str(
         excinfo.value,
     )
+
+
+class _Block:
+    """Stand-in for an agentscope content block (object with attributes)."""
+
+    def __init__(self, **fields: Any) -> None:
+        self.__dict__.update(fields)
+
+
+class TestExtractModelText:
+    def test_plain_string_passthrough(self) -> None:
+        assert llm._extract_model_text("hello") == "hello"
+
+    def test_reasoning_model_keeps_text_skips_thinking(self) -> None:
+        # ChatResponse is a dict subclass carrying blocks in ``content``; a
+        # reasoning model streams a thinking block before the answer text.
+        response = {
+            "type": "chat",
+            "content": [
+                _Block(type="thinking", thinking="1. 分析…"),
+                _Block(type="text", text='{"ok": true}', id="x"),
+            ],
+        }
+        assert llm._extract_model_text(response) == '{"ok": true}'
+
+    def test_thinking_only_yields_empty(self) -> None:
+        response = {"content": [_Block(type="thinking", thinking="…")]}
+        assert llm._extract_model_text(response) == ""
+
+    def test_multiple_text_blocks_concatenated(self) -> None:
+        response = {
+            "content": [
+                _Block(type="text", text='{"a":'),
+                _Block(type="text", text="1}"),
+            ],
+        }
+        assert llm._extract_model_text(response) == '{"a":1}'

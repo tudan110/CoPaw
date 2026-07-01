@@ -41,25 +41,49 @@ class StructuredCallResult(Generic[T]):
     last_error: str = ""
 
 
+def _get_field(payload: Any, key: str) -> Any:
+    if isinstance(payload, dict):
+        return payload.get(key)
+    return getattr(payload, key, None)
+
+
 def _extract_model_text(payload: Any) -> str:
-    """Best-effort text extraction from agentscope model payloads."""
-    if isinstance(payload, str):
-        return payload
+    """Best-effort text extraction from agentscope model payloads.
+
+    Reasoning models stream content as typed blocks — a ``thinking`` block
+    plus a ``text`` block. Only the ``text`` block is the answer; a naive
+    extractor would concatenate the thinking block's repr and break JSON
+    parsing (every structured call then degraded). So: text blocks yield
+    their text, any other typed block yields nothing, and response wrappers
+    are unwrapped into their content.
+    """
     if payload is None:
         return ""
+    if isinstance(payload, str):
+        return payload
     if isinstance(payload, list):
-        return "\n".join(
-            filter(None, (_extract_model_text(item) for item in payload)),
+        return "".join(
+            text
+            for text in (_extract_model_text(item) for item in payload)
+            if text
         )
-    keys = ("text", "content", "response", "message")
-    if isinstance(payload, dict):
-        candidates = (payload.get(key) for key in keys)
-    else:
-        candidates = (getattr(payload, key, None) for key in keys)
-    for value in candidates:
+    # Response wrappers (ChatResponse is a dict subclass) carry the blocks in
+    # ``content`` — unwrap that FIRST, before the block-type check, because
+    # the wrapper itself may also have a ``type`` field.
+    content = _get_field(payload, "content")
+    if content:
+        return _extract_model_text(content)
+    block_type = _get_field(payload, "type")
+    if block_type == "text":
+        return str(_get_field(payload, "text") or "")
+    if isinstance(block_type, str):
+        # thinking / tool_use / media block — carries no answer text
+        return ""
+    for key in ("response", "message", "text"):
+        value = _get_field(payload, key)
         if value:
             return _extract_model_text(value)
-    return "" if isinstance(payload, dict) else str(payload)
+    return ""
 
 
 async def _consume_model_response(
@@ -82,7 +106,16 @@ def create_pipeline_model() -> ModelCallable:
 
     Maps provider-configuration errors to operator-actionable messages.
     Imported lazily to keep module import light (CLAUDE.md rule).
+
+    The agentscope ``ChatModelBase`` expects ``Msg`` objects (it applies the
+    formatter internally); the pipeline speaks the simpler ``list[dict]``
+    shape. This wraps the model so the pipeline's role/content dicts are
+    converted to ``Msg`` before the call — without it every generation and
+    patch failed with "Expected Msg object, got dict" and silently degraded
+    to the keyword guardrail (the whole LLM decision layer was dead).
     """
+    from agentscope.message import Msg, TextBlock
+
     from qwenpaw.agents import model_factory
 
     try:
@@ -94,7 +127,24 @@ def create_pipeline_model() -> ModelCallable:
                 raise ValueError(CONFIGURE_LLM_MESSAGE) from exc
             raise ValueError(f"默认大模型不可用：{message}") from exc
         raise ValueError(f"默认大模型初始化失败：{message}") from exc
-    return model
+
+    async def _call(messages: list[dict[str, str]]) -> Any:
+        msgs = [
+            Msg(
+                name=str(message.get("role") or "user"),
+                role=str(message.get("role") or "user"),
+                content=[
+                    TextBlock(
+                        type="text",
+                        text=str(message.get("content") or ""),
+                    ),
+                ],
+            )
+            for message in messages
+        ]
+        return await model(msgs)
+
+    return _call
 
 
 async def structured_call(
