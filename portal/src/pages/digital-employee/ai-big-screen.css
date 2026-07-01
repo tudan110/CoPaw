@@ -364,6 +364,42 @@
   background: rgba(105, 20, 24, 0.38);
 }
 
+/* Inline receipt for the edit loop — instant ack + honest outcome. */
+.ai-big-screen-patch-status {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  border-radius: 8px;
+  padding: 9px 12px;
+  font-size: 12.5px;
+  line-height: 1.55;
+  border: 1px solid rgba(111, 200, 255, 0.3);
+  background: rgba(10, 26, 44, 0.5);
+  color: #cfe6ff;
+}
+
+.ai-big-screen-patch-status > i {
+  margin-top: 2px;
+}
+
+.ai-big-screen-patch-status.success {
+  border-color: rgba(155, 229, 100, 0.32);
+  background: rgba(45, 95, 44, 0.34);
+  color: #dbffc7;
+}
+
+.ai-big-screen-patch-status.warn {
+  border-color: rgba(255, 197, 92, 0.4);
+  background: rgba(92, 64, 12, 0.42);
+  color: #ffe9c2;
+}
+
+.ai-big-screen-patch-status.error {
+  border-color: rgba(255, 107, 107, 0.34);
+  background: rgba(105, 20, 24, 0.38);
+  color: #ffd8d8;
+}
+
 .ai-big-screen-library {
   display: flex;
   flex-direction: column;

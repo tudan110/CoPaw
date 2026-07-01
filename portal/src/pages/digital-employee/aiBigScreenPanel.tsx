@@ -189,6 +189,13 @@ export function AiBigScreenPanel() {
   const [publishing, setPublishing] = useState(false);
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
+  // Inline receipt for the region-editor edit loop so a modification is never
+  // "石沉大海": acknowledges instantly, then honestly reports applied / no-op /
+  // error right where the user clicked.
+  const [patchStatus, setPatchStatus] = useState<{
+    kind: "pending" | "success" | "warn" | "error";
+    text: string;
+  } | null>(null);
   const [previewLines, setPreviewLines] = useState<string[]>([]);
   const [previewing, setPreviewing] = useState(false);
   const [metrics, setMetrics] = useState<AiBigScreenMetricsResponse | null>(
@@ -329,6 +336,12 @@ export function AiBigScreenPanel() {
     setSaving(true);
     setError("");
     setNotice("");
+    // Instant receipt — the user sees their instruction was received before
+    // the (possibly slow) model call returns.
+    setPatchStatus({
+      kind: "pending",
+      text: "已收到指令，正在修改…模型较慢时可能需要数十秒，请稍候。",
+    });
     try {
       const saved = await persistScreen(screen);
       const response = await patchAiBigScreen(saved.id, {
@@ -350,13 +363,33 @@ export function AiBigScreenPanel() {
         requestedBy: "portal",
       });
       setScreen(response.screen);
-      setEditInstruction("");
       setPreviewLines([]);
-      setRegionEditorOpen(false);
-      setNotice(response.summary || "组件已按自然语言要求修改。");
       await loadCatalog();
+      // Honest outcome, driven by the real diff — not a silent no-op.
+      const changes = summarizePatchDiff(response.diff);
+      if (changes.length > 0) {
+        setEditInstruction("");
+        setRegionEditorOpen(false);
+        setNotice(`已应用 ${changes.length} 项修改。`);
+        setPatchStatus({
+          kind: "success",
+          text: `已应用 ${changes.length} 项修改：${
+            response.summary || "组件已更新。"
+          }`,
+        });
+      } else {
+        // Keep the editor open so the user can rephrase — never look dead.
+        setPatchStatus({
+          kind: "warn",
+          text: `指令已收到，但本次没有产生可执行的修改。可以换种说法，或直接调整尺寸/配色/字段/布局等。${
+            response.summary ? `（${response.summary}）` : ""
+          }`,
+        });
+      }
     } catch (requestError) {
-      setError(extractErrorMessage(requestError) || "修改组件失败");
+      const message = extractErrorMessage(requestError) || "修改组件失败";
+      setError(message);
+      setPatchStatus({ kind: "error", text: `修改失败：${message}` });
     } finally {
       setSaving(false);
     }
@@ -371,6 +404,10 @@ export function AiBigScreenPanel() {
     setError("");
     setNotice("");
     setPreviewLines([]);
+    setPatchStatus({
+      kind: "pending",
+      text: "已收到，正在预览本次修改会产生哪些变更…",
+    });
     try {
       const saved = await persistScreen(screen);
       const response = await patchAiBigScreen(saved.id, {
@@ -399,8 +436,21 @@ export function AiBigScreenPanel() {
           ? `预览：将产生 ${lines.length} 项变更，确认后再应用。`
           : "预览：AI 未生成可执行的变更。",
       );
+      setPatchStatus(
+        lines.length
+          ? {
+              kind: "success",
+              text: `预览：将产生 ${lines.length} 项变更，点“确认应用”生效。`,
+            }
+          : {
+              kind: "warn",
+              text: "预览：本次没有可执行的变更。可以换种说法，或直接调整尺寸/配色/字段/布局等。",
+            },
+      );
     } catch (requestError) {
-      setError(extractErrorMessage(requestError) || "预览变更失败");
+      const message = extractErrorMessage(requestError) || "预览变更失败";
+      setError(message);
+      setPatchStatus({ kind: "error", text: `预览失败：${message}` });
     } finally {
       setPreviewing(false);
     }
@@ -523,6 +573,7 @@ export function AiBigScreenPanel() {
     });
     setRegionEditorOpen(true);
     setEditInstruction("");
+    setPatchStatus(null);
   };
 
   const handleDeleteScreen = async (item: AiBigScreenApp) => {
@@ -1024,6 +1075,7 @@ export function AiBigScreenPanel() {
                   onChange={(event) => {
                     setEditInstruction(event.target.value);
                     if (previewLines.length) setPreviewLines([]);
+                    if (patchStatus) setPatchStatus(null);
                   }}
                   placeholder="例如：这个区域颜色太冷，换成更有温度的风格"
                   rows={3}
@@ -1035,6 +1087,27 @@ export function AiBigScreenPanel() {
                       <li key={index}>{line}</li>
                     ))}
                   </ul>
+                ) : null}
+                {patchStatus ? (
+                  <div
+                    className={`ai-big-screen-patch-status ${patchStatus.kind}`}
+                    role="status"
+                    aria-live="polite"
+                  >
+                    <i
+                      className={`fas ${
+                        patchStatus.kind === "pending"
+                          ? "fa-spinner fa-spin"
+                          : patchStatus.kind === "success"
+                            ? "fa-check-circle"
+                            : patchStatus.kind === "warn"
+                              ? "fa-info-circle"
+                              : "fa-exclamation-triangle"
+                      }`}
+                      aria-hidden="true"
+                    />
+                    <span>{patchStatus.text}</span>
+                  </div>
                 ) : null}
                 <div className="ai-big-screen-region-actions">
                   <button
