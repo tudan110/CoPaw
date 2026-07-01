@@ -28,6 +28,7 @@ from qwenpaw.extensions.ai_big_screen.capabilities.fields import (
 )
 from qwenpaw.extensions.ai_big_screen.intent import (
     ALLOWED_COMPONENT_TYPES,
+    ALLOWED_EMPHASIS,
     ALLOWED_PALETTES,
     extract_lookback_minutes,
     normalize_layout_position,
@@ -46,7 +47,10 @@ from qwenpaw.extensions.ai_big_screen.orchestration import (
     now_iso,
     rebuild_data_bindings,
 )
-from qwenpaw.extensions.ai_big_screen.sanitizer import sanitize_visual_spec
+from qwenpaw.extensions.ai_big_screen.sanitizer import (
+    sanitize_component_style,
+    sanitize_visual_spec,
+)
 from qwenpaw.extensions.ai_big_screen.schemas import (
     PatchOperation,
     PatchPlan,
@@ -65,6 +69,7 @@ _DIFF_COMPONENT_FIELDS = (
     "type",
     "layoutPosition",
     "visualConfig",
+    "visualSpec",
     "queryParams",
 )
 
@@ -219,10 +224,17 @@ def _build_patch_messages(
         "operations 是数组，每项字段为 op、componentId 或 componentIds、value。"
         "op 只能是：addComponent、setThemePalette、setComponentPalette、"
         "setComponentType、setComponentLayout、setComponentTitle、"
+        "setComponentComposition、setComponentStyle、"
         "setComponentQueryParams、setComponentFields。"
         "value 语义：setComponentTitle=新标题字符串；"
         "setComponentType=组件类型字符串；"
-        "setComponentLayout={x,y,w,h}(12 列网格数字)；"
+        "setComponentLayout={x,y,w,h}(12 列网格数字，用于移动/定位组件，"
+        "x∈0-11、w∈1-12、y≥0、h∈1-8)；"
+        "setComponentComposition={composition: primary|secondary|supporting}"
+        "(重要度，primary 更大更突出)；"
+        "setComponentStyle={sizeScale 0.5-2.0(变大变小), palette(配色), "
+        "accentColor(强调色名或#十六进制), lineOpacity 0-100(线条/区域亮度), "
+        "labelBrightness -100到100(文字提亮/压暗), emphasis standard|strong}；"
         "setThemePalette=palette 字符串；"
         "setComponentPalette={palette, emphasis}；"
         "setComponentQueryParams=要合并的查询参数对象；"
@@ -233,6 +245,12 @@ def _build_patch_messages(
         "layoutPosition, visualSpec?}。"
         "palette 只能是 professional、industrial、aurora、mono、warm、cool、"
         "executive；用户说太丑、美化、高级、领导看且未指定颜色时优先 executive。"
+        "外观类诉求映射：太小/看不清/放大→setComponentStyle.sizeScale 1.3-1.8；"
+        "太暗/变亮→setComponentStyle 提高 lineOpacity(80-95) 且 labelBrightness 正值；"
+        "换暖色/冷色/高级风→setComponentStyle.palette 或 setThemePalette；"
+        "更突出/最重要→setComponentComposition=primary 或 emphasis=strong；"
+        "移到左上/顶部/右侧/某位置→setComponentLayout 给出对应 12 列网格坐标"
+        "(左上≈{x:0,y:0}、右侧≈{x:6}、顶部≈{y:0})。"
         "componentId 必须来自给定组件清单；用户说整个大屏时可对多个 "
         "componentIds 生效。"
         "如果用户选择了组件(selectedComponentIds 非空)，"
@@ -248,13 +266,23 @@ def _build_patch_messages(
         "不允许输出 HTML、CSS、JS、URL 或代码。"
     )
     output_example = {
-        "summary": "视觉风格调整为领导驾驶舱风格",
+        "summary": "放大并提亮拓扑、整体切换高管配色",
         "operations": [
             {"op": "setThemePalette", "value": "executive"},
             {
-                "op": "setComponentPalette",
+                "op": "setComponentStyle",
                 "componentIds": ["component-1"],
-                "value": {"palette": "executive", "emphasis": "strong"},
+                "value": {
+                    "sizeScale": 1.4,
+                    "lineOpacity": 88,
+                    "labelBrightness": 25,
+                    "emphasis": "strong",
+                },
+            },
+            {
+                "op": "setComponentLayout",
+                "componentIds": ["component-1"],
+                "value": {"x": 0, "y": 0, "w": 7, "h": 5},
             },
         ],
     }
@@ -306,8 +334,29 @@ def _apply_set_type(component: dict[str, Any], value: Any) -> bool:
 def _apply_set_layout(component: dict[str, Any], value: Any) -> bool:
     if not isinstance(value, dict):
         return False
-    component["layoutPosition"] = normalize_layout_position(value, 0)
+    # Mark user-pinned so the frontend honours it. Generated (un-pinned)
+    # positions are still dropped in favour of auto-layout; only an explicit
+    # "move" edit pins the component to its grid coordinates.
+    position = normalize_layout_position(value, 0)
+    position["pinned"] = True
+    component["layoutPosition"] = position
     return True
+
+
+def _mirror_style(component: dict[str, Any], **fields: Any) -> bool:
+    """Write presentation fields into ``visualSpec.style`` (the home the
+    frontend actually reads). Returns whether anything changed."""
+    visual_spec = dict(component.get("visualSpec") or {})
+    style = dict(visual_spec.get("style") or {})
+    changed = False
+    for key, val in fields.items():
+        if val is not None and style.get(key) != val:
+            style[key] = val
+            changed = True
+    if changed:
+        visual_spec["style"] = style
+        component["visualSpec"] = visual_spec
+    return changed
 
 
 def _apply_set_palette(component: dict[str, Any], value: Any) -> bool:
@@ -322,7 +371,7 @@ def _apply_set_palette(component: dict[str, Any], value: Any) -> bool:
         changed = True
     emphasis = str(payload.get("emphasis") or "").strip()
     if (
-        emphasis in {"standard", "strong"}
+        emphasis in ALLOWED_EMPHASIS
         and visual_config.get(
             "emphasis",
         )
@@ -332,7 +381,29 @@ def _apply_set_palette(component: dict[str, Any], value: Any) -> bool:
         changed = True
     if changed:
         component["visualConfig"] = visual_config
-    return changed
+    # Mirror into visualSpec.style so the change is actually rendered — the
+    # frontend reads visualSpec, not visualConfig. Keeps the legacy palette
+    # op from being a silent no-op.
+    mirrored = _mirror_style(
+        component,
+        palette=palette if palette in ALLOWED_PALETTES else None,
+        emphasis=emphasis if emphasis in ALLOWED_EMPHASIS else None,
+    )
+    return changed or mirrored
+
+
+def _apply_set_component_style(component: dict[str, Any], value: Any) -> bool:
+    style = sanitize_component_style(value)
+    if not style:
+        return False
+    visual_spec = dict(component.get("visualSpec") or {})
+    current = dict(visual_spec.get("style") or {})
+    merged = {**current, **style}  # accumulate partial edits
+    if merged == current:
+        return False
+    visual_spec["style"] = merged
+    component["visualSpec"] = visual_spec
+    return True
 
 
 def _apply_set_composition(component: dict[str, Any], value: Any) -> bool:
@@ -396,6 +467,7 @@ _COMPONENT_OP_HANDLERS = {
     "setComponentLayout": _apply_set_layout,
     "setComponentPalette": _apply_set_palette,
     "setComponentComposition": _apply_set_composition,
+    "setComponentStyle": _apply_set_component_style,
     "setComponentQueryParams": _apply_set_query_params,
     "setComponentFields": _apply_set_fields,
 }

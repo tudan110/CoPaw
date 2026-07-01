@@ -46,6 +46,41 @@ test("drops legacy grid coordinates so auto-layout positions components", () => 
   assert.equal(spec.status, "published");
 });
 
+test("carries a pinned move but still drops generated coords; style flows", () => {
+  const spec = adaptLegacyScreen({
+    id: "s",
+    name: "n",
+    components: [
+      {
+        id: "pinned",
+        type: "graph",
+        title: "拓扑",
+        layoutPosition: { x: 0, y: 0, w: 6, h: 5, pinned: true },
+        visualSpec: { style: { sizeScale: 1.5, palette: "warm" } },
+        data: { sourceStatus: "ok", nodes: [{ name: "a" }] },
+      },
+      {
+        id: "generated",
+        type: "graph",
+        title: "拓扑2",
+        layoutPosition: { x: 6, y: 0, w: 6, h: 5 },
+        data: { sourceStatus: "ok", nodes: [{ name: "b" }] },
+      },
+    ],
+  });
+  const byId = Object.fromEntries(spec.components.map((c) => [c.id, c]));
+  assert.deepEqual(byId["pinned"].layoutPosition, {
+    x: 0,
+    y: 0,
+    w: 6,
+    h: 5,
+    pinned: true,
+  });
+  assert.equal(byId["generated"].layoutPosition, undefined, "generated dropped");
+  assert.equal(byId["pinned"].visualSpec.style?.sizeScale, 1.5);
+  assert.equal(byId["pinned"].visualSpec.style?.palette, "warm");
+});
+
 test("adapts data payload into CapabilityResult (rows + scalar metrics)", () => {
   const spec = adaptLegacyScreen({
     id: "s",

@@ -18,6 +18,21 @@ export interface VisualRule {
   tone: "critical" | "high" | "medium" | "normal" | "cool" | "warm";
 }
 
+/**
+ * Controlled presentation style — the single declarative vocabulary the
+ * LLM generator and the natural-language edit loop both write, and the
+ * renderer reads. Mirrors the backend sanitizer (visualSpec.style):
+ * enums + clamped numbers only, never raw CSS/code.
+ */
+export interface VisualStyle {
+  sizeScale?: number;        // 0.5–2.0  component zoom (bigger/smaller)
+  palette?: string;          // palette name (see charts/darkTheme PALETTES)
+  accentColor?: string;      // primary accent (#hex or colour name)
+  lineOpacity?: number;      // 0–100    chart line / area / link brightness
+  labelBrightness?: number;  // -100..100 lighten/darken labels
+  emphasis?: "standard" | "strong";
+}
+
 export interface VisualSpec {
   kind?: string;
   motion?: "none" | "pulse" | "scan" | "flow" | "stagger";
@@ -29,9 +44,19 @@ export interface VisualSpec {
   emphasisRules?: VisualRule[];
   /** Generative composition (composed type) — validated by blueprint.ts. */
   blueprint?: unknown;
+  /** Controlled presentation style (size / colour / brightness / emphasis). */
+  style?: VisualStyle;
 }
 
-export interface LayoutPosition { x: number; y: number; w: number; h: number; }
+export interface LayoutPosition {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  /** True only when the user explicitly moved/positioned the component.
+   * Generated (un-pinned) positions are dropped in favour of auto-layout. */
+  pinned?: boolean;
+}
 
 export interface ScreenComponent {
   id: string;

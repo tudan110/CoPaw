@@ -62,9 +62,7 @@ def test_default_then_env_then_override(
     )
 
     # Settings-page override wins over env.
-    q.apply_settings_update(
-        {"qiming_base_url": "http://page:2"}, db_path=db
-    )
+    q.apply_settings_update({"qiming_base_url": "http://page:2"}, db_path=db)
     assert q.resolve_text("QWENPAW_QIMING_BASE_URL", db_path=db) == (
         "http://page:2"
     )
@@ -116,9 +114,7 @@ def test_empty_sensitive_is_noop_and_clear_removes(
     assert q.has_override("qiming_app_key", db_path=db) is True
 
     # CLEAR sentinel deletes the override.
-    q.apply_settings_update(
-        {"qiming_app_key": q.CLEAR_SENTINEL}, db_path=db
-    )
+    q.apply_settings_update({"qiming_app_key": q.CLEAR_SENTINEL}, db_path=db)
     assert q.has_override("qiming_app_key", db_path=db) is False
 
 
@@ -137,9 +133,7 @@ def test_reset_drops_override(
 ) -> None:
     db = _db(tmp_path)
     _clear(monkeypatch, _QIMING_ENVS)
-    q.apply_settings_update(
-        {"qiming_base_url": "http://page:2"}, db_path=db
-    )
+    q.apply_settings_update({"qiming_base_url": "http://page:2"}, db_path=db)
     assert q.has_override("qiming_base_url", db_path=db) is True
     q.reset_setting("qiming_base_url", db_path=db)
     assert q.has_override("qiming_base_url", db_path=db) is False
@@ -180,3 +174,43 @@ def test_unmodelled_env_returns_empty(
     # legacy fallback handles it.
     db = _db(tmp_path)
     assert q.resolve_text("QWENPAW_QIMING_TIMEOUT_SECONDS", db_path=db) == ""
+
+
+_ORDER_ENVS = (
+    "ORDER_API_BASE_URL",
+    "ORDER_AUTHORIZATION",
+    "ORDER_TIMEOUT_SECONDS",
+    "ORDER_VERIFY_SSL",
+    "ORDER_ENABLE_CURL_FALLBACK",
+)
+
+
+def test_order_store_basics(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from qwenpaw.extensions.api import order_settings_store as ordr
+
+    db = _db(tmp_path)
+    _clear(monkeypatch, _ORDER_ENVS)
+    # ferry connection defaults empty so the client falls back to INOE
+    assert ordr.resolve_text("ORDER_API_BASE_URL", db_path=db) == ""
+    assert ordr.resolve_text("ORDER_AUTHORIZATION", db_path=db) == ""
+    # override + masked authorization
+    ordr.apply_settings_update(
+        {
+            "order_api_base_url": "http://ferry:30080/ferry",
+            "order_authorization": "Bearer secrettoken",
+        },
+        db_path=db,
+    )
+    assert ordr.resolve_text("ORDER_API_BASE_URL", db_path=db) == (
+        "http://ferry:30080/ferry"
+    )
+    payload = ordr.build_settings_payload(db_path=db)
+    assert payload["effective"]["order_authorization"]["masked"] == (
+        "****oken"
+    )
+    # unknown key rejected
+    with pytest.raises(ValueError):
+        ordr.apply_settings_update({"nope": "x"}, db_path=db)

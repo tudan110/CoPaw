@@ -85,6 +85,8 @@ def _capability_metadata(cfg: Any) -> dict[str, Any]:
         "id": f"{CAPABILITY_PREFIX}{cfg.id}",
         "name": cfg.name,
         "domain": binding.domain or "custom",
+        "category": binding.domain or "custom",
+        "connection": f"{CAPABILITY_PREFIX}{cfg.id}",
         "description": (cfg.description or f"操作员注册的外部数据源「{cfg.name}」"),
         "inputSchema": input_schema,
         "outputSchema": {"columns": "array", "rows": "array"},

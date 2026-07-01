@@ -214,6 +214,24 @@ class TestRegistry:
         assert descriptor is not None
         assert descriptor.is_gap is True
 
+    def test_metadata_carries_category_and_connection(self) -> None:
+        by_id = {item["id"]: item for item in list_capability_metadata()}
+        # every capability declares both classification keys
+        for item in by_id.values():
+            assert "category" in item
+            assert "connection" in item
+        # functional-domain mapping is honest about the backing connection
+        assert by_id["real-alarms"]["category"] == "alarm"
+        assert by_id["real-alarms"]["connection"] == "inoe"
+        assert by_id["workorders"]["category"] == "workorder"
+        assert by_id["workorders"]["connection"] == "order"
+        assert by_id["cmdb-resources"]["category"] == "cmdb"
+        assert by_id["system-logs"]["category"] == "logs"
+        assert by_id["system-logs"]["connection"] == "n9e"
+        # web/gap need no connection
+        assert by_id["web-live-data"]["connection"] == ""
+        assert by_id["capability-gap"]["connection"] == ""
+
 
 class TestHonestIntegrationWiring:
     async def test_real_alarms_failure_is_failed(
@@ -242,6 +260,46 @@ class TestHonestIntegrationWiring:
         )
         assert result.source_status == "failed"
         assert "alarm backend down" in result.message
+
+    async def test_real_alarms_default_queries_all_no_time_window(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from qwenpaw.extensions.integrations import portal_real_alarms
+
+        captured: dict[str, Any] = {}
+
+        def _capture(**kwargs: Any) -> dict[str, Any]:
+            captured.clear()
+            captured.update(kwargs)
+            return {"source": "live", "total": 0, "items": []}
+
+        monkeypatch.setattr(
+            "qwenpaw.extensions.integrations.working_secrets"
+            ".ensure_working_secrets_loaded",
+            lambda: None,
+        )
+        monkeypatch.setattr(
+            portal_real_alarms,
+            "query_portal_real_alarms",
+            _capture,
+        )
+
+        # no time in the request -> query the full history (very wide window)
+        await execute_capability(
+            {"limit": 5},
+            capability_id="real-alarms",
+            fresh=True,
+        )
+        assert captured["lookback_minutes"] >= 365 * 24 * 60
+
+        # an explicit lookback from the LLM is honoured, uncapped (7 days)
+        await execute_capability(
+            {"limit": 5, "lookbackMinutes": 10080},
+            capability_id="real-alarms",
+            fresh=True,
+        )
+        assert captured["lookback_minutes"] == 10080
 
     async def test_real_alarms_rows_carry_rich_display_fields(
         self,

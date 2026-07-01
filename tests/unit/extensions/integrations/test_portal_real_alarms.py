@@ -1,7 +1,11 @@
 from datetime import datetime, timedelta, timezone
 
+import pytest
+
 from qwenpaw.extensions.integrations import portal_real_alarms
-from qwenpaw.extensions.integrations.portal_real_alarms import query_portal_real_alarms
+from qwenpaw.extensions.integrations.portal_real_alarms import (
+    query_portal_real_alarms,
+)
 
 
 class _FakeResponse:
@@ -42,15 +46,23 @@ def test_query_portal_real_alarms_normalizes_live_rows(monkeypatch) -> None:
 
     assert payload["source"] == "live"
     assert payload["total"] == 1
-    assert payload["items"][0]["id"] == "COMMON__1776338881568_2044739586778116096"
-    assert payload["items"][0]["alarmId"] == "COMMON__1776338881568_2044739586778116096"
+    assert (
+        payload["items"][0]["id"]
+        == "COMMON__1776338881568_2044739586778116096"
+    )
+    assert (
+        payload["items"][0]["alarmId"]
+        == "COMMON__1776338881568_2044739586778116096"
+    )
     assert payload["items"][0]["resId"] == "3094"
     assert payload["items"][0]["level"] == "critical"
     assert payload["items"][0]["employeeId"] == "fault"
     assert payload["items"][0]["dispatchContent"] == "mysql/死锁 + cmdb/新增/插入"
 
 
-def test_query_portal_real_alarms_uses_fallback_dispatch_for_camel_case_subtype(monkeypatch) -> None:
+def test_query_portal_real_alarms_uses_fallback_dispatch_for_camel_case_subtype(
+    monkeypatch,
+) -> None:
     monkeypatch.setattr(
         "qwenpaw.extensions.integrations.portal_real_alarms._post_real_alarm_list",
         lambda *, limit, begin_time, end_time, alarm_status=None: {
@@ -73,7 +85,9 @@ def test_query_portal_real_alarms_uses_fallback_dispatch_for_camel_case_subtype(
     payload = query_portal_real_alarms(limit=10)
 
     assert payload["source"] == "live"
-    assert payload["items"][0]["dispatchContent"] == "CPU利用率过高 / k8s-node-01 / 性能"
+    assert (
+        payload["items"][0]["dispatchContent"] == "CPU利用率过高 / k8s-node-01 / 性能"
+    )
 
 
 def test_query_portal_real_alarms_omits_missing_device_sentinel_from_fallback_dispatch(
@@ -104,7 +118,9 @@ def test_query_portal_real_alarms_omits_missing_device_sentinel_from_fallback_di
     assert payload["items"][0]["dispatchContent"] == "CPU利用率过高 / 性能"
 
 
-def test_query_portal_real_alarms_preserves_deadlock_dispatch_for_english_mysql_alarm(monkeypatch) -> None:
+def test_query_portal_real_alarms_preserves_deadlock_dispatch_for_english_mysql_alarm(
+    monkeypatch,
+) -> None:
     monkeypatch.setattr(
         "qwenpaw.extensions.integrations.portal_real_alarms._post_real_alarm_list",
         lambda *, limit, begin_time, end_time, alarm_status=None: {
@@ -130,10 +146,16 @@ def test_query_portal_real_alarms_preserves_deadlock_dispatch_for_english_mysql_
     assert payload["items"][0]["dispatchContent"] == "mysql/死锁 + cmdb/新增/插入"
 
 
-def test_query_portal_real_alarms_returns_empty_live_payload_when_live_rows_empty(monkeypatch) -> None:
+def test_query_portal_real_alarms_returns_empty_live_payload_when_live_rows_empty(
+    monkeypatch,
+) -> None:
     monkeypatch.setattr(
         "qwenpaw.extensions.integrations.portal_real_alarms._post_real_alarm_list",
-        lambda *, limit, begin_time, end_time, alarm_status=None: {"code": 200, "total": 0, "rows": []},
+        lambda *, limit, begin_time, end_time, alarm_status=None: {
+            "code": 200,
+            "total": 0,
+            "rows": [],
+        },
     )
 
     payload = query_portal_real_alarms(limit=10)
@@ -141,8 +163,12 @@ def test_query_portal_real_alarms_returns_empty_live_payload_when_live_rows_empt
     assert payload == {"total": 0, "items": [], "source": "live"}
 
 
-def test_query_portal_real_alarms_returns_empty_live_payload_on_request_failure(monkeypatch) -> None:
-    def _raise_request_error(*, limit, begin_time, end_time, alarm_status=None):
+def test_query_portal_real_alarms_returns_empty_live_payload_on_request_failure(
+    monkeypatch,
+) -> None:
+    def _raise_request_error(
+        *, limit, begin_time, end_time, alarm_status=None
+    ):
         raise RuntimeError("gateway unavailable")
 
     monkeypatch.setattr(
@@ -158,7 +184,9 @@ def test_query_portal_real_alarms_returns_empty_live_payload_on_request_failure(
 def test_query_portal_real_alarms_returns_empty_live_payload_when_request_failure_has_no_fallback(
     monkeypatch,
 ) -> None:
-    def _raise_request_error(*, limit, begin_time, end_time, alarm_status=None):
+    def _raise_request_error(
+        *, limit, begin_time, end_time, alarm_status=None
+    ):
         raise RuntimeError("gateway unavailable")
 
     monkeypatch.setattr(
@@ -170,10 +198,14 @@ def test_query_portal_real_alarms_returns_empty_live_payload_when_request_failur
     assert payload == {"total": 0, "items": [], "source": "live"}
 
 
-def test_query_portal_real_alarms_applies_default_query_window(monkeypatch) -> None:
+def test_query_portal_real_alarms_applies_default_query_window(
+    monkeypatch,
+) -> None:
     captured = {}
 
-    def _fake_post(*, limit, begin_time=None, end_time=None, alarm_status=None):
+    def _fake_post(
+        *, limit, begin_time=None, end_time=None, alarm_status=None
+    ):
         captured["limit"] = limit
         captured["begin_time"] = begin_time
         captured["end_time"] = end_time
@@ -204,7 +236,9 @@ def test_query_portal_real_alarms_applies_default_query_window(monkeypatch) -> N
     assert captured["alarm_status"] is None
 
 
-def test_query_portal_real_alarms_preserves_backend_total_beyond_page_rows(monkeypatch) -> None:
+def test_query_portal_real_alarms_preserves_backend_total_beyond_page_rows(
+    monkeypatch,
+) -> None:
     monkeypatch.setattr(
         "qwenpaw.extensions.integrations.portal_real_alarms._post_real_alarm_list",
         lambda *, limit, begin_time=None, end_time=None, alarm_status=None: {
@@ -229,10 +263,14 @@ def test_query_portal_real_alarms_preserves_backend_total_beyond_page_rows(monke
     assert len(payload["items"]) == 1
 
 
-def test_query_portal_real_alarms_sends_explicit_minute_window(monkeypatch) -> None:
+def test_query_portal_real_alarms_sends_explicit_minute_window(
+    monkeypatch,
+) -> None:
     captured = {}
 
-    def _fake_post(*, limit, begin_time=None, end_time=None, alarm_status=None):
+    def _fake_post(
+        *, limit, begin_time=None, end_time=None, alarm_status=None
+    ):
         captured["limit"] = limit
         captured["begin_time"] = begin_time
         captured["end_time"] = end_time
@@ -255,10 +293,14 @@ def test_query_portal_real_alarms_sends_explicit_minute_window(monkeypatch) -> N
     assert captured["alarm_status"] is None
 
 
-def test_query_portal_real_alarms_sends_explicit_alarm_status(monkeypatch) -> None:
+def test_query_portal_real_alarms_sends_explicit_alarm_status(
+    monkeypatch,
+) -> None:
     captured = {}
 
-    def _fake_post(*, limit, begin_time=None, end_time=None, alarm_status=None):
+    def _fake_post(
+        *, limit, begin_time=None, end_time=None, alarm_status=None
+    ):
         captured["limit"] = limit
         captured["begin_time"] = begin_time
         captured["end_time"] = end_time
@@ -291,7 +333,9 @@ def test_query_portal_real_alarms_sends_explicit_alarm_status(monkeypatch) -> No
     }
 
 
-def test_query_portal_real_alarms_calls_gateway_with_query_params(monkeypatch) -> None:
+def test_query_portal_real_alarms_calls_gateway_with_query_params(
+    monkeypatch,
+) -> None:
     captured = {}
     monkeypatch.delenv("INOE_API_BASE_URL", raising=False)
     monkeypatch.delenv("INOE_API_TOKEN", raising=False)
@@ -360,7 +404,9 @@ def test_query_portal_real_alarms_falls_back_to_curl_on_connection_error(
     monkeypatch.setenv("INOE_API_TOKEN", "demo-token")
 
     def _raise_connection_error(*args, **kwargs):
-        raise portal_real_alarms.requests.exceptions.ConnectionError("requests path blocked")
+        raise portal_real_alarms.requests.exceptions.ConnectionError(
+            "requests path blocked"
+        )
 
     class _FakeCompleted:
         returncode = 0
@@ -399,7 +445,9 @@ def test_query_portal_real_alarms_falls_back_to_curl_on_connection_error(
         return _FakeCompleted()
 
     monkeypatch.setenv("INOE_API_TIMEOUT", "30")
-    monkeypatch.setattr(portal_real_alarms.requests, "get", _raise_connection_error)
+    monkeypatch.setattr(
+        portal_real_alarms.requests, "get", _raise_connection_error
+    )
     monkeypatch.setattr(portal_real_alarms.subprocess, "run", _fake_run)
 
     payload = query_portal_real_alarms(limit=3)
@@ -415,7 +463,9 @@ def test_query_portal_real_alarms_falls_back_to_curl_on_connection_error(
     assert captured["params"]["alarmSeverity"] == "1,2,3,4"
 
 
-def test_query_portal_real_alarms_sends_bearer_header_from_config(monkeypatch) -> None:
+def test_query_portal_real_alarms_sends_bearer_header_from_config(
+    monkeypatch,
+) -> None:
     captured = {}
 
     def _fake_get(url, *, params, headers, timeout):
@@ -427,14 +477,43 @@ def test_query_portal_real_alarms_sends_bearer_header_from_config(monkeypatch) -
 
     monkeypatch.setenv("INOE_API_BASE_URL", "http://example.test")
     monkeypatch.setenv("INOE_API_TOKEN", "demo-token")
+    # Isolate from any real settings-DB override in ~/.qwenpaw so this test
+    # exercises the env -> header path deterministically (a DB override would
+    # otherwise win over the env token by design).
+    monkeypatch.setattr(
+        "qwenpaw.extensions.api.settings_store.get_namespace",
+        lambda *args, **kwargs: {},
+    )
     monkeypatch.setattr(portal_real_alarms.requests, "get", _fake_get)
     payload = query_portal_real_alarms(limit=3)
 
     assert payload == {"total": 0, "items": [], "source": "live"}
-    assert captured["url"].endswith(
-        "/resource/alarm/statistics/hisAlarmList"
-    )
+    assert captured["url"].endswith("/resource/alarm/statistics/hisAlarmList")
     assert captured["authorization"] == "Bearer demo-token"
+
+
+def test_error_envelope_raises_for_honest_caller(monkeypatch) -> None:
+    # INOE answers HTTP 200 with a business-error envelope (service not
+    # routed on this gateway / expired token). The honest big-screen caller
+    # (raise_on_error=True) must see a failure, not a fake-empty result.
+    def _fake_get(url, *, params, headers, timeout):
+        return _FakeResponse({"code": 500, "msg": "服务未找到"})
+
+    monkeypatch.setenv("INOE_API_BASE_URL", "http://example.test")
+    monkeypatch.setenv("INOE_API_TOKEN", "demo-token")
+    monkeypatch.setattr(
+        "qwenpaw.extensions.api.settings_store.get_namespace",
+        lambda *args, **kwargs: {},
+    )
+    monkeypatch.setattr(portal_real_alarms.requests, "get", _fake_get)
+
+    with pytest.raises(Exception) as excinfo:
+        query_portal_real_alarms(limit=3, raise_on_error=True)
+    assert "服务未找到" in str(excinfo.value)
+
+    # legacy/skill callers keep swallowing to an empty live payload
+    payload = query_portal_real_alarms(limit=3, raise_on_error=False)
+    assert payload == {"total": 0, "items": [], "source": "live"}
 
 
 def test_parse_alarm_event_time_uses_alarm_timezone(monkeypatch) -> None:
@@ -481,9 +560,7 @@ def test_filter_alarms_started_after_keeps_new_and_unparsable(
         "source": "live",
     }
 
-    filtered = portal_real_alarms.filter_alarms_started_after(
-        payload, cutoff
-    )
+    filtered = portal_real_alarms.filter_alarms_started_after(payload, cutoff)
 
     # Stale-latest drops; on-or-after latest stays; unparsable fails open;
     # old-first-seen-but-still-active stays (keyed on eventLastTime).

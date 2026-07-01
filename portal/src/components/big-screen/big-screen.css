@@ -677,6 +677,23 @@
   opacity: 0.75;
 }
 
+/* Emphasis (visualSpec.style.emphasis = strong) — brighten the whole panel so
+   non-chart widgets (KPI / list / text) and chart canvases both respond to
+   "更突出 / 强调 / 变亮". Complements the per-series colour resolution. */
+.bs-emphasis-strong {
+  filter: brightness(1.12) saturate(1.08);
+}
+
+.bs-emphasis-strong .bs-gp-title {
+  color: var(--bs-cyan-lt);
+  text-shadow: 0 0 12px rgba(34, 211, 238, 0.35);
+}
+
+.bs-emphasis-strong .bs-kpi-value,
+.bs-emphasis-strong .bs-flip-digit {
+  text-shadow: 0 0 16px rgba(34, 211, 238, 0.45);
+}
+
 /* ── Keyframes ─────────────────────────────────────────────── */
 
 @keyframes bs-particle-pulse {

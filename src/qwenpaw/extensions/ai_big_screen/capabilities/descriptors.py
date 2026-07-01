@@ -368,6 +368,11 @@ def fetch_system_logs(query_params: Mapping[str, Any]) -> dict[str, Any]:
 # real-alarms — honest failure propagation (raise_on_error=True)
 # ---------------------------------------------------------------------------
 
+# "Query all" window when the conversation gives no time. hisAlarmList needs a
+# begin/end, so "all" is expressed as a very wide window rather than an omitted
+# filter (~10 years comfortably covers the platform's retained history).
+_ALARM_QUERY_ALL_MINUTES = 10 * 366 * 24 * 60
+
 
 def fetch_real_alarms(query_params: Mapping[str, Any]) -> dict[str, Any]:
     from qwenpaw.extensions.integrations import working_secrets
@@ -376,11 +381,21 @@ def fetch_real_alarms(query_params: Mapping[str, Any]) -> dict[str, Any]:
     from qwenpaw.extensions.integrations import portal_real_alarms
 
     limit = max(1, min(200, safe_int(query_params.get("limit"), 100)))
-    lookback_minutes = (
-        max(1, min(24 * 60, safe_int(query_params.get("lookbackMinutes"), 15)))
-        if "lookbackMinutes" in query_params
-        else None
-    )
+    # No default recency window: when the conversation did not specify a time,
+    # query the full alarm history (a very wide window, since hisAlarmList
+    # requires a begin/end). The LLM fills ``lookbackMinutes`` only when the
+    # user actually mentions a range ("最近2小时" -> 120), and it is not
+    # capped — honour whatever was asked for.
+    raw_lookback = query_params.get("lookbackMinutes")
+    has_window = str(raw_lookback if raw_lookback is not None else "").strip()
+    has_window = has_window not in ("", "0")
+    if has_window:
+        lookback_minutes = max(
+            1,
+            safe_int(raw_lookback, _ALARM_QUERY_ALL_MINUTES),
+        )
+    else:
+        lookback_minutes = _ALARM_QUERY_ALL_MINUTES
     alarm_status = str(
         query_params.get("alarmStatus")
         or query_params.get("alarmstatus")
@@ -408,15 +423,11 @@ def fetch_real_alarms(query_params: Mapping[str, Any]) -> dict[str, Any]:
         "real-alarms",
         query_params.get("fields"),
     )
-    trend = (
-        f"最近 {lookback_minutes} 分钟活动告警"
-        if lookback_minutes is not None
-        else "当前活动告警"
-    )
+    trend = f"最近 {lookback_minutes} 分钟告警" if has_window else "全部告警"
     return {
         "source": "portal-real-alarm-api",
         "sourceStatus": "live" if rows else "empty",
-        "lookbackMinutes": lookback_minutes,
+        "lookbackMinutes": lookback_minutes if has_window else None,
         "total": int(payload.get("total") or len(rows)),
         "value": int(payload.get("total") or len(rows)),
         "unit": "起",
@@ -655,9 +666,14 @@ CAPABILITY_METADATA: list[dict[str, Any]] = [
         "id": "real-alarms",
         "name": "系统告警",
         "domain": "alarm",
-        "description": "调用资源告警接口读取指定时间窗口内的活动告警。",
+        "description": (
+            "调用资源告警接口读取告警。默认查询全部告警；仅当用户在对话中明确"
+            "提到时间范围时，才填写 lookbackMinutes（最近 N 分钟，例如"
+            "「最近2小时」=120、「最近7天」=10080），不提时间就留空查全部。"
+        ),
         "inputSchema": {
             "limit": 100,
+            "lookbackMinutes": 0,
             "alarmStatus": "",
             "fields": DEFAULT_CAPABILITY_FIELDS["real-alarms"],
         },
@@ -689,7 +705,11 @@ CAPABILITY_METADATA: list[dict[str, Any]] = [
         "cachePolicy": {"ttlSeconds": 60},
         "refreshPolicy": {"intervalSeconds": 60},
         "dataSource": "portal-real-alarm-api",
-        "examplePrompts": ["最近15分钟告警", "当前活动告警"],
+        "examplePrompts": [
+            "查询告警信息",
+            "全部系统告警",
+            "最近2小时告警",
+        ],
     },
     {
         "id": "cmdb-resources",
@@ -871,6 +891,29 @@ CAPABILITY_METADATA: list[dict[str, Any]] = [
         "examplePrompts": ["需要还没接入的数据", "帮我设计新的取数逻辑"],
     },
 ]
+
+
+# Functional domain + backing connection per built-in capability, so the
+# config center can group by domain (告警/工单/CMDB/日志…) and show which
+# connection each capability needs. Injected into CAPABILITY_METADATA below.
+_CAPABILITY_CLASSIFICATION: dict[str, tuple[str, str]] = {
+    "system-logs": ("logs", "n9e"),
+    "real-alarms": ("alarm", "inoe"),
+    "cmdb-resources": ("cmdb", "inoe"),
+    "workorders": ("workorder", "order"),
+    "alarm-top5": ("alarm", "inoe"),
+    "topology-impact": ("cmdb", "inoe"),
+    "web-live-data": ("web", ""),
+    "capability-gap": ("", ""),
+}
+
+for _meta in CAPABILITY_METADATA:
+    _category, _connection = _CAPABILITY_CLASSIFICATION.get(
+        str(_meta.get("id") or ""),
+        ("", ""),
+    )
+    _meta.setdefault("category", _category)
+    _meta.setdefault("connection", _connection)
 
 
 def fetch_web_live(query_params: Mapping[str, Any]) -> dict[str, Any]:

@@ -1,8 +1,11 @@
 import * as echarts from "echarts";
 
+import { BS_PALETTE } from "./palettes.ts";
+
 let registered = false;
 
-export const BS_PALETTE = ["#22d3ee", "#34d399", "#a78bfa", "#fb923c", "#f87171"];
+// Re-exported for back-compat with callers that imported it from here.
+export { BS_PALETTE };
 
 export function registerDarkChartTheme(): string {
   if (!registered) {

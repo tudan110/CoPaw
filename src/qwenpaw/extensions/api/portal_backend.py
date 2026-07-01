@@ -138,6 +138,8 @@ from qwenpaw.extensions.api import inoe_settings_store
 from qwenpaw.extensions.api import qiming_settings_store
 from qwenpaw.extensions.api import xingchen_settings_store
 from qwenpaw.extensions.api import zgops_settings_store
+from qwenpaw.extensions.api import operator_settings_store
+from qwenpaw.extensions.api import order_settings_store
 from qwenpaw.extensions.api import resource_import_llm_settings_api
 from qwenpaw.extensions.api import n9e_settings_store
 from qwenpaw.extensions.api import fde_workbench_service
@@ -775,11 +777,9 @@ async def _ensure_portal_real_alarm_sessions(
                     chat.id,
                 )
                 if current_status == "idle":
-                    state = (
-                        await workspace.session.get_session_state_dict(
-                            chat.session_id,
-                            chat.user_id,
-                        )
+                    state = await workspace.session.get_session_state_dict(
+                        chat.session_id,
+                        chat.user_id,
                     )
                     has_history = _portal_real_alarm_has_history(state)
                     if has_history:
@@ -1839,6 +1839,24 @@ def _refresh_resource_import_llm_environ() -> None:
         pass
 
 
+def _refresh_operator_environ() -> None:
+    try:
+        from qwenpaw.extensions.integrations import working_secrets
+
+        working_secrets.refresh_operator_environ()
+    except Exception:  # noqa: BLE001 - settings already persisted
+        pass
+
+
+def _refresh_order_environ() -> None:
+    try:
+        from qwenpaw.extensions.integrations import working_secrets
+
+        working_secrets.refresh_order_environ()
+    except Exception:  # noqa: BLE001 - settings already persisted
+        pass
+
+
 @router.get("/zgops-settings")
 async def get_zgops_settings() -> dict[str, Any]:
     """Return zgops CMDB settings as ``{effective, env, overrides}``."""
@@ -1870,6 +1888,87 @@ async def reset_zgops_setting(
         raise HTTPException(status_code=400, detail=str(exc))
     _refresh_zgops_environ()
     return zgops_settings_store.build_settings_payload()
+
+
+# ---------------------------------------------------------------------------
+# operator (page-operator) menu connection. Independent OPERATOR_MENU_* env
+# vars (the 操作 settings tab), materialised into os.environ so the
+# page-operator skill subprocess inherits them. See operator_settings_store.
+# ---------------------------------------------------------------------------
+
+
+@router.get("/operator-settings")
+async def get_operator_settings() -> dict[str, Any]:
+    """Return operator menu settings as ``{effective, env, overrides}``."""
+    return operator_settings_store.build_settings_payload()
+
+
+@router.put("/operator-settings")
+async def put_operator_settings(
+    body: dict[str, Any] = Body(default_factory=dict),
+) -> dict[str, Any]:
+    """Persist a partial update of the operator menu settings."""
+    try:
+        operator_settings_store.apply_settings_update(body)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    _refresh_operator_environ()
+    return operator_settings_store.build_settings_payload()
+
+
+@router.post("/operator-settings/reset")
+async def reset_operator_setting(
+    body: dict[str, Any] = Body(default_factory=dict),
+) -> dict[str, Any]:
+    """Drop one operator field's override. Body: ``{"key": "<field>"}``."""
+    key = str(body.get("key") or "").strip()
+    try:
+        operator_settings_store.reset_setting(key)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    _refresh_operator_environ()
+    return operator_settings_store.build_settings_payload()
+
+
+# ---------------------------------------------------------------------------
+# work-order (order-workflow / ferry) connection. Independent ORDER_* env vars
+# (the 工单 settings tab), materialised into os.environ so the order-workflow
+# skill subprocess inherits them; empty fields fall back to the shared INOE
+# connection. See order_settings_store.
+# ---------------------------------------------------------------------------
+
+
+@router.get("/order-settings")
+async def get_order_settings() -> dict[str, Any]:
+    """Return work-order settings as ``{effective, env, overrides}``."""
+    return order_settings_store.build_settings_payload()
+
+
+@router.put("/order-settings")
+async def put_order_settings(
+    body: dict[str, Any] = Body(default_factory=dict),
+) -> dict[str, Any]:
+    """Persist a partial update of the work-order settings."""
+    try:
+        order_settings_store.apply_settings_update(body)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    _refresh_order_environ()
+    return order_settings_store.build_settings_payload()
+
+
+@router.post("/order-settings/reset")
+async def reset_order_setting(
+    body: dict[str, Any] = Body(default_factory=dict),
+) -> dict[str, Any]:
+    """Drop one work-order field's override. Body: ``{"key": "<field>"}``."""
+    key = str(body.get("key") or "").strip()
+    try:
+        order_settings_store.reset_setting(key)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    _refresh_order_environ()
+    return order_settings_store.build_settings_payload()
 
 
 @router.get("/resource-import-llm-settings")
@@ -2522,7 +2621,7 @@ def _collect_sse_report_messages(
         chunk = chunk.strip()
         if not chunk.startswith("data:"):
             continue
-        payload = chunk[len("data:"):].strip()
+        payload = chunk[len("data:") :].strip()
         try:
             event = json.loads(payload)
         except (json.JSONDecodeError, ValueError):

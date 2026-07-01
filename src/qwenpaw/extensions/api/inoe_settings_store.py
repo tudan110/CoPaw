@@ -60,6 +60,11 @@ __all__ = [
     "get_token",
     "get_timeout_seconds",
     "get_enable_curl_fallback",
+    "get_menu_base_url",
+    "get_menu_token",
+    "get_menu_app_code",
+    "get_menu_timeout_seconds",
+    "get_menu_cache_ttl_seconds",
     "build_headers",
     "build_url",
     "build_settings_payload",
@@ -103,10 +108,63 @@ INOE_FIELD_SPECS: dict[str, FieldSpec] = {
             "bool",
             "inoe",
         ),
+        # --- Menu / page-navigation API (getRouters) ---
+        # page-navigator (gateway) resolves portal menu routes from this INOE
+        # endpoint. These used to live only in the skill's ``.env`` /
+        # ``secrets/inoe.env``; they are now editable on the 平台 settings tab
+        # and materialised into ``os.environ`` so the skill subprocess inherits
+        # them. Empty base URL / token fall back to the shared INOE_API_*
+        # connection above (the skill resolves the fallback at runtime).
+        FieldSpec(
+            "inoe_menu_base_url",
+            "INOE_MENU_BASE_URL",
+            "",
+            "str",
+            "inoe_menu",
+        ),
+        FieldSpec(
+            "inoe_menu_token",
+            "INOE_MENU_TOKEN",
+            "",
+            "str",
+            "inoe_menu",
+            sensitive=True,
+        ),
+        FieldSpec(
+            "inoe_menu_app_code",
+            "INOE_MENU_APP_CODE",
+            "inoe",
+            "str",
+            "inoe_menu",
+        ),
+        FieldSpec(
+            "inoe_menu_timeout_seconds",
+            "INOE_MENU_TIMEOUT_SECONDS",
+            20.0,
+            "float",
+            "inoe_menu",
+            min_value=0.1,
+        ),
+        FieldSpec(
+            "inoe_menu_cache_ttl_seconds",
+            "INOE_MENU_CACHE_TTL_SECONDS",
+            600.0,
+            "float",
+            "inoe_menu",
+            min_value=0,
+        ),
     )
 }
 
-_INOE_KEYS = tuple(INOE_FIELD_SPECS.keys())
+# Only these four connection keys historically lived under the ``diagnosis``
+# namespace, so only they are migrated. The menu keys above are new and never
+# had a legacy home.
+_INOE_KEYS = (
+    "inoe_api_base_url",
+    "inoe_api_token",
+    "inoe_api_timeout_seconds",
+    "inoe_enable_curl_fallback",
+)
 
 
 # ---------------------------------------------------------------------------
@@ -225,6 +283,53 @@ def get_enable_curl_fallback(*, db_path: Path = DEFAULT_DB_PATH) -> bool:
     return bool(
         _resolve(
             INOE_FIELD_SPECS["inoe_enable_curl_fallback"],
+            db_path=db_path,
+        )
+    )
+
+
+# ---------------------------------------------------------------------------
+# Menu / page-navigation API resolvers (page-navigator getRouters)
+# ---------------------------------------------------------------------------
+#
+# Mirror the connection getters above but resolve the menu-specific fields.
+# :mod:`working_secrets` reads these to materialise the values into
+# ``os.environ`` so the page-navigator skill subprocess inherits them. An
+# empty base URL / token resolves to ``""`` so the skill falls back to the
+# shared INOE_API_* connection at runtime.
+
+
+def get_menu_base_url(*, db_path: Path = DEFAULT_DB_PATH) -> str:
+    return str(
+        _resolve(INOE_FIELD_SPECS["inoe_menu_base_url"], db_path=db_path) or ""
+    ).strip()
+
+
+def get_menu_token(*, db_path: Path = DEFAULT_DB_PATH) -> str:
+    return str(
+        _resolve(INOE_FIELD_SPECS["inoe_menu_token"], db_path=db_path) or ""
+    ).strip()
+
+
+def get_menu_app_code(*, db_path: Path = DEFAULT_DB_PATH) -> str:
+    return str(
+        _resolve(INOE_FIELD_SPECS["inoe_menu_app_code"], db_path=db_path) or ""
+    ).strip()
+
+
+def get_menu_timeout_seconds(*, db_path: Path = DEFAULT_DB_PATH) -> float:
+    return float(
+        _resolve(
+            INOE_FIELD_SPECS["inoe_menu_timeout_seconds"],
+            db_path=db_path,
+        )
+    )
+
+
+def get_menu_cache_ttl_seconds(*, db_path: Path = DEFAULT_DB_PATH) -> float:
+    return float(
+        _resolve(
+            INOE_FIELD_SPECS["inoe_menu_cache_ttl_seconds"],
             db_path=db_path,
         )
     )

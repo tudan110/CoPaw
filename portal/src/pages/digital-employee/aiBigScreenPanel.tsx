@@ -3,6 +3,7 @@ import {
   createAiBigScreenDraftTask,
   deleteAiBigScreen,
   duplicateAiBigScreen,
+  getAiBigScreenCapabilityConfig,
   getAiBigScreenDraftTask,
   getAiBigScreenMetrics,
   listAiBigScreenPlugins,
@@ -22,9 +23,14 @@ import {
   topFailingCapabilities,
   hasMetrics,
 } from "../../components/big-screen/metricsFormat.ts";
+import {
+  groupByDomain,
+  unconfiguredCount,
+} from "../../components/big-screen/capabilityCatalog.ts";
 import "../../components/big-screen/big-screen.css";
 import type {
   AiBigScreenApp,
+  AiBigScreenCapabilityConfigItem,
   AiBigScreenMetricsResponse,
   AiBigScreenPlugin,
   AiBigScreenPublishTarget,
@@ -76,6 +82,17 @@ function getStatusLabel(status: string) {
 
 function getComponentCount(screen: AiBigScreenApp) {
   return screen.components?.length || 0;
+}
+
+// connection settings-tab key → friendly name for the unconfigured hint.
+function describeSettingsTab(tab: string): string {
+  const labels: Record<string, string> = {
+    inoe: "INOE 网关",
+    n9e: "夜莺日志",
+    cmdb: "CMDB 对接",
+    proxy: "自定义连接器",
+  };
+  return labels[tab] || tab;
 }
 
 function AiBigScreenGenerationStage({
@@ -177,6 +194,18 @@ export function AiBigScreenPanel() {
   const [metrics, setMetrics] = useState<AiBigScreenMetricsResponse | null>(
     null,
   );
+  const [capabilityConfig, setCapabilityConfig] = useState<
+    AiBigScreenCapabilityConfigItem[]
+  >([]);
+
+  const capabilityGroups = useMemo(
+    () => groupByDomain(capabilityConfig),
+    [capabilityConfig],
+  );
+  const capabilityUnconfigured = useMemo(
+    () => unconfiguredCount(capabilityConfig),
+    [capabilityConfig],
+  );
 
   const selectedComponent = useMemo(
     () =>
@@ -211,6 +240,13 @@ export function AiBigScreenPanel() {
       setMetrics(await getAiBigScreenMetrics());
     } catch {
       setMetrics(null);
+    }
+    // data-source health is likewise supplementary.
+    try {
+      const config = await getAiBigScreenCapabilityConfig();
+      setCapabilityConfig(config.items || []);
+    } catch {
+      setCapabilityConfig([]);
     }
   };
 
@@ -748,6 +784,67 @@ export function AiBigScreenPanel() {
                   ) : null}
                 </div>
               ) : null}
+              {capabilityGroups.length ? (
+                <div className="ai-big-screen-datasource">
+                  <div className="ai-big-screen-datasource-head">
+                    <span>数据源配置</span>
+                    {capabilityUnconfigured ? (
+                      <span className="ai-big-screen-datasource-warn">
+                        {capabilityUnconfigured} 项待配置
+                      </span>
+                    ) : (
+                      <span className="ai-big-screen-datasource-ok">
+                        全部已配置
+                      </span>
+                    )}
+                  </div>
+                  {capabilityGroups.map((group) => (
+                    <div
+                      key={group.key}
+                      className="ai-big-screen-datasource-group"
+                    >
+                      <h4>{group.label}</h4>
+                      <ul>
+                        {group.items.map((item) => (
+                          <li
+                            key={item.id}
+                            className={
+                              item.configured
+                                ? "ds-cap configured"
+                                : "ds-cap unconfigured"
+                            }
+                          >
+                            <span className="ds-cap-name">{item.name}</span>
+                            <span className="ds-cap-conn">
+                              {item.connection}
+                            </span>
+                            {item.configured ? (
+                              <span className="ds-cap-badge ok">已配置</span>
+                            ) : (
+                              <span
+                                className="ds-cap-badge warn"
+                                title={
+                                  item.reason
+                                    ? `${item.reason}${
+                                        item.settingsTab
+                                          ? `（到设置 → ${describeSettingsTab(
+                                              item.settingsTab,
+                                            )} 配置）`
+                                          : ""
+                                      }`
+                                    : "未配置"
+                                }
+                              >
+                                未配置
+                              </span>
+                            )}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
               {screens.length ? (
                 <div className="ai-big-screen-list">
                   {screens.map((item) => (
@@ -969,8 +1066,8 @@ export function AiBigScreenPanel() {
                     {saving
                       ? "修改中..."
                       : previewLines.length
-                      ? "确认应用"
-                      : "应用修改"}
+                        ? "确认应用"
+                        : "应用修改"}
                   </button>
                 </div>
               </div>
