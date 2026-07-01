@@ -542,6 +542,11 @@ def _infer_component_capability_id(
         or "topology" in lowered
     ):
         scores["topology-impact"] = 6
+    # Public web data — lowest score so an internal keyword always wins a
+    # collision (e.g. "资讯中心告警" stays real-alarms); only a pure public
+    # ask like "南京天气" routes here.
+    if _text_is_web_live(text):
+        scores["web-live-data"] = 4
     if not scores:
         return ""
     return max(scores.items(), key=lambda item: item[1])[0]
@@ -561,6 +566,17 @@ def _resolve_component_capability_id(
     ):
         return raw_capability_id
     if raw_capability_id and not _capability_meta(raw_capability_id):
+        # Unknown claimed capability. Public web data (天气/汇率/新闻) has a real
+        # capability — route it there instead of an honest-gap placeholder;
+        # unknown *internal* data still gaps (no faking).
+        if (
+            _infer_component_capability_id(
+                component,
+                keys=("title", "name", "summary", "description"),
+            )
+            == "web-live-data"
+        ):
+            return "web-live-data"
         return raw_capability_id
     if raw_capability_id:
         title_inferred = _infer_component_capability_id(
@@ -691,6 +707,17 @@ def normalize_plan_component(
         prompt=prompt,
         component=component,
     )
+    # web-live-data needs a query; backfill from the title if the model
+    # routed here (e.g. inferred from "南京天气") without one.
+    if (
+        capability_id == "web-live-data"
+        and not str(
+            query_params.get("query") or "",
+        ).strip()
+    ):
+        query_params["query"] = (
+            str(component.get("title") or "").strip() or prompt
+        )[:60]
     visual_config = _normalize_visual_config(component.get("visualConfig"))
     visual_spec = sanitize_visual_spec(component.get("visualSpec"))
     explicit_log_risk = (
@@ -746,6 +773,79 @@ def normalize_plan_component(
             component.get("layoutPosition"),
             index,
         ),
+    )
+
+
+_WEB_LIVE_CN_TERMS = (
+    "天气",
+    "气温",
+    "汇率",
+    "外汇",
+    "新闻",
+    "资讯",
+    "百科",
+)
+_WEB_LIVE_EN_TERMS = ("weather", "forecast", "exchange rate", "news")
+_WEB_QUERY_LEADING_RE = re.compile(
+    r"^(?:查询|查看|看一下|看下|显示|展示|搜索|帮我|给我|我想|想|要|再|并|顺便|的)+",
+)
+
+
+def _text_is_web_live(text: str) -> bool:
+    """True if free text is a public-web ask (天气/汇率/新闻…)."""
+    lowered = text.lower()
+    return any(term in text for term in _WEB_LIVE_CN_TERMS) or any(
+        term in lowered for term in _WEB_LIVE_EN_TERMS
+    )
+
+
+def extract_web_live_requests(prompt: str) -> list[str]:
+    """Public-web clauses (天气/汇率/新闻…) → cleaned query strings.
+
+    The keyword guardrail only knows internal capabilities, so a degraded
+    plan used to silently drop public-data asks (the confirmed cause of
+    "weather not showing"). This surfaces them so the guardrail can build a
+    real ``web-live-data`` component instead of dropping them.
+    """
+    out: list[str] = []
+    for clause in _REQUEST_SPLIT_RE.split(str(prompt or "")):
+        clause = clause.strip()
+        if not clause or not _text_is_web_live(clause):
+            continue
+        query = _WEB_QUERY_LEADING_RE.sub("", clause).strip()[:60]
+        if query and query not in out:
+            out.append(query)
+    return out
+
+
+def build_web_live_component(
+    *,
+    query: str,
+    index: int,
+) -> PlanComponent | None:
+    """A real ``web-live-data`` component for a public-web query.
+
+    Rendered as a ``table`` so it is non-blank for every kind: weather →
+    3-day forecast, fx → currency rates, web/news → search results (each
+    ships columns+rows). The generative composed card is the LLM path's job.
+    """
+    capability = _capability_meta("web-live-data")
+    if not capability:
+        return None
+    normalized_query = str(query or "").strip()[:60]
+    raw_component: dict[str, Any] = {
+        "title": normalized_query or "实时公开数据",
+        "description": capability.get("description") or "",
+        "capabilityId": "web-live-data",
+        "visualType": "table",
+        "queryParams": {"query": normalized_query, "kind": "auto"},
+        "layoutPosition": normalize_layout_position({}, index),
+        "visualConfig": {"palette": "cool", "emphasis": "standard"},
+    }
+    return normalize_plan_component(
+        raw_component,
+        index=index,
+        inferred_lookback_minutes=15,
     )
 
 
@@ -874,6 +974,15 @@ def build_guardrail_plan(
                 capability_id,
             ),
             prompt=prompt,
+        )
+        if component is not None:
+            components.append(component)
+    # Public-web asks (天气/汇率/新闻…) the keyword router doesn't cover — build
+    # a real web-live-data component so the degraded path stops dropping them.
+    for query in extract_web_live_requests(prompt):
+        component = build_web_live_component(
+            query=query,
+            index=len(components),
         )
         if component is not None:
             components.append(component)

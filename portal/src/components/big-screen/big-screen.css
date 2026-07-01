@@ -694,6 +694,69 @@
   text-shadow: 0 0 16px rgba(34, 211, 238, 0.45);
 }
 
+/* Table widget — multi-field tabular data (工单 / 资源等) */
+.bs-table-wrap {
+  height: 100%;
+  overflow: hidden; /* long tables auto-scroll (below) — no ugly scrollbar */
+  font-size: 12px;
+}
+
+/* Auto-scroll (marquee) when there are more rows than fit; fade the bottom
+   edge and pause on hover so it stays readable. */
+.bs-table-wrap--scroll {
+  -webkit-mask: linear-gradient(#000 84%, transparent);
+  mask: linear-gradient(#000 84%, transparent);
+}
+
+.bs-table-scroll {
+  animation: bs-marquee-v 20s linear infinite;
+}
+
+.bs-table-wrap--scroll:hover .bs-table-scroll {
+  animation-play-state: paused;
+}
+
+.bs-table {
+  width: 100%;
+  border-collapse: collapse;
+  color: var(--bs-label);
+}
+
+.bs-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  text-align: left;
+  font-weight: 600;
+  color: var(--bs-cyan-lt);
+  background: rgba(12, 22, 40, 0.92);
+  padding: 6px 10px;
+  white-space: nowrap;
+  border-bottom: 1px solid rgba(34, 211, 238, 0.25);
+}
+
+.bs-table tbody td {
+  padding: 5px 10px;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.bs-table tbody tr:hover td {
+  background: rgba(34, 211, 238, 0.06);
+}
+
+.bs-table-empty {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--bs-muted);
+  font-size: 12px;
+}
+
 /* ── Keyframes ─────────────────────────────────────────────── */
 
 @keyframes bs-particle-pulse {

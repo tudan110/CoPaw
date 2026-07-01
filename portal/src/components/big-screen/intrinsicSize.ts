@@ -84,6 +84,11 @@ function baseSize(component: ScreenComponent): IntrinsicSize {
       naturalHeight: clamp(64 + rows * 30, 180, 460),
     };
   }
+  if (type === "table") {
+    // Multi-column grid: wants width for its columns and grows with rows.
+    const rows = rowCount(component);
+    return { widthUnits: 2, naturalHeight: clamp(96 + rows * 30, 200, 480) };
+  }
   if (type === "graph") {
     const nodes = component.data?.nodes?.length ?? 0;
     return nodes < 5

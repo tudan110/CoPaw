@@ -9,7 +9,8 @@ import {
 
 test("maps legacy types to D-max component types", () => {
   assert.equal(mapComponentType("metric-card"), "metric-kpi");
-  assert.equal(mapComponentType("table"), "alarm-stream");
+  assert.equal(mapComponentType("table"), "table"); // first-class table widget
+  assert.equal(mapComponentType("list"), "alarm-stream"); // stream-shaped
   assert.equal(mapComponentType("topology"), "graph");
   assert.equal(mapComponentType("line-chart"), "line-chart"); // already known
   assert.equal(mapComponentType("risk-pulse"), "risk-pulse"); // already known
@@ -143,8 +144,9 @@ test("normalizeBindings aliases legacy roles to widget vocabulary", () => {
   assert.equal(b?.time, "eventTime", "time preserved");
 });
 
-test("real table screen resolves a non-blank message (regression for blank rows)", () => {
-  // shape from screen-3ae3323fbc/3c478117e4: table + bindings.title, rows carry `title`
+test("workorder table stays a table and carries its columns as fields", () => {
+  // 工单: table type + backend columns; must render as a real grid, not a
+  // single-line alarm-stream (regression for blank work-order rows).
   const spec = adaptLegacyScreen({
     id: "s",
     name: "n",
@@ -154,18 +156,30 @@ test("real table screen resolves a non-blank message (regression for blank rows)
         type: "table",
         title: "待办工单",
         capabilityId: "workorders",
-        visualSpec: { bindings: { title: "title", severity: "severity", time: "eventTime" } },
         data: {
           sourceStatus: "live",
-          rows: [{ title: "工单A", eventTime: "09:00", severity: "high" }],
+          columns: [
+            { key: "workorderNo", label: "工单号" },
+            { key: "title", label: "标题" },
+            { key: "status", label: "状态" },
+          ],
+          rows: [{ workorderNo: "WO-1", title: "工单A", status: "处理中" }],
         },
       },
     ],
   });
   const c = spec.components[0];
-  assert.equal(c.type, "alarm-stream");
-  const msgKey = c.visualSpec.bindings?.message;
-  assert.equal(msgKey, "title", "message binding aliased from title");
+  assert.equal(c.type, "table", "table stays first-class");
+  // columns → fields so the TableWidget can render every column
+  assert.deepEqual(
+    c.data?.fields,
+    [
+      { key: "workorderNo", label: "工单号" },
+      { key: "title", label: "标题" },
+      { key: "status", label: "状态" },
+    ],
+    "columns surfaced as fields",
+  );
   const row0 = c.data?.rows?.[0] as Record<string, unknown>;
-  assert.equal(row0[msgKey!], "工单A", "message resolves to a real, non-blank value");
+  assert.equal(row0["status"], "处理中", "row cells preserved");
 });

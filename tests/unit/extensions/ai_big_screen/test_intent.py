@@ -335,3 +335,52 @@ def test_intent_module_has_no_llm_import_at_top_level() -> None:
     source = inspect.getsource(intent)
     module_header = source.split("def ", maxsplit=1)[0]
     assert "from qwenpaw.agents" not in module_header
+
+
+class TestWebLiveRouting:
+    def test_extract_web_live_requests(self) -> None:
+        assert intent.extract_web_live_requests(
+            "查询最近工单，告警以及南京天气",
+        ) == ["南京天气"]
+        assert intent.extract_web_live_requests("查询工单和告警") == []
+        reqs = intent.extract_web_live_requests("上海天气，美元汇率")
+        assert "上海天气" in reqs and any("汇率" in r for r in reqs)
+
+    def test_guardrail_builds_web_live_component(self) -> None:
+        # The confirmed root cause: the degraded/guardrail path dropped
+        # weather because it only knew internal capabilities.
+        plan = intent.build_guardrail_plan(
+            prompt="查询最近工单，告警以及南京天气",
+            title="",
+            degraded=True,
+        )
+        caps = [(c.type, c.capability_id) for c in plan.components]
+        assert ("table", "web-live-data") in caps
+        weather = next(
+            c for c in plan.components if c.capability_id == "web-live-data"
+        )
+        assert weather.query_params.get("query") == "南京天气"
+
+    def test_public_web_infers_but_internal_wins_collision(self) -> None:
+        assert (
+            intent._infer_component_capability_id({"title": "南京天气"})
+            == "web-live-data"
+        )
+        # internal keyword must win a collision (not mis-route to the web)
+        assert (
+            intent._infer_component_capability_id({"title": "资讯中心告警"})
+            == "real-alarms"
+        )
+
+    def test_unknown_weather_capability_reroutes_not_gapped(self) -> None:
+        pc = intent.normalize_plan_component(
+            {
+                "title": "南京天气",
+                "capabilityId": "weather",  # not a real capability id
+                "visualType": "metric-kpi",
+            },
+            index=0,
+            inferred_lookback_minutes=15,
+        )
+        assert pc.capability_id == "web-live-data"  # not capability-gap
+        assert pc.query_params.get("query") == "南京天气"

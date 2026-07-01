@@ -33,9 +33,19 @@ export function AlarmStream({ component }: WidgetProps) {
             tones[i % rows.length] ??
             String((row as Record<string, unknown>)[toneKey] ?? "");
           const dotCls = TONE_DOT[tone] ?? "bs-dot--normal";
-          const msg = String(row[msgKey] ?? row["message"] ?? row["msg"] ?? "");
+          // Fall back through common label-ish keys so tabular rows (工单/资源)
+          // never render a fully blank line if bindings are missing.
+          const msg = String(
+            row[msgKey] ??
+              row["message"] ??
+              row["msg"] ??
+              row["title"] ??
+              row["name"] ??
+              row["workorderNo"] ??
+              "",
+          );
           const time = String(
-            row[timeKey] ?? row["time"] ?? row["ts"] ?? "",
+            row[timeKey] ?? row["time"] ?? row["ts"] ?? row["eventTime"] ?? "",
           );
           return (
             <li key={i} className="bs-stream-item">

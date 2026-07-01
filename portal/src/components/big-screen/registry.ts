@@ -34,6 +34,7 @@ export const KNOWN_COMPONENT_TYPES = [
   "graph",
   "map-fly",
   "alarm-stream",
+  "table",
   "top-n",
   "risk-pulse",
   "funnel",

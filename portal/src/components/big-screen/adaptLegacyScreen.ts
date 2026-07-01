@@ -47,7 +47,8 @@ const TYPE_MAP: Record<string, string> = {
   bar: "bar-chart",
   area: "area-chart",
   pie: "donut",
-  table: "alarm-stream",
+  // `table` is now a first-class type (TableWidget renders its columns);
+  // only genuinely stream-shaped legacy types fall back to alarm-stream.
   list: "alarm-stream",
   stream: "alarm-stream",
   "status-stream": "alarm-stream",
