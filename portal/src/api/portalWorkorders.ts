@@ -4,6 +4,17 @@ const DEFAULT_PORTAL_API_BASE_URL = "/portal-api";
 const SAME_ORIGIN_PORTAL_API_BASE_URL = "/api/portal";
 const DEFAULT_REQUEST_TIMEOUT_MS = 15000;
 
+// Optional global handler invoked when a portal API call returns 401 — used
+// by the SSO layer to clear the session and re-login. SSO endpoints
+// (/sso/*) are excluded so login calls handle their own 401s.
+let unauthorizedHandler: (() => void) | null = null;
+
+export function setPortalUnauthorizedHandler(
+  handler: (() => void) | null,
+): void {
+  unauthorizedHandler = handler;
+}
+
 const PORTAL_API_BASE_URL = (
   import.meta.env.VITE_PORTAL_API_BASE_URL ||
   (typeof window !== "undefined"
@@ -99,7 +110,14 @@ export async function requestPortalApi<T = unknown>(
 
     if (!response.ok) {
       errorText = errorText || await response.text().catch(() => "");
-      throw new Error(extractPortalApiError(errorText));
+      if (response.status === 401 && !path.startsWith("/sso/")) {
+        unauthorizedHandler?.();
+      }
+      const error = new Error(extractPortalApiError(errorText)) as Error & {
+        status?: number;
+      };
+      error.status = response.status;
+      throw error;
     }
 
     return response.json();

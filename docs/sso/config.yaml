@@ -1,0 +1,21 @@
+sys:
+  auth:
+    idp:
+      # 授权码有效期（秒），一次性消费，默认 300
+      code-expire-seconds: 300
+      # 请求签名时间窗（秒）：请求时间戳与服务端时间差超过该值则拒绝，用于抗重放，默认 60
+      sign-window-seconds: 60
+      # 已注册的外部客户端列表，可配置多个
+      clients:
+        - # 客户端标识，由我方分配后下发给外部系统
+          client-id: ndai
+          # 客户端密钥：建议使用现有 jasypt 加密（与 sys.external.auth.pswd 同套），形如 ENC(xxx)
+          # 也可直接填明文进行联调（生产务必加密）
+          client-secret: CGQlJs*Z@&X@a
+          # 客户端名称，仅用于辨识
+          client-name: AI模块
+          # 允许的回调地址白名单（精确匹配，防开放重定向），可配置多个
+          redirect-uris:
+            - https://extsysA.example.com/sso/callback
+          # 授权范围，原样回带至 token 响应
+          scopes: basic
