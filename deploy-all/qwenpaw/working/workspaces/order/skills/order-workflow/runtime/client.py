@@ -362,7 +362,17 @@ class OrderWorkflowClient:
             return
         code = payload.get("code")
         if code is None:
-            return
+            # ferry 的每个业务响应都带 code；一个没有 code 的 JSON 体
+            # （例如配错网关时上游应答 200 {"msg":""}）不是 ferry 的响应。
+            # 以前这里静默放行，随后被归一化成"0 条数据"——把配置错误
+            # 伪装成了"暂无数据"。诚实报错，别装作查到了空结果。
+            message = "工单接口未返回业务码，疑似网关未代理 ferry 服务"
+            if base_url:
+                message = (
+                    f"{message}（工单接口地址 {base_url}，"
+                    f"请确认该地址是 ferry 服务的正确入口）"
+                )
+            raise RuntimeError(message)
         try:
             code_int = int(code)
         except (TypeError, ValueError):
