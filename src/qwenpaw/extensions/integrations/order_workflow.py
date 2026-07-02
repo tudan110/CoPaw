@@ -66,18 +66,57 @@ def _load_order_client_module():
     return module
 
 
+def _build_order_client_config(
+    module: Any,
+    *,
+    timeout_seconds: int | None,
+    disable_curl_fallback: bool,
+) -> Any:
+    """按需覆盖 client 配置；无覆盖时返回 None（照旧 from_env()）。
+
+    仅当调用方显式要求缩短超时或关掉 curl 兜底时，才基于
+    ``OrderWorkflowConfig.from_env()`` 复制一份并改对应字段。默认
+    （两个覆盖都不传）返回 None，``OrderWorkflowClient`` 内部仍走
+    ``from_env()``，聊天技能路径行为零变化。
+    """
+    if timeout_seconds is None and not disable_curl_fallback:
+        return None
+    config = module.OrderWorkflowConfig.from_env()
+    if timeout_seconds is not None:
+        config.timeout_seconds = int(timeout_seconds)
+    if disable_curl_fallback:
+        config.enable_curl_fallback = False
+    return config
+
+
 def query_order_workorders(
     *,
     limit: int,
     time_range: str = "today",
+    timeout_seconds: int | None = None,
+    disable_curl_fallback: bool = False,
 ) -> dict[str, Any]:
+    """查询待办工单 + 统计。
+
+    ``timeout_seconds`` / ``disable_curl_fallback`` 供大屏等对时延敏感的
+    调用方缩短失败成本用：跳板半死时 urllib 20s + curl 兜底 20s = 40s，
+    对同一条坏链路毫无意义，只会把失败成本翻倍。默认不传时行为与聊天
+    技能路径完全一致（走 ORDER_TIMEOUT_SECONDS / ORDER_ENABLE_CURL_FALLBACK
+    的环境默认值）。
+    """
     from qwenpaw.extensions.integrations.working_secrets import (
         ensure_working_secrets_loaded,
     )
 
     ensure_working_secrets_loaded()
     module = _load_order_client_module()
-    client = module.OrderWorkflowClient()
+    client = module.OrderWorkflowClient(
+        _build_order_client_config(
+            module,
+            timeout_seconds=timeout_seconds,
+            disable_curl_fallback=disable_curl_fallback,
+        )
+    )
     safe_limit = max(1, min(int(limit or 20), 100))
     stats_payload = client.get_workorder_stats()
     todo_payload = client.list_todo_workorders(

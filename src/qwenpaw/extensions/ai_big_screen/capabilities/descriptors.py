@@ -14,6 +14,7 @@ Honesty rules enforced here (spec §5/§11):
   sample-data fallback (kept out of this module by design and pinned
   by a unit test).
 """
+
 from __future__ import annotations
 
 import copy
@@ -253,7 +254,10 @@ def _build_system_log_risk_summary(
         "summary": (
             "未识别到明显高危日志"
             if not risk_rows
-            else (f"最高风险 {max_score}，" f"请优先关注前 {min(len(top_rows), 5)} 条日志。")
+            else (
+                f"最高风险 {max_score}，"
+                f"请优先关注前 {min(len(top_rows), 5)} 条日志。"
+            )
         ),
         "columns": [
             {"key": "time", "label": "时间"},
@@ -467,7 +471,9 @@ def fetch_cmdb_resources(query_params: Mapping[str, Any]) -> dict[str, Any]:
         "scope": str(query_params.get("scope") or "all"),
         "value": value,
         "unit": "项",
-        "trend": ("来自 CMDB/资源概览接口" if source_status == "live" else message),
+        "trend": (
+            "来自 CMDB/资源概览接口" if source_status == "live" else message
+        ),
         "message": "" if source_status == "live" else message,
         "columns": columns,
         "rows": rows,
@@ -484,9 +490,14 @@ def fetch_workorders(query_params: Mapping[str, Any]) -> dict[str, Any]:
         "workorders",
         query_params.get("fields"),
     )
+    # 大屏对时延敏感：跳板半死时对同一条坏链路 urllib 20s + curl 兜底
+    # 20s = 40s，而能力层 30s 就判超时、线程还在白烧。缩短到 6s 并禁掉
+    # curl 兜底，同场景下每组件 ≤12s（2 次调用×6s）内诚实 failed。
     payload = order_workflow.query_order_workorders(
         limit=limit,
         time_range=time_range,
+        timeout_seconds=6,
+        disable_curl_fallback=True,
     )
     provider_source = str(payload.get("source") or "")
     if provider_source != "live":
@@ -582,7 +593,8 @@ def fetch_capability_gap(query_params: Mapping[str, Any]) -> dict[str, Any]:
                 "、".join(str(item) for item in required_inputs)
                 if isinstance(required_inputs, list)
                 else str(
-                    required_inputs or "数据源地址、鉴权方式、查询参数、返回字段映射",
+                    required_inputs
+                    or "数据源地址、鉴权方式、查询参数、返回字段映射",
                 )
             ),
         },
@@ -591,7 +603,9 @@ def fetch_capability_gap(query_params: Mapping[str, Any]) -> dict[str, Any]:
     return {
         "source": "ai-capability-planning",
         "sourceStatus": "unavailable",
-        "message": ("当前没有可复用的真实数据能力，已生成接入方案，未展示模拟数据。"),
+        "message": (
+            "当前没有可复用的真实数据能力，已生成接入方案，未展示模拟数据。"
+        ),
         "columns": [
             {"key": "name", "label": "事项"},
             {"key": "value", "label": "方案"},
@@ -750,7 +764,8 @@ CAPABILITY_METADATA: list[dict[str, Any]] = [
         "name": "工单信息",
         "domain": "workorder",
         "description": (
-            "调用 order-workflow 传统工单系统能力读取今日工单统计和" "待办工单；不使用告警 mock 数据伪装工单。"
+            "调用 order-workflow 传统工单系统能力读取今日工单统计和"
+            "待办工单；不使用告警 mock 数据伪装工单。"
         ),
         "inputSchema": {
             "timeRange": "today",
