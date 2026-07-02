@@ -131,13 +131,15 @@ def _lint_skill(name: str, paths: list[Path]) -> list[tuple[str, str]]:
             ("WARN", "脚本类技能缺少自然语言→命令映射（模型会猜命令/瞎试）"),
         )
 
-    # divergent copies across workspaces
+    # divergent copies across workspaces. NOTE: a benign per-workspace label
+    # (e.g. "这是 gateway 本地的…") will show up here as a 1-line diff — verify
+    # the diff is real drift before syncing, don't blindly overwrite.
     if len(paths) > 1:
         bodies = {p.read_text(encoding="utf-8", errors="ignore") for p in paths}
         if len(bodies) > 1:
             wss = ", ".join(sorted(p.parents[2].name for p in paths))
             findings.append(
-                ("WARN", f"{len(paths)} 份副本内容不一致（{wss}），需同步"),
+                ("WARN", f"{len(paths)} 份副本内容不一致（{wss}），需人工确认是否同步"),
             )
 
     return findings
