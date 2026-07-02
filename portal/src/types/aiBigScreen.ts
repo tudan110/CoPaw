@@ -86,6 +86,9 @@ export interface AiBigScreenVersion {
   configSnapshot?: Record<string, unknown>;
   changeSummary?: string;
   changedBy?: string;
+  // T-014: audit aliases mirroring changeSummary/changedBy.
+  summary?: string;
+  requestedBy?: string;
   changedByAi?: boolean;
   createdAt?: string;
   basedOnVersionId?: string;

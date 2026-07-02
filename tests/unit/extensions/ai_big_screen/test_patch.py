@@ -594,6 +594,13 @@ class TestVersioningAndContext:
         assert [v["versionId"] for v in screen["versions"]] == ["v1", "v2"]
         assert outcome["version"]["basedOnVersionId"] == "v1"
         assert outcome["summary"] == "改了标题"
+        # T-014: the newly appended version carries an audit trail — its
+        # summary equals the returned summary and requestedBy is populated.
+        latest = screen["versions"][-1]
+        assert latest["summary"] == outcome["summary"] != ""
+        assert latest["requestedBy"] == "portal"
+        # pre-existing v1 is left untouched (no backfill)
+        assert "summary" not in screen["versions"][0]
         binding_ids = {
             b["componentId"]: b["id"] for b in screen["dataBindings"]
         }
