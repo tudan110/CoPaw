@@ -1,0 +1,770 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>QwenPaw 自监控 · Self Monitor — P0 设计稿</title>
+<style>
+/* =============================================================
+ * QwenPaw Self-Monitor Console — P0 design mockup
+ * Visual system inherited from portal big-screen (bs-root / bs-dark):
+ *   bg radial #11243f→#070c16 · aurora blobs · 5-colour palette
+ *   digits: DIN Alternate · text: Inter + Noto Sans SC
+ * Demo data re-enacts the 6/28 incident: llm degrade + 429 storm
+ * caught live by self-monitoring. 全部为演示假数据。
+ * ============================================================= */
+:root {
+  --cyan:    #22d3ee;
+  --green:   #34d399;
+  --violet:  #a78bfa;
+  --orange:  #fb923c;
+  --red:     #f87171;
+  --cyan-lt: #a5f3fc;
+  --text:    #eaf2ff;
+  --muted:   #9fb2cc;
+  --label:   #cbd6e8;
+  --panel:       rgba(255, 255, 255, 0.045);
+  --panel-hover: rgba(255, 255, 255, 0.07);
+  --line:        rgba(255, 255, 255, 0.08);
+  --line-soft:   rgba(255, 255, 255, 0.05);
+  --font-num: "DIN Alternate", "Bahnschrift", "Segoe UI", sans-serif;
+  --font-ui: "Inter", "Noto Sans SC", -apple-system, BlinkMacSystemFont, sans-serif;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; }
+body {
+  font-family: var(--font-ui);
+  color: var(--text);
+  background: radial-gradient(120% 120% at 70% -10%, #11243f, #070c16 62%);
+  min-height: 100vh;
+  overflow-x: hidden;
+  font-size: 13px;
+}
+
+/* ── Atmosphere ────────────────────────────────────────────── */
+.atmo { position: fixed; inset: 0; z-index: 0; pointer-events: none; overflow: hidden; }
+.aurora { position: absolute; border-radius: 50%; filter: blur(64px); }
+.aurora--cyan   { width: 420px; height: 420px; left: -110px; top: -150px;
+  background: radial-gradient(circle, var(--cyan), transparent 62%); opacity: .28; }
+.aurora--violet { width: 460px; height: 460px; left: 38%; bottom: -230px;
+  background: radial-gradient(circle, var(--violet), transparent 62%); opacity: .22; }
+.aurora--red    { width: 380px; height: 380px; right: -130px; top: -60px;
+  background: radial-gradient(circle, var(--red), transparent 62%); opacity: .16;
+  animation: breathe 6s ease-in-out infinite; }
+@keyframes breathe { 0%,100% { opacity: .10; } 50% { opacity: .22; } }
+.gridlines {
+  position: absolute; inset: 0; opacity: .5;
+  background-image:
+    linear-gradient(rgba(255,255,255,.022) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,.022) 1px, transparent 1px);
+  background-size: 44px 44px;
+  mask-image: radial-gradient(80% 70% at 50% 30%, #000 30%, transparent 100%);
+  -webkit-mask-image: radial-gradient(80% 70% at 50% 30%, #000 30%, transparent 100%);
+}
+
+/* ── Command bar ───────────────────────────────────────────── */
+.cmd {
+  position: relative; z-index: 5;
+  display: flex; align-items: center; gap: 18px;
+  padding: 14px 22px 12px;
+  border-bottom: 1px solid var(--line-soft);
+  background: linear-gradient(180deg, rgba(9,15,28,.55), rgba(9,15,28,0));
+  backdrop-filter: blur(6px);
+}
+.brand { display: flex; align-items: center; gap: 12px; }
+.brand-glyph {
+  width: 34px; height: 34px; border-radius: 9px; position: relative;
+  background: linear-gradient(135deg, rgba(34,211,238,.22), rgba(167,139,250,.16));
+  border: 1px solid rgba(34,211,238,.35);
+  display: grid; place-items: center;
+}
+.brand-glyph svg { width: 19px; height: 19px; }
+.brand-name { font-size: 16px; font-weight: 700; letter-spacing: .5px; }
+.brand-name em { font-style: normal; color: var(--cyan); }
+.brand-sub { font-size: 10px; letter-spacing: 2.4px; color: var(--muted); text-transform: uppercase; margin-top: 2px; }
+
+.sysstate {
+  display: flex; align-items: center; gap: 10px;
+  padding: 7px 14px 7px 11px; border-radius: 999px;
+  border: 1px solid rgba(251, 146, 60, .45);
+  background: rgba(251, 146, 60, .10);
+}
+.sysstate .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--orange); position: relative; }
+.sysstate .dot::after {
+  content: ""; position: absolute; inset: -5px; border-radius: 50%;
+  border: 1.5px solid var(--orange); opacity: .7; animation: ping 1.6s ease-out infinite;
+}
+@keyframes ping { 0% { transform: scale(.5); opacity: .8; } 100% { transform: scale(1.5); opacity: 0; } }
+.sysstate b { color: var(--orange); font-size: 13px; letter-spacing: .5px; }
+.sysstate span { color: var(--muted); font-size: 11px; }
+
+.cmd-spacer { flex: 1; }
+
+.rangebar { display: flex; gap: 4px; padding: 3px; border-radius: 9px; border: 1px solid var(--line); background: rgba(255,255,255,.03); }
+.rangebar button {
+  border: 0; background: transparent; color: var(--muted); cursor: pointer;
+  font: 600 11px var(--font-ui); padding: 5px 11px; border-radius: 6px; letter-spacing: .3px;
+  transition: all .18s ease;
+}
+.rangebar button:hover { color: var(--label); }
+.rangebar button.on { background: rgba(34,211,238,.16); color: var(--cyan); }
+
+.cmd-meta { display: flex; align-items: center; gap: 14px; }
+.clock { font: 600 15px var(--font-num); color: var(--label); letter-spacing: 1px; font-variant-numeric: tabular-nums; }
+.mock-badge {
+  font-size: 10px; font-weight: 700; letter-spacing: 1.6px; color: #0b1220;
+  padding: 4px 10px; border-radius: 5px;
+  background: linear-gradient(90deg, var(--cyan-lt), var(--cyan));
+  text-transform: uppercase;
+}
+
+/* ── Shell layout ──────────────────────────────────────────── */
+.shell {
+  position: relative; z-index: 2;
+  display: grid;
+  grid-template-columns: 216px minmax(0, 1fr) 296px;
+  gap: 16px;
+  padding: 16px 22px 26px;
+  max-width: 1720px; margin: 0 auto;
+}
+
+/* ── Panels (shared) ───────────────────────────────────────── */
+.panel {
+  position: relative;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 14px 16px;
+  opacity: 0; transform: translateY(10px);
+  transition: background .2s ease;
+}
+.panel.lit { animation: rise .5s cubic-bezier(.2,.7,.3,1) forwards; }
+@keyframes rise { to { opacity: 1; transform: none; } }
+/* corner ticks — industrial marker */
+.panel::before, .panel::after {
+  content: ""; position: absolute; width: 14px; height: 14px; pointer-events: none;
+  border-color: rgba(34,211,238,.5); border-style: solid;
+}
+.panel::before { top: -1px; left: -1px; border-width: 1.5px 0 0 1.5px; border-radius: 14px 0 0 0; }
+.panel::after { bottom: -1px; right: -1px; border-width: 0 1.5px 1.5px 0; border-radius: 0 0 14px 0; }
+
+.ph { display: flex; align-items: baseline; gap: 8px; margin-bottom: 12px; }
+.ph .tick { width: 3px; height: 12px; border-radius: 2px; background: var(--cyan); align-self: center; }
+.ph h3 { font-size: 12.5px; font-weight: 700; letter-spacing: .8px; color: var(--label); }
+.ph .en { font-size: 9.5px; letter-spacing: 2px; color: rgba(159,178,204,.55); text-transform: uppercase; }
+.ph .right { margin-left: auto; font-size: 10.5px; color: var(--muted); }
+
+/* ── Layer spine (memorable anchor) ────────────────────────── */
+.spine { display: flex; flex-direction: column; gap: 10px; }
+.spine-head { padding: 2px 2px 0; }
+.spine-head h2 { font-size: 12.5px; letter-spacing: .8px; color: var(--label); font-weight: 700; }
+.spine-head p { font-size: 9.5px; letter-spacing: 2.2px; color: rgba(159,178,204,.5); text-transform: uppercase; margin-top: 3px; }
+
+.spine-track { position: relative; display: flex; flex-direction: column; gap: 10px; padding-left: 0; }
+.spine-track::before {
+  content: ""; position: absolute; left: 24px; top: 28px; bottom: 28px; width: 1.5px;
+  background: linear-gradient(180deg, rgba(34,211,238,.4), rgba(255,255,255,.07) 45%, rgba(255,255,255,.07));
+}
+.lnode {
+  position: relative;
+  display: grid; grid-template-columns: 34px 1fr; gap: 10px; align-items: start;
+  border: 1px solid var(--line); border-radius: 12px;
+  background: var(--panel);
+  padding: 11px 12px;
+  opacity: 0; transform: translateX(-10px);
+  cursor: pointer;
+  transition: border-color .2s ease, background .2s ease;
+}
+.lnode.lit { animation: slide .45s cubic-bezier(.2,.7,.3,1) forwards; }
+@keyframes slide { to { opacity: 1; transform: none; } }
+.lnode:hover { background: var(--panel-hover); }
+.lnode .ring {
+  width: 24px; height: 24px; border-radius: 50%; margin-top: 1px;
+  display: grid; place-items: center; position: relative; z-index: 2;
+  font: 700 8.5px var(--font-ui); letter-spacing: .5px;
+  border: 1.5px solid; background: #0a1322;
+}
+.lnode.ok    .ring { border-color: var(--green);  color: var(--green);  box-shadow: 0 0 10px rgba(52,211,153,.35); }
+.lnode.warn  .ring { border-color: var(--orange); color: var(--orange); box-shadow: 0 0 10px rgba(251,146,60,.35); }
+.lnode.crit  .ring { border-color: var(--red);    color: var(--red);    box-shadow: 0 0 12px rgba(248,113,113,.5); }
+.lnode.crit { border-color: rgba(248,113,113,.5); background: rgba(248,113,113,.06); }
+.lnode.crit .ring::after {
+  content: ""; position: absolute; inset: -6px; border-radius: 50%;
+  border: 1.5px solid var(--red); animation: ping 1.4s ease-out infinite;
+}
+.lnode h4 { font-size: 12.5px; font-weight: 700; color: var(--text); display: flex; align-items: center; gap: 6px; }
+.lnode h4 .en { font-size: 9px; font-weight: 600; letter-spacing: 1.6px; color: rgba(159,178,204,.55); }
+.lnode .kv { margin-top: 6px; display: flex; flex-direction: column; gap: 3px; }
+.lnode .kv div { display: flex; justify-content: space-between; font-size: 10.5px; color: var(--muted); }
+.lnode .kv b { font-family: var(--font-num); font-size: 11.5px; font-weight: 600; color: var(--label); font-variant-numeric: tabular-nums; }
+.lnode .kv b.up { color: var(--green); }
+.lnode .kv b.bad { color: var(--red); }
+.lnode .kv b.mid { color: var(--orange); }
+.lnode .statline { margin-top: 7px; height: 3px; border-radius: 2px; background: rgba(255,255,255,.07); overflow: hidden; }
+.lnode .statline i { display: block; height: 100%; border-radius: 2px; transform-origin: left; transform: scaleX(0); transition: transform 1s cubic-bezier(.2,.7,.3,1) .2s; }
+.lnode.lit .statline i { transform: scaleX(var(--w, 1)); }
+.lnode.ok   .statline i { background: var(--green); }
+.lnode.warn .statline i { background: var(--orange); }
+.lnode.crit .statline i { background: var(--red); }
+
+.spine-foot { border: 1px dashed rgba(255,255,255,.14); border-radius: 12px; padding: 11px 12px; opacity: 0; }
+.spine-foot.lit { animation: rise .5s ease forwards; }
+.spine-foot .row { display: flex; justify-content: space-between; align-items: center; font-size: 10.5px; color: var(--muted); }
+.spine-foot .row + .row { margin-top: 7px; }
+.spine-foot b { font-family: var(--font-num); color: var(--label); font-weight: 600; }
+.pill { display: inline-flex; align-items: center; gap: 5px; font-size: 9.5px; font-weight: 700; letter-spacing: .6px; padding: 2.5px 8px; border-radius: 999px; }
+.pill.on  { color: var(--green); background: rgba(52,211,153,.12); border: 1px solid rgba(52,211,153,.4); }
+.pill.on i { width: 5px; height: 5px; border-radius: 50%; background: var(--green); }
+
+/* ── Main canvas ───────────────────────────────────────────── */
+.canvas { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+
+/* KPI vitals */
+.kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
+.kpi { padding: 13px 15px 11px; }
+.kpi .tag { display: flex; align-items: center; justify-content: space-between; }
+.kpi .tag span { font-size: 11px; color: var(--muted); letter-spacing: .3px; }
+.kpi .tag .lyr { font-size: 8.5px; font-weight: 700; letter-spacing: 1px; padding: 2px 6px; border-radius: 4px; color: var(--cyan); background: rgba(34,211,238,.1); border: 1px solid rgba(34,211,238,.25); }
+.kpi .val { display: flex; align-items: baseline; gap: 6px; margin-top: 8px; }
+.kpi .val b { font: 600 30px/1 var(--font-num); letter-spacing: .5px; font-variant-numeric: tabular-nums; }
+.kpi .val small { font-size: 11px; color: var(--muted); }
+.kpi .delta { margin-top: 6px; font-size: 10.5px; display: flex; gap: 6px; align-items: center; }
+.kpi .delta b { font-weight: 700; }
+.kpi .delta .good { color: var(--green); } .kpi .delta .bad { color: var(--red); } .kpi .delta .mid { color: var(--orange); }
+.kpi .delta span { color: rgba(159,178,204,.6); }
+.kpi svg.spark { width: 100%; height: 30px; margin-top: 8px; overflow: visible; }
+.kpi.alarm { border-color: rgba(248,113,113,.55); background: rgba(248,113,113,.07); }
+.kpi.alarm::before, .kpi.alarm::after { border-color: rgba(248,113,113,.7); }
+.kpi.alarm .val b { color: var(--red); text-shadow: 0 0 18px rgba(248,113,113,.45); }
+.kpi.warned .val b { color: var(--orange); }
+.kpi.fine .val b { color: var(--text); }
+
+/* chart rows */
+.row-main { display: grid; grid-template-columns: minmax(0, 1.9fr) minmax(0, 1fr); gap: 14px; }
+.row-sub  { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr) minmax(0, .95fr); gap: 14px; }
+
+.legend { display: flex; gap: 14px; align-items: center; }
+.legend i { display: inline-flex; align-items: center; gap: 5px; font-size: 10px; color: var(--muted); font-style: normal; }
+.legend i::before { content: ""; width: 8px; height: 3px; border-radius: 2px; background: var(--c, var(--cyan)); }
+
+.chart-wrap { position: relative; }
+.chart-wrap svg { width: 100%; display: block; overflow: visible; }
+.axis-x { display: flex; justify-content: space-between; font-size: 9.5px; color: rgba(159,178,204,.55); margin-top: 6px; font-family: var(--font-num); }
+
+/* storm annotation flag */
+.flag {
+  position: absolute; top: 4px;
+  transform: translateX(-50%);
+  display: flex; flex-direction: column; align-items: center; gap: 3px;
+  pointer-events: none;
+}
+.flag .cap {
+  font-size: 9.5px; font-weight: 700; color: var(--red); letter-spacing: .4px;
+  background: rgba(248,113,113,.12); border: 1px solid rgba(248,113,113,.45);
+  padding: 3px 8px; border-radius: 5px; white-space: nowrap;
+  box-shadow: 0 4px 16px rgba(248,113,113,.2);
+}
+
+/* governance segmented bar */
+.seg { display: flex; height: 14px; border-radius: 7px; overflow: hidden; border: 1px solid var(--line); }
+.seg i { display: block; height: 100%; transform-origin: left; }
+.seg-legend { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 12px; margin-top: 11px; }
+.seg-legend div { display: flex; align-items: center; gap: 7px; font-size: 10.5px; color: var(--muted); }
+.seg-legend em { width: 8px; height: 8px; border-radius: 2.5px; font-style: normal; }
+.seg-legend b { margin-left: auto; font-family: var(--font-num); font-weight: 600; color: var(--label); font-variant-numeric: tabular-nums; }
+.divline { height: 1px; background: var(--line-soft); margin: 12px 0; }
+
+/* resource gauges */
+.gauges { display: flex; flex-direction: column; gap: 11px; }
+.gauge .top { display: flex; justify-content: space-between; font-size: 10.5px; color: var(--muted); margin-bottom: 5px; }
+.gauge .top b { font-family: var(--font-num); color: var(--label); font-weight: 600; font-variant-numeric: tabular-nums; }
+.gauge .bar { position: relative; height: 7px; border-radius: 4px; background: rgba(255,255,255,.07); }
+.gauge .bar i { position: absolute; inset: 0 auto 0 0; border-radius: 4px; background: linear-gradient(90deg, rgba(34,211,238,.7), var(--cyan)); transform-origin: left; transform: scaleX(0); transition: transform 1.1s cubic-bezier(.2,.7,.3,1) .3s; }
+.panel.lit .gauge .bar i { transform: scaleX(var(--w)); }
+.gauge .bar .th { position: absolute; top: -3px; bottom: -3px; width: 1.5px; background: rgba(248,113,113,.6); }
+.gauge.hot .bar i { background: linear-gradient(90deg, rgba(251,146,60,.7), var(--orange)); }
+
+/* datasource chips */
+.dsgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.ds {
+  display: flex; align-items: center; gap: 8px;
+  border: 1px solid var(--line); border-radius: 9px; padding: 8px 10px;
+  font-size: 11px; color: var(--label);
+}
+.ds i { width: 7px; height: 7px; border-radius: 50%; flex: none; }
+.ds.up i { background: var(--green); box-shadow: 0 0 8px rgba(52,211,153,.6); }
+.ds.down i { background: var(--red); box-shadow: 0 0 8px rgba(248,113,113,.6); animation: blink 1.2s step-end infinite; }
+@keyframes blink { 50% { opacity: .25; } }
+.ds.down { border-color: rgba(248,113,113,.4); color: var(--red); }
+.ds small { margin-left: auto; font-size: 9px; color: rgba(159,178,204,.55); font-family: var(--font-num); }
+.ds.self { border-color: rgba(34,211,238,.4); }
+.ds.self b { color: var(--cyan); font-weight: 700; }
+
+/* ── Event stream ──────────────────────────────────────────── */
+.events { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.efilters { display: flex; gap: 5px; flex-wrap: wrap; }
+.efilters button {
+  border: 1px solid var(--line); background: transparent; color: var(--muted);
+  font: 600 10px var(--font-ui); padding: 3.5px 9px; border-radius: 999px; cursor: pointer;
+  transition: all .15s ease;
+}
+.efilters button.on { border-color: rgba(34,211,238,.5); color: var(--cyan); background: rgba(34,211,238,.08); }
+.efilters button:hover { color: var(--label); }
+
+.feed { display: flex; flex-direction: column; gap: 8px; overflow: hidden; }
+.evt {
+  position: relative;
+  display: grid; grid-template-columns: 3px 1fr; gap: 10px;
+  border: 1px solid var(--line); border-radius: 10px;
+  background: rgba(255,255,255,.03);
+  padding: 9px 11px 9px 9px;
+  opacity: 0; transform: translateY(8px);
+}
+.evt.lit { animation: rise .4s ease forwards; }
+.evt .rail { border-radius: 2px; }
+.evt.err  .rail { background: var(--red); box-shadow: 0 0 8px rgba(248,113,113,.5); }
+.evt.warn .rail { background: var(--orange); }
+.evt.info .rail { background: var(--cyan); }
+.evt .l1 { display: flex; align-items: center; gap: 7px; }
+.evt .type { font: 700 11px var(--font-num); letter-spacing: .3px; }
+.evt.err  .type { color: var(--red); }
+.evt.warn .type { color: var(--orange); }
+.evt.info .type { color: var(--cyan); }
+.evt .cnt { font: 700 9.5px var(--font-num); color: var(--red); background: rgba(248,113,113,.13); border: 1px solid rgba(248,113,113,.4); padding: 1px 6px; border-radius: 999px; }
+.evt time { margin-left: auto; font: 500 10px var(--font-num); color: rgba(159,178,204,.6); font-variant-numeric: tabular-nums; }
+.evt p { margin-top: 4px; font-size: 11px; line-height: 1.5; color: var(--label); }
+.evt .meta { display: flex; gap: 8px; margin-top: 6px; align-items: center; }
+.evt .src { font-size: 9.5px; color: rgba(159,178,204,.6); letter-spacing: .3px; }
+.evt a.trace {
+  margin-left: auto; font-size: 9.5px; font-weight: 700; color: var(--cyan);
+  text-decoration: none; letter-spacing: .4px; display: inline-flex; gap: 3px; align-items: center;
+}
+.evt a.trace:hover { text-shadow: 0 0 12px rgba(34,211,238,.8); }
+.evt.resolved { opacity: .55 !important; }
+.evt .tagres { font-size: 9px; font-weight: 700; color: var(--green); border: 1px solid rgba(52,211,153,.4); padding: 1px 6px; border-radius: 999px; }
+
+/* P1 teaser */
+.teaser { border-style: dashed; text-align: left; }
+.teaser .lockrow { display: flex; align-items: center; gap: 9px; }
+.teaser .lock { width: 26px; height: 26px; border-radius: 8px; display: grid; place-items: center; background: rgba(167,139,250,.12); border: 1px solid rgba(167,139,250,.35); }
+.teaser h4 { font-size: 12px; color: var(--label); }
+.teaser h4 small { display: block; font-size: 9px; letter-spacing: 1.6px; color: rgba(159,178,204,.5); margin-top: 2px; text-transform: uppercase; }
+.teaser p { margin-top: 8px; font-size: 10.5px; line-height: 1.6; color: var(--muted); }
+.teaser .p1 { font-size: 9px; font-weight: 800; letter-spacing: 1px; color: var(--violet); background: rgba(167,139,250,.13); border: 1px solid rgba(167,139,250,.4); border-radius: 4px; padding: 2px 6px; margin-left: auto; }
+
+/* ── Responsive ────────────────────────────────────────────── */
+@media (max-width: 1360px) {
+  .shell { grid-template-columns: 200px minmax(0,1fr); }
+  .events { grid-column: 1 / -1; }
+  .feed { flex-direction: row; flex-wrap: wrap; }
+  .feed .evt { flex: 1 1 300px; }
+}
+@media (max-width: 980px) {
+  .shell { grid-template-columns: 1fr; }
+  .kpis { grid-template-columns: 1fr 1fr; }
+  .row-main, .row-sub { grid-template-columns: 1fr; }
+  .cmd { flex-wrap: wrap; }
+}
+</style>
+</head>
+<body>
+
+<div class="atmo">
+  <div class="aurora aurora--cyan"></div>
+  <div class="aurora aurora--violet"></div>
+  <div class="aurora aurora--red"></div>
+  <div class="gridlines"></div>
+</div>
+
+<!-- ═══════════ Command bar ═══════════ -->
+<header class="cmd">
+  <div class="brand">
+    <div class="brand-glyph">
+      <svg viewBox="0 0 24 24" fill="none">
+        <path d="M3 13 8 13 10 7 14 18 16 11 18 13 21 13" stroke="#22d3ee" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </div>
+    <div>
+      <div class="brand-name">QwenPaw <em>自监控</em></div>
+      <div class="brand-sub">Self Monitor · Mission Console</div>
+    </div>
+  </div>
+
+  <div class="sysstate">
+    <span class="dot"></span>
+    <b>受损运行 DEGRADED</b>
+    <span>L3 依赖层异常 · 其余 3 层正常</span>
+  </div>
+
+  <div class="cmd-spacer"></div>
+
+  <div class="rangebar" id="rangebar">
+    <button>15m</button><button class="on">1h</button><button>6h</button><button>24h</button><button>7d</button>
+  </div>
+
+  <div class="cmd-meta">
+    <div class="clock" id="clock">14:36:02</div>
+    <div class="mock-badge">设计稿 · 演示数据</div>
+  </div>
+</header>
+
+<div class="shell">
+
+  <!-- ═══════════ 左:四层健康脊柱 ═══════════ -->
+  <aside class="spine">
+    <div class="spine-head">
+      <h2>四层健康</h2>
+      <p>Layered Vitals</p>
+    </div>
+    <div class="spine-track">
+
+      <div class="lnode ok boot" style="--w:.982">
+        <div class="ring">L1</div>
+        <div>
+          <h4>体验层 <span class="en">UX</span></h4>
+          <div class="kv">
+            <div><span>会话成功率</span><b class="up">98.2%</b></div>
+            <div><span>首 token P95</span><b>1.9s</b></div>
+          </div>
+          <div class="statline"><i></i></div>
+        </div>
+      </div>
+
+      <div class="lnode warn boot" style="--w:.87">
+        <div class="ring">L2</div>
+        <div>
+          <h4>应用层 <span class="en">Agent</span></h4>
+          <div class="kv">
+            <div><span>技能成功率</span><b>96.4%</b></div>
+            <div><span>治理超时</span><b class="mid">3 次</b></div>
+          </div>
+          <div class="statline"><i></i></div>
+        </div>
+      </div>
+
+      <div class="lnode crit boot" style="--w:.41">
+        <div class="ring">L3</div>
+        <div>
+          <h4>依赖层 <span class="en">Deps</span></h4>
+          <div class="kv">
+            <div><span>LLM 429 / 1h</span><b class="bad">47 次</b></div>
+            <div><span>降级事件</span><b class="bad">12 起</b></div>
+          </div>
+          <div class="statline"><i></i></div>
+        </div>
+      </div>
+
+      <div class="lnode ok boot" style="--w:.94">
+        <div class="ring">L4</div>
+        <div>
+          <h4>资源层 <span class="en">Host</span></h4>
+          <div class="kv">
+            <div><span>Worker 存活</span><b class="up">2 / 2</b></div>
+            <div><span>内存 RSS</span><b>1.2G</b></div>
+          </div>
+          <div class="statline"><i></i></div>
+        </div>
+      </div>
+
+    </div>
+
+    <div class="spine-foot boot">
+      <div class="row"><span>/metrics 导出</span><span class="pill on"><i></i>被 n9e 抓取中</span></div>
+      <div class="row"><span>self_monitor.db</span><b>18.4 MB · 7d</b></div>
+      <div class="row"><span>rollup 周期</span><b>15s · 2 workers</b></div>
+    </div>
+  </aside>
+
+  <!-- ═══════════ 中:主画布 ═══════════ -->
+  <main class="canvas">
+
+    <!-- KPI vitals -->
+    <section class="kpis">
+      <div class="panel kpi alarm boot">
+        <div class="tag"><span>降级事件 degrade_events</span><i class="lyr">L3</i></div>
+        <div class="val"><b data-count="12">0</b><small>起 / 1h</small></div>
+        <div class="delta"><b class="bad">▲ +12</b><span>昨日同时段 0 起</span></div>
+        <svg class="spark" id="spark-degrade" viewBox="0 0 200 30" preserveAspectRatio="none"></svg>
+      </div>
+      <div class="panel kpi warned boot">
+        <div class="tag"><span>LLM 限流 429</span><i class="lyr">L3</i></div>
+        <div class="val"><b data-count="47">0</b><small>次 / 1h</small></div>
+        <div class="delta"><b class="mid">▲ 风暴</b><span>ctyun TPM · 暂停累计 96s</span></div>
+        <svg class="spark" id="spark-429" viewBox="0 0 200 30" preserveAspectRatio="none"></svg>
+      </div>
+      <div class="panel kpi fine boot">
+        <div class="tag"><span>Worker 存活</span><i class="lyr">L4</i></div>
+        <div class="val"><b>2<span style="color:var(--muted);font-size:18px"> / 2</span></b><small>UP</small></div>
+        <div class="delta"><b class="good">● 稳定</b><span>12:40 曾重启 worker-2</span></div>
+        <svg class="spark" id="spark-worker" viewBox="0 0 200 30" preserveAspectRatio="none"></svg>
+      </div>
+      <div class="panel kpi fine boot">
+        <div class="tag"><span>会话成功率</span><i class="lyr">L1</i></div>
+        <div class="val"><b data-count="98.2" data-dec="1">0</b><small>%</small></div>
+        <div class="delta"><b class="good">▼ -0.6pp</b><span>受 L3 降级轻微拖累</span></div>
+        <svg class="spark" id="spark-chat" viewBox="0 0 200 30" preserveAspectRatio="none"></svg>
+      </div>
+    </section>
+
+    <!-- main chart + governance -->
+    <section class="row-main">
+      <div class="panel boot">
+        <div class="ph">
+          <span class="tick"></span><h3>依赖层脉搏</h3><span class="en">LLM Requests · 24h</span>
+          <div class="right legend">
+            <i style="--c:#22d3ee">请求量</i><i style="--c:#fb923c">429</i><i style="--c:#f87171">降级</i>
+          </div>
+        </div>
+        <div class="chart-wrap">
+          <svg id="mainchart" viewBox="0 0 720 190" preserveAspectRatio="none" height="190"></svg>
+          <div class="flag" id="stormflag"><div class="cap">14:32 · 429 风暴 → component.degraded ×3</div></div>
+        </div>
+        <div class="axis-x"><span>14:00 昨</span><span>18:00</span><span>22:00</span><span>02:00</span><span>06:00</span><span>10:00</span><span>14:36 现在</span></div>
+      </div>
+
+      <div class="panel boot">
+        <div class="ph"><span class="tick"></span><h3>治理决策</h3><span class="en">Governance · 24h</span></div>
+        <div class="seg" id="govseg">
+          <i style="background:var(--green);  flex: 1841;"></i>
+          <i style="background:var(--cyan);   flex: 121;"></i>
+          <i style="background:var(--orange); flex: 34;"></i>
+          <i style="background:var(--red);    flex: 3;"></i>
+        </div>
+        <div class="seg-legend">
+          <div><em style="background:var(--green)"></em>allow<b>1,841</b></div>
+          <div><em style="background:var(--cyan)"></em>ask<b>121</b></div>
+          <div><em style="background:var(--orange)"></em>deny<b>34</b></div>
+          <div><em style="background:var(--red)"></em>timeout<b>3</b></div>
+        </div>
+        <div class="divline"></div>
+        <div class="ph" style="margin-bottom:8px"><span class="tick" style="background:var(--violet)"></span><h3>ReAct 迭代分布</h3><span class="en">P95 = 11</span></div>
+        <svg id="iterhist" viewBox="0 0 300 74" preserveAspectRatio="none" height="74" style="width:100%"></svg>
+        <div class="axis-x"><span>1</span><span>5</span><span>10</span><span>15</span><span>20</span><span>≥25 打转</span></div>
+      </div>
+    </section>
+
+    <!-- tokens + resources + datasources -->
+    <section class="row-sub">
+      <div class="panel boot">
+        <div class="ph">
+          <span class="tick" style="background:var(--green)"></span><h3>Token 用量</h3><span class="en">by hour</span>
+          <div class="right legend"><i style="--c:#22d3ee">prompt</i><i style="--c:#34d399">completion</i></div>
+        </div>
+        <svg id="tokenbars" viewBox="0 0 340 110" preserveAspectRatio="none" height="110" style="width:100%"></svg>
+        <div class="axis-x"><span>02</span><span>06</span><span>10</span><span>14时</span></div>
+      </div>
+
+      <div class="panel boot">
+        <div class="ph"><span class="tick"></span><h3>L4 资源</h3><span class="en">psutil · 15s</span></div>
+        <div class="gauges">
+          <div class="gauge"><div class="top"><span>CPU · 主机</span><b>34%</b></div><div class="bar"><i style="--w:.34"></i><span class="th" style="left:85%"></span></div></div>
+          <div class="gauge hot"><div class="top"><span>RSS · worker-2</span><b>1.2 / 2G</b></div><div class="bar"><i style="--w:.61"></i><span class="th" style="left:90%"></span></div></div>
+          <div class="gauge"><div class="top"><span>磁盘 · working</span><b>41%</b></div><div class="bar"><i style="--w:.41"></i><span class="th" style="left:88%"></span></div></div>
+          <div class="gauge"><div class="top"><span>日志 ERROR / 1h</span><b>18 条</b></div><div class="bar"><i style="--w:.22"></i><span class="th" style="left:70%"></span></div></div>
+        </div>
+      </div>
+
+      <div class="panel boot">
+        <div class="ph"><span class="tick" style="background:var(--violet)"></span><h3>数据源连通</h3><span class="en">connection_status</span></div>
+        <div class="dsgrid">
+          <div class="ds up"><i></i>inoe<small>42ms</small></div>
+          <div class="ds up"><i></i>n9e 夜莺<small>67ms</small></div>
+          <div class="ds down"><i></i>zgops cmdb<small>timeout</small></div>
+          <div class="ds up"><i></i>order 工单<small>103ms</small></div>
+          <div class="ds up self"><i></i><b>self: 自监控</b><small>2ms</small></div>
+          <div class="ds up"><i></i>proxy ×2<small>ok</small></div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- ═══════════ 右:事件流 ═══════════ -->
+  <aside class="events">
+    <div class="panel boot" style="padding-bottom:12px">
+      <div class="ph" style="margin-bottom:10px">
+        <span class="tick" style="background:var(--red)"></span><h3>事件流</h3><span class="en">Events</span>
+        <span class="right">今日 23 起 · 抑制合并 61</span>
+      </div>
+      <div class="efilters">
+        <button class="on">全部</button><button>error</button><button>warn</button><button>L3</button><button>已解决</button>
+      </div>
+    </div>
+
+    <div class="feed" id="feed">
+
+      <div class="evt err boot"><div class="rail"></div><div>
+        <div class="l1"><span class="type">component.degraded</span><span class="cnt">×3</span><time>14:32:11</time></div>
+        <p>大屏生成退回 industrial 模版:LLM 路径连续失败,critique 修订未通过。</p>
+        <div class="meta"><span class="src">L3 · ai_big_screen · worker-1</span><a class="trace" href="#">查看 trace →</a></div>
+      </div></div>
+
+      <div class="evt warn boot"><div class="rail"></div><div>
+        <div class="l1"><span class="type">llm.rate_limit_storm</span><span class="cnt">×47</span><time>14:31:48</time></div>
+        <p>ctyun TPM 限流:5 分钟窗口内 429 计 47 次,限流器全局暂停累计 96s。</p>
+        <div class="meta"><span class="src">L3 · retry_chat_model · 全 worker</span><a class="trace" href="#">指标详情 →</a></div>
+      </div></div>
+
+      <div class="evt warn boot"><div class="rail"></div><div>
+        <div class="l1"><span class="type">governance.deny_timeout</span><time>13:58:02</time></div>
+        <p>fde workspace 跨读判定 15s 超时 → 默认 DENY,已触发关键词兜底放行。</p>
+        <div class="meta"><span class="src">L2 · tool_guard · fde</span><a class="trace" href="#">查看 trace →</a></div>
+      </div></div>
+
+      <div class="evt err boot resolved"><div class="rail"></div><div>
+        <div class="l1"><span class="type">worker.restart</span><time>12:40:19</time><span class="tagres">已恢复</span></div>
+        <p>worker-2 RSS 触顶 1.9G 后无响应,supervisor 第 1 次拉起成功。</p>
+        <div class="meta"><span class="src">L4 · supervisor · worker-2</span><a class="trace" href="#">重启记录 →</a></div>
+      </div></div>
+
+      <div class="evt warn boot"><div class="rail"></div><div>
+        <div class="l1"><span class="type">datasource.down</span><span class="cnt">×9</span><time>11:07:33</time></div>
+        <p>zgops cmdb:31090 连接超时,大屏 CMDB 类能力自动降级为缓存快照。</p>
+        <div class="meta"><span class="src">L3 · connection_status</span><a class="trace" href="#">探活历史 →</a></div>
+      </div></div>
+
+      <div class="evt info boot resolved"><div class="rail"></div><div>
+        <div class="l1"><span class="type">portal.whitescreen</span><span class="cnt">×2</span><time>09:15:07</time></div>
+        <p>前端看门狗 beacon:ERR_NETWORK_CHANGED(aTrust VNIC 抖动),自动重载恢复。</p>
+        <div class="meta"><span class="src">L1 · portal watchdog</span><a class="trace" href="#">beacon →</a></div>
+      </div></div>
+
+    </div>
+
+    <div class="panel teaser boot">
+      <div class="lockrow">
+        <div class="lock">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none"><rect x="5" y="10" width="14" height="10" rx="2.5" stroke="#a78bfa" stroke-width="2"/><path d="M8 10V7a4 4 0 1 1 8 0v3" stroke="#a78bfa" stroke-width="2"/></svg>
+        </div>
+        <h4>告警规则 → 渠道推送<small>Alert Rules · Channels</small></h4>
+        <span class="p1">P1</span>
+      </div>
+      <p>「降级事件 &gt; 0 持续 5m → 钉钉 @值班」阈值 + 同比规则引擎,复用现有渠道。P0 先把数据备好。</p>
+    </div>
+  </aside>
+
+</div>
+
+<script>
+/* ── demo data (fabricated, re-enacting the 6/28 incident) ── */
+const H = 48; // 24h, 30min buckets
+const reqs=[], err429=[], degr=[];
+for (let i=0;i<H;i++){
+  const day=Math.sin((i/H)*Math.PI*2 - .9)*.5+.5;
+  // clamp: the storm-induced drop must not dive below the x-axis
+  reqs.push(Math.max(6, Math.round(40+150*day + 22*Math.sin(i*1.7) + (i>44? -30*(i-44):0))));
+  err429.push(i<44? (Math.random()<.14?Math.round(Math.random()*3):0) : [6,14,19,8][i-44]);
+  degr.push(i<45?0:[3,6,3][i-45]||0);
+}
+
+/* ── helpers ── */
+const NS="http://www.w3.org/2000/svg";
+function el(n,attrs,parent){const e=document.createElementNS(NS,n);for(const k in attrs)e.setAttribute(k,attrs[k]);parent&&parent.appendChild(e);return e;}
+function pts(data,W,Hh,pad=2){const mx=Math.max(...data)||1;return data.map((v,i)=>[i/(data.length-1)*W, Hh-pad-(v/mx)*(Hh-pad*2)]);}
+function polyline(svg,data,W,Hh,color,w=1.6,fill){
+  const p=pts(data,W,Hh);
+  if(fill){el("path",{d:"M"+p.map(q=>q.join(",")).join("L")+`L${W},${Hh}L0,${Hh}Z`,fill:fill},svg);}
+  const ln=el("polyline",{points:p.map(q=>q.join(",")).join(" "),fill:"none",stroke:color,"stroke-width":w,"stroke-linejoin":"round","stroke-linecap":"round"},svg);
+  const len=ln.getTotalLength?ln.getTotalLength():800;
+  ln.style.strokeDasharray=len; ln.style.strokeDashoffset=len;
+  ln.style.transition="stroke-dashoffset 1.6s cubic-bezier(.3,.6,.3,1) .35s";
+  requestAnimationFrame(()=>requestAnimationFrame(()=>ln.style.strokeDashoffset=0));
+}
+
+/* ── sparklines ── */
+function spark(id,data,color,fill){const s=document.getElementById(id);polyline(s,data,200,30,color,1.8,fill);}
+spark("spark-degrade",[0,0,0,0,0,0,0,0,0,1,0,0,2,5,8,12],"#f87171","rgba(248,113,113,.14)");
+spark("spark-429",[1,0,2,1,0,1,3,1,2,4,2,6,14,19,12,8],"#fb923c","rgba(251,146,60,.12)");
+spark("spark-worker",[2,2,2,2,2,2,2,2,1,2,2,2,2,2,2,2],"#34d399","rgba(52,211,153,.10)");
+spark("spark-chat",[99.4,99.1,99.3,98.9,99.2,99.0,98.8,99.1,98.4,98.9,98.7,98.2,97.6,97.9,98.1,98.2].map(v=>v-97),"#22d3ee","rgba(34,211,238,.10)");
+
+/* ── main chart: requests area + 429 bars + degrade markers ── */
+(function(){
+  const svg=document.getElementById("mainchart"), W=720, Hh=190;
+  for(let i=1;i<4;i++) el("line",{x1:0,y1:Hh*i/4,x2:W,y2:Hh*i/4,stroke:"rgba(255,255,255,.06)","stroke-width":1},svg);
+  polyline(svg,reqs,W,Hh,"#22d3ee",2,"rgba(34,211,238,.10)");
+  const mx4=Math.max(...err429)||1, bw=W/H*.44;
+  err429.forEach((v,i)=>{ if(!v)return;
+    const h=(v/mx4)*(Hh*.5), x=i/(H-1)*W-bw/2, y=Hh-h;
+    const r=el("rect",{x:x,y:Hh,width:bw,height:0,rx:1.5,fill:"rgba(251,146,60,.75)"},svg);
+    setTimeout(()=>{r.style.transition="all .7s cubic-bezier(.2,.7,.3,1)";r.setAttribute("y",y);r.setAttribute("height",h);},500+i*10);
+  });
+  degr.forEach((v,i)=>{ if(!v)return;
+    const x=i/(H-1)*W;
+    const c=el("circle",{cx:x,cy:14,r:0,fill:"#f87171"},svg);
+    el("line",{x1:x,y1:20,x2:x,y2:Hh,stroke:"rgba(248,113,113,.35)","stroke-width":1,"stroke-dasharray":"3 4"},svg);
+    setTimeout(()=>{c.style.transition="r .4s ease";c.setAttribute("r",4.5);},1300+i*60);
+  });
+  // storm markers sit at the far right edge — right-anchor the flag so it
+  // stays inside the panel instead of bleeding into the neighbour.
+  const flag=document.getElementById("stormflag");
+  flag.style.left="auto"; flag.style.right="4px"; flag.style.transform="none"; flag.style.alignItems="flex-end";
+})();
+
+/* ── iteration histogram ── */
+(function(){
+  const svg=document.getElementById("iterhist"), data=[4,18,34,42,31,22,14,9,6,4,3,2,2,1,1,1,0,1,0,0,0,1,0,2,3];
+  const W=300, Hh=74, mx=Math.max(...data), bw=W/data.length-2;
+  data.forEach((v,i)=>{
+    const h=v/mx*(Hh-6), x=i*(W/data.length)+1;
+    const hot=i>=20;
+    const r=el("rect",{x:x,y:Hh,width:bw,height:0,rx:2,fill:hot?"rgba(248,113,113,.8)":"rgba(167,139,250,.65)"},svg);
+    setTimeout(()=>{r.style.transition="all .6s cubic-bezier(.2,.7,.3,1)";r.setAttribute("y",Hh-h);r.setAttribute("height",h);},700+i*24);
+  });
+})();
+
+/* ── token stacked bars ── */
+(function(){
+  const svg=document.getElementById("tokenbars"), n=14;
+  const W=340, Hh=110, bw=W/n-5;
+  for(let i=0;i<n;i++){
+    const p=30+Math.random()*46, c=12+Math.random()*22, mx=110;
+    const hp=p/mx*(Hh-8), hc=c/mx*(Hh-8), x=i*(W/n)+2;
+    const r1=el("rect",{x:x,y:Hh,width:bw,height:0,rx:2.5,fill:"rgba(34,211,238,.6)"},svg);
+    const r2=el("rect",{x:x,y:Hh,width:bw,height:0,rx:2.5,fill:"rgba(52,211,153,.65)"},svg);
+    setTimeout(()=>{
+      r1.style.transition=r2.style.transition="all .7s cubic-bezier(.2,.7,.3,1)";
+      r1.setAttribute("y",Hh-hp); r1.setAttribute("height",hp);
+      r2.setAttribute("y",Hh-hp-hc-1.5); r2.setAttribute("height",hc);
+    },800+i*36);
+  }
+})();
+
+/* ── boot sequence: spine lights L4→L1 then panels stagger ── */
+(function(){
+  const nodes=[...document.querySelectorAll(".lnode")].reverse();
+  nodes.forEach((n,i)=>setTimeout(()=>n.classList.add("lit"), 150+i*170));
+  const foot=document.querySelector(".spine-foot"); setTimeout(()=>foot.classList.add("lit"), 150+4*170);
+  const panels=[...document.querySelectorAll(".canvas .panel, .events .panel, .events .evt")];
+  panels.forEach((p,i)=>setTimeout(()=>p.classList.add("lit"), 420+i*75));
+})();
+
+/* ── count-up KPIs ── */
+document.querySelectorAll("[data-count]").forEach(b=>{
+  const target=parseFloat(b.dataset.count), dec=+(b.dataset.dec||0), t0=performance.now(), dur=1400;
+  (function tick(t){
+    const k=Math.min(1,(t-t0)/dur), e=1-Math.pow(1-k,3);
+    b.textContent=(target*e).toFixed(dec);
+    if(k<1)requestAnimationFrame(tick);
+  })(t0);
+});
+
+/* ── live clock ── */
+setInterval(()=>{
+  const d=new Date();
+  document.getElementById("clock").textContent=[d.getHours(),d.getMinutes(),d.getSeconds()].map(v=>String(v).padStart(2,"0")).join(":");
+},1000);
+
+/* ── cosmetic interactivity (mock) ── */
+document.getElementById("rangebar").addEventListener("click",e=>{
+  if(e.target.tagName!=="BUTTON")return;
+  document.querySelectorAll("#rangebar button").forEach(b=>b.classList.remove("on"));
+  e.target.classList.add("on");
+});
+document.querySelectorAll(".efilters button").forEach(b=>b.addEventListener("click",()=>{
+  document.querySelectorAll(".efilters button").forEach(x=>x.classList.remove("on"));
+  b.classList.add("on");
+}));
+document.querySelectorAll("a.trace").forEach(a=>a.addEventListener("click",e=>e.preventDefault()));
+</script>
+</body>
+</html>
