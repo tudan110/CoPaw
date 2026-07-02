@@ -263,6 +263,7 @@ async def patch_screen_asset(
             selected_component_ids=list(request.selectedComponentIds or []),
             selected_region=request.selectedRegion or {},
             selection_context=request.selectionContext or {},
+            rendered_layout=request.renderedLayout or {},
             requested_by=str(request.requestedBy or "portal"),
             dry_run=preview,
         )

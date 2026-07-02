@@ -187,6 +187,11 @@ export function patchAiBigScreen(
     selectedComponentIds?: string[];
     selectedRegion?: Record<string, unknown>;
     selectionContext?: Record<string, unknown>;
+    /** actual on-screen geometry (grid-unit equivalent) keyed by component id */
+    renderedLayout?: Record<
+      string,
+      { x: number; y: number; w: number; h: number }
+    >;
     instruction: string;
     requestedBy?: string;
     /** dry-run: compute the diff on a copy without persisting/versioning. */

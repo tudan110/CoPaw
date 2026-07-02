@@ -23,6 +23,9 @@ class AiBigScreenPatchRequest(BaseModel):
     selectedComponentIds: list[str] = Field(default_factory=list)
     selectedRegion: dict[str, Any] = Field(default_factory=dict)
     selectionContext: dict[str, Any] = Field(default_factory=dict)
+    # actual on-screen geometry at request time, keyed by component id —
+    # see apply_patch()'s rendered_layout docstring
+    renderedLayout: dict[str, Any] = Field(default_factory=dict)
     instruction: str
     requestedBy: str = "portal"
     # preview mode: compute the patch on a copy and return the diff
