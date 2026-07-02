@@ -48,6 +48,15 @@ _EXPIRES_IN_UNIT_SECONDS = 60
 # against /userinfo. No phone number, no authorization code, no signing.
 _INOE_LOGIN_COOKIE = "Cnos-Inoe-Admin-Token"
 
+# INOE drops this alongside the token cookie at login — the same
+# ``expires_in`` (minutes) its native /login response carries. Only trust it
+# as an anchor at the moment we first see a given token (see setSession() on
+# the frontend, which keeps the previously-computed deadline instead of
+# re-deriving it on every revalidation) — INOE does not refresh this cookie
+# as time passes, so re-reading it later and treating it as "N minutes from
+# now" would keep pushing the deadline out indefinitely.
+_INOE_EXPIRES_IN_COOKIE = "Cnos-Inoe-Admin-Expires-In"
+
 
 def _canonical(params: dict[str, str]) -> str:
     """Join non-empty params as ``key=value&key=value`` sorted by key asc.
@@ -257,13 +266,16 @@ async def token_login(
         raise HTTPException(
             status_code=401, detail="未能从 INOE 获取用户信息,token 可能已失效"
         )
+    try:
+        expires_in_minutes = float(
+            request.cookies.get(_INOE_EXPIRES_IN_COOKIE) or 0
+        )
+    except (TypeError, ValueError):
+        expires_in_minutes = 0.0
     return {
         "access_token": token,
         "token_type": "Bearer",
-        # The INOE token carries its own expiry server-side; we don't learn
-        # it here, so 0 = "no client-known expiry" (the token still fails
-        # against /userinfo once INOE expires it).
-        "expires_in_seconds": 0,
+        "expires_in_seconds": int(expires_in_minutes * _EXPIRES_IN_UNIT_SECONDS),
         "user": user,
     }
 
