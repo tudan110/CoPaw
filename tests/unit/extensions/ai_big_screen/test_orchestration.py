@@ -267,3 +267,26 @@ def test_build_version_chains_base() -> None:
     )
     assert version["basedOnVersionId"] == "v1"
     assert version["screenId"] == "screen-x"
+
+
+def test_build_version_carries_summary_and_requested_by() -> None:
+    # T-014: every appended version must keep an audit trail (summary +
+    # requestedBy), mirroring the legacy changeSummary/changedBy fields.
+    version = build_version(
+        screen={"id": "screen-x", "versions": [], "components": []},
+        version_id="v1",
+        summary="改了标题",
+        requested_by="tester",
+    )
+    assert version["summary"] == "改了标题" == version["changeSummary"]
+    assert version["requestedBy"] == "tester" == version["changedBy"]
+
+
+def test_build_version_requested_by_defaults_to_portal() -> None:
+    version = build_version(
+        screen={"id": "screen-x", "versions": [], "components": []},
+        version_id="v1",
+        summary="生成草稿",
+        requested_by="   ",
+    )
+    assert version["requestedBy"] == "portal"

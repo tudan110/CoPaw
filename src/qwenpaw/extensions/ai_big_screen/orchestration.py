@@ -6,6 +6,7 @@ dataBindings, dataIntentPlan, visualPlan, versions) so the existing
 frontend (``adaptLegacyScreen`` + the workshop panel) keeps working
 unchanged while the pipeline internals are typed.
 """
+
 from __future__ import annotations
 
 import copy
@@ -157,7 +158,10 @@ def _infer_intent_kind(
     if (
         analysis_mode
         or component_type == "risk-pulse"
-        or any(term in text for term in ("分析", "风险", "高危", "危险", "异常", "根因"))
+        or any(
+            term in text
+            for term in ("分析", "风险", "高危", "危险", "异常", "根因")
+        )
     ):
         return "analysis"
     keyword_kinds = (
@@ -198,7 +202,10 @@ def _infer_time_intent(
         or str(query_params.get("timeMode") or "") == "relative"
     ):
         return "relative"
-    if any(term in text for term in ("当前", "目前", "现在", "实时", "活动", "有哪些")):
+    if any(
+        term in text
+        for term in ("当前", "目前", "现在", "实时", "活动", "有哪些")
+    ):
         return "current"
     if "最近" in text or "分钟" in text or "小时" in text:
         return "relative"
@@ -434,13 +441,21 @@ def build_version(
     requested_by: str = "portal",
 ) -> dict[str, Any]:
     versions = screen.get("versions") or [{}]
+    change_summary = str(summary or "")
+    changed_by = str(requested_by or "portal").strip() or "portal"
     return {
         "versionId": version_id,
         "screenId": str(screen.get("id") or ""),
         "configSnapshot": _snapshot_screen(screen),
-        "changeSummary": summary,
-        "changedBy": str(requested_by or "portal").strip() or "portal",
+        "changeSummary": change_summary,
+        "changedBy": changed_by,
         "changedByAi": True,
+        # T-014: additive audit fields — mirror changeSummary/changedBy under
+        # the summary/requestedBy names the version-history surface reads, so
+        # every newly appended version keeps a non-null trail of what changed
+        # and who asked. Existing stored versions are not backfilled.
+        "summary": change_summary,
+        "requestedBy": changed_by,
         "createdAt": now_iso(),
         "basedOnVersionId": str(versions[-1].get("versionId") or ""),
     }
