@@ -57,8 +57,15 @@ class EventBus:
         self._pending: list[Event] = []
         self._max_pending = max_pending
         self._dedup_window = dedup_window
-        # dedup_key -> pending Event still eligible for merging
+        # dedup_key -> pending Event still eligible for count-merging
         self._recent: dict[str, Event] = {}
+        # dedup_key -> last-seen ts for ALREADY-FLUSHED events.  A
+        # persistent condition (datasource down, disk high) re-emitted
+        # every rollup tick must not append one row per tick: within a
+        # sliding window repeats are swallowed, so a condition surfaces
+        # once per onset and again only after it has been quiet for a
+        # full window.  Continuous state lives in gauges, not events.
+        self._suppressed: dict[str, float] = {}
         self._dropped = 0
 
     def emit(
@@ -86,6 +93,11 @@ class EventBus:
                     merged.count += 1
                     merged.ts = now
                     return
+                flushed_ts = self._suppressed.get(key)
+                if flushed_ts is not None and now - flushed_ts <= self._dedup_window:
+                    # Already persisted this window; slide and swallow.
+                    self._suppressed[key] = now
+                    return
                 if len(self._pending) >= self._max_pending:
                     self._dropped += 1
                     return
@@ -107,13 +119,23 @@ class EventBus:
     def drain(self) -> tuple[list[Event], int]:
         """Return (pending events, dropped-since-last-drain) and reset.
 
-        Once drained an event row is persisted; later duplicates within
-        the window start a fresh row (documented trade-off — keeps the
-        hot path lock-cheap and the store append-only).
+        Drained events move into the sliding suppression map: repeats of
+        the same ``dedup_key`` are swallowed until the signal has been
+        quiet for a full window (``count`` therefore reflects merges up
+        to the first flush; exact totals belong to metrics).
         """
         with self._lock:
             events, self._pending = self._pending, []
             dropped, self._dropped = self._dropped, 0
+            now = time.time()
+            for event in events:
+                self._suppressed[event.dedup_key] = event.ts
+            # bound the map: expired keys can be forgotten
+            self._suppressed = {
+                key: ts
+                for key, ts in self._suppressed.items()
+                if now - ts <= self._dedup_window
+            }
             self._recent.clear()
             return events, dropped
 

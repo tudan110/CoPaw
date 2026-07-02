@@ -81,8 +81,19 @@ def test_event_dedup_merges_within_window():
     by_type = {e.type: e for e in events}
     assert by_type["llm.rate_limit_storm"].count == 5
     assert by_type["other"].count == 1
-    # window resets after drain — a new row starts
+    # already-flushed keys stay suppressed inside the sliding window —
+    # a persistent condition must not append one row per rollup tick
     bus.emit("llm.rate_limit_storm", dedup_key="k1")
+    events, _ = bus.drain()
+    assert events == []
+
+
+def test_event_suppression_expires_after_quiet_window():
+    bus = EventBus(dedup_window=0.02)
+    bus.emit("datasource.down", dedup_key="ds")
+    assert len(bus.drain()[0]) == 1
+    time.sleep(0.05)  # quiet for a full window → next onset is a new row
+    bus.emit("datasource.down", dedup_key="ds")
     events, _ = bus.drain()
     assert len(events) == 1 and events[0].count == 1
 
