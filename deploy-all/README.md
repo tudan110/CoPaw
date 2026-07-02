@@ -129,13 +129,30 @@ helm install cnos-inoe-agent ./deploy-all/helm/cnos-inoe-agent \
 # 实际部署示例 -- 大装置
 helm install cnos-inoe-agent ./cnos-inoe-agent-1.0.0.tgz -n cnos-iomp \
   --set-string digital-workforce-portal.env.PORTAL_APP_TITLE="智观 AI" \
+  --set-string digital-workforce-portal.env.PORTAL_SSO_ENABLED="true" \
   --set-string qwenpaw.env.INOE_API_BASE_URL="http://192.168.134.96:30080"
 
 # 实际部署示例 -- 北京环境
 helm install cnos-inoe-agent ./cnos-inoe-agent-1.0.0.tgz -n cnos-iomp \
   --set-string digital-workforce-portal.env.PORTAL_APP_TITLE="智观 AI" \
+  --set-string digital-workforce-portal.env.PORTAL_SSO_ENABLED="true" \
   --set-string qwenpaw.env.INOE_API_BASE_URL="http://10.3.39.246:30080"
 ```
+
+### 单点登录（SSO）
+
+标准 k3s 部署下 portal 固定在 `:30083`，INOE 前端固定在 `:30081`，二者同主机，
+所以开启 SSO 只需要一个开关，无需额外配置登录地址或端口：
+
+```bash
+helm install cnos-inoe-agent ./cnos-inoe-agent-1.0.0.tgz -n cnos-iomp \
+  --set-string digital-workforce-portal.env.PORTAL_APP_TITLE="智观 AI" \
+  --set-string digital-workforce-portal.env.PORTAL_SSO_ENABLED="true"
+```
+
+Portal 会自动推导 INOE 登录地址为 `http://<当前访问的 host>:30081/login`。只有
+INOE 前端不在标准 `30081` 端口，或者跟 portal 不同主机时，才需要额外覆盖
+`PORTAL_SSO_INOE_PORT` / `PORTAL_SSO_LOGIN_URL`（见下方环境变量表）。
 
 ### 常用环境变量设置
 
@@ -144,6 +161,7 @@ helm install cnos-inoe-agent ./cnos-inoe-agent-1.0.0.tgz -n cnos-iomp \
 ```bash
 helm install cnos-inoe-agent ./cnos-inoe-agent-1.0.0.tgz -n cnos-iomp \
   --set-string digital-workforce-portal.env.PORTAL_APP_TITLE="智观 AI" \
+  --set-string digital-workforce-portal.env.PORTAL_SSO_ENABLED="true" \
   --set-string qwenpaw.env.INOE_API_BASE_URL="http://192.168.134.96:30080" \
   --set-string qwenpaw.env.INOE_API_TOKEN="<your_jwt_token>" \
   --set-string qwenpaw.env.INOE_API_TIMEOUT="60" \
@@ -160,6 +178,9 @@ helm install cnos-inoe-agent ./cnos-inoe-agent-1.0.0.tgz -n cnos-iomp \
 | 变量 | 说明 | 默认值 |
 |------|------|--------|
 | `PORTAL_APP_TITLE` | Portal 页面标题 | - |
+| `PORTAL_SSO_ENABLED` | 是否启用 INOE 单点登录（`true`/`false`） | `false` |
+| `PORTAL_SSO_INOE_PORT` | INOE 前端 NodePort（同主机部署时用于自动推导登录地址，一般无需设置） | `30081` |
+| `PORTAL_SSO_LOGIN_URL` | INOE 登录页完整地址（跟 portal 不同主机，或端口非标准时才需要，格式 `http://<ip>:<port>/login`） | - |
 | `INOE_API_BASE_URL` | 智观告警平台接口地址 | `http://192.168.134.96:30080` |
 | `INOE_API_TOKEN` | 智观平台 JWT Token | - |
 | `INOE_API_TIMEOUT` | 接口请求超时(秒) | `60` |
