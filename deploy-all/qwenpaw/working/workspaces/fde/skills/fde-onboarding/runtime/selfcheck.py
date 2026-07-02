@@ -116,10 +116,15 @@ def _todo(skill_dir: Path) -> list[str]:
             pass
     env_example = skill_dir / ".env.example"
     if env_example.exists():
+        # 兼容历史遗留的 .env.example（新骨架已不再产出）：把变量名当作待配置
+        # 字段列出，但引导去门户设置页配 settings store，不再走复制 .env 的老路。
         for line in env_example.read_text(encoding="utf-8").splitlines():
             line = line.strip()
             if line and not line.startswith("#") and line.endswith("="):
-                items.append(f"需要填写凭证：{line[:-1]}（复制 .env.example 为 .env 后填）")
+                items.append(
+                    f"需要配置连接凭证：{line[:-1]}"
+                    "（在门户设置页为该外部系统新建 settings store 字段并填值，不要塞 .env）"
+                )
     adapters = skill_dir / "runtime" / "tool_adapters.py"
     if adapters.exists() and "mock-or-real" in adapters.read_text(encoding="utf-8"):
         items.append("runtime/tool_adapters.py 仍是占位实现，需要接上真实接口")

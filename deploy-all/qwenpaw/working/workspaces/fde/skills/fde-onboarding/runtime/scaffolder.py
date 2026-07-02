@@ -67,13 +67,13 @@ def _render(text: str, values: dict[str, str]) -> str:
     return text
 
 
-_TEXT_SUFFIXES = {".py", ".md", ".txt", ".json", ".yaml", ".yml", ".example", ".cfg", ".ini", ".env"}
+_TEXT_SUFFIXES = {".py", ".md", ".txt", ".json", ".yaml", ".yml", ".example", ".cfg", ".ini"}
 
 
 def _is_text_file(path: Path) -> bool:
     if path.suffix in _TEXT_SUFFIXES:
         return True
-    return path.name in {".env.example", ".gitkeep"}
+    return path.name in {".gitkeep"}
 
 
 def scaffold_skill(
