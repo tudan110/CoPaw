@@ -950,6 +950,65 @@ def _dedupe_simple_query_components(
     return deduped
 
 
+def _fill_uncovered_clauses(
+    components: list[PlanComponent],
+    *,
+    prompt: str,
+) -> list[PlanComponent]:
+    """Patch any substantive clause left unrepresented by ``components``.
+
+    General on purpose — not a per-topic keyword whitelist. Reuses the
+    same clause split + noise-stripping already used by
+    ``_has_uncovered_request`` to decide fast-path routing, but applies it
+    *after* a plan (guardrail or LLM) is built: any clause with real
+    content that matches no known capability is either a genuine
+    public-web ask (→ a real ``web-live-data`` component, still fetchable)
+    or something we truly can't serve (→ an honest ``capability-gap``).
+    Weather was one example that used to vanish silently; this closes the
+    same hole for any other topic (an internal system name, a vendor API,
+    whatever the user happens to ask for next).
+    """
+    clauses = [
+        c.strip()
+        for c in _REQUEST_SPLIT_RE.split(str(prompt or ""))
+        if c.strip()
+    ]
+    if len(clauses) <= 1:
+        return components
+    present = {component.capability_id for component in components}
+    out = list(components)
+    seen_web_queries: set[str] = set()
+    for clause in clauses:
+        if extract_semantic_capability_ids(clause):
+            continue
+        if not _clause_has_substance(clause):
+            continue
+        if _text_is_web_live(clause):
+            if "web-live-data" in present:
+                continue
+            query = _WEB_QUERY_LEADING_RE.sub("", clause).strip()[:60]
+            if not query or query in seen_web_queries:
+                continue
+            seen_web_queries.add(query)
+            appended = build_web_live_component(query=query, index=len(out))
+            if appended is not None:
+                out.append(appended)
+                present.add("web-live-data")
+            continue
+        if "capability-gap" in present:
+            continue
+        out.append(
+            build_capability_gap_component(
+                index=len(out),
+                requested_data=clause,
+                reason="该数据需求未匹配到已接入能力，也非公开互联网可查信息",
+                query_params={},
+            )
+        )
+        present.add("capability-gap")
+    return out
+
+
 # ---------------------------------------------------------------------------
 # plan building
 # ---------------------------------------------------------------------------
@@ -986,6 +1045,7 @@ def build_guardrail_plan(
         )
         if component is not None:
             components.append(component)
+    components = _fill_uncovered_clauses(components, prompt=prompt)
     if not components:
         components = [
             build_capability_gap_component(
@@ -1039,6 +1099,7 @@ def _normalize_llm_plan(
         prompt=prompt,
         components=components,
     )
+    components = _fill_uncovered_clauses(components, prompt=prompt)
     if not components:
         components = [
             build_capability_gap_component(

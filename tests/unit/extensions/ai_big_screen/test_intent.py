@@ -384,3 +384,81 @@ class TestWebLiveRouting:
         )
         assert pc.capability_id == "web-live-data"  # not capability-gap
         assert pc.query_params.get("query") == "南京天气"
+
+
+class TestUncoveredClauseCompleteness:
+    """_fill_uncovered_clauses is a general post-hoc completeness patch,
+    not a topic-specific keyword list — these deliberately avoid weather
+    (already covered by TestWebLiveRouting) to prove the mechanism
+    generalizes to any unregistered data ask."""
+
+    def test_guardrail_flags_unregistered_clause_as_gap(self) -> None:
+        plan = intent.build_guardrail_plan(
+            prompt="查询最近工单，告警以及库存管理系统的库存周转率",
+            title="",
+        )
+        caps = [c.capability_id for c in plan.components]
+        assert "workorders" in caps
+        assert "real-alarms" in caps
+        gap = next(
+            c for c in plan.components if c.capability_id == "capability-gap"
+        )
+        assert "库存周转率" in gap.query_params.get("requestedData", "")
+
+    def test_guardrail_fully_covered_prompt_has_no_gap(self) -> None:
+        plan = intent.build_guardrail_plan(
+            prompt="查询工单和告警",
+            title="",
+        )
+        caps = [c.capability_id for c in plan.components]
+        assert "capability-gap" not in caps
+
+    async def test_llm_path_patches_clause_llm_forgot(self) -> None:
+        # The LLM only answered "工单" and silently dropped the other
+        # clause — normalization must catch what the guardrail's own
+        # routing (_has_uncovered_request) flagged before the call.
+        model = SpyModel(
+            [
+                _llm_plan(
+                    [
+                        {
+                            "title": "工单",
+                            "capabilityId": "workorders",
+                            "visualType": "table",
+                        },
+                    ],
+                ),
+            ],
+        )
+        plan = await build_screen_plan(
+            "查询工单，以及库存管理系统的库存周转率",
+            model=model,
+        )
+        assert model.calls == 1
+        gap = next(
+            c for c in plan.components if c.capability_id == "capability-gap"
+        )
+        assert "库存周转率" in gap.query_params.get("requestedData", "")
+
+    async def test_llm_path_no_gap_when_already_complete(self) -> None:
+        model = SpyModel(
+            [
+                _llm_plan(
+                    [
+                        {
+                            "title": "工单",
+                            "capabilityId": "workorders",
+                            "visualType": "table",
+                        },
+                        {
+                            "title": "告警",
+                            "capabilityId": "real-alarms",
+                            "visualType": "table",
+                        },
+                    ],
+                ),
+            ],
+        )
+        plan = await build_screen_plan("查询工单和告警", model=model)
+        caps = {c.capability_id for c in plan.components}
+        assert "capability-gap" not in caps
