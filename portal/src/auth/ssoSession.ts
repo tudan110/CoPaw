@@ -72,8 +72,19 @@ export function setSession(input: {
   user?: SsoUser | null;
   expiresInSeconds?: number;
 }): void {
+  // INOE's expires_in is a countdown from when *it* issued the token, not
+  // from "now" — the value doesn't change as time passes. If we recomputed
+  // expireAt as Date.now() + expiresInSeconds on every revalidation of the
+  // *same* token, the deadline would keep sliding into the future and never
+  // actually arrive. Anchor it once, the first time we see a given token,
+  // and keep that fixed point on subsequent calls for the same token.
+  const previous = getSession();
   safeSet(TOKEN_KEY, input.token);
   safeSet(USER_KEY, JSON.stringify(input.user ?? {}));
+  if (previous && previous.token === input.token && previous.expireAt > 0) {
+    safeSet(EXPIRE_KEY, String(previous.expireAt));
+    return;
+  }
   const expiresInSeconds = Number(input.expiresInSeconds || 0);
   const expireAt =
     expiresInSeconds > 0 ? Date.now() + expiresInSeconds * 1000 : 0;
