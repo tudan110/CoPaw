@@ -10,6 +10,7 @@ import {
   type PortalEmployeeRuntimeStatus,
 } from "../../api/portalEmployeeStatus";
 import { portalAppTitle, portalGatewayAgentId } from "../../config/portalBranding";
+import { getInoeFrontendOrigin } from "../../auth/ssoConfig";
 export const sidebarEmployeePriority = [
   "query",
   "fault",
@@ -55,11 +56,8 @@ export function postPortalCloseDrawerMessage() {
   }
 }
 
-export const TRADITIONAL_VIEW_PORT = "30081";
-
 export function navigateToTraditionalView() {
-  const { protocol, hostname } = window.location;
-  const url = `${protocol}//${hostname}:${TRADITIONAL_VIEW_PORT}/`;
+  const url = `${getInoeFrontendOrigin()}/`;
   const target = window.top ?? window;
   target.location.href = url;
 }
