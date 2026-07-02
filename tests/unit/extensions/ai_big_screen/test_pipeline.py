@@ -82,6 +82,20 @@ class TestDraftPipeline:
         intents = screen["aiConversationContext"]["dataIntentPlan"]["intents"]
         assert intents[0]["dataQuality"] == "live"
 
+    async def test_draft_carries_non_empty_banner_title(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        # T-015: a fast-path draft (no LLM) still names its banner from the
+        # prompt heuristic instead of leaving screen.title blank.
+        _mock_workorders(monkeypatch)
+        screen = await run_draft_pipeline(
+            prompt="查询今日工单",
+            model=FakeModel(),
+        )
+        assert screen["title"]
+        assert "查询" not in screen["title"]
+
     async def test_fetch_once_across_same_capability_components(
         self,
         monkeypatch: pytest.MonkeyPatch,

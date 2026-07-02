@@ -6,8 +6,12 @@ from typing import Any
 
 from qwenpaw.extensions.ai_big_screen import intent
 from qwenpaw.extensions.ai_big_screen.intent import (
+    DEFAULT_SCREEN_NAME,
+    MAX_SCREEN_TITLE_LENGTH,
     build_guardrail_plan,
     build_screen_plan,
+    clamp_screen_title,
+    derive_screen_title,
     extract_lookback_minutes,
     extract_semantic_capability_ids,
     should_use_semantic_fast_path,
@@ -462,3 +466,102 @@ class TestUncoveredClauseCompleteness:
         plan = await build_screen_plan("查询工单和告警", model=model)
         caps = {c.capability_id for c in plan.components}
         assert "capability-gap" not in caps
+
+
+class TestScreenTitleHeuristic:
+    def test_strips_leading_verb(self) -> None:
+        title = derive_screen_title("查询最近15分钟告警")
+        assert title
+        assert "查询" not in title
+        assert "最近15分钟告警" == title
+
+    def test_strips_big_screen_noun(self) -> None:
+        title = derive_screen_title("做一个日志和告警的综合分析大屏")
+        assert title
+        assert "大屏" not in title
+        assert "综合分析" in title
+
+    def test_override_wins(self) -> None:
+        assert derive_screen_title("查询告警", "NOC 一号屏") == "NOC 一号屏"
+
+    def test_empty_after_strip_falls_back_to_default(self) -> None:
+        assert derive_screen_title("大屏") == DEFAULT_SCREEN_NAME
+
+    def test_heuristic_truncates_to_20(self) -> None:
+        title = derive_screen_title("告警" * 40)
+        assert 0 < len(title) <= 20
+
+    def test_clamp_bounds_to_max(self) -> None:
+        clamped = clamp_screen_title("屏" * 100)
+        assert len(clamped) == MAX_SCREEN_TITLE_LENGTH
+
+
+class TestScreenTitlePlan:
+    async def test_llm_screen_title_lands_on_plan(self) -> None:
+        model = SpyModel(
+            [
+                _llm_plan(
+                    [
+                        {
+                            "title": "告警",
+                            "capabilityId": "real-alarms",
+                            "visualType": "table",
+                        },
+                    ],
+                    screenTitle="核心告警态势",
+                ),
+            ],
+        )
+        plan = await build_screen_plan(
+            "做一个日志和告警的综合分析大屏",
+            model=model,
+        )
+        assert plan.screen_title == "核心告警态势"
+
+    async def test_llm_without_screen_title_uses_heuristic(self) -> None:
+        model = SpyModel(
+            [
+                _llm_plan(
+                    [
+                        {
+                            "title": "告警",
+                            "capabilityId": "real-alarms",
+                            "visualType": "table",
+                        },
+                    ],
+                ),
+            ],
+        )
+        plan = await build_screen_plan(
+            "做一个日志和告警的综合分析大屏",
+            model=model,
+        )
+        assert plan.screen_title
+        assert "大屏" not in plan.screen_title
+
+    async def test_requested_title_wins_screen_title(self) -> None:
+        spy = SpyModel()
+        plan = await build_screen_plan(
+            "查询最近15分钟告警",
+            title="NOC 一号屏",
+            model=spy,
+        )
+        assert plan.screen_title == "NOC 一号屏"
+
+    def test_guardrail_screen_title_non_empty(self) -> None:
+        plan = build_guardrail_plan(
+            prompt="帮我做一个量子计算监控大屏",
+            title="",
+        )
+        assert plan.screen_title
+        assert "监控大屏" not in plan.screen_title
+
+    async def test_degraded_fallback_screen_title_non_empty(self) -> None:
+        model = SpyModel(["不是 JSON", "还不是 JSON", "依旧不是 JSON"])
+        plan = await build_screen_plan(
+            "做一个日志和告警的综合分析大屏",
+            model=model,
+            max_repair=2,
+        )
+        assert plan.degraded is True
+        assert plan.screen_title
