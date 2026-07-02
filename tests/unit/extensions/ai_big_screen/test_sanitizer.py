@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
+from qwenpaw.extensions.ai_big_screen.capabilities.fields import safe_int
 from qwenpaw.extensions.ai_big_screen.sanitizer import (
     safe_visual_token,
     sanitize_component_style,
@@ -398,3 +399,32 @@ class TestComponentStyle:
         )
         assert spec["composition"] == "primary"
         assert spec["style"] == {"sizeScale": 1.5}
+
+
+class TestSafeInt:
+    def test_plain_and_string_integers(self) -> None:
+        assert safe_int(42, -1) == 42
+        assert safe_int("42", -1) == 42
+        assert safe_int("  7  ", -1) == 7  # int() strips surrounding space
+
+    def test_large_numbers_pass_through(self) -> None:
+        big = 10**30
+        assert safe_int(big, -1) == big
+        assert safe_int("9" * 40, -1) == int("9" * 40)
+
+    def test_negative_numbers(self) -> None:
+        assert safe_int(-7, 0) == -7
+        assert safe_int("-7", 0) == -7
+
+    def test_floats_truncate_toward_zero(self) -> None:
+        assert safe_int(3.9, -1) == 3
+        assert safe_int(-3.9, -1) == -3
+
+    def test_non_numeric_returns_fallback(self) -> None:
+        # Numeric-looking strings with a decimal point are NOT valid ints.
+        assert safe_int("3.14", -1) == -1
+        assert safe_int("abc", 99) == 99
+        assert safe_int("", 5) == 5
+        assert safe_int(None, 5) == 5
+        assert safe_int([], 5) == 5
+        assert safe_int({}, 5) == 5
