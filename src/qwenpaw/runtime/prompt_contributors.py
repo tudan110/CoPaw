@@ -291,6 +291,64 @@ class DriverPolicyHintContributor(SyncPromptContributor):
 
 
 # ---------------------------------------------------------------------------
+# Tool-usage discipline (anti tool-storm / anti shell-flail)
+# ---------------------------------------------------------------------------
+
+_TOOL_DISCIPLINE_ZH = (
+    "# 工具使用纪律\n"
+    "\n"
+    "- **优先使用专门的技能/工具**完成任务；不要用 `execute_shell_command` "
+    "去硬凑本应由专门技能承载的查询（资源统计、告警、CMDB、设备清单、"
+    "工单等）。不确定用哪个技能时，先看已启用技能的说明再选，不要反复 "
+    "shell 试探。\n"
+    "- **不要用相同参数重复调用同一个工具**：某次调用已返回结果就直接复用，"
+    "不要为“确认”而重复执行。\n"
+    "- 工具**返回空 / 报错**时不要盲目重试或狂换工具：最多换一次不同的参数或"
+    "方法；仍拿不到有效数据就**停下来**，明确告诉用户「未查询到该数据 / "
+    "数据源暂不可用」并说明已尝试的途径。\n"
+    "- 让工具调用**收敛**：连续几步没有获得新信息就停止调用、基于已有信息"
+    "给结论。宁可如实说“查不到”，也不要无休止地试。"
+)
+
+_TOOL_DISCIPLINE_EN = (
+    "# Tool-usage discipline\n"
+    "\n"
+    "- **Prefer the dedicated skill/tool** for a task; do NOT brute-force "
+    "with `execute_shell_command` a query that a dedicated skill should "
+    "handle (resource stats, alarms, CMDB, device lists, work orders, "
+    "etc.). If unsure which skill fits, read the enabled skills' "
+    "descriptions first instead of probing with the shell repeatedly.\n"
+    "- **Never repeat the same tool call with identical arguments**: if a "
+    "call already returned a result, reuse it — do not re-run it to "
+    "\"confirm\".\n"
+    "- When a tool returns empty / errors, do NOT blindly retry or thrash "
+    "between tools: try a different parameter or method at most once; if "
+    "there is still no usable data, **stop** and tell the user plainly "
+    "that it was not found / the data source is unavailable, noting what "
+    "you tried.\n"
+    "- Keep tool use **convergent**: if several steps yield no new "
+    "information, stop calling tools and answer from what you have. It is "
+    "better to honestly say \"not found\" than to retry endlessly."
+)
+
+
+class ToolDisciplineContributor(SyncPromptContributor):
+    """Global anti tool-storm / anti shell-flail guidance for every agent."""
+
+    name = "tool_discipline"
+    priority = 86
+
+    def contribute_sync(self, ctx: "HookContext") -> str | None:
+        extras = getattr(ctx, "extras", {}) or {}
+        language = extras.get("language")
+        if not language:
+            agent_config = extras.get("agent_config")
+            language = getattr(agent_config, "language", "zh")
+        is_zh = str(language or "zh").strip().lower() == "zh"
+        return _TOOL_DISCIPLINE_ZH if is_zh else _TOOL_DISCIPLINE_EN
+
+
+# ---------------------------------------------------------------------------
 # Factory
 # ---------------------------------------------------------------------------
 
@@ -303,6 +361,7 @@ _ALL_CONTRIBUTORS = (
     CodingModeContributor,
     ScrollContextContributor,
     DriverPolicyHintContributor,
+    ToolDisciplineContributor,
     EnvContextContributor,
 )
 
@@ -324,6 +383,7 @@ __all__ = [
     "CodingModeContributor",
     "ScrollContextContributor",
     "DriverPolicyHintContributor",
+    "ToolDisciplineContributor",
     "EnvContextContributor",
     "build_default_prompt_manager",
 ]

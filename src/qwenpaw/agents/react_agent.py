@@ -550,6 +550,8 @@ class QwenPawAgent(CodingModeMixin, Agent):
     _FASTFAIL_SCAN_WINDOW = 12
     # Iterations to wait before re-injecting after a trigger (anti-spam).
     _FASTFAIL_COOLDOWN = 1
+    # Max chars of a prior tool result to echo back in the reuse hint.
+    _FASTFAIL_RESULT_SNIPPET_CHARS = 1500
 
     # Substrings that mark an "empty / not-found" tool result. Matched
     # case-insensitively against the result's flattened text.
@@ -573,14 +575,40 @@ class QwenPawAgent(CodingModeMixin, Agent):
         '"total": 0',
     )
 
-    _FASTFAIL_HINT_ZH = (
+    # Soft-cache hint: the same (tool, args) was called repeatedly AND a
+    # usable prior result exists — echo it back so the model reuses it
+    # instead of re-running. Safe for shell / mutating tools: the call is
+    # never silently suppressed, we only remind the model it already has
+    # the answer.
+    _FASTFAIL_DUP_REUSE_ZH = (
+        "<system-hint>"
+        "你已 {count} 次用完全相同的参数调用工具 `{tool}`。它上一次的返回"
+        "如下，**请直接复用这个结果、不要再用相同参数重复调用**；若该结果"
+        "不满足需求，请换用不同的方法/参数，或据此直接给出结论：\n"
+        "<上次调用结果>\n{result}\n</上次调用结果>"
+        "</system-hint>"
+    )
+    _FASTFAIL_DUP_REUSE_EN = (
+        "<system-hint>"
+        "You have called tool `{tool}` {count} times with identical "
+        "arguments. Its previous result is below — **reuse this result and "
+        "do not call it again with the same arguments**; if it does not "
+        "meet the need, try a different method/arguments, or answer "
+        "directly from it:\n"
+        "<previous-tool-result>\n{result}\n</previous-tool-result>"
+        "</system-hint>"
+    )
+
+    # No usable data (empty/error streak, or repeated calls that all came
+    # back empty) — nothing to reuse, so stop and report unavailability.
+    _FASTFAIL_EMPTY_HINT_ZH = (
         "<system-hint>"
         "检测到你{reason}。请**立即停止重试**：基于已经掌握的信息直接给出"
         "结论；若数据确实查不到，明确告知用户「未查询到该数据 / 数据源暂不"
         "可用」并简述你已尝试的途径与可能原因，**不要再调用工具**。"
         "</system-hint>"
     )
-    _FASTFAIL_HINT_EN = (
+    _FASTFAIL_EMPTY_HINT_EN = (
         "<system-hint>"
         "Detected that you {reason}. **Stop retrying now**: answer directly "
         "from what you already have; if the data is genuinely unavailable, "
@@ -616,6 +644,19 @@ class QwenPawAgent(CodingModeMixin, Agent):
                     parts.append(str(self._block_field(item, "data", "") or ""))
             return "\n".join(p for p in parts if p)
         return str(output)
+
+    def _result_snippet(self, text: str) -> str:
+        """Truncate a prior tool result for echoing back in the reuse hint."""
+        text = (text or "").strip()
+        limit = self._FASTFAIL_RESULT_SNIPPET_CHARS
+        if len(text) <= limit:
+            return text
+        suffix = (
+            "\n…（结果过长已截断）"
+            if (self._language or "").strip().lower() == "zh"
+            else "\n…(result truncated)"
+        )
+        return text[:limit].rstrip() + suffix
 
     def _is_empty_or_error_result(self, block: Any) -> bool:
         """Heuristic: did this tool result carry no usable data?"""
@@ -678,14 +719,16 @@ class QwenPawAgent(CodingModeMixin, Agent):
         Triggers when, within the last ``_FASTFAIL_SCAN_WINDOW`` tool calls,
         either the same ``(name, args)`` repeats ``_FASTFAIL_DUP_THRESHOLD``+
         times, or the last ``_FASTFAIL_EMPTY_STREAK``+ tool results in a row
-        were empty/error.
+        were empty/error. For the duplicate case, if a usable prior result
+        exists it is echoed back so the model reuses it (soft cache).
         """
         context = getattr(self.state, "context", None)
         if not context:
             return None
 
-        calls: list[tuple[str, str]] = []
-        results_empty: list[bool] = []
+        calls: list[tuple[str, str, str]] = []  # (id, name, args)
+        result_by_id: dict[str, tuple[bool, str]] = {}  # id -> (empty, text)
+        results_seq: list[bool] = []  # empties in chronological order
         for msg in context:
             content = getattr(msg, "content", None)
             if not isinstance(content, list):
@@ -693,47 +736,82 @@ class QwenPawAgent(CodingModeMixin, Agent):
             for block in content:
                 btype = self._block_type(block)
                 if btype == "tool_call":
+                    cid = str(self._block_field(block, "id", "") or "")
                     name = str(self._block_field(block, "name", "") or "")
                     args = self._normalize_tool_input(
                         self._block_field(block, "input"),
                     )
-                    calls.append((name, args))
+                    calls.append((cid, name, args))
                 elif btype == "tool_result":
-                    results_empty.append(
-                        self._is_empty_or_error_result(block),
+                    rid = str(self._block_field(block, "id", "") or "")
+                    is_empty = self._is_empty_or_error_result(block)
+                    text = self._result_text(
+                        self._block_field(block, "output"),
                     )
+                    if rid:
+                        result_by_id[rid] = (is_empty, text)
+                    results_seq.append(is_empty)
 
         if not calls:
             return None
 
-        # Duplicate-call storm within the recent window.
-        recent_calls = calls[-self._FASTFAIL_SCAN_WINDOW:]
+        is_zh = (self._language or "").strip().lower() == "zh"
+        recent = calls[-self._FASTFAIL_SCAN_WINDOW:]
+
+        # --- Duplicate-call storm within the recent window. ---
         from collections import Counter
 
-        dup_name, dup_count = "", 0
-        if recent_calls:
-            (dup_key, dup_count) = Counter(recent_calls).most_common(1)[0]
+        key_counts = Counter((name, args) for _cid, name, args in recent)
+        dup_key, dup_count = key_counts.most_common(1)[0]
+        if dup_count >= self._FASTFAIL_DUP_THRESHOLD:
             dup_name = dup_key[0]
+            # Most recent non-empty result for this duplicated call, if any.
+            prior_text = ""
+            for cid, name, args in recent:
+                if (name, args) != dup_key:
+                    continue
+                info = result_by_id.get(cid)
+                if info is None:
+                    continue
+                is_empty, text = info
+                if not is_empty and text.strip():
+                    prior_text = text
+            if prior_text.strip():
+                tmpl = (
+                    self._FASTFAIL_DUP_REUSE_ZH
+                    if is_zh
+                    else self._FASTFAIL_DUP_REUSE_EN
+                )
+                return tmpl.format(
+                    tool=dup_name,
+                    count=dup_count,
+                    result=self._result_snippet(prior_text),
+                )
+            # Repeated but every result was empty/error → unavailable.
+            reason = (
+                f"已 {dup_count} 次用相同参数调用工具 `{dup_name}`，"
+                "且每次都没拿到有效数据"
+                if is_zh
+                else (
+                    f"have called `{dup_name}` {dup_count} times with the "
+                    "same arguments and never got usable data"
+                )
+            )
+            tmpl = (
+                self._FASTFAIL_EMPTY_HINT_ZH
+                if is_zh
+                else self._FASTFAIL_EMPTY_HINT_EN
+            )
+            return tmpl.format(reason=reason)
 
-        # Trailing run of empty/error results.
+        # --- Trailing run of empty/error results. ---
         empty_streak = 0
-        for is_empty in reversed(results_empty[-self._FASTFAIL_SCAN_WINDOW:]):
+        for is_empty in reversed(results_seq[-self._FASTFAIL_SCAN_WINDOW:]):
             if is_empty:
                 empty_streak += 1
             else:
                 break
-
-        is_zh = (self._language or "").strip().lower() == "zh"
-        if dup_count >= self._FASTFAIL_DUP_THRESHOLD:
-            reason = (
-                f"已重复 {dup_count} 次调用同一工具 `{dup_name}`（参数相同）"
-                if is_zh
-                else (
-                    f"have called the same tool `{dup_name}` {dup_count} "
-                    "times with identical arguments"
-                )
-            )
-        elif empty_streak >= self._FASTFAIL_EMPTY_STREAK:
+        if empty_streak >= self._FASTFAIL_EMPTY_STREAK:
             reason = (
                 f"已连续 {empty_streak} 次得到空 / 错误的工具结果"
                 if is_zh
@@ -742,11 +820,14 @@ class QwenPawAgent(CodingModeMixin, Agent):
                     "in a row"
                 )
             )
-        else:
-            return None
+            tmpl = (
+                self._FASTFAIL_EMPTY_HINT_ZH
+                if is_zh
+                else self._FASTFAIL_EMPTY_HINT_EN
+            )
+            return tmpl.format(reason=reason)
 
-        template = self._FASTFAIL_HINT_ZH if is_zh else self._FASTFAIL_HINT_EN
-        return template.format(reason=reason)
+        return None
 
     def _maybe_inject_convergence_hint(self) -> None:
         """Inject a fast-fail convergence hint if a tool-call storm is

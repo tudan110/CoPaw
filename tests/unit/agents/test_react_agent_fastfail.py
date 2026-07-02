@@ -3,9 +3,11 @@
 
 The detector nudges the agent to stop when it is stuck in a tool-call storm
 (repeated identical calls, or a run of empty/error results) instead of
-flailing until ``max_iters`` / timeout. These tests exercise the pure
-detection logic and the cooldown on hint injection without constructing a
-full agent.
+flailing until ``max_iters`` / timeout. For repeated identical calls with a
+usable prior result, it echoes that result back (soft cache) so the model
+reuses it instead of re-running — safe even for shell/mutating tools because
+nothing is silently suppressed. These tests exercise the pure detection logic
+and the cooldown on hint injection without constructing a full agent.
 """
 
 # pylint: disable=protected-access
@@ -33,57 +35,68 @@ def _msg(*blocks):
     return SimpleNamespace(content=list(blocks))
 
 
-def _call(name: str, args: dict | str):
-    return {"type": "tool_call", "name": name, "input": args}
+def _call(name: str, args, cid: str = "c1"):
+    return {"type": "tool_call", "id": cid, "name": name, "input": args}
 
 
-def _result(output, state: str = "success"):
-    return {"type": "tool_result", "output": output, "state": state}
+def _result(output, state: str = "success", cid: str = "c1"):
+    return {"type": "tool_result", "id": cid, "output": output, "state": state}
+
+
+def _pair(name, args, output, *, i, state="success"):
+    """A tool_call + its matching tool_result, sharing a unique id."""
+    cid = f"c{i}"
+    return [_msg(_call(name, args, cid)), _msg(_result(output, state, cid))]
 
 
 # --------------------------------------------------------------------------
-# Duplicate-call storm
+# Duplicate-call storm — with a usable prior result → echo it back (reuse)
 # --------------------------------------------------------------------------
 
 
-def test_detects_repeated_identical_tool_calls():
-    ctx = [
-        _msg(_call("execute_shell_command", {"cmd": "psql -c 'select 1'"})),
-        _msg(_result("ok")),
-        _msg(_call("execute_shell_command", {"cmd": "psql -c 'select 1'"})),
-        _msg(_result("ok")),
-        _msg(_call("execute_shell_command", {"cmd": "psql -c 'select 1'"})),
-        _msg(_result("ok")),
-    ]
+def test_repeated_call_echoes_prior_result_for_reuse():
+    ctx = []
+    for i in range(3):
+        ctx += _pair(
+            "execute_shell_command",
+            {"cmd": "psql -c 'select count(*)'"},
+            "count = 42",
+            i=i,
+        )
     hint = _agent(ctx)._detect_non_convergence()
     assert hint is not None
     assert "execute_shell_command" in hint
-    assert "停止重试" in hint  # zh convergence directive
+    assert "复用" in hint            # reuse directive
+    assert "count = 42" in hint      # prior result echoed back
 
 
 def test_arg_key_reordering_still_counts_as_duplicate():
-    ctx = [
-        _msg(_call("q", '{"a":1,"b":2}')),
-        _msg(_result("x")),
-        _msg(_call("q", '{"b":2,"a":1}')),
-        _msg(_result("x")),
-        _msg(_call("q", '{"a":1, "b":2}')),
-        _msg(_result("x")),
-    ]
+    ctx = []
+    for i, args in enumerate(('{"a":1,"b":2}', '{"b":2,"a":1}', '{"a":1, "b":2}')):
+        ctx += _pair("q", args, "some result", i=i)
     assert _agent(ctx)._detect_non_convergence() is not None
 
 
+def test_repeated_call_all_empty_reports_unavailable():
+    # Same call 3x, every result empty → nothing to reuse → unavailable hint.
+    ctx = []
+    for i in range(3):
+        ctx += _pair("q", {"x": 1}, '{"code":200,"data":null}', i=i)
+    hint = _agent(ctx)._detect_non_convergence()
+    assert hint is not None
+    assert "数据源" in hint or "未查询到" in hint
+    assert "复用" not in hint  # no usable result → not a reuse hint
+
+
 # --------------------------------------------------------------------------
-# Empty / error streak
+# Empty / error streak (distinct calls) → stop + report unavailable
 # --------------------------------------------------------------------------
 
 
 def test_detects_consecutive_empty_results():
-    # Four different calls, each returning empty/not-found → data unavailable.
     ctx = []
     for i in range(4):
-        ctx.append(_msg(_call(f"tool_{i}", {"q": i})))
-        ctx.append(_msg(_result('{"code":200,"msg":"ok","data":null}')))
+        ctx += _pair(f"tool_{i}", {"q": i}, '{"code":200,"data":null}', i=i)
     hint = _agent(ctx)._detect_non_convergence()
     assert hint is not None
     assert "数据源" in hint or "未查询到" in hint
@@ -92,16 +105,14 @@ def test_detects_consecutive_empty_results():
 def test_detects_error_state_streak():
     ctx = []
     for i in range(4):
-        ctx.append(_msg(_call(f"t{i}", {})))
-        ctx.append(_msg(_result("接口返回空响应", state="error")))
+        ctx += _pair(f"t{i}", {}, "接口返回空响应", i=i, state="error")
     assert _agent(ctx)._detect_non_convergence() is not None
 
 
 def test_marker_in_text_counts_as_empty():
     ctx = []
     for i in range(4):
-        ctx.append(_msg(_call(f"t{i}", {})))
-        ctx.append(_msg(_result("查询结果：暂无数据")))
+        ctx += _pair(f"t{i}", {}, "查询结果：暂无数据", i=i)
     assert _agent(ctx)._detect_non_convergence() is not None
 
 
@@ -111,29 +122,33 @@ def test_marker_in_text_counts_as_empty():
 
 
 def test_distinct_calls_with_real_data_do_not_trigger():
-    ctx = [
-        _msg(_call("a", {"x": 1})),
-        _msg(_result('{"code":200,"data":[1,2,3]}')),
-        _msg(_call("b", {"x": 2})),
-        _msg(_result('{"code":200,"data":{"total":42}}')),
-        _msg(_call("c", {"x": 3})),
-        _msg(_result("这是一段有内容的正常结果文本")),
-    ]
+    ctx = []
+    ctx += _pair("a", {"x": 1}, '{"code":200,"data":[1,2,3]}', i=0)
+    ctx += _pair("b", {"x": 2}, '{"code":200,"data":{"total":42}}', i=1)
+    ctx += _pair("c", {"x": 3}, "这是一段有内容的正常结果文本", i=2)
     assert _agent(ctx)._detect_non_convergence() is None
 
 
 def test_one_empty_then_recovery_does_not_trigger():
-    ctx = [
-        _msg(_call("a", {})),
-        _msg(_result('{"code":200,"data":null}')),  # one empty
-        _msg(_call("b", {})),
-        _msg(_result('{"code":200,"data":[1]}')),  # recovered → streak broken
-    ]
+    ctx = []
+    ctx += _pair("a", {}, '{"code":200,"data":null}', i=0)   # one empty
+    ctx += _pair("b", {}, '{"code":200,"data":[1]}', i=1)    # recovered
     assert _agent(ctx)._detect_non_convergence() is None
 
 
 def test_empty_context_returns_none():
     assert _agent([])._detect_non_convergence() is None
+
+
+def test_result_snippet_truncates_long_results():
+    long = "x" * 5000
+    ctx = []
+    for i in range(3):
+        ctx += _pair("q", {"a": 1}, long, i=i)
+    hint = _agent(ctx)._detect_non_convergence()
+    assert hint is not None
+    assert "截断" in hint            # truncation marker present
+    assert len(hint) < 3000          # not the full 5000-char result
 
 
 # --------------------------------------------------------------------------
@@ -142,14 +157,9 @@ def test_empty_context_returns_none():
 
 
 def test_inject_appends_tagged_hint_once_then_cools_down():
-    ctx = [
-        _msg(_call("q", {"a": 1})),
-        _msg(_result("暂无数据")),
-        _msg(_call("q", {"a": 1})),
-        _msg(_result("暂无数据")),
-        _msg(_call("q", {"a": 1})),
-        _msg(_result("暂无数据")),
-    ]
+    ctx = []
+    for i in range(3):
+        ctx += _pair("q", {"a": 1}, "暂无数据", i=i)
     agent = _agent(ctx, cur_iter=5)
 
     before = len(ctx)
