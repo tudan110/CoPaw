@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from dataclasses import dataclass
 from typing import Any, AsyncGenerator
 
@@ -52,6 +53,42 @@ from .rate_limiter import LLMRateLimiter, get_rate_limiter
 logger = logging.getLogger(__name__)
 
 RETRYABLE_STATUS_CODES = {429, 500, 502, 503, 504, 529}
+
+
+def _sm_record_llm(model_key: str, status: str, duration_s: float) -> None:
+    """Self-monitor tap (L3): one terminal sample per LLM attempt.
+
+    Strictly fail-open — monitoring must never affect the call path.
+    429s additionally emit a dedup-merged event so a limiter storm shows
+    up as one event row with a running count.
+    """
+    try:
+        from ..self_monitor import emit_event, get_registry
+
+        registry = get_registry()
+        registry.counter("qwenpaw_llm_requests_total").inc(
+            {"model": model_key, "status": status})
+        registry.histogram("qwenpaw_llm_request_duration_seconds").observe(
+            duration_s, {"status": status})
+        if status == "429":
+            emit_event(
+                "llm.rate_limit_storm", severity="warn", layer="l3",
+                source=model_key,
+                message="upstream 429 (count = hits within the window)",
+                dedup_key=f"llm.429|{model_key}",
+            )
+    except Exception:  # pragma: no cover - tap must never break calls
+        logger.debug("self-monitor llm tap failed", exc_info=True)
+
+
+def _sm_count_retry() -> None:
+    """Self-monitor tap: one retry attempt scheduled (fail-open)."""
+    try:
+        from ..self_monitor import get_registry
+
+        get_registry().counter("qwenpaw_llm_retries_total").inc()
+    except Exception:  # pragma: no cover
+        pass
 
 _openai_retryable: tuple[type[Exception], ...] | None = None
 _anthropic_retryable: tuple[type[Exception], ...] | None = None
@@ -435,6 +472,10 @@ class RetryChatModel(ChatModelBase):
             acquired = False
             owns_semaphore = True
             acquired_at: float = 0.0
+            # Self-monitor attempt clock; failure durations include any
+            # semaphore/cooldown wait, success durations are re-based
+            # below once the slot is held.
+            attempt_started = time.monotonic()
             try:
                 try:
                     acquired_at = await asyncio.wait_for(
@@ -456,6 +497,7 @@ class RetryChatModel(ChatModelBase):
                         },
                     ) from exc
 
+                attempt_started = time.monotonic()
                 try:
                     result = await self._inner(*args, **kwargs)
                 except Exception as inner_exc:
@@ -476,6 +518,8 @@ class RetryChatModel(ChatModelBase):
                     # Transfer semaphore ownership to _wrap_stream, which uses
                     # _consume_stream_with_slot internally and handles
                     # retries on stream failure.
+                    _sm_record_llm(
+                        key, "ok", time.monotonic() - attempt_started)
                     owns_semaphore = False
                     return self._wrap_stream(
                         result,
@@ -491,15 +535,23 @@ class RetryChatModel(ChatModelBase):
                 # subsequent callers are not held back by a pause set by an
                 # unrelated background task (e.g. dream/cron 429).
                 await limiter.on_success(acquired_at)
+                _sm_record_llm(
+                    key, "ok", time.monotonic() - attempt_started)
                 return result
 
             except Exception as exc:
                 last_exc = exc
+                _sm_record_llm(
+                    key,
+                    "429" if _is_rate_limit(exc) else "error",
+                    time.monotonic() - attempt_started,
+                )
                 await self._handle_rate_limit_exc(exc, limiter)
 
                 if not _is_retryable(exc) or attempt >= attempts:
                     raise
 
+                _sm_count_retry()
                 delay = _compute_backoff(attempt, self._retry_config)
                 logger.warning(
                     "LLM call failed (attempt %d/%d): %s. "

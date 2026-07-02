@@ -121,6 +121,30 @@ def _with_no_retry_instruction(body: str) -> str:
     return body + _NO_RETRY_INSTRUCTION
 
 
+def _sm_count_decision(decision: str, tool_name: str = "") -> None:
+    """Self-monitor tap (L2): count one tool-guard decision outcome.
+
+    ``ask`` counts approval requests; the eventual user outcome is
+    additionally counted as allow/deny/timeout.  Timeouts also emit a
+    dedup-merged event (the No-rule-hit→ASK→timeout→DENY chain is a
+    known incident pattern).  Strictly fail-open.
+    """
+    try:
+        from ..self_monitor import emit_event, get_registry
+
+        get_registry().counter("qwenpaw_governance_decisions_total").inc(
+            {"decision": decision})
+        if decision == "timeout":
+            emit_event(
+                "governance.deny_timeout", severity="warn", layer="l2",
+                source=tool_name,
+                message=f"approval for '{tool_name}' timed out; denied",
+                dedup_key=f"governance.timeout|{tool_name}",
+            )
+    except Exception:  # pragma: no cover - tap must never affect guard
+        pass
+
+
 # pylint: disable=too-many-return-statements
 async def _guarded_tool_check_permissions(
     self: Any,
@@ -157,6 +181,7 @@ async def _guarded_tool_check_permissions(
     level = self._resolve_execution_level()  # pylint: disable=protected-access
 
     if level == "bypass":
+        _sm_count_decision("allow")
         return PermissionDecision(
             behavior=PermissionBehavior.ALLOW,
             message="Tool guard BYPASS — no agent_id bound.",
@@ -174,6 +199,7 @@ async def _guarded_tool_check_permissions(
 
     # OFF: bypass without engine.
     if exec_level.is_disabled() or not engine.enabled:
+        _sm_count_decision("allow")
         return PermissionDecision(
             behavior=PermissionBehavior.ALLOW,
             message=f"Tool guard {exec_level.value.upper()} — allowed.",
@@ -187,6 +213,7 @@ async def _guarded_tool_check_permissions(
             if denied_result is None or not denied_result.findings
             else _format_guard_message(tool_name, denied_result)
         )
+        _sm_count_decision("deny", tool_name)
         return PermissionDecision(
             behavior=PermissionBehavior.DENY,
             message=_with_no_retry_instruction(body),
@@ -211,6 +238,7 @@ async def _guarded_tool_check_permissions(
 
     # No findings on AUTO/SMART → allow.
     if guard_result is None or not guard_result.findings:
+        _sm_count_decision("allow")
         return PermissionDecision(
             behavior=PermissionBehavior.ALLOW,
             message="Tool guard: no findings.",
@@ -223,6 +251,7 @@ async def _guarded_tool_check_permissions(
 
     # Auto-deny rules (HIGH-RISK rules flagged by config).
     if engine.should_auto_deny_result(guard_result):
+        _sm_count_decision("deny", tool_name)
         return PermissionDecision(
             behavior=PermissionBehavior.DENY,
             message=_format_guard_message(tool_name, guard_result),
@@ -232,6 +261,7 @@ async def _guarded_tool_check_permissions(
     if exec_level.is_smart_mode():
         max_sev = guard_result.max_severity
         if max_sev in (GuardSeverity.INFO, GuardSeverity.LOW):
+            _sm_count_decision("allow")
             return PermissionDecision(
                 behavior=PermissionBehavior.ALLOW,
                 message=(
@@ -373,6 +403,7 @@ async def _ask_user_approval(
         pending.severity,
     )
 
+    _sm_count_decision("ask", tool_name)
     try:
         decision = await svc.wait_for_approval(
             pending.request_id,
@@ -388,17 +419,20 @@ async def _ask_user_approval(
 
     summary = format_findings_summary(guard_result)
     if decision == ApprovalDecision.APPROVED:
+        _sm_count_decision("allow")
         return PermissionDecision(
             behavior=PermissionBehavior.ALLOW,
             message=f"Approved by user.\n{summary}",
         )
     if decision == ApprovalDecision.DENIED:
+        _sm_count_decision("deny", tool_name)
         return PermissionDecision(
             behavior=PermissionBehavior.DENY,
             message=_with_no_retry_instruction(
                 f"User denied the request to run '{tool_name}'.\n{summary}",
             ),
         )
+    _sm_count_decision("timeout", tool_name)
     return PermissionDecision(
         behavior=PermissionBehavior.DENY,
         message=_with_no_retry_instruction(

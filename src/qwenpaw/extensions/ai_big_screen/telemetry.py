@@ -66,6 +66,34 @@ def record_generation(
             )
     except Exception:  # telemetry must never break generation
         _LOGGER.warning("big-screen telemetry write failed", exc_info=True)
+    _sm_tap_generation(event)
+
+
+def _sm_tap_generation(event: Mapping[str, Any]) -> None:
+    """Self-monitor tap (L3): feed the degrade counter/event stream.
+
+    The big screen falling back to a template is the #1 signal the
+    self-monitor exists to surface (design §5.1); fail-open as ever.
+    """
+    try:
+        from qwenpaw.self_monitor import emit_event, get_registry
+
+        get_registry().counter("qwenpaw_bigscreen_generation_total").inc(
+            {"kind": str(event.get("kind") or "unknown"),
+             "degraded": "1" if event.get("degraded") else "0"})
+        if event.get("degraded"):
+            get_registry().counter("qwenpaw_degrade_events_total").inc(
+                {"component": "ai_big_screen"})
+            emit_event(
+                "component.degraded", severity="error", layer="l3",
+                source="ai_big_screen",
+                message=(f"generation kind="
+                         f"{event.get('kind') or 'unknown'} degraded "
+                         f"(lastError={str(event.get('lastError') or '')[:120]})"),
+                dedup_key="component.degraded|ai_big_screen",
+            )
+    except Exception:  # pragma: no cover
+        _LOGGER.debug("self-monitor big-screen tap failed", exc_info=True)
 
 
 def recent_events(

@@ -15,6 +15,26 @@ logger = logging.getLogger(__name__)
 _DEFAULT_FLUSH_INTERVAL = 10  # seconds
 
 
+def _sm_tap_tokens(event: "_UsageEvent") -> None:
+    """Self-monitor tap (L3): mirror token counts into the metric
+    registry.  ``enqueue`` is the single choke point every usage event
+    passes through, so tapping here keeps the two books consistent
+    without re-counting anywhere.  Strictly fail-open."""
+    try:
+        from ..self_monitor import get_registry
+
+        counter = get_registry().counter("qwenpaw_llm_tokens_total")
+        base = {"provider": event.provider_id, "model": event.model_name}
+        if event.prompt_tokens:
+            counter.inc({**base, "kind": "prompt"},
+                        float(event.prompt_tokens))
+        if event.completion_tokens:
+            counter.inc({**base, "kind": "completion"},
+                        float(event.completion_tokens))
+    except Exception:  # pragma: no cover - tap must never break usage
+        pass
+
+
 class _UsageEvent(NamedTuple):
     """Immutable record placed on the queue by the producer."""
 
@@ -98,6 +118,7 @@ class TokenUsageBuffer:
                 event.provider_id,
                 event.model_name,
             )
+        _sm_tap_tokens(event)
 
     async def get_merged_data(self) -> dict:
         """Return a consistent view of all known token usage.

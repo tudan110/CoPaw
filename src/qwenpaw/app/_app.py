@@ -41,6 +41,10 @@ from .routers.coding_mode import router as coding_mode_router
 from .routers.tool_calls import router as tool_calls_router
 from .routers.voice import voice_router
 from ..extensions.api.portal_backend import router as portal_router
+from ..extensions.api.self_monitor_api import (
+    metrics_router as self_monitor_metrics_router,
+    router as self_monitor_router,
+)
 from ..extensions.api.traces_backend import router as traces_router
 from ..extensions.api.delete_block_middleware import DeleteBlockMiddleware
 from ..envs import load_envs_into_environ
@@ -390,6 +394,23 @@ async def lifespan(  # pylint: disable=too-many-statements,too-many-branches
                     exc_info=True,
                 )
 
+            try:
+                from ..self_monitor.hook import (
+                    SelfMonitorHook,
+                    SelfMonitorFinalizeHook,
+                )
+
+                # pylint: disable=protected-access
+                workspace_registry._bootstrap_kwargs.setdefault(
+                    "builtin_hook_clses",
+                    [],
+                ).extend([SelfMonitorHook, SelfMonitorFinalizeHook])
+            except Exception:
+                logger.debug(
+                    "Self-monitor hooks not available",
+                    exc_info=True,
+                )
+
             logger.debug("Built-in lifecycle hooks collected")
         except Exception:
             logger.debug(
@@ -447,6 +468,16 @@ async def lifespan(  # pylint: disable=too-many-statements,too-many-branches
 
     token_usage_manager = get_token_usage_manager()
     token_usage_manager.start(flush_interval=10)
+
+    # Start self-monitor rollup/prune loops (no-op when disabled).
+    self_monitor_service = None
+    try:
+        from ..self_monitor import get_self_monitor
+
+        self_monitor_service = get_self_monitor()
+        self_monitor_service.start()
+    except Exception:
+        logger.debug("Self-monitor start skipped", exc_info=True)
 
     # Expose to endpoints (must be set before first request arrives).
     # WorkspaceRegistry IS-A MultiAgentManager — backward compat for
@@ -721,6 +752,14 @@ async def lifespan(  # pylint: disable=too-many-statements,too-many-branches
                     f"Error stopping TokenUsageManager: {e}",
                 )
 
+        async def _stop_self_monitor():
+            if self_monitor_service is None:
+                return
+            try:
+                await self_monitor_service.stop()
+            except Exception as e:
+                logger.error(f"Error stopping self-monitor: {e}")
+
         async def _stop_browsers():
             try:
                 await stop_all_browsers()
@@ -739,6 +778,7 @@ async def lifespan(  # pylint: disable=too-many-statements,too-many-branches
 
         await asyncio.gather(
             _stop_token_usage(),
+            _stop_self_monitor(),
             _stop_browsers(),
             _close_hub(),
         )
@@ -855,6 +895,10 @@ app.include_router(api_router, prefix="/api")
 app.include_router(portal_router)
 # Traceability center router: /api/portal/traces/*
 app.include_router(traces_router)
+# Self-monitor console: /api/portal/self-monitor/*
+app.include_router(self_monitor_router)
+# Prometheus exposition: /metrics (404 unless QWENPAW_METRICS_ENABLED)
+app.include_router(self_monitor_metrics_router)
 
 app.include_router(tool_calls_router, prefix="/api")
 
