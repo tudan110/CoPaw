@@ -396,6 +396,31 @@ def _declare_builtin_metrics(reg: MetricRegistry) -> None:
     reg.counter(
         "qwenpaw_log_errors_total", "l4", "ERROR/CRITICAL records on the qwenpaw logger"
     )
+    # L1 — synthetic probes (P1 拨测)
+    reg.gauge(
+        "qwenpaw_probe_up",
+        "l1",
+        "Synthetic probe target reachable (1|0)",
+    )
+    reg.histogram(
+        "qwenpaw_probe_duration_seconds",
+        "l1",
+        "Synthetic probe round-trip time",
+        DURATION_BUCKETS,
+    )
+    # L3 — streaming first-token latency (slot request → first chunk)
+    reg.histogram(
+        "qwenpaw_llm_first_token_seconds",
+        "l3",
+        "From limiter slot request to first streamed chunk",
+        DURATION_BUCKETS,
+    )
+    # alerting (P1) — currently firing alerts by severity
+    reg.gauge(
+        "qwenpaw_alerts_firing",
+        "l4",
+        "Alerts currently in firing state",
+    )
     # self-monitoring of the monitor (fail-open accounting)
     reg.counter(
         "qwenpaw_self_monitor_events_dropped_total",

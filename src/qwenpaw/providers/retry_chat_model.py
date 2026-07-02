@@ -90,6 +90,20 @@ def _sm_count_retry() -> None:
     except Exception:  # pragma: no cover
         pass
 
+
+def _sm_record_first_token(latency_s: float) -> None:
+    """Self-monitor tap: slot request → first streamed chunk. The wait
+    inside the limiter (cooldown/semaphore) is included on purpose —
+    this is the user-perceived first-token latency."""
+    try:
+        from ..self_monitor import get_registry
+
+        get_registry().histogram("qwenpaw_llm_first_token_seconds").observe(
+            max(0.0, latency_s)
+        )
+    except Exception:  # pragma: no cover
+        pass
+
 _openai_retryable: tuple[type[Exception], ...] | None = None
 _anthropic_retryable: tuple[type[Exception], ...] | None = None
 _httpx_retryable: tuple[type[Exception], ...] | None = None
@@ -421,6 +435,7 @@ class RetryChatModel(ChatModelBase):
                     # subsequent callers (including user chats) are not
                     # held back by a pause set by a background task.
                     await limiter.on_success(acquired_at)
+                    _sm_record_first_token(time.monotonic() - acquired_at)
                 yield chunk
         finally:
             await stream.aclose()

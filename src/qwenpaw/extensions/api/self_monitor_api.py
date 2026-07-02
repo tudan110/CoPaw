@@ -17,16 +17,20 @@ import json
 import time
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Body, HTTPException, Query
 from fastapi.responses import PlainTextResponse
 
 from ...constant import EnvVarLoader
+from ...self_monitor.costs import cost_summary, day_start
+from ...self_monitor.diagnose import diagnose as run_diagnose
+from ...self_monitor.events import emit_event
 from ...self_monitor.prometheus import CONTENT_TYPE, render_prometheus
 from ...self_monitor.sampler import (
     ROLLUP_INTERVAL_SECONDS,
     SELF_MONITOR_ENABLED,
 )
 from ...self_monitor.store import SelfMonitorStore
+from ...self_monitor.topology import build_topology
 
 router = APIRouter(prefix="/api/portal/self-monitor", tags=["portal", "self-monitor"])
 metrics_router = APIRouter(tags=["self-monitor"])
@@ -88,6 +92,12 @@ def self_monitor_overview(
         for row in latest
         if row["name"] == "qwenpaw_datasource_up"
     }
+    probes = {
+        row["labels"].get("target", ""): bool(row["value"] >= 1.0)
+        for row in latest
+        if row["name"] == "qwenpaw_probe_up"
+    }
+    active_alerts = store.active_alerts()
     rss_by_worker = {
         row["worker_id"]: row["value"]
         for row in latest
@@ -102,9 +112,11 @@ def self_monitor_overview(
     has_data = bool(latest)
 
     l1 = _status(
-        has_data and chat_total > 0,
-        crit=(chat_success_rate is not None and chat_success_rate < 0.90),
-        warn=(chat_success_rate is not None and chat_success_rate < 0.98),
+        has_data and (chat_total > 0 or bool(probes)),
+        crit=(chat_success_rate is not None and chat_success_rate < 0.90)
+        or (bool(probes) and not any(probes.values())),
+        warn=(chat_success_rate is not None and chat_success_rate < 0.98)
+        or any(not up for up in probes.values()),
     )
     l2 = _status(
         has_data,
@@ -138,6 +150,7 @@ def self_monitor_overview(
                 "metrics": {
                     "chatTurns": chat_total,
                     "chatSuccessRate": chat_success_rate,
+                    "probes": probes,
                 },
             },
             {
@@ -177,6 +190,7 @@ def self_monitor_overview(
             "workersUp": len(workers),
             "chatSuccessRate": chat_success_rate,
         },
+        "alertsFiring": len(active_alerts),
         "eventCounts": store.event_counts(since=now - 86400),
     }
 
@@ -267,6 +281,92 @@ def self_monitor_health() -> dict:
             "sizeBytes": store.db_size_bytes(),
         },
     }
+
+
+# ── alerts (P1) ──────────────────────────────────────────────────
+
+
+@router.get("/alerts")
+def self_monitor_alerts(
+    limit: int = Query(default=50, ge=1, le=500),
+) -> dict:
+    """Firing alerts + recent history from the rule engine."""
+    store = _get_store()
+    return {
+        "active": store.active_alerts(),
+        "recent": store.recent_alerts(limit=limit),
+    }
+
+
+# ── topology (P2) ────────────────────────────────────────────────
+
+
+@router.get("/topology")
+def self_monitor_topology(
+    window_s: int = Query(default=3600, ge=300, le=7 * 86400),
+) -> dict:
+    """Runtime dependency graph derived from the rollup labels."""
+    return build_topology(_get_store(), window_s=window_s)
+
+
+# ── cost (P2) ────────────────────────────────────────────────────
+
+
+@router.get("/cost")
+def self_monitor_cost(
+    window_s: int | None = Query(default=None, ge=300, le=31 * 86400),
+) -> dict:
+    """LLM cost over the window (default: since local midnight)."""
+    now = time.time()
+    since = now - window_s if window_s else day_start(now)
+    summary = cost_summary(_get_store(), since=since)
+    summary["since"] = int(since)
+    summary["generatedAt"] = int(now)
+    return summary
+
+
+# ── diagnosis (P2) ───────────────────────────────────────────────
+
+
+@router.post("/diagnose")
+async def self_monitor_diagnose(
+    payload: dict = Body(default_factory=dict),
+) -> dict:
+    """Root-cause verdict: LLM when configured, rule-based otherwise."""
+    try:
+        window_s = float(payload.get("windowS") or 3600)
+    except (TypeError, ValueError):
+        window_s = 3600.0
+    window_s = max(300.0, min(window_s, 7 * 86400.0))
+    return await run_diagnose(window_s=window_s, store=_get_store())
+
+
+# ── frontend beacon (P1 白屏/资源异常上报) ───────────────────────
+
+_BEACON_TYPES = {"whitescreen", "chunk_error", "frontend_error"}
+
+
+@router.post("/beacon")
+def self_monitor_beacon(payload: dict = Body(default_factory=dict)) -> dict:
+    """Tiny unauthenticated sink for frontend watchdog reports.
+
+    Type-whitelisted and length-capped; the event bus dedup window
+    keeps repeat reports from flooding the events table.
+    """
+    beacon_type = str(payload.get("type") or "frontend_error")
+    if beacon_type not in _BEACON_TYPES:
+        beacon_type = "frontend_error"
+    message = str(payload.get("message") or "")[:300]
+    source = str(payload.get("source") or "portal")[:80]
+    emit_event(
+        f"portal.{beacon_type}",
+        severity="warn",
+        layer="l1",
+        source=source,
+        message=message or beacon_type,
+        dedup_key=f"beacon|{beacon_type}|{source}",
+    )
+    return {"accepted": True}
 
 
 # ── Prometheus exposition ────────────────────────────────────────

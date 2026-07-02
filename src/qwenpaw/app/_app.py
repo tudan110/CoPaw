@@ -469,13 +469,43 @@ async def lifespan(  # pylint: disable=too-many-statements,too-many-branches
     token_usage_manager = get_token_usage_manager()
     token_usage_manager.start(flush_interval=10)
 
-    # Start self-monitor rollup/prune loops (no-op when disabled).
+    # Start self-monitor rollup/prune/probe loops (no-op when disabled).
     self_monitor_service = None
     try:
         from ..self_monitor import get_self_monitor
 
         self_monitor_service = get_self_monitor()
         self_monitor_service.start()
+
+        # Alert channel push (P1): reuse the configured channels. Only
+        # active when the operator names a target; alerts always land
+        # in the alerts table + event stream regardless.
+        from ..constant import EnvVarLoader as _EnvLoader
+
+        _alert_channel = _EnvLoader.get_str(
+            "QWENPAW_SELF_MONITOR_ALERT_CHANNEL", ""
+        )
+        _alert_user = _EnvLoader.get_str(
+            "QWENPAW_SELF_MONITOR_ALERT_USER", ""
+        )
+        if _alert_channel and _alert_user and app_services is not None:
+
+            async def _alert_notify(text: str) -> None:
+                manager = app_services.services.get("channel_manager")
+                if manager is None:
+                    return
+                await manager.send_text(
+                    channel=_alert_channel,
+                    user_id=_alert_user,
+                    session_id="self-monitor-alerts",
+                    text=text,
+                )
+
+            self_monitor_service.set_notifier(_alert_notify)
+            logger.info(
+                "self_monitor alert push wired to channel=%s",
+                _alert_channel,
+            )
     except Exception:
         logger.debug("Self-monitor start skipped", exc_info=True)
 

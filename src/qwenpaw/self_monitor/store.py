@@ -63,6 +63,20 @@ CREATE TABLE IF NOT EXISTS events (
 CREATE INDEX IF NOT EXISTS idx_events_type_ts ON events(type, ts);
 CREATE INDEX IF NOT EXISTS idx_events_severity_ts
     ON events(severity, ts);
+CREATE TABLE IF NOT EXISTS alerts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    rule_id TEXT NOT NULL,
+    name TEXT NOT NULL DEFAULT '',
+    layer TEXT NOT NULL DEFAULT '',
+    severity TEXT NOT NULL DEFAULT 'warn',
+    state TEXT NOT NULL DEFAULT 'firing',
+    value REAL NOT NULL DEFAULT 0,
+    threshold REAL NOT NULL DEFAULT 0,
+    message TEXT NOT NULL DEFAULT '',
+    started_at INTEGER NOT NULL,
+    resolved_at INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_alerts_state ON alerts(state, started_at);
 """
 
 
@@ -358,6 +372,190 @@ class SelfMonitorStore:
             return self.path.stat().st_size if self.path.exists() else 0
         except OSError:
             return 0
+
+    # ── gauge/counter aggregation helpers (alerts, costs, topology) ─
+
+    def gauge_agg(
+        self,
+        name: str,
+        *,
+        agg: str = "sum",
+        max_age_s: float = 180.0,
+        label_filter: Mapping[str, str] | None = None,
+    ) -> float | None:
+        """Aggregate the freshest gauge value per series (sum|min|max),
+        or None when no fresh sample exists (rules stay dormant)."""
+        rows = [
+            r for r in self.latest_samples(max_age_s=max_age_s) if r["name"] == name
+        ]
+        if label_filter:
+            rows = [
+                r
+                for r in rows
+                if all(r["labels"].get(k) == v for k, v in label_filter.items())
+            ]
+        if not rows:
+            return None
+        values = [r["value"] for r in rows]
+        if agg == "min":
+            return min(values)
+        if agg == "max":
+            return max(values)
+        return sum(values)
+
+    def counter_deltas(
+        self,
+        name: str,
+        *,
+        since: float,
+        until: float | None = None,
+        per_worker: bool = False,
+    ) -> list[dict[str, Any]]:
+        """Windowed increase per label set (optionally per worker),
+        with the same reset-aware baseline walk as counter_delta."""
+        rows = self.query_metrics(name, since=since, until=until)
+        baselines = self._baselines(name, before=since)
+        totals: dict[tuple[str, str], float] = {}
+        prev: dict[tuple[str, str], float] = {}
+        labels_of: dict[tuple[str, str], dict[str, str]] = {}
+        for row in rows:
+            series_key = (
+                row["worker_id"],
+                json.dumps(row["labels"], sort_keys=True),
+            )
+            if series_key not in prev:
+                prev[series_key] = baselines.get(series_key, 0.0)
+                totals[series_key] = 0.0
+                labels_of[series_key] = row["labels"]
+            value = row["value"]
+            if value >= prev[series_key]:
+                totals[series_key] += value - prev[series_key]
+            else:  # counter reset
+                totals[series_key] += value
+            prev[series_key] = value
+        if per_worker:
+            return [
+                {
+                    "labels": labels_of[key],
+                    "worker_id": key[0],
+                    "delta": delta,
+                }
+                for key, delta in totals.items()
+            ]
+        merged: dict[str, dict[str, Any]] = {}
+        for (worker_id, labels_json), delta in totals.items():
+            del worker_id
+            entry = merged.setdefault(
+                labels_json,
+                {"labels": _loads_labels(labels_json), "delta": 0.0},
+            )
+            entry["delta"] += delta
+        return list(merged.values())
+
+    # ── alerts ───────────────────────────────────────────────────
+
+    def insert_alert(
+        self,
+        *,
+        rule_id: str,
+        name: str,
+        layer: str,
+        severity: str,
+        value: float,
+        threshold: float,
+        message: str,
+        started_at: float,
+    ) -> int | None:
+        try:
+            with self._connect() as connection:
+                cursor = connection.execute(
+                    "INSERT INTO alerts (rule_id, name, layer, severity,"
+                    " state, value, threshold, message, started_at)"
+                    " VALUES (?, ?, ?, ?, 'firing', ?, ?, ?, ?)",
+                    (
+                        rule_id,
+                        name,
+                        layer,
+                        severity,
+                        float(value),
+                        float(threshold),
+                        message,
+                        int(started_at),
+                    ),
+                )
+                return int(cursor.lastrowid)
+        except Exception:
+            logger.warning("self_monitor alert insert failed", exc_info=True)
+            return None
+
+    def touch_alert(self, alert_id: int | None, value: float) -> None:
+        if alert_id is None:
+            return
+        try:
+            with self._connect() as connection:
+                connection.execute(
+                    "UPDATE alerts SET value = ? WHERE id = ?",
+                    (float(value), int(alert_id)),
+                )
+        except Exception:
+            logger.debug("self_monitor alert touch failed", exc_info=True)
+
+    def resolve_alert(
+        self, alert_id: int | None, *, resolved_at: float, value: float
+    ) -> bool:
+        """Mark firing→resolved; returns True only for the transition
+        that actually changed the row (multi-worker notify guard)."""
+        if alert_id is None:
+            return False
+        try:
+            with self._connect() as connection:
+                cursor = connection.execute(
+                    "UPDATE alerts SET state = 'resolved',"
+                    " resolved_at = ?, value = ?"
+                    " WHERE id = ? AND state = 'firing'",
+                    (int(resolved_at), float(value), int(alert_id)),
+                )
+                return cursor.rowcount > 0
+        except Exception:
+            logger.warning("self_monitor alert resolve failed", exc_info=True)
+            return False
+
+    def active_alerts(self) -> list[dict[str, Any]]:
+        return self._alert_rows("WHERE state = 'firing'", ())
+
+    def recent_alerts(self, *, limit: int = 50) -> list[dict[str, Any]]:
+        return self._alert_rows(
+            "ORDER BY started_at DESC, id DESC LIMIT ?", (max(1, limit),)
+        )
+
+    def _alert_rows(self, clause: str, params: tuple) -> list[dict[str, Any]]:
+        try:
+            with self._connect() as connection:
+                rows = connection.execute(
+                    "SELECT id, rule_id, name, layer, severity, state,"
+                    " value, threshold, message, started_at, resolved_at"
+                    f" FROM alerts {clause}",
+                    params,
+                ).fetchall()
+        except Exception:
+            logger.warning("self_monitor alerts read failed", exc_info=True)
+            return []
+        return [
+            {
+                "id": row[0],
+                "ruleId": row[1],
+                "name": row[2],
+                "layer": row[3],
+                "severity": row[4],
+                "state": row[5],
+                "value": row[6],
+                "threshold": row[7],
+                "message": row[8],
+                "startedAt": row[9],
+                "resolvedAt": row[10],
+            }
+            for row in rows
+        ]
 
 
 def _loads_labels(raw: str) -> dict[str, str]:

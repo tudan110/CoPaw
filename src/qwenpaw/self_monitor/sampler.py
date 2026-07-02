@@ -67,7 +67,16 @@ class SelfMonitorService:
         self.worker_id = worker_id or _default_worker_id()
         self._rollup_task: asyncio.Task | None = None
         self._prune_task: asyncio.Task | None = None
+        self._probe_task: asyncio.Task | None = None
         self._process = None  # lazy psutil.Process
+        # P1: alert engine + probes ride on this service's loops.
+        from .alerts import AlertEngine
+
+        self.alert_engine = AlertEngine(self.store)
+
+    def set_notifier(self, notifier) -> None:
+        """Wire the channel push callable (async text -> None)."""
+        self.alert_engine.set_notifier(notifier)
 
     # ── lifecycle ────────────────────────────────────────────────
 
@@ -84,6 +93,12 @@ class SelfMonitorService:
         self._prune_task = asyncio.create_task(
             self._prune_loop(), name="self-monitor-prune"
         )
+        from .probes import PROBES_ENABLED
+
+        if PROBES_ENABLED:
+            self._probe_task = asyncio.create_task(
+                self._probe_loop(), name="self-monitor-probes"
+            )
         logger.info(
             "self_monitor started (worker=%s interval=%.0fs db=%s)",
             self.worker_id,
@@ -92,7 +107,7 @@ class SelfMonitorService:
         )
 
     async def stop(self) -> None:
-        for task in (self._rollup_task, self._prune_task):
+        for task in (self._rollup_task, self._prune_task, self._probe_task):
             if task is not None:
                 task.cancel()
                 try:
@@ -101,6 +116,7 @@ class SelfMonitorService:
                     pass
         self._rollup_task = None
         self._prune_task = None
+        self._probe_task = None
         # Final flush so shutdown-adjacent samples/events are not lost.
         self._flush_once()
 
@@ -113,6 +129,10 @@ class SelfMonitorService:
                 self._pull_limiters()
                 self._pull_datasources()
                 self._flush_once()
+                # Rules read the freshly-flushed rollup, so every worker
+                # evaluates the same cross-worker truth (double-firing is
+                # prevented by the recovered active-alert map).
+                await self.alert_engine.evaluate()
             except asyncio.CancelledError:
                 raise
             except Exception:
@@ -131,6 +151,21 @@ class SelfMonitorService:
             except Exception:
                 logger.warning("self_monitor prune tick failed", exc_info=True)
             await asyncio.sleep(_PRUNE_INTERVAL_SECONDS)
+
+    async def _probe_loop(self) -> None:
+        from .probes import PROBE_INTERVAL_SECONDS, ProbeRunner
+
+        runner = ProbeRunner()
+        # Let the app finish binding its port before the first pass.
+        await asyncio.sleep(min(10.0, PROBE_INTERVAL_SECONDS))
+        while True:
+            try:
+                await runner.run_once()
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                logger.warning("self_monitor probe tick failed", exc_info=True)
+            await asyncio.sleep(PROBE_INTERVAL_SECONDS)
 
     def _flush_once(self) -> None:
         now = time.time()
