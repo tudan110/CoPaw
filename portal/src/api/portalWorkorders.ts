@@ -1,4 +1,5 @@
 import type { AlarmWorkorder } from "../types/portal";
+import { getSession } from "../auth/ssoSession";
 
 const DEFAULT_PORTAL_API_BASE_URL = "/portal-api";
 const SAME_ORIGIN_PORTAL_API_BASE_URL = "/api/portal";
@@ -89,6 +90,19 @@ export async function requestPortalApi<T = unknown>(
   const cleanupExternalAbort = bindAbortSignals(controller, externalSignal);
   const requestInit = { ...init };
   delete requestInit.signal;
+
+  // SSO pass-through: forward the logged-in user's own INOE token so
+  // backend INOE calls made while handling this request use the user's
+  // permissions instead of the shared configured token. No-op when SSO
+  // is disabled or there is no session yet.
+  const ssoToken = getSession()?.token;
+  if (ssoToken) {
+    requestInit.headers = {
+      ...(requestInit.headers as Record<string, string> | undefined),
+      "X-Inoe-Token": ssoToken,
+    };
+  }
+
   const timerId = window.setTimeout(() => controller.abort(), timeoutMs);
 
   try {

@@ -8,6 +8,7 @@ import {
   type AlarmTop5Item,
   type ApplicationHealth,
   type AssetOverviewData,
+  type CmdbSummaryData,
   type MonitoringOverviewDashboardResponse,
   type ResourceTypeStat,
   type SeverityTrendData,
@@ -203,8 +204,16 @@ function buildKpiCards(
   employees: OverviewEmployee[],
   activeAlarmTotal: number,
   workorderStats: WorkorderStatsData | null,
+  cmdbSummary: CmdbSummaryData | null,
 ): OverviewKpi[] {
   const totalResources = Number(asset?.totalResources ?? 0);
+  // 纳管总资产以 CMDB total_ci_count 为准(对齐 INOE 首页);取不到时降级
+  // 回资产总览的 totalResources。
+  const cmdbTotal =
+    cmdbSummary && cmdbSummary.total_ci_count != null
+      ? Number(cmdbSummary.total_ci_count)
+      : null;
+  const managedTotal = cmdbTotal ?? (asset ? totalResources : null);
   const healthRate = Number(asset?.healthRate ?? 0);
   const stats = toResourceTypeStats(asset?.resourceTypeStats);
   const onlineEmployees = employees.filter(
@@ -260,9 +269,9 @@ function buildKpiCards(
     },
     {
       label: "纳管总资产",
-      value: asset ? totalResources.toLocaleString() : "—",
+      value: managedTotal != null ? managedTotal.toLocaleString() : "—",
       trend: "flat",
-      trendValue: asset ? "资产" : "—",
+      trendValue: managedTotal != null ? "资产" : "—",
       color: "#3b82f6",
       barPct: 100,
       iconClass: "fa-server",
@@ -401,6 +410,7 @@ export function OverviewPanel({ pageTheme, onOpenEmployeeChat, employees }: Over
   const alarmTop5 = envelopeData<AlarmTop5Item[]>(dashboard?.alarmTop5);
   const workorderStats = envelopeData<WorkorderStatsData>(dashboard?.workorderStats);
   const severityTrend = envelopeData<SeverityTrendData>(dashboard?.severityTrend);
+  const cmdbSummary = envelopeData<CmdbSummaryData>(dashboard?.cmdbSummary);
   const activeAlarmTotal = Number(dashboard?.activeAlarmTotal ?? 0);
 
   const assetOverviewError = dashboard?.assetOverview && dashboard.assetOverview.code !== 200
@@ -425,8 +435,15 @@ export function OverviewPanel({ pageTheme, onOpenEmployeeChat, employees }: Over
   );
 
   const kpiCards = useMemo(
-    () => buildKpiCards(assetOverview, employees, activeAlarmTotal, workorderStats),
-    [assetOverview, employees, activeAlarmTotal, workorderStats],
+    () =>
+      buildKpiCards(
+        assetOverview,
+        employees,
+        activeAlarmTotal,
+        workorderStats,
+        cmdbSummary,
+      ),
+    [assetOverview, employees, activeAlarmTotal, workorderStats, cmdbSummary],
   );
   const tickets = useMemo(() => buildTickets(workorderStats), [workorderStats]);
   const alerts = useMemo(() => buildAlerts(alarmTop5), [alarmTop5]);

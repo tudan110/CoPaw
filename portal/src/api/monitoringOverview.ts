@@ -72,12 +72,20 @@ export interface SeverityTrendPoint {
 // each value a per-day series (the gateway only offers daily buckets).
 export type SeverityTrendData = Record<string, SeverityTrendPoint[]>;
 
+// CMDB CI summary — total_ci_count is the "资产总数" shown on the INOE
+// homepage (source of truth for 纳管总资产).
+export interface CmdbSummaryData {
+  total_ci_count?: number;
+  model_count?: number;
+}
+
 export interface MonitoringOverviewDashboardResponse {
   assetOverview: MonitoringEnvelope<AssetOverviewData>;
   alarmTop5: MonitoringEnvelope<AlarmTop5Item[]>;
   topology: MonitoringEnvelope<TopologyData>;
   workorderStats: MonitoringEnvelope<WorkorderStatsData>;
   severityTrend: MonitoringEnvelope<SeverityTrendData>;
+  cmdbSummary: MonitoringEnvelope<CmdbSummaryData>;
   activeAlarmTotal: number;
 }
 

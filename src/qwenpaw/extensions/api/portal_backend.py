@@ -131,6 +131,7 @@ from qwenpaw.extensions.integrations.portal_monitoring_overview import (
     query_topology as query_monitoring_topology,
     query_workorder_stats as query_monitoring_workorder_stats,
     query_severity_trend as query_monitoring_severity_trend,
+    query_cmdb_summary as query_monitoring_cmdb_summary,
 )
 from qwenpaw.extensions.integrations import knowledge_base
 from qwenpaw.extensions.api import diagnosis_settings_store
@@ -3383,6 +3384,7 @@ async def get_monitoring_overview_dashboard():
         topology,
         workorder_stats,
         severity_trend,
+        cmdb_summary,
         active_alarm_total,
     ) = await asyncio.gather(
         asyncio.to_thread(query_monitoring_asset_overview),
@@ -3390,6 +3392,7 @@ async def get_monitoring_overview_dashboard():
         asyncio.to_thread(query_monitoring_topology),
         asyncio.to_thread(query_monitoring_workorder_stats),
         asyncio.to_thread(query_monitoring_severity_trend),
+        asyncio.to_thread(query_monitoring_cmdb_summary),
         asyncio.to_thread(query_monitoring_active_alarm_total),
     )
     return {
@@ -3398,6 +3401,7 @@ async def get_monitoring_overview_dashboard():
         "topology": topology,
         "workorderStats": workorder_stats,
         "severityTrend": severity_trend,
+        "cmdbSummary": cmdb_summary,
         "activeAlarmTotal": active_alarm_total,
     }
 
@@ -4957,6 +4961,26 @@ def register_app_routes(fastapi_app) -> None:
                     "path"
                 ] = f"/api/portal{path[len('/portal-api'):]}"
             return await call_next(request)
+
+        @fastapi_app.middleware("http")
+        async def inoe_token_passthrough_middleware(
+            request: Request, call_next
+        ):
+            # SSO pass-through (see portal/src/auth/ssoSession.ts): when
+            # the logged-in user's own INOE token is sent on this header,
+            # every INOE call made while handling this request uses it
+            # instead of the shared configured token — so query results
+            # reflect that user's own INOE/CMDB permissions. Absent for
+            # background tasks and non-SSO setups, which keep using the
+            # configured token via inoe_settings_store.get_token().
+            token = request.headers.get("X-Inoe-Token")
+            ctx_token = inoe_settings_store.CURRENT_REQUEST_TOKEN.set(
+                token or None
+            )
+            try:
+                return await call_next(request)
+            finally:
+                inoe_settings_store.CURRENT_REQUEST_TOKEN.reset(ctx_token)
 
         fastapi_app.state.portal_api_compat_installed = True
 

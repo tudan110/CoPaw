@@ -183,3 +183,48 @@ def test_no_token_omits_authorization_header(
     db = _db(tmp_path)
     _clear_env(monkeypatch)
     assert "Authorization" not in store.build_headers(db_path=db)
+
+
+def test_effective_token_prefers_request_context(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    db = _db(tmp_path)
+    _clear_env(monkeypatch)
+    monkeypatch.setenv("INOE_API_TOKEN", "configured-token")
+    # No per-request token in context -> falls back to the configured one.
+    assert store.get_effective_token(db_path=db) == "configured-token"
+    assert (
+        store.build_headers(db_path=db)["Authorization"]
+        == "Bearer configured-token"
+    )
+
+    # SSO pass-through middleware sets the contextvar for the request.
+    reset = store.CURRENT_REQUEST_TOKEN.set("user-own-token")
+    try:
+        assert store.get_effective_token(db_path=db) == "user-own-token"
+        assert (
+            store.build_headers(db_path=db)["Authorization"]
+            == "Bearer user-own-token"
+        )
+    finally:
+        store.CURRENT_REQUEST_TOKEN.reset(reset)
+
+    # Reset -> back to the configured token (no leakage across requests).
+    assert store.get_effective_token(db_path=db) == "configured-token"
+
+
+def test_effective_token_empty_context_falls_back(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    db = _db(tmp_path)
+    _clear_env(monkeypatch)
+    monkeypatch.setenv("INOE_API_TOKEN", "configured-token")
+    # Middleware sets None when the request carries no SSO token header —
+    # must not be treated as "use an empty token".
+    reset = store.CURRENT_REQUEST_TOKEN.set(None)
+    try:
+        assert store.get_effective_token(db_path=db) == "configured-token"
+    finally:
+        store.CURRENT_REQUEST_TOKEN.reset(reset)

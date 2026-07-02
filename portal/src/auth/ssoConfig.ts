@@ -30,6 +30,39 @@ function getInoeFrontendPort(): string {
   return String(configured ?? "").trim() || DEFAULT_INOE_FRONTEND_PORT;
 }
 
+// Full login-URL override (VITE_SSO_LOGIN_URL / runtime ssoLoginUrl), if any.
+// Read once here so both getSsoLoginUrl() and getInoeFrontendOrigin() agree
+// on whether an override is set.
+function getInoeLoginUrlOverride(): string {
+  const explicit =
+    import.meta.env.VITE_SSO_LOGIN_URL ||
+    (typeof window !== "undefined"
+      ? window.__PORTAL_RUNTIME_CONFIG__?.ssoLoginUrl
+      : "");
+  return String(explicit ?? "").trim();
+}
+
+/**
+ * Origin (protocol + host + port) of the INOE frontend — shared by the SSO
+ * login-URL derivation and the "切换传统视图" button, since both point at the
+ * same INOE frontend. If VITE_SSO_LOGIN_URL/ssoLoginUrl is set (portal and
+ * INOE aren't same-host, or the NodePort mapping differs), its host wins;
+ * otherwise same-host + VITE_SSO_INOE_PORT is assumed.
+ */
+export function getInoeFrontendOrigin(): string {
+  const override = getInoeLoginUrlOverride();
+  if (override) {
+    try {
+      return new URL(override, window.location.href).origin;
+    } catch {
+      // Malformed override — fall through to auto-derive rather than send
+      // callers a garbage origin.
+    }
+  }
+  const { protocol, hostname } = window.location;
+  return `${protocol}//${hostname}:${getInoeFrontendPort()}`;
+}
+
 // Paths that must never be guarded, or we'd cause a redirect loop / break
 // embedded views.
 const GUARD_ALLOWLIST_EXACT = new Set(["/sso/callback"]);
@@ -53,11 +86,7 @@ export function isSsoEnabled(): boolean {
 }
 
 export function getSsoLoginUrl(): string {
-  const explicit =
-    import.meta.env.VITE_SSO_LOGIN_URL ||
-    (typeof window !== "undefined"
-      ? window.__PORTAL_RUNTIME_CONFIG__?.ssoLoginUrl
-      : "");
+  const explicit = getInoeLoginUrlOverride();
   if (explicit) {
     return explicit;
   }
@@ -65,8 +94,7 @@ export function getSsoLoginUrl(): string {
   // NodePort. Kept as /login (not /) so the redirect param we append survives
   // INOE's root-route guard. This makes VITE_SSO_LOGIN_URL unnecessary for the
   // standard k3s layout.
-  const { protocol, hostname } = window.location;
-  return `${protocol}//${hostname}:${getInoeFrontendPort()}/login`;
+  return `${getInoeFrontendOrigin()}/login`;
 }
 
 // Query param INOE's login page reads to redirect back after sign-in
@@ -125,13 +153,15 @@ export function triggerSsoRelogin(): void {
 }
 
 /**
- * Silently re-validate the stored session by re-checking the token it
- * actually holds (not whatever cookie happens to be present). On a genuine
- * auth failure (401) the token is dead → re-login. Transient errors
- * (network/timeout/config) are ignored so a blip doesn't bounce a
- * still-valid session.
+ * Re-validate the stored session by re-checking the token it actually holds
+ * (not whatever cookie happens to be present), and report whether it's safe
+ * to render. Awaited by ensureSsoLogin() so a dead token never paints the app
+ * first — if INOE logged the user out server-side, the tab must stay blank
+ * until this resolves, not flash the last-known page before bouncing.
+ * Transient errors (network/timeout/config) are treated as still-valid, so a
+ * blip doesn't lock out a session that's actually fine.
  */
-async function revalidateSession(): Promise<void> {
+async function revalidateSession(): Promise<boolean> {
   const token = getSession()?.token;
   try {
     const result = await tokenLogin(token || undefined);
@@ -140,10 +170,13 @@ async function revalidateSession(): Promise<void> {
       user: result.user,
       expiresInSeconds: result.expires_in_seconds,
     });
+    return true;
   } catch (error) {
     if ((error as { status?: number })?.status === 401) {
       triggerSsoRelogin();
+      return false;
     }
+    return true;
   }
 }
 
@@ -151,9 +184,9 @@ async function revalidateSession(): Promise<void> {
  * Bootstrap guard. Call once before rendering; await it.
  *
  * Returns true when the app should render now (SSO disabled, allowlisted
- * path, already authenticated, or a cookie pass-through just succeeded).
- * Returns false when it has triggered a full-page redirect to the INOE
- * login (caller should skip rendering to avoid a flash).
+ * path, a cached session just revalidated OK, or a cookie pass-through just
+ * succeeded). Returns false when it has triggered a full-page redirect to
+ * the INOE login (caller should skip rendering to avoid a flash).
  *
  * The cookie pass-through is what makes INOE's bare AI-icon redirect work:
  * it lands on portal "/" (not /sso/callback), and on the same host the
@@ -169,11 +202,10 @@ export async function ensureSsoLogin(): Promise<boolean> {
     return true;
   }
   if (isAuthenticated()) {
-    // Render immediately, but re-validate the session against the live INOE
-    // cookie in the background — if the token has since died, that triggers
-    // a re-login. Keeps the cached session honest without blocking paint.
-    void revalidateSession();
-    return true;
+    // Must be awaited: if INOE logged the user out server-side, the cached
+    // session looks valid locally but is dead upstream. Painting first and
+    // revalidating after would flash the stale page before bouncing.
+    return await revalidateSession();
   }
   // Not authenticated yet — try the INOE login cookie silently.
   try {
