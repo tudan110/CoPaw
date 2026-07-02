@@ -10,7 +10,7 @@ from types import SimpleNamespace
 import pytest
 from fastapi.testclient import TestClient
 
-from qwenpaw.app.runner.models import ChatSpec
+from qwenpaw.app.chats.models import ChatSpec
 from qwenpaw.extensions.api import portal_backend
 
 
