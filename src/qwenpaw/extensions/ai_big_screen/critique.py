@@ -155,7 +155,7 @@ async def run_critique(
     *,
     model: ModelCallable | None = None,
     max_repair: int = 0,
-    timeout: float = 60.0,
+    timeout: float = 15.0,
 ) -> dict[str, Any] | None:
     """Critique ``screen`` in place; returns the critique info or None.
 
@@ -163,10 +163,12 @@ async def run_critique(
     records ``aiConversationContext.critique``. Any failure returns
     None and leaves the screen exactly as it was.
 
-    Defaults are a single attempt with a 60s wall: the critique is a
-    bonus pass on the user's critical path, so worst-case added
-    latency must stay bounded (measured: slow gateways exceed 45s
-    routinely — better one honest shot than repair loops).
+    Single attempt with a 15s wall: critique is a bonus pass on the
+    user's critical path, so its latency must stay tightly bounded.
+    A fast model finishes well within 15s; a slow/heavy model can't
+    finish anyway, so failing fast is strictly better than burning
+    60s on a call that will time out regardless (measured: on the
+    slow model critique added a flat ~60s and produced nothing).
     """
     if not critique_enabled():
         return None
