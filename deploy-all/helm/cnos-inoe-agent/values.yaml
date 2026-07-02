@@ -28,6 +28,16 @@ digital-workforce-portal:
     timezone: "Asia/Shanghai"
     FAULT_DISPOSAL_COPAW_BASE_URL: "http://qwenpaw:8088/api"
 
+    # ----- SSO 单点登录（运行时注入 portal 的 runtime-config.js）-----
+    # 改这里 → helm upgrade 让 pod 重启即生效，无需重构 portal 镜像。
+    # 开关：默认 false；同 host 部署联调就绪后置 "true" 开启。
+    PORTAL_SSO_ENABLED: "false"
+    # INOE 前端 NodePort（自动拼登录 URL 用），默认 30081；仅当 NodePort 改了才设。
+    # PORTAL_SSO_INOE_PORT: "30081"
+    # 登录页完整地址覆盖，默认自动拼 http://<当前host>:<上面端口>/login。
+    # 仅当 portal/INOE 不同 host 或登录路径不同才配；格式须 http://ip:port/login（不以 / 结尾）。
+    # PORTAL_SSO_LOGIN_URL: ""
+
   # 资源限制
   resources:
     requests:

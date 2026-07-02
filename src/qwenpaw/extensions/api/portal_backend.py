@@ -68,6 +68,9 @@ from qwenpaw.extensions.api.xingchen_openai_adapter import (
 from qwenpaw.extensions.api.proxy_api import (
     router as proxy_router,
 )
+from qwenpaw.extensions.api.sso_backend import (
+    router as sso_router,
+)
 from qwenpaw.config.utils import load_config
 from qwenpaw.extensions.api.fault_manual_workorder_models import (
     ManualWorkorderCloseNotificationRequest,
@@ -163,6 +166,7 @@ router.include_router(agent_reports_router)
 router.include_router(qiming_openai_adapter_router)
 router.include_router(xingchen_openai_adapter_router)
 router.include_router(proxy_router)
+router.include_router(sso_router)
 app = FastAPI(title="Portal Backend")
 FAULT_DISPOSAL_SCRIPT_TIMEOUT_SECONDS = 45
 PORTAL_REAL_ALARM_ROUTE_DEFAULT_LIMIT = 20

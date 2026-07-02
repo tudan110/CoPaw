@@ -5,6 +5,7 @@ import DigitalEmployeePage from "./pages/DigitalEmployeePage";
 import { lazyWithRetry } from "./utils/lazyWithRetry";
 
 const AgentCenterPage = lazyWithRetry(() => import("./pages/AgentCenterPage"));
+const SsoCallbackPage = lazyWithRetry(() => import("./pages/SsoCallbackPage"));
 const KnowledgeBaseEmbedPage = lazyWithRetry(() => import("./pages/KnowledgeBaseEmbedPage"));
 const AiBigScreenViewPage = lazyWithRetry(() => import("./pages/AiBigScreenViewPage"));
 const AiBigScreenGalleryPage = lazyWithRetry(() => import("./pages/AiBigScreenGalleryPage"));
@@ -48,6 +49,10 @@ export default function App() {
     <ChunkErrorBoundary>
       <Routes>
         <Route path="/" element={renderDeferredPage(<DigitalEmployeePage />)} />
+      <Route
+        path="/sso/callback"
+        element={renderDeferredPage(<SsoCallbackPage />)}
+      />
       <Route
         path="/embed/knowledge-base"
         element={renderDeferredPage(<KnowledgeBaseEmbedPage />)}

@@ -18,6 +18,7 @@ import {
   operatorSettingsApi,
   orderSettingsApi,
   n9eSettingsApi,
+  ssoSettingsApi,
   DIAGNOSIS_TOKEN_CLEAR,
   type NotificationChannelScopeConfig,
   type NotificationChannelSettings,
@@ -259,6 +260,12 @@ const SETTINGS_TABS = [
     description: "INOE 平台网关地址、令牌与超时",
   },
   {
+    id: "sso",
+    label: "单点登录",
+    iconClass: "fa-key",
+    description: "INOE OAuth2 单点登录的网关、client 凭据与回调地址",
+  },
+  {
     id: "diagnosis",
     label: "告警 / 巡检",
     iconClass: "fa-stethoscope",
@@ -301,6 +308,40 @@ const SETTINGS_TABS = [
     description: "页面操作助手（operator）的菜单接口连接",
   },
 ] as const;
+
+// SSO field keys match the backend FieldSpec keys in sso_settings_store.py.
+const SSO_FIELDS: ProviderFieldDesc[] = [
+  {
+    key: "sso_userinfo_path",
+    label: "用户信息接口路径",
+    placeholder: "/admin/user/getInfo",
+    hint: "token 直通用它验证登录态并取用户；相对「平台」tab 的 INOE 网关根。默认 /admin/user/getInfo（实测可用）；若同事部署了 /auth/oauth2/userinfo 可改这里。",
+  },
+  {
+    key: "sso_gateway_base_url",
+    label: "授权码网关 base_url（可选覆盖）",
+    placeholder: "留空 = 平台 INOE 网关地址 + /auth/oauth2",
+    hint: "仅授权码模式用；默认自动取「平台」INOE 网关地址 + /auth/oauth2。token 直通不用此项。",
+  },
+  {
+    key: "sso_client_id",
+    label: "Client ID（授权码模式）",
+    placeholder: "ndai",
+    hint: "仅授权码模式需要；token 直通可留空。",
+  },
+  {
+    key: "sso_client_secret",
+    label: "Client Secret（授权码模式）",
+    sensitive: true,
+    hint: "仅授权码模式的 HMAC 签名密钥，只在后端使用；token 直通可留空。",
+  },
+  {
+    key: "sso_redirect_uri",
+    label: "回调地址 redirect_uri（授权码模式）",
+    placeholder: "https://<portal>/sso/callback",
+    hint: "仅授权码模式需要，须与 INOE 白名单一致；token 直通可留空。",
+  },
+];
 
 const N9E_FIELDS: ProviderFieldDesc[] = [
   {
@@ -1871,6 +1912,15 @@ export function SettingsPanel() {
                     fields={INOE_MENU_FIELDS}
                   />
                 </>
+              ) : null}
+
+              {activeTab === "sso" ? (
+                <ProviderSettingsSection
+                  api={ssoSettingsApi}
+                  title="INOE 单点登录"
+                  description="当前用 token 直通：用户从 INOE 点过来时带上已登录的 token（同 host 时浏览器自动带 cookie），portal 后端拿它调网关 /userinfo 验证并取用户信息。网关地址默认复用「平台」tab 的 INOE 网关地址，通常无需在此填写。下面三个 Client 字段是授权码模式（暂未启用）才需要的，可留空。"
+                  fields={SSO_FIELDS}
+                />
               ) : null}
 
               {activeTab === "model-adapters" ? (
