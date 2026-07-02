@@ -30,6 +30,11 @@ WORKORDER_STATS_ENDPOINT = "/api/v1/work-order/getWorkOrder"
 # gateway only offers per-day buckets, so the overview shows the last N days.
 SEVERITY_TREND_ENDPOINT = "/resource/alarm/statistics/statSeverityTrend"
 SEVERITY_TREND_DAYS = 7
+# CMDB CI summary — the INOE homepage's "资产总数" reads total_ci_count from
+# here (excludes group 26). Requires a token with CMDB (维易) access; the
+# overview falls back to asset-overview totalResources when it is unavailable.
+CMDB_STAT_SUMMARY_ENDPOINT = "/cmdb/api/v0.1/stat/summary"
+CMDB_EXCLUDE_GROUP_IDS = "26"
 
 ALARM_TOP5_DEFAULT_PARAMS = {
     "alarmClassType": 0,
@@ -57,7 +62,7 @@ def _get_envelope(
     # used by every INOE consumer. See :mod:`inoe_settings_store`.
     if not inoe_settings_store.get_base_url():
         return _make_error(400, "未设置 INOE 网关地址")
-    if not inoe_settings_store.get_token():
+    if not inoe_settings_store.get_effective_token():
         return _make_error(401, "未设置 INOE 访问令牌")
     try:
         with httpx.Client(
@@ -112,6 +117,17 @@ def query_severity_trend(days: int = SEVERITY_TREND_DAYS) -> dict[str, Any]:
     return _get_envelope(f"{SEVERITY_TREND_ENDPOINT}?{query}")
 
 
+def query_cmdb_summary() -> dict[str, Any]:
+    now = datetime.now(_alarm_timezone())
+    params = {
+        "start_time": now.strftime("%Y-%m-%d 00:00:00"),
+        "end_time": now.strftime("%Y-%m-%d 23:59:59"),
+        "exclude_group_ids": CMDB_EXCLUDE_GROUP_IDS,
+    }
+    query = urlencode(params, quote_via=quote)
+    return _get_envelope(f"{CMDB_STAT_SUMMARY_ENDPOINT}?{query}")
+
+
 def query_active_alarm_total() -> int:
     payload = query_portal_real_alarms(limit=1)
     return int(payload.get("total") or 0) if isinstance(payload, dict) else 0
@@ -124,5 +140,6 @@ def query_monitoring_overview_dashboard() -> dict[str, Any]:
         "topology": query_topology(),
         "workorderStats": query_workorder_stats(),
         "severityTrend": query_severity_trend(),
+        "cmdbSummary": query_cmdb_summary(),
         "activeAlarmTotal": query_active_alarm_total(),
     }

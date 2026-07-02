@@ -25,6 +25,7 @@ namespace once; the legacy read is a safety net if migration has not run yet.
 """
 from __future__ import annotations
 
+import contextvars
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlencode, urljoin
@@ -56,8 +57,10 @@ DEFAULT_INOE_ENABLE_CURL_FALLBACK = True
 __all__ = [
     "CLEAR_SENTINEL",
     "INOE_FIELD_SPECS",
+    "CURRENT_REQUEST_TOKEN",
     "get_base_url",
     "get_token",
+    "get_effective_token",
     "get_timeout_seconds",
     "get_enable_curl_fallback",
     "get_menu_base_url",
@@ -263,6 +266,32 @@ def get_token(*, db_path: Path = DEFAULT_DB_PATH) -> str:
     ).strip()
 
 
+# Per-request INOE credential from the portal's SSO pass-through (see
+# ssoSession.ts): portal_backend's middleware sets this from the
+# ``X-Inoe-Token`` header for the lifetime of the request, so every INOE
+# call made while handling it — including ones dispatched via
+# ``asyncio.to_thread`` — sees the logged-in user's own token instead of
+# the shared configured one. Unset outside a request (background tasks,
+# SSO disabled), where it stays ``None`` and callers fall back to
+# :func:`get_token`.
+CURRENT_REQUEST_TOKEN: contextvars.ContextVar[str | None] = (
+    contextvars.ContextVar("inoe_current_request_token", default=None)
+)
+
+
+def get_effective_token(*, db_path: Path = DEFAULT_DB_PATH) -> str:
+    """Token to use for an outbound INOE call right now.
+
+    Prefers the current request's SSO pass-through token (the logged-in
+    user's own INOE permissions); falls back to the configured
+    ``inoe_api_token`` when no per-request token is set.
+    """
+    ctx_token = CURRENT_REQUEST_TOKEN.get()
+    if ctx_token:
+        return ctx_token
+    return get_token(db_path=db_path)
+
+
 def get_timeout_seconds(*, db_path: Path = DEFAULT_DB_PATH) -> float:
     return float(
         _resolve(
@@ -345,7 +374,7 @@ def build_headers(*, db_path: Path = DEFAULT_DB_PATH) -> dict[str, str]:
         "Accept": "application/json, text/plain, */*",
         "Content-Type": "application/json;charset=UTF-8",
     }
-    token = get_token(db_path=db_path)
+    token = get_effective_token(db_path=db_path)
     if token:
         headers["Authorization"] = (
             token if token.lower().startswith("bearer ") else f"Bearer {token}"
