@@ -905,6 +905,40 @@ CAPABILITY_METADATA: list[dict[str, Any]] = [
         "skillName": "",
         "examplePrompts": ["需要还没接入的数据", "帮我设计新的取数逻辑"],
     },
+    {
+        "id": "self-monitor-overview",
+        "name": "智观AI 自监控",
+        "domain": "monitor",
+        "description": (
+            "读取智观AI 自身的四层健康(体验/应用/依赖/资源)、降级与 429 "
+            "计数、worker 存活与拨测状态。数据来自本地自监控 SQLite,"
+            "无需任何外部连接。"
+        ),
+        "inputSchema": {"windowS": 3600, "limit": 20},
+        "outputSchema": {
+            "metrics": "object",
+            "rows": "array",
+            "categories": "array",
+            "series": "array",
+        },
+        "supportedVisuals": [
+            "metric-card",
+            "table",
+            "line-chart",
+            "bar-chart",
+            "gauge",
+            "composed",
+        ],
+        "permissionScope": "self-monitor:read",
+        "cachePolicy": {"ttlSeconds": 30},
+        "refreshPolicy": {"intervalSeconds": 30},
+        "dataSource": "self-monitor-sqlite",
+        "examplePrompts": [
+            "智观AI 自己的健康大屏",
+            "系统自监控情况",
+            "自监控四层健康",
+        ],
+    },
 ]
 
 
@@ -920,6 +954,7 @@ _CAPABILITY_CLASSIFICATION: dict[str, tuple[str, str]] = {
     "topology-impact": ("cmdb", "inoe"),
     "web-live-data": ("web", ""),
     "capability-gap": ("", ""),
+    "self-monitor-overview": ("monitor", "self"),
 }
 
 for _meta in CAPABILITY_METADATA:
@@ -937,6 +972,166 @@ def fetch_web_live(query_params: Mapping[str, Any]) -> dict[str, Any]:
     return web_live.fetch_web_live_data(query_params)
 
 
+def fetch_self_monitor_overview(
+    query_params: Mapping[str, Any],
+) -> dict[str, Any]:
+    """智观AI self-monitoring: four-layer vitals from the local rollup.
+
+    Reads the self-monitor SQLite directly (no HTTP hop); honest
+    ``sourceStatus`` per the capability contract.
+    """
+    import time as _time
+
+    try:
+        from qwenpaw.self_monitor.store import SelfMonitorStore
+
+        window_s = max(
+            300, min(86400 * 7, safe_int(query_params.get("windowS"), 3600))
+        )
+        store = SelfMonitorStore()
+        now = _time.time()
+        since = now - window_s
+
+        latest = store.latest_samples(max_age_s=180.0)
+        if not latest:
+            return {
+                "source": "self-monitor-sqlite",
+                "sourceStatus": "empty",
+                "message": "自监控暂无新鲜样本(后端刚启动或采集被禁用)",
+                "rows": [],
+                "columns": [],
+            }
+
+        degrade = store.counter_delta(
+            "qwenpaw_degrade_events_total", since=since
+        )
+        llm_429 = store.counter_delta(
+            "qwenpaw_llm_requests_total",
+            since=since,
+            label_filter={"status": "429"},
+        )
+        chat_total = store.counter_delta(
+            "qwenpaw_chat_turns_total", since=since
+        )
+        chat_ok = store.counter_delta(
+            "qwenpaw_chat_turns_total",
+            since=since,
+            label_filter={"status": "success"},
+        )
+        workers = sorted(
+            {
+                row["worker_id"]
+                for row in latest
+                if row["name"] == "qwenpaw_worker_up"
+                and row["value"] >= 1.0
+            }
+        )
+        datasources_down = [
+            str(row["labels"].get("source") or "")
+            for row in latest
+            if row["name"] == "qwenpaw_datasource_up"
+            and row["value"] < 1.0
+        ]
+        probes_down = [
+            str(row["labels"].get("target") or "")
+            for row in latest
+            if row["name"] == "qwenpaw_probe_up" and row["value"] < 1.0
+        ]
+
+        rows = [
+            {
+                "layer": "L1 体验层",
+                "status": "异常" if probes_down else "正常",
+                "detail": (
+                    f"拨测失败: {', '.join(probes_down)}"
+                    if probes_down
+                    else f"会话 {chat_total:.0f} 轮"
+                ),
+            },
+            {
+                "layer": "L2 应用层",
+                "status": "正常",
+                "detail": "治理/技能指标见控制台",
+            },
+            {
+                "layer": "L3 依赖层",
+                "status": "异常" if (degrade or datasources_down) else "正常",
+                "detail": (
+                    f"降级 {degrade:.0f} 起 · 429 {llm_429:.0f} 次"
+                    + (
+                        f" · 断连: {', '.join(datasources_down)}"
+                        if datasources_down
+                        else ""
+                    )
+                ),
+            },
+            {
+                "layer": "L4 资源层",
+                "status": "正常" if workers else "异常",
+                "detail": f"worker 存活 {len(workers)}",
+            },
+        ]
+
+        # llm request pulse, bucketed server-side for line charts
+        bucket_s = max(60, window_s // 60)
+        buckets: dict[int, float] = {}
+        for row in store.query_metrics(
+            "qwenpaw_llm_requests_total", since=since
+        ):
+            key = int(row["ts"]) // bucket_s * bucket_s
+            buckets.setdefault(key, 0.0)
+        prev_by_series: dict[str, float] = {}
+        for row in store.query_metrics(
+            "qwenpaw_llm_requests_total", since=since
+        ):
+            series_key = f'{row["worker_id"]}|{row["labels"]}'
+            value = row["value"]
+            prev = prev_by_series.get(series_key)
+            if prev is not None:
+                delta = value - prev if value >= prev else value
+                key = int(row["ts"]) // bucket_s * bucket_s
+                buckets[key] = buckets.get(key, 0.0) + delta
+            prev_by_series[series_key] = value
+        ordered = sorted(buckets.items())
+        categories = [
+            _time.strftime("%H:%M", _time.localtime(ts))
+            for ts, _ in ordered
+        ]
+        series = [round(v, 1) for _, v in ordered]
+
+        return {
+            "source": "self-monitor-sqlite",
+            "sourceStatus": "live",
+            "columns": [
+                {"key": "layer", "label": "层级"},
+                {"key": "status", "label": "状态"},
+                {"key": "detail", "label": "关键指标"},
+            ],
+            "rows": rows,
+            "categories": categories,
+            "series": series,
+            "metrics": {
+                "降级事件": int(degrade),
+                "LLM 429": int(llm_429),
+                "Worker 存活": len(workers),
+                "会话成功率": (
+                    round(chat_ok / chat_total * 100, 1)
+                    if chat_total > 0
+                    else None
+                ),
+            },
+            "total": len(rows),
+        }
+    except Exception as exc:  # honest failure, never raise
+        return {
+            "source": "self-monitor-sqlite",
+            "sourceStatus": "unavailable",
+            "message": f"自监控数据读取失败: {exc}",
+            "rows": [],
+            "columns": [],
+        }
+
+
 FETCHERS: dict[str, Fetcher] = {
     "system-logs": fetch_system_logs,
     "real-alarms": fetch_real_alarms,
@@ -946,4 +1141,5 @@ FETCHERS: dict[str, Fetcher] = {
     "topology-impact": fetch_topology_impact,
     "web-live-data": fetch_web_live,
     "capability-gap": fetch_capability_gap,
+    "self-monitor-overview": fetch_self_monitor_overview,
 }

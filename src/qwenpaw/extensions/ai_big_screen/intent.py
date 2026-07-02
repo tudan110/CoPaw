@@ -92,6 +92,10 @@ _SEMANTIC_CAPABILITY_CHECKS = [
     ("workorders", ("工单", "workorder", "ticket", "tickets")),
     ("cmdb-resources", ("cmdb", "资源", "资产", "resource", "asset")),
     ("topology-impact", ("拓扑", "链路", "影响范围", "topology")),
+    (
+        "self-monitor-overview",
+        ("自监控", "self-monitor", "自身健康", "系统健康"),
+    ),
 ]
 
 

@@ -128,6 +128,7 @@ DEFAULT_CAPABILITY_FIELDS: dict[str, list[str]] = {
     ],
     "cmdb-resources": ["name", "value"],
     "workorders": ["workorderNo", "title", "status", "severity", "eventTime"],
+    "self-monitor-overview": ["layer", "status", "detail"],
 }
 
 

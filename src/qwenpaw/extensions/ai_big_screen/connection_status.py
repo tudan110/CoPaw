@@ -34,6 +34,7 @@ _CONNECTION_META: dict[str, tuple[str, str]] = {
     "n9e": ("夜莺日志", "n9e"),
     "zgops": ("ZGOPS CMDB", "cmdb"),
     "order": ("工单 / ferry", "order"),
+    "self": ("智观AI 自监控", ""),
 }
 
 
@@ -43,6 +44,21 @@ def _env(name: str) -> str:
 
 def _looks_placeholder(base_url: str) -> bool:
     return any(marker in base_url for marker in _PLACEHOLDER_HOST_MARKERS)
+
+
+def _self_status() -> tuple[bool, str]:
+    """Self-monitoring SQLite readable and receiving fresh rollups."""
+    try:
+        from qwenpaw.self_monitor.store import SelfMonitorStore
+
+        store = SelfMonitorStore()
+        if not store.path.exists():
+            return False, "自监控数据库尚未生成(后端启动后自动创建)"
+        if not store.latest_samples(max_age_s=180.0):
+            return False, "自监控无新鲜样本(采集可能被禁用)"
+        return True, ""
+    except Exception as exc:
+        return False, f"自监控数据不可读: {str(exc)[:60]}"
 
 
 def _inoe_status() -> tuple[bool, str]:
@@ -149,6 +165,7 @@ def connection_status(connection: str) -> dict[str, Any]:
         "n9e": _n9e_status,
         "zgops": _zgops_status,
         "order": _order_status,
+        "self": _self_status,
     }.get(underlying)
     if checker is None:
         return {

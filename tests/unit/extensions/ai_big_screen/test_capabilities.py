@@ -197,6 +197,7 @@ class TestRegistry:
             "workorders",
             "alarm-top5",
             "topology-impact",
+            "self-monitor-overview",
             "web-live-data",
             "capability-gap",
         }
