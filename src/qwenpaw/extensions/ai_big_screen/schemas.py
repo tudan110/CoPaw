@@ -6,6 +6,7 @@ These mirror the semantics of the frontend domain model in
 camelCase, so every model accepts camelCase aliases and dumps back to
 camelCase via ``model_dump(by_alias=True)``.
 """
+
 from __future__ import annotations
 
 import json
@@ -138,6 +139,10 @@ class ScreenPlan(_CamelModel):
     """L1 output: what the screen should contain (no data yet)."""
 
     name: str = ""
+    # ``screenTitle`` (wire alias): the banner title the draft renders at the
+    # top of the screen. The planner names it in-band (zero extra LLM call);
+    # empty output falls back to a heuristic in the intent layer.
+    screen_title: str = ""
     description: str = ""
     summary: str = ""
     theme: dict[str, Any] = Field(default_factory=dict)

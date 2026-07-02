@@ -237,6 +237,39 @@ class TestAssembleScreen:
         assert version["changedByAi"] is True
         assert version["configSnapshot"]["versions"] == []
 
+    def test_banner_title_from_plan_screen_title(self) -> None:
+        plan = ScreenPlan(
+            name="NOC 大屏",
+            screen_title="15分钟告警态势",
+            components=[_plan_component()],
+        )
+        screen = assemble_screen(
+            plan=plan,
+            results={"component-1-abc123": _live_result()},
+            prompt="查询告警",
+            screen_id="screen-test123",
+        )
+        assert screen["title"] == "15分钟告警态势"
+
+    def test_banner_title_falls_back_to_name(self) -> None:
+        # A plan with no screenTitle still yields a non-empty banner.
+        screen = self._screen()
+        assert screen["title"] == "NOC 大屏"
+
+    def test_banner_title_clamped_to_max(self) -> None:
+        plan = ScreenPlan(
+            name="NOC 大屏",
+            screen_title="屏" * 100,
+            components=[_plan_component()],
+        )
+        screen = assemble_screen(
+            plan=plan,
+            results={"component-1-abc123": _live_result()},
+            prompt="查询告警",
+            screen_id="screen-test123",
+        )
+        assert len(screen["title"]) == 60
+
     def test_degraded_plan_marks_context(self) -> None:
         plan = ScreenPlan(
             name="降级屏",

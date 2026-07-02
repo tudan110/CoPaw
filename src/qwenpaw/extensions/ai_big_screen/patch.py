@@ -31,6 +31,7 @@ from qwenpaw.extensions.ai_big_screen.intent import (
     ALLOWED_COMPONENT_TYPES,
     ALLOWED_EMPHASIS,
     ALLOWED_PALETTES,
+    MAX_SCREEN_TITLE_LENGTH,
     extract_lookback_minutes,
     normalize_layout_position,
     normalize_plan_component,
@@ -565,8 +566,9 @@ _COMPONENT_OP_HANDLERS = {
 }
 
 #: hard cap keeps a runaway model output from turning the screen title
-#: into a paragraph — it renders as a single-line banner
-_MAX_SCREEN_TITLE_LENGTH = 60
+#: into a paragraph — it renders as a single-line banner. Canonical value lives
+#: in ``intent`` so draft-time (T-015) and patch-time titles clamp identically.
+_MAX_SCREEN_TITLE_LENGTH = MAX_SCREEN_TITLE_LENGTH
 
 
 def _apply_operations(

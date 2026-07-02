@@ -46,6 +46,88 @@ from qwenpaw.extensions.ai_big_screen.schemas import (
 
 DEFAULT_SCREEN_NAME = "AI 实时运维大屏"
 
+#: hard cap for the screen banner title — kept identical to the patch
+#: ``setScreenTitle`` op so draft-time and edit-time titles clamp the same way
+#: (``patch`` imports this constant instead of defining its own).
+MAX_SCREEN_TITLE_LENGTH = 60
+
+#: banner-friendly truncation for the heuristic fallback (LLM screenTitle and
+#: explicit overrides are only bounded by ``MAX_SCREEN_TITLE_LENGTH``).
+_HEURISTIC_TITLE_LENGTH = 20
+
+#: framing verbs / 大屏-type nouns stripped from a prompt to recover a title.
+#: Longest-first so "监控大屏" is removed before "大屏", "做一个" before "做".
+_SCREEN_TITLE_STOP_TERMS = tuple(
+    sorted(
+        (
+            "帮我",
+            "麻烦",
+            "请",
+            "给我",
+            "做一个",
+            "做个",
+            "制作",
+            "生成",
+            "创建",
+            "搭建",
+            "搭个",
+            "建一个",
+            "构建",
+            "做",
+            "查询一下",
+            "查询",
+            "查一下",
+            "查看",
+            "查",
+            "看一下",
+            "看看",
+            "展示",
+            "显示",
+            "呈现",
+            "可视化大屏",
+            "数据大屏",
+            "监控大屏",
+            "实时大屏",
+            "态势大屏",
+            "大屏",
+            "看板",
+            "仪表盘",
+            "驾驶舱",
+            "面板",
+        ),
+        key=len,
+        reverse=True,
+    )
+)
+
+
+def derive_screen_title(prompt: str, title: str = "") -> str:
+    """Heuristic banner title for paths without an LLM ``screenTitle``.
+
+    An explicit override wins; otherwise framing verbs (查询/生成/…) and
+    大屏-type nouns are stripped from the prompt and the remainder truncated
+    to a banner-friendly length, falling back to :data:`DEFAULT_SCREEN_NAME`
+    when nothing meaningful survives. Always clamped to
+    :data:`MAX_SCREEN_TITLE_LENGTH`.
+    """
+    override = str(title or "").strip()
+    if override:
+        return override[:MAX_SCREEN_TITLE_LENGTH]
+    text = str(prompt or "").strip()
+    for term in _SCREEN_TITLE_STOP_TERMS:
+        text = text.replace(term, "")
+    text = re.sub(r"[\s,，。;；:：!！?？、~～]+", "", text)
+    text = text.strip(" 的和与及关于对于")
+    if not text:
+        return DEFAULT_SCREEN_NAME
+    return text[:_HEURISTIC_TITLE_LENGTH]
+
+
+def clamp_screen_title(title: str) -> str:
+    """Clamp any banner title to :data:`MAX_SCREEN_TITLE_LENGTH`."""
+    return str(title or "").strip()[:MAX_SCREEN_TITLE_LENGTH]
+
+
 # A capability-gap placeholder is titled ``待接入：<name>`` to warn that no
 # real source is wired yet. Both the fullwidth (：) and halfwidth (:) colon
 # variants are tolerated so an upstream/hand-authored title still reconciles.
@@ -1111,6 +1193,7 @@ def build_guardrail_plan(
     requested_title = str(title or "").strip()
     return ScreenPlan(
         name=requested_title or DEFAULT_SCREEN_NAME,
+        screen_title=derive_screen_title(prompt, requested_title),
         description=f"按数据意图查询：{prompt}",
         summary=f"已按数据意图生成 {capability_label} 查询组件。",
         theme=normalize_theme({}),
@@ -1156,8 +1239,16 @@ def _normalize_llm_plan(
             ),
         ]
     requested_title = str(title or "").strip()
+    # Banner title priority: explicit override → planner's in-band screenTitle
+    # → heuristic recovered from the prompt. Clamped like setScreenTitle.
+    screen_title = clamp_screen_title(
+        requested_title
+        or plan.screen_title.strip()
+        or derive_screen_title(prompt, requested_title),
+    )
     return ScreenPlan(
         name=requested_title or plan.name.strip() or DEFAULT_SCREEN_NAME,
+        screen_title=screen_title,
         description=plan.description.strip(),
         summary=plan.summary.strip(),
         theme=normalize_theme(plan.theme),
@@ -1206,7 +1297,10 @@ def _build_intent_messages(prompt: str, title: str) -> list[dict[str, str]]:
         "suggestedApi、requiredInputs、validationPlan，"
         "不得用已有能力或样例数据伪装。"
         "只输出严格 JSON，不要输出 Markdown、解释或代码块。"
-        "JSON 字段固定为：name, description, theme, layout, components, summary。"
+        "JSON 字段固定为：name, screenTitle, description, theme, layout, "
+        "components, summary。"
+        "screenTitle 是渲染在大屏顶部的主标题：一句话概括本屏主题，"
+        "紧扣用户需求、不含'查询/生成/大屏'等动词，≤20 字（如'15分钟告警态势'）。"
         "theme.palette 只能是 professional、industrial、aurora、mono、"
         "warm、cool、executive。"
         "components 是数组；每项必须包含 title, description, capabilityId, visualType, "
@@ -1279,6 +1373,7 @@ def _build_intent_messages(prompt: str, title: str) -> list[dict[str, str]]:
     )
     output_example = {
         "name": "15分钟运行态势",
+        "screenTitle": "15分钟运行态势",
         "description": "围绕近期日志、告警和资源状态的实时大屏。",
         "theme": {
             "mode": "dark",
