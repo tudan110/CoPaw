@@ -727,12 +727,62 @@ def _extract_topology_payload(
             for series in series_list:
                 if not isinstance(series, dict):
                     continue
-                if str(series.get("type") or "").lower() != "graph":
+                series_type = str(series.get("type") or "").lower()
+                if series_type == "tree":
+                    nodes, edges = _flatten_tree_series(series)
+                    if nodes:
+                        return nodes, edges
+                    continue
+                if series_type != "graph":
                     continue
                 nodes = series.get("data") if isinstance(series.get("data"), list) else []
                 edges = series.get("links") if isinstance(series.get("links"), list) else []
                 return list(nodes), list(edges)
     return [], []
+
+
+def _flatten_tree_series(
+    series: dict[str, Any],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Flatten an echarts `series.type='tree'` payload into flat nodes/edges.
+
+    `alarm-analyst` is instructed to prefer `type='tree'` for topology, but
+    the rest of the card pipeline (evidence detection, structured chart,
+    highlighting) works on flat graph-style nodes/edges — so tree data is
+    converted here rather than requiring a second representation upstream.
+    """
+    roots = series.get("data")
+    if not isinstance(roots, list):
+        return [], []
+
+    nodes: list[dict[str, Any]] = []
+    edges: list[dict[str, Any]] = []
+    seen_ids: set[str] = set()
+
+    def _walk(node: Any, path: str, parent_id: str | None) -> None:
+        if not isinstance(node, dict):
+            return
+        name = str(node.get("name") or "").strip()
+        raw_id = node.get("id")
+        node_id = str(raw_id).strip() if isinstance(raw_id, (str, int)) and str(raw_id).strip() else path
+        if node_id in seen_ids:
+            node_id = f"{node_id}#{len(nodes)}"
+        seen_ids.add(node_id)
+        nodes.append({"id": node_id, "name": name or node_id})
+        if parent_id is not None:
+            edges.append({"source": parent_id, "target": node_id})
+
+        children = node.get("children")
+        if isinstance(children, list):
+            for index, child in enumerate(children):
+                child_name = child.get("name") if isinstance(child, dict) else index
+                _walk(child, f"{path}/{index}:{child_name}", node_id)
+
+    for root_index, root in enumerate(roots):
+        root_name = root.get("name") if isinstance(root, dict) else root_index
+        _walk(root, f"root{root_index}:{root_name}", None)
+
+    return nodes, edges
 
 
 def _iter_json_payloads(text: str) -> Iterable[dict[str, Any]]:

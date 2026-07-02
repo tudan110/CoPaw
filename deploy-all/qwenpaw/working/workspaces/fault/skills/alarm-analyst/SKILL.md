@@ -226,10 +226,33 @@ cd skills/alarm-analyst && python scripts/send_analysis_report.py \
 
 ## 拓扑可视化
 
-当 zgops-cmdb 或 query 返回拓扑时：
-- 优先展示为 `echarts` 树状图（`series.type='tree'`, `orient='LR'`）
-- 根节点使用实际应用名或核心资源名
-- 保留 query 返回的 echarts 代码块，不要改写成纯文字
+当 zgops-cmdb 或 query 返回拓扑关系（应用/集群/容器/虚拟机等层级或依赖关系）时，**必须**在报告正文中输出一个 ` ```echarts ` 代码块（围栏语言标记必须精确写成 `echarts`，前端按此标记提取渲染，写成 `json` 或纯文字表格都不会被识别）：
+
+- **优先使用 `series.type='tree'`**（`orient='LR'`，从左到右分层），根节点用实际应用名或核心资源名，逐层用 `children` 挂接下游资源，例如：
+  ```echarts
+  {
+    "series": [
+      {
+        "type": "tree",
+        "orient": "LR",
+        "data": [
+          {
+            "name": "天翼智观",
+            "children": [
+              {
+                "name": "k3s-SYM01",
+                "children": [{ "name": "天翼智观部署虚机" }]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+  ```
+- 仅当拓扑呈现多对多网状依赖、无法用单一树形表达时，才退化使用 `series.type='graph'`（`data`/`links` 描述节点与关系）
+- 禁止只用 markdown 表格或文字描述拓扑而不给 echarts 代码块——那属于协议未遵守，会导致 portal 卡片的拓扑区域留空
+- 保留 query 返回的 echarts 代码块，不要改写成纯文字；如需补充说明，放在代码块前后，不要替代代码块
 
 ---
 
