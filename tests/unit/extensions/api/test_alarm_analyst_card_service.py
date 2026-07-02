@@ -361,3 +361,54 @@ def test_extract_root_cause_candidates_tolerates_messy_table() -> None:
     assert candidates[0].confidence == ""
     assert candidates[1].rank == 3
     assert candidates[1].confidence == "30%"
+
+
+def test_extract_topology_payload_flattens_tree_series() -> None:
+    from qwenpaw.extensions.api.alarm_analyst_card_service import (
+        _extract_topology_payload,
+    )
+
+    process_blocks = [
+        {
+            "kind": "tool",
+            "toolName": "cmdb_topology",
+            "outputContent": (
+                "{\"series\":[{\"type\":\"tree\",\"orient\":\"LR\","
+                "\"data\":[{\"name\":\"天翼智观\",\"children\":["
+                "{\"name\":\"k3s-SYM01\",\"children\":["
+                "{\"name\":\"天翼智观部署虚机\"}]}]}]}]}"
+            ),
+        }
+    ]
+
+    nodes, edges = _extract_topology_payload(process_blocks)
+
+    names = {node["name"] for node in nodes}
+    assert names == {"天翼智观", "k3s-SYM01", "天翼智观部署虚机"}
+    assert len(edges) == 2
+    root_id = next(node["id"] for node in nodes if node["name"] == "天翼智观")
+    mid_id = next(node["id"] for node in nodes if node["name"] == "k3s-SYM01")
+    assert {"source": root_id, "target": mid_id} in edges
+
+
+def test_extract_topology_payload_still_supports_graph_series() -> None:
+    from qwenpaw.extensions.api.alarm_analyst_card_service import (
+        _extract_topology_payload,
+    )
+
+    process_blocks = [
+        {
+            "kind": "tool",
+            "toolName": "cmdb_topology",
+            "outputContent": (
+                "{\"series\":[{\"type\":\"graph\","
+                "\"data\":[{\"id\":\"a\",\"name\":\"A\"},{\"id\":\"b\",\"name\":\"B\"}],"
+                "\"links\":[{\"source\":\"a\",\"target\":\"b\"}]}]}"
+            ),
+        }
+    ]
+
+    nodes, edges = _extract_topology_payload(process_blocks)
+
+    assert nodes == [{"id": "a", "name": "A"}, {"id": "b", "name": "B"}]
+    assert edges == [{"source": "a", "target": "b"}]
