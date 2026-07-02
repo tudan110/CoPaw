@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   createAiBigScreenDraftTask,
   deleteAiBigScreen,
@@ -179,6 +179,19 @@ export function AiBigScreenPanel() {
   const [selectedComponentIds, setSelectedComponentIds] = useState<string[]>(
     [],
   );
+  // Actual on-screen geometry (grid-unit equivalent), reported by
+  // BigScreenRenderer after each layout pass — real ground truth for
+  // components whose stored layoutPosition is un-pinned (auto-laid-out)
+  // and therefore not reliable for relative sizing instructions.
+  const [renderedLayout, setRenderedLayout] = useState<
+    Record<string, { x: number; y: number; w: number; h: number }>
+  >({});
+  const handleLayoutComputed = useCallback(
+    (rects: Record<string, { x: number; y: number; w: number; h: number }>) => {
+      setRenderedLayout(rects);
+    },
+    [],
+  );
   const [generationTask, setGenerationTask] = useState<AiBigScreenTask | null>(
     null,
   );
@@ -349,6 +362,7 @@ export function AiBigScreenPanel() {
           saved.versions?.[saved.versions.length - 1]?.versionId || "",
         selectedComponentId,
         selectedComponentIds,
+        renderedLayout,
         selectionContext: {
           selectedTitles: selectedComponentIds
             .map(
@@ -420,6 +434,7 @@ export function AiBigScreenPanel() {
           saved.versions?.[saved.versions.length - 1]?.versionId || "",
         selectedComponentId,
         selectedComponentIds,
+        renderedLayout,
         selectionContext: {
           selectedTitles: selectedComponentIds
             .map(
@@ -1025,6 +1040,7 @@ export function AiBigScreenPanel() {
                 selectedComponentId={selectedComponentId}
                 selectedComponentIds={selectedComponentIds}
                 onSelectComponent={handleSelectComponent}
+                onLayoutComputed={handleLayoutComputed}
               />
               {(screen.aiConversationContext as Record<string, unknown>)
                 ?.degraded === true ? (

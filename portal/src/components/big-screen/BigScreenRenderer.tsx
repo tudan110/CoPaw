@@ -2,6 +2,7 @@
 // load, so it MUST run before any registry lookup below.
 import "./widgets/registerWidgets.tsx";
 
+import { useEffect } from "react";
 import {
   normalizeSpec,
   type DashboardSpec,
@@ -15,6 +16,7 @@ import { COMPONENT_REGISTRY, resolveComponentType } from "./registry.ts";
 import { visualSpecClassTokens } from "./visualSpec.ts";
 import { computeAutoLayout } from "./autoLayout.ts";
 import { intrinsicSize } from "./intrinsicSize.ts";
+import { LAYOUT_MARGIN, gridToPx, pxToGrid, type Rect } from "./gridGeometry.ts";
 
 /** Honest L2 status: failed/empty render an explicit note instead of an
  *  empty/broken-looking widget body. gap/live fall through to the widget. */
@@ -72,31 +74,6 @@ function ComponentBody({ component }: { component: ScreenComponent }) {
 }
 
 const DEFAULT_POS = { x: 0, y: 0, w: 480, h: 280 };
-
-const LAYOUT_MARGIN = 24;
-const GRID_COLS = 12;
-
-interface Rect {
-  x: number;
-  y: number;
-  w: number;
-  h: number;
-}
-
-/** Convert a pinned 12-col grid position (backend units) to design pixels. */
-function gridToPx(
-  lp: { x: number; y: number; w: number; h: number },
-  design: { designWidth: number; designHeight: number },
-): Rect {
-  const colW = (design.designWidth - 2 * LAYOUT_MARGIN) / GRID_COLS;
-  const rowH = (design.designHeight - 2 * LAYOUT_MARGIN) / GRID_COLS;
-  return {
-    x: LAYOUT_MARGIN + Math.max(0, lp.x) * colW,
-    y: LAYOUT_MARGIN + Math.max(0, lp.y) * rowH,
-    w: Math.max(1, lp.w) * colW,
-    h: Math.max(1, lp.h) * rowH,
-  };
-}
 
 /**
  * Auto-layout for un-pinned components, reserving the vertical band the
@@ -156,6 +133,15 @@ interface BigScreenRendererProps {
     componentId: string,
     options?: { additive?: boolean },
   ) => void;
+  /**
+   * Reports every component's actual on-screen rect (grid-unit equivalent,
+   * see pxToGrid) after each geometry recompute. Lets callers hand real
+   * layout ground truth to the AI patch flow instead of the stored
+   * (possibly stale/fictional, for un-pinned components) layoutPosition.
+   */
+  onLayoutComputed?: (
+    rects: Record<string, { x: number; y: number; w: number; h: number }>,
+  ) => void;
 }
 
 export function BigScreenRenderer({
@@ -164,6 +150,7 @@ export function BigScreenRenderer({
   selectedComponentId = "",
   selectedComponentIds = [],
   onSelectComponent,
+  onLayoutComputed,
 }: BigScreenRendererProps) {
   const s = normalizeSpec(spec);
   const selectedSet = new Set(
@@ -189,6 +176,32 @@ export function BigScreenRenderer({
         s.layout,
       )
     : null;
+  const resolvedRects = new Map<string, Rect>();
+  for (const c of s.components) {
+    resolvedRects.set(
+      c.id,
+      pinnedRects.get(c.id) ??
+        c.layoutPosition ??
+        autoPos?.get(c.id) ??
+        DEFAULT_POS,
+    );
+  }
+
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- `spec` fully
+  // determines resolvedRects; re-deriving it here (vs. depending on the
+  // Map, which is a fresh object every render) avoids firing on renders
+  // that don't change geometry.
+  useEffect(() => {
+    if (!onLayoutComputed) return;
+    const grid: Record<
+      string,
+      { x: number; y: number; w: number; h: number }
+    > = {};
+    for (const [id, rect] of resolvedRects) {
+      grid[id] = pxToGrid(rect, s.layout);
+    }
+    onLayoutComputed(grid);
+  }, [spec, onLayoutComputed]);
 
   return (
     <div
@@ -211,11 +224,7 @@ export function BigScreenRenderer({
         }
       >
         {s.components.map((c) => {
-          const pos =
-            pinnedRects.get(c.id) ??
-            c.layoutPosition ??
-            autoPos?.get(c.id) ??
-            DEFAULT_POS;
+          const pos = resolvedRects.get(c.id) ?? DEFAULT_POS;
           const vsClasses = visualSpecClassTokens(c.visualSpec).join(" ");
           const selected = selectedSet.has(c.id);
           return (

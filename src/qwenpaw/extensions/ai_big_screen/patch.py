@@ -185,15 +185,46 @@ def _normalize_selection(
     return ids
 
 
+def _safe_float(value: Any, fallback: float) -> float:
+    """Coerce ``value`` to ``float``, returning ``fallback`` when it can't."""
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return fallback
+
+
+def _normalize_rendered_position(raw: Any) -> dict[str, float] | None:
+    """Frontend-reported real geometry for one component (grid-unit
+    equivalents, see ``BigScreenRenderer.tsx``'s ``pxToGrid``). Unlike the
+    stored ``layoutPosition``, these come from what is actually on screen
+    right now, so they're allowed to be fractional. ``None`` on anything
+    that isn't a usable rect — this is request-body input, an untrusted
+    boundary."""
+    if not isinstance(raw, Mapping):
+        return None
+    return {
+        "x": round(_safe_float(raw.get("x"), 0.0), 2),
+        "y": round(_safe_float(raw.get("y"), 0.0), 2),
+        "w": round(_safe_float(raw.get("w"), 0.0), 2),
+        "h": round(_safe_float(raw.get("h"), 0.0), 2),
+    }
+
+
 def _build_patch_messages(
     *,
     screen: Mapping[str, Any],
     instruction: str,
     selected_component_ids: list[str],
+    rendered_layout: Mapping[str, Any] | None = None,
 ) -> list[dict[str, str]]:
-    component_catalog = [
-        {
-            "id": str(item.get("id") or ""),
+    rendered_layout = rendered_layout or {}
+    component_catalog = []
+    for item in screen.get("components", []):
+        if not isinstance(item, dict):
+            continue
+        component_id = str(item.get("id") or "")
+        entry = {
+            "id": component_id,
             "type": str(item.get("type") or ""),
             "title": str(item.get("title") or ""),
             "capabilityId": str(
@@ -212,9 +243,12 @@ def _build_patch_messages(
                 ),
             ),
         }
-        for item in screen.get("components", [])
-        if isinstance(item, dict)
-    ]
+        rendered_position = _normalize_rendered_position(
+            rendered_layout.get(component_id),
+        )
+        if rendered_position is not None:
+            entry["renderedPosition"] = rendered_position
+        component_catalog.append(entry)
     system_prompt = (
         "你是 AI 运维大屏配置设计助手。只输出严格 JSON，"
         "不要输出 Markdown、代码块或解释。"
@@ -230,6 +264,16 @@ def _build_patch_messages(
         "setComponentType=组件类型字符串；"
         "setComponentLayout={x,y,w,h}(12 列网格数字，用于移动/定位组件，"
         "x∈0-11、w∈1-12、y≥0、h∈1-8)；"
+        "组件清单里的 layoutPosition 只是历史存值，"
+        "未被用户显式移动/定位过的组件不代表实际渲染效果(前端按内容自动"
+        "布局，不会拉伸铺满一行，同一行内窄内容居中、两侧留白)；"
+        "若某组件带 renderedPosition，那才是它当前真实渲染的 12 列网格"
+        "等效坐标(同单位，允许小数)，比 layoutPosition 更可信；"
+        "遇到'宽度/位置和某组件保持一致或之和一致'等相对尺寸诉求，"
+        "必须以 renderedPosition 为准计算，不要假设同行组件宽度之和等于"
+        "整屏 12；缺 renderedPosition 的组件无法核实其真实尺寸，"
+        "此时按你的最佳判断给出合理绝对值即可，不要在 summary 里宣称"
+        "精确对齐了某个无法核实的数值。"
         "setComponentComposition={composition: primary|secondary|supporting}"
         "(重要度，primary 更大更突出)；"
         "setComponentStyle={sizeScale 0.5-2.0(变大变小), palette(配色), "
@@ -599,19 +643,32 @@ async def apply_patch(
     selected_component_ids: list[str] | None = None,
     selected_region: Mapping[str, Any] | None = None,
     selection_context: Mapping[str, Any] | None = None,
+    rendered_layout: Mapping[str, Any] | None = None,
     requested_by: str = "portal",
     model: ModelCallable | None = None,
     max_repair: int = 2,
     timeout: float = 120.0,
     dry_run: bool = False,
 ) -> dict[str, Any]:
-    """Patch a screen in place; returns ``{screen, version, summary}``.
+    """Patch a screen in place; returns ``{screen, version, summary, diff}``.
 
     Persistence is the caller's concern — this operates on the dict.
     With ``dry_run=True`` all changes (including data refetches for
     query-param edits) happen on a deep copy: the original screen is
     untouched, no version is appended, and the result additionally
-    carries ``preview=True`` plus a structured ``diff``.
+    carries ``preview=True``. Both modes report a structured ``diff``
+    (before/after per changed field) so callers can honestly tell a
+    real no-op apart from a completed-but-unreported change.
+
+    ``rendered_layout`` (optional, keyed by component id) is the frontend's
+    actual on-screen geometry at request time — components that have never
+    been explicitly pinned are auto-laid-out client-side, so the stored
+    ``layoutPosition`` on those doesn't reflect reality. When supplied it is
+    surfaced to the model as each component's ``renderedPosition`` so
+    relative sizing/position instructions ("match component X's width") can
+    be grounded in what's actually on screen instead of stale/fictional
+    stored coordinates. It is request-scoped context only — never persisted
+    onto the screen.
     """
     normalized_instruction = str(instruction or "").strip()
     if not normalized_instruction:
@@ -628,9 +685,15 @@ async def apply_patch(
         if _component_index(components, component_id) < 0:
             raise ValueError(f"未找到组件：{component_id}")
 
-    original = screen
     if dry_run:
+        original = screen
         screen = copy.deepcopy(screen)
+    else:
+        # A pristine snapshot taken before any mutation below — ``screen``
+        # itself is mutated in place for the real-apply path, so aliasing
+        # ``original = screen`` here would make before/after the same
+        # object and any later diff trivially empty.
+        original = copy.deepcopy(screen)
 
     active_model = model if model is not None else create_pipeline_model()
     result = await structured_call(
@@ -639,6 +702,7 @@ async def apply_patch(
             screen=screen,
             instruction=normalized_instruction,
             selected_component_ids=selection,
+            rendered_layout=rendered_layout,
         ),
         parser=_parse_patch_plan_require_ops,
         max_repair=max_repair,
@@ -730,6 +794,7 @@ async def apply_patch(
         "screen": screen,
         "version": version,
         "summary": summary,
+        "diff": build_screen_diff(original, screen),
         "lastError": result.last_error,
     }
 
