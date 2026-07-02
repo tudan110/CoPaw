@@ -213,7 +213,7 @@ export function SkillPoolPanel() {
         (res.skills || []).filter((s) => s.agent_id !== agentId),
       );
     } catch {
-      // 软失败：FDE 工作台不可用时不要把整个技能池面板挂掉
+      // 软失败：skill 构建助手不可用时不要把整个技能池面板挂掉
       setErkaiElsewhere([]);
     } finally {
       setErkaiElsewhereLoading(false);
@@ -449,7 +449,7 @@ export function SkillPoolPanel() {
       if (!realContent || !realContent.trim()) {
         setNotice({
           type: "error",
-          message: `无法读取「${skill.name}」的 SKILL.md 内容，先到「FDE 交付工作台」检查它在 ${getForeignName(skill) || targetAgent} 工作区的实际文件。`,
+          message: `无法读取「${skill.name}」的 SKILL.md 内容，先到「FDE skill 构建助手」检查它在 ${getForeignName(skill) || targetAgent} 工作区的实际文件。`,
         });
         return;
       }
@@ -1097,7 +1097,7 @@ export function SkillPoolPanel() {
                               {foreignId ? (
                                 <span
                                   className="skill-pool-badge foreign"
-                                  title={`这条技能装在业务智能体 ${foreignId} 的工作区，本面板只能查看；管理请去 FDE 交付工作台`}
+                                  title={`这条技能装在业务智能体 ${foreignId} 的工作区，本面板只能查看；管理请去 FDE skill 构建助手`}
                                 >
                                   所属 {foreignName || foreignId}
                                 </span>
@@ -1177,9 +1177,9 @@ export function SkillPoolPanel() {
                               buildPortalSectionPath("fde-workbench"),
                             );
                           }}
-                          title="去 FDE 交付工作台查看 staged 状态、自检报告或重新生成"
+                          title="去 FDE skill 构建助手查看 staged 状态、自检报告或重新生成"
                         >
-                          去工作台
+                          去构建助手
                         </button>
                       ) : null}
                     </div>

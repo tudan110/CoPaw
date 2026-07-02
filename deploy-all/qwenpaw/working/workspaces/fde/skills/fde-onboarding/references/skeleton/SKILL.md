@@ -10,7 +10,7 @@ description: {{description}}
 
 {{summary}}
 
-由 FDE 交付助手按 `skill_scaffold` 生成的技能骨架。**上线前**请：
+由 skill 构建助手按 `skill_scaffold` 生成的技能骨架。**上线前**请：
 
 1. 把 `runtime/tool_adapters.py` 里的 `mock-or-real` 占位换成真实接口调用（直接 HTTP，或复用 `src/qwenpaw/extensions/integrations/*`）。鉴权由平台 settings（`settings.db`）在后端启动时 materialize 进 `os.environ`、子进程继承——复用现有连接（INOE/zgops/n9e/order…）无需任何配置；只有引入**新**外部系统才需新建 settings store 字段（见下方「配置」）。
 2. 按业务场景补 `runtime/playbooks/business_flow.py`（查询/统计类只需 `diagnose`；带"分析→建议动作→执行→恢复验证"闭环的再补 `execute`）。

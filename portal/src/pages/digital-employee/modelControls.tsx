@@ -430,7 +430,7 @@ export function AdvancedModelEntry({
               🛠️
             </span>
           </div>
-          <div className="sidebar-advanced-item-name">交付工作台</div>
+          <div className="sidebar-advanced-item-name">skill 构建助手</div>
           <div className="sidebar-advanced-item-desc">FDE 把需求变成技能</div>
           <div className="sidebar-advanced-item-meta">访谈 / 生成 / 自检 / 安装</div>
         </button>

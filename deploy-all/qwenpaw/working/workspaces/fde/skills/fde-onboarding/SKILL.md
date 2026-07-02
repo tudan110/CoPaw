@@ -3,7 +3,7 @@ name: fde-onboarding
 category: ops-delivery
 tags: [fde, delivery, secondary-development, skill-generation, network-management, ops-automation]
 triggers: [新增数字员工, 交付一个技能, 帮我做个数字员工, 二开一个技能, FDE, 客户需求落地, 生成技能, 交付方案, 把需求落进系统]
-description: FDE 交付助手的元技能 —— 把客户/运营方的需求与系统现状翻译成可上线的"数字员工"业务技能。访谈澄清 → 交付方案 → 按 skill_scaffold 生成技能 → 自检（域审查 dry-run + 示例运行 + 待确认项）→ 把产物暂存到 fde 工作区 staged/，交人工在 Portal『交付工作台』确认安装。仅面向网络管理 / 运维域；不直接写业务智能体工作区。
+description: skill 构建助手的元技能 —— 把客户/运营方的需求与系统现状翻译成可上线的"数字员工"业务技能。访谈澄清 → 交付方案 → 按 skill_scaffold 生成技能 → 自检（域审查 dry-run + 示例运行 + 待确认项）→ 把产物暂存到 fde 工作区 staged/，交人工在 Portal『skill 构建助手』确认安装。仅面向网络管理 / 运维域；不直接写业务智能体工作区。
 ---
 
 # FDE Onboarding（数字员工交付）
@@ -35,7 +35,7 @@ description: FDE 交付助手的元技能 —— 把客户/运营方的需求与
    python scripts/fde_tools.py probe     --skill-dir staged/<skill-name> --json   # 沙箱跑一遍 diagnose
    ```
    `ready_for_review` 必须为 true 才交付（域审查未通过/有语法错/缺 SKILL.md 都会阻塞）。连接凭证走平台 settings（`settings.db`），**绝不写进 SKILL.md/脚本/staged 文件**；新连接在 portal 设置页配，拿不准的字段进待确认项。
-5. **交付**：把"交付方案 + 每个 staged skill 的预览 + 自检结果 + 待确认项"组织清楚给对方，并提示：到 Portal **「交付工作台」** 面板逐个查看代码、（可选）沙箱试跑、然后点「确认安装到 \<目标工作区\>」。真正写入业务工作区由那个人工动作触发（走现有 `POST /api/skills`，含安全扫描），**你不替他按这个键**。
+5. **交付**：把"交付方案 + 每个 staged skill 的预览 + 自检结果 + 待确认项"组织清楚给对方，并提示：到 Portal **「skill 构建助手」** 面板逐个查看代码、（可选）沙箱试跑、然后点「确认安装到 \<目标工作区\>」。真正写入业务工作区由那个人工动作触发（走现有 `POST /api/skills`，含安全扫描），**你不替他按这个键**。
 
 ## 工具速查（`scripts/fde_tools.py`，用 app 自带 python 调，不要 uv）
 

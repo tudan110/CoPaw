@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""FDE 交付助手的确定性工具。
+"""skill 构建助手的确定性工具。
 
 在 QwenPaw 聊天里由 fde 智能体通过 shell 调用（用 app 自带的 python，不要 uv，
 因为要 import qwenpaw 做安全扫描/领域审查）。所有子命令都支持 `--json`。
@@ -345,7 +345,7 @@ def build_parser() -> argparse.ArgumentParser:
     common = argparse.ArgumentParser(add_help=False)
     common.add_argument("--json", action="store_true", help="以 JSON 输出")
 
-    parser = argparse.ArgumentParser(description="FDE 交付助手工具")
+    parser = argparse.ArgumentParser(description="skill 构建助手工具")
     sub = parser.add_subparsers(dest="command", required=True)
 
     p = sub.add_parser("scaffold", parents=[common], help="从骨架生成一个 staged 技能")

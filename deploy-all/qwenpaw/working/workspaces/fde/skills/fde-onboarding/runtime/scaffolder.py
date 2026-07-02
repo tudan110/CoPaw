@@ -4,7 +4,7 @@
 用的是一份"已填好、可直接 import / 运行"的镜像副本，随本技能一起部署：
 `fde-onboarding/references/skeleton/`。生成的产物落在 fde 工作区的
 `staged/<skill_name>/`，**不会**写进任何业务智能体的工作区——真正安装由
-人工在 Portal『交付工作台』确认后走现有 `/api/skills` 接口。
+人工在 Portal『skill 构建助手』确认后走现有 `/api/skills` 接口。
 """
 from __future__ import annotations
 
@@ -49,7 +49,7 @@ def _placeholders(skill_name: str, brief: dict[str, Any]) -> dict[str, str]:
         "triggers": ", ".join(str(t) for t in triggers) or skill_name,
         "description": str(
             brief.get("description")
-            or f"由 FDE 交付助手生成的 {skill_name} 技能（待补全真实接口）。"
+            or f"由 skill 构建助手生成的 {skill_name} 技能（待补全真实接口）。"
         ),
         "summary": str(brief.get("summary") or "面向具体业务场景的数字员工技能。"),
         "when-to-use": str(brief.get("when_to_use") or "继续推进业务闭环，而不是只做一般查询"),
@@ -152,7 +152,7 @@ def scaffold_skill(
         "",
         "## 安装",
         "",
-        "在 Portal『交付工作台』面板上查看代码、（可选）沙箱试跑，然后点"
+        "在 Portal『skill 构建助手』面板上查看代码、（可选）沙箱试跑，然后点"
         f"「确认安装到 {target_workspace}」——安装会再走一遍安全扫描。",
     ]
     (dest / "GENERATION.md").write_text("\n".join(generation_md) + "\n", encoding="utf-8")

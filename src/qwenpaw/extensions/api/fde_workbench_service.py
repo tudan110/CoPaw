@@ -65,11 +65,11 @@ def fde_workspace_dir() -> Path:
     profiles = getattr(config.agents, "profiles", {}) or {}
     if FDE_AGENT_ID not in profiles:
         raise FdeWorkbenchError(
-            "FDE 交付助手未配置" "（config.json 缺少 agents.profiles.fde）",
+            "skill 构建助手未配置" "（config.json 缺少 agents.profiles.fde）",
         )
     ref = profiles[FDE_AGENT_ID]
     if not getattr(ref, "enabled", True):
-        raise FdeWorkbenchError("FDE 交付助手已停用")
+        raise FdeWorkbenchError("skill 构建助手已停用")
     return Path(getattr(ref, "workspace_dir", "")).expanduser()
 
 
@@ -568,7 +568,7 @@ def write_skill_env(
         else:
             current[key] = text
     lines = [
-        "# 由 Portal 交付工作台写入。包含敏感凭证，请妥善保护。",
+        "# 由 Portal skill 构建助手写入。包含敏感凭证，请妥善保护。",
         "",
     ] + [f"{k}={v}" for k, v in current.items()]
     body = "\n".join(lines) + "\n"
@@ -613,7 +613,7 @@ def prefill_domain_allow_for_staged(
     skill_dir: Path,
     *,
     source: str = "fde-manual-override",
-    reason: str = "FDE 交付工作台手动确认（领域审核服务暂不可用）",
+    reason: str = "FDE skill 构建助手手动确认（领域审核服务暂不可用）",
 ) -> bool:
     """Pre-warm ``domain_guard``'s in-memory verdict cache with an
     ``allow`` for the staged skill's content digest.
@@ -699,7 +699,7 @@ def copy_installed_skill(
         create_business_agent(
             agent_id=target_workspace,
             name=target_workspace,
-            description=(f"由 FDE 交付工作台在复制 `{skill_name}` 时自动创建"),
+            description=(f"由 FDE skill 构建助手在复制 `{skill_name}` 时自动创建"),
             active_model=_pick_default_active_model(),
         )
         target_created = True
@@ -1427,7 +1427,7 @@ def install_staged_skill(
         create_business_agent(
             agent_id=target_workspace,
             name=target_workspace,
-            description=(f"由 FDE 交付工作台在安装 `{name}` 时自动创建"),
+            description=(f"由 FDE skill 构建助手在安装 `{name}` 时自动创建"),
             active_model=_pick_default_active_model(),
         )
         target_created = True

@@ -1,4 +1,4 @@
-// FDE 交付工作台 API 客户端。
+// FDE skill 构建助手 API 客户端。
 // 后端路由前缀 `/api/portal/fde/*`，nginx 把 `/portal-api/*` 反代到那里。
 
 const DEFAULT_PORTAL_API_BASE_URL = "/portal-api";
@@ -60,7 +60,7 @@ async function requestFde<T = unknown>(
       (body as { reason?: string }).reason === "fde_workbench_error"
     ) {
       throw new FdeWorkbenchError(
-        String((body as { detail?: unknown }).detail || "FDE 工作台错误"),
+        String((body as { detail?: unknown }).detail || "skill 构建助手错误"),
       );
     }
     return body as T;

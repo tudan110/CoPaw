@@ -20,7 +20,7 @@ import "../fde-workbench.css";
 const NEW_AGENT_SENTINEL = "__fde_new_agent__";
 
 const FDE_AGENT_ID = "fde";
-const FDE_AGENT_NAME = "FDE 交付助手";
+const FDE_AGENT_NAME = "skill 构建助手";
 
 // 顺序必须与 currentStep 的闸门映射一致：
 // AI 自检（gate 1）在前，人工审查（gate 2）在后，两道都过才能安装。
@@ -828,15 +828,15 @@ export function FdeWorkbenchPanel() {
         </div>
         <div className="fde-hero-body">
           <div className="fde-hero-title">
-            交付工作台
+            skill 构建助手
             <span className="fde-hero-kicker">Forward Deployed Engineer</span>
           </div>
           <p className="fde-hero-sub">
             {heroState === "ok"
               ? "把客户需求与系统现状交给 FDE，它走完「访谈 → 方案 → 生成」并把可上线的技能暂存到这里，由你审查、试跑、确认安装。"
               : heroState === "loading"
-              ? "正在连接 FDE 交付助手…"
-              : `FDE 交付助手暂不可用：${
+              ? "正在连接 skill 构建助手…"
+              : `skill 构建助手暂不可用：${
                   info?.reason ||
                   "请先 sync-qwenpaw-working.sh 同步工作区并重启服务"
                 }`}

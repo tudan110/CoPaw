@@ -1,4 +1,4 @@
-"""数据模型 —— 由 FDE 交付助手生成的技能骨架自带。
+"""数据模型 —— 由 skill 构建助手生成的技能骨架自带。
 
 镜像 `src/qwenpaw/extensions/templates/skill_scaffold/` 的概念，但这里是
 一份可直接 import / 运行的最小实现。生成后可以按业务需要扩展字段，
