@@ -269,3 +269,40 @@ class TestFlushAutoMemoryDefensiveGuard:
         await mw._flush_auto_memory(agent)
 
         mm.auto_memory.assert_awaited_once()
+
+
+# ---------------------------------------------------------------------------
+# _is_memory_user_turn: injected hint tags must NOT count as a user turn
+# ---------------------------------------------------------------------------
+
+
+class TestIsMemoryUserTurn:
+    """Injected synthetic user messages (auto-continue / fast-fail convergence)
+    must be excluded from user-turn detection, else auto-memory-search fires on
+    the synthetic hint and the memory-write window is mis-scoped."""
+
+    def _tagged(self, tag: str) -> Msg:
+        from qwenpaw.constant import QWENPAW_MESSAGE_TAG_KEY
+
+        msg = Msg(
+            name="user",
+            role="user",
+            content=[TextBlock(type="text", text="hint")],
+            metadata={QWENPAW_MESSAGE_TAG_KEY: tag},
+        )
+        return msg
+
+    def test_genuine_user_turn_counts(self):
+        assert MemoryMiddleware._is_memory_user_turn(_user_msg()) is True
+
+    def test_auto_continue_excluded(self):
+        from qwenpaw.constant import AUTO_CONTINUE_MESSAGE_TAG
+
+        msg = self._tagged(AUTO_CONTINUE_MESSAGE_TAG)
+        assert MemoryMiddleware._is_memory_user_turn(msg) is False
+
+    def test_fastfail_converge_excluded(self):
+        from qwenpaw.constant import FASTFAIL_CONVERGE_MESSAGE_TAG
+
+        msg = self._tagged(FASTFAIL_CONVERGE_MESSAGE_TAG)
+        assert MemoryMiddleware._is_memory_user_turn(msg) is False

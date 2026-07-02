@@ -28,6 +28,7 @@ from ..constant import (
     AUTO_CONTINUE_MESSAGE_TAG,
     AUTO_MEMORY_SEARCH_MESSAGE_TAG,
     AUTO_MEMORY_SEARCH_TEXT,
+    FASTFAIL_CONVERGE_MESSAGE_TAG,
     QWENPAW_MESSAGE_TAG_KEY,
     TRUNCATION_NOTICE_MARKER,
 )
@@ -299,6 +300,7 @@ class MemoryMiddleware(MiddlewareBase):
     def _is_memory_user_turn(cls, msg: "Msg") -> bool:
         return msg.role == "user" and cls._message_tag(msg) not in {
             AUTO_CONTINUE_MESSAGE_TAG,
+            FASTFAIL_CONVERGE_MESSAGE_TAG,
         }
 
     @classmethod

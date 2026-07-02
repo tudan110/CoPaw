@@ -336,7 +336,7 @@ class ToolDisciplineContributor(SyncPromptContributor):
     """Global anti tool-storm / anti shell-flail guidance for every agent."""
 
     name = "tool_discipline"
-    priority = 86
+    priority = 87
 
     def contribute_sync(self, ctx: "HookContext") -> str | None:
         extras = getattr(ctx, "extras", {}) or {}

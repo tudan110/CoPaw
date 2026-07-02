@@ -722,23 +722,46 @@ class QwenPawAgent(CodingModeMixin, Agent):
         except Exception:
             return str(parsed)
 
-    def _detect_non_convergence(self) -> str | None:
-        """Scan the recent context tail; return a convergence hint (or None).
+    def _current_turn_start(self, context: list) -> int:
+        """Index of the last genuine user message (role=user with no injected
+        qwenpaw tag). Detection scopes to this turn so a deliberate re-query
+        in a LATER turn is not conflated with the current one (which would
+        echo a stale prior result / falsely count cross-turn duplicates)."""
+        start = 0
+        for i, msg in enumerate(context):
+            if getattr(msg, "role", None) != "user":
+                continue
+            md = getattr(msg, "metadata", None)
+            tag = md.get(QWENPAW_MESSAGE_TAG_KEY) if isinstance(md, dict) else None
+            if not tag:  # untagged user message == a real user turn
+                start = i
+        return start
 
-        Triggers when, within the last ``_FASTFAIL_SCAN_WINDOW`` tool calls,
-        either the same ``(name, args)`` repeats ``_FASTFAIL_DUP_THRESHOLD``+
-        times, or the last ``_FASTFAIL_EMPTY_STREAK``+ tool results in a row
-        were empty/error. For the duplicate case, if a usable prior result
-        exists it is echoed back so the model reuses it (soft cache).
+    def _detect_non_convergence(
+        self,
+        context: list | None = None,
+        start: int = 0,
+    ) -> str | None:
+        """Scan the current turn's tool calls; return a convergence hint (or
+        None).
+
+        Only ``context[start:]`` is considered so the detector reasons about
+        the current turn's storm, not the whole conversation. Triggers when,
+        within the last ``_FASTFAIL_SCAN_WINDOW`` tool calls, either the same
+        ``(name, args)`` repeats ``_FASTFAIL_DUP_THRESHOLD``+ times, or the
+        last ``_FASTFAIL_EMPTY_STREAK``+ tool results in a row were
+        empty/error. For the duplicate case, if a usable prior result exists
+        it is echoed back so the model reuses it (soft cache).
         """
-        context = getattr(self.state, "context", None)
+        if context is None:
+            context = getattr(self.state, "context", None)
         if not context:
             return None
 
         calls: list[tuple[str, str, str]] = []  # (id, name, args)
         result_by_id: dict[str, tuple[bool, str]] = {}  # id -> (empty, text)
         results_seq: list[bool] = []  # empties in chronological order
-        for msg in context:
+        for msg in context[start:]:
             content = getattr(msg, "content", None)
             if not isinstance(content, list):
                 continue
@@ -840,34 +863,48 @@ class QwenPawAgent(CodingModeMixin, Agent):
 
     def _maybe_inject_convergence_hint(self) -> None:
         """Inject a fast-fail convergence hint if a tool-call storm is
-        detected (with a short cooldown to avoid spamming)."""
+        detected in the current turn.
+
+        The whole path is guarded: it runs at the top of every ``_reasoning``
+        call, so a failure here must never break a normal agent turn. The
+        cooldown is reset at each new genuine user turn (``cur_iter`` restarts
+        at 0 per turn, so a stale cross-turn trigger-iter would otherwise
+        silence the detector early in the next turn).
+        """
         try:
-            guidance = self._detect_non_convergence()
+            context = getattr(self.state, "context", None)
+            if not context:
+                return
+            start = self._current_turn_start(context)
+            if getattr(self, "_fastfail_turn_start", None) != start:
+                self._fastfail_turn_start = start
+                self._fastfail_last_trigger_iter = -10
+
+            guidance = self._detect_non_convergence(context, start)
+            if not guidance:
+                return
+
+            cur_iter = getattr(self.state, "cur_iter", 0)
+            last_iter = getattr(self, "_fastfail_last_trigger_iter", -10)
+            if cur_iter <= last_iter + self._FASTFAIL_COOLDOWN:
+                return
+            self._fastfail_last_trigger_iter = cur_iter
+
+            context.append(
+                Msg(
+                    name="user",
+                    role="user",
+                    content=[TextBlock(type="text", text=guidance)],
+                    metadata={
+                        QWENPAW_MESSAGE_TAG_KEY: FASTFAIL_CONVERGE_MESSAGE_TAG,
+                    },
+                ),
+            )
+            logger.info(
+                "Fast-fail: injected convergence hint at iter=%s", cur_iter,
+            )
         except Exception:
-            logger.debug("fast-fail detection failed", exc_info=True)
-            return
-        if not guidance:
-            return
-
-        cur_iter = getattr(self.state, "cur_iter", 0)
-        last_iter = getattr(self, "_fastfail_last_trigger_iter", -10)
-        if cur_iter <= last_iter + self._FASTFAIL_COOLDOWN:
-            return
-        self._fastfail_last_trigger_iter = cur_iter
-
-        self.state.context.append(
-            Msg(
-                name="user",
-                role="user",
-                content=[TextBlock(type="text", text=guidance)],
-                metadata={
-                    QWENPAW_MESSAGE_TAG_KEY: FASTFAIL_CONVERGE_MESSAGE_TAG,
-                },
-            ),
-        )
-        logger.info(
-            "Fast-fail: injected convergence hint at iter=%s", cur_iter,
-        )
+            logger.debug("fast-fail inject failed", exc_info=True)
 
     @staticmethod
     def _is_content_safety_error(exc: Exception) -> bool:

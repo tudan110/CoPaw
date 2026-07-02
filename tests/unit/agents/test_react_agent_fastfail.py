@@ -156,6 +156,35 @@ def test_empty_context_returns_none():
     assert _agent([])._detect_non_convergence() is None
 
 
+def _user_msg(text: str):
+    return SimpleNamespace(role="user", metadata={}, content=[])
+
+
+def test_detection_scoped_to_current_turn_ignores_prior_turn_calls():
+    # Turn 1: one call. Genuine user message. Turn 2: two identical calls.
+    # Scoped to turn 2 (start after the user msg), only 2 dups < threshold 3.
+    ctx = []
+    ctx += _pair("q", {"a": 1}, "r", i=0)          # prior turn
+    ctx.append(_user_msg("再查一次"))               # real user turn boundary
+    ctx += _pair("q", {"a": 1}, "r", i=1)
+    ctx += _pair("q", {"a": 1}, "r", i=2)
+    agent = _agent(ctx)
+    start = agent._current_turn_start(ctx)
+    # Whole-context scan would see 3 dups (trigger); current-turn scan sees 2.
+    assert agent._detect_non_convergence(ctx, start) is None
+    assert agent._detect_non_convergence(ctx, 0) is not None
+
+
+def test_current_turn_start_skips_injected_tagged_user_msgs():
+    tagged = SimpleNamespace(
+        role="user", metadata={QWENPAW_MESSAGE_TAG_KEY: "auto_continue"},
+        content=[],
+    )
+    ctx = [_user_msg("真问题"), tagged]
+    # start points at the genuine user msg (index 0), not the tagged one.
+    assert _agent(ctx)._current_turn_start(ctx) == 0
+
+
 def test_result_snippet_truncates_long_results():
     long = "x" * 5000
     ctx = []
