@@ -103,9 +103,13 @@ def _proxy_status(connection: str) -> tuple[bool, str, str, str]:
         cfg = None
     if cfg is None:
         return False, "连接器未注册", f"连接器 {datasource_id}", "proxy"
+    label = str(cfg.name or datasource_id)
     if not getattr(cfg, "enabled", False):
-        return False, "连接器已禁用", str(cfg.name or datasource_id), "proxy"
-    return True, "", str(cfg.name or datasource_id), "proxy"
+        return False, "连接器已禁用", label, "proxy"
+    url = str(getattr(cfg, "url_template", "") or "")
+    if not url or _looks_placeholder(url):
+        return False, "连接器地址未配置或仍是集群内默认地址", label, "proxy"
+    return True, "", label, "proxy"
 
 
 def connection_status(connection: str) -> dict[str, Any]:
