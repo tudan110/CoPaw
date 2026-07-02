@@ -109,6 +109,69 @@ class TestOthers:
         assert status["configured"] is False
 
 
+class TestProxy:
+    """proxy:<id> connectors validate the registered url_template the
+    same way INOE/N9E/ZGOPS validate their base URL — a datasource that
+    still points at an in-cluster default host is *not* "configured"."""
+
+    @staticmethod
+    def _stub(monkeypatch: pytest.MonkeyPatch, url: str, enabled: bool = True):
+        from qwenpaw.extensions.api import proxy_datasource_service as svc
+        from qwenpaw.extensions.api.proxy_datasource_models import (
+            DatasourceConfig,
+        )
+
+        cfg = DatasourceConfig(
+            id="ds1",
+            name="我的连接器",
+            url_template=url,
+            enabled=enabled,
+        )
+        monkeypatch.setattr(svc, "get_datasource", lambda _did: cfg)
+
+    def test_placeholder_gateway_host_unconfigured(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        # registered but still pointing at the in-cluster gateway default
+        self._stub(monkeypatch, "http://gateway:8080/api/v1/data")
+        status = cs.connection_status("proxy:ds1")
+        assert status["configured"] is False
+        assert status["label"] == "我的连接器"
+        assert status["settingsTab"] == "proxy"
+        assert "默认" in status["reason"] or "集群" in status["reason"]
+
+    def test_localhost_host_unconfigured(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        # localhost is unreachable in a container deployment
+        self._stub(monkeypatch, "http://localhost:3000/metrics")
+        assert cs.connection_status("proxy:ds1")["configured"] is False
+
+    def test_disabled_datasource_unconfigured(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        self._stub(
+            monkeypatch, "http://82.156.83.38:9000/api", enabled=False
+        )
+        status = cs.connection_status("proxy:ds1")
+        assert status["configured"] is False
+        assert "禁用" in status["reason"]
+
+    def test_real_host_configured(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        self._stub(monkeypatch, "http://82.156.83.38:9000/api/{metric}")
+        status = cs.connection_status("proxy:ds1")
+        assert status["configured"] is True
+        assert status["reason"] == ""
+        assert status["label"] == "我的连接器"
+        assert status["settingsTab"] == "proxy"
+
+
 class TestOrder:
     def test_own_ferry_config_is_configured(
         self,
