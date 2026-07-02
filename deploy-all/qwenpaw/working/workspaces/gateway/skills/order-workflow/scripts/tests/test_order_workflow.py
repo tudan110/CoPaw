@@ -180,6 +180,18 @@ class OrderWorkflowTests(unittest.TestCase):
         # Should not raise.
         OrderWorkflowClient._require_ok({"code": 200, "data": {}, "msg": ""})
 
+    def test_require_ok_raises_on_missing_business_code(self) -> None:
+        # A JSON body without a ferry business code (e.g. a misconfigured
+        # gateway answering 200 {"msg": ""}) must fail loudly instead of
+        # being normalized into an empty result list downstream.
+        with self.assertRaises(RuntimeError) as ctx:
+            OrderWorkflowClient._require_ok(
+                {"msg": ""},
+                "http://gateway.example:30080/ferry",
+            )
+        self.assertIn("未返回业务码", str(ctx.exception))
+        self.assertIn("http://gateway.example:30080/ferry", str(ctx.exception))
+
     def test_normalize_list_payload_maps_paginator_result(self) -> None:
         normalized = OrderWorkflowClient._normalize_list_payload(
             _list_envelope([TODO_ROW], total=26, page=1, per_page=10)
