@@ -36,6 +36,43 @@ function markReload(): void {
   }
 }
 
+/**
+ * Self-monitor beacon (L1 白屏/资源异常上报). Dependency-free on purpose:
+ * when this boundary trips, dynamic imports may be exactly what's broken,
+ * so the API base resolution is inlined and sendBeacon needs no chunks.
+ * The backend dedups repeats; failures here are silently ignored.
+ */
+function reportBoundaryBeacon(kind: "chunk_error" | "frontend_error", error: unknown): void {
+  try {
+    const base = (
+      (import.meta as { env?: Record<string, string> }).env?.VITE_PORTAL_API_BASE_URL ||
+      (window as unknown as { __PORTAL_RUNTIME_CONFIG__?: { portalApiBaseUrl?: string } })
+        .__PORTAL_RUNTIME_CONFIG__?.portalApiBaseUrl ||
+      "/portal-api"
+    ).replace(/\/$/, "");
+    const payload = JSON.stringify({
+      type: kind,
+      source: `portal:${window.location.pathname}`,
+      message: String(error instanceof Error ? error.message : error).slice(0, 280),
+    });
+    if (navigator.sendBeacon) {
+      navigator.sendBeacon(
+        `${base}/self-monitor/beacon`,
+        new Blob([payload], { type: "application/json" }),
+      );
+    } else {
+      void fetch(`${base}/self-monitor/beacon`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: payload,
+        keepalive: true,
+      }).catch(() => undefined);
+    }
+  } catch {
+    /* never let telemetry break the recovery path */
+  }
+}
+
 interface State {
   hasError: boolean;
   isChunkError: boolean;
@@ -54,12 +91,14 @@ export class ChunkErrorBoundary extends Component<
   componentDidCatch(error: unknown): void {
     if (isChunkLoadError(error)) {
       console.warn("[Portal] Chunk load error caught:", error);
+      reportBoundaryBeacon("chunk_error", error);
       if (!recentlyReloaded()) {
         markReload();
         window.location.reload();
       }
     } else {
       console.error("[Portal] Unhandled render error:", error);
+      reportBoundaryBeacon("frontend_error", error);
     }
   }
 

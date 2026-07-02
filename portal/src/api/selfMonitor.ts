@@ -21,7 +21,59 @@ export interface SelfMonitorOverview {
     workersUp: number;
     chatSuccessRate: number | null;
   };
+  alertsFiring: number;
   eventCounts: Record<string, number>;
+}
+
+export interface SelfMonitorAlert {
+  id: number;
+  ruleId: string;
+  name: string;
+  layer: string;
+  severity: "warn" | "critical";
+  state: "firing" | "resolved";
+  value: number;
+  threshold: number;
+  message: string;
+  startedAt: number;
+  resolvedAt: number | null;
+}
+
+export interface SelfMonitorTopology {
+  generatedAt: number;
+  windowS: number;
+  nodes: {
+    id: string;
+    type: "core" | "worker" | "model" | "datasource";
+    label: string;
+    status: string;
+    requests?: number;
+    errorRatio?: number;
+  }[];
+  edges: { source: string; target: string; value: number }[];
+}
+
+export interface SelfMonitorCost {
+  total: number | null;
+  currency: string;
+  byModel: Record<string, number>;
+  unpricedModels: string[];
+  tokensByModel: Record<string, { prompt: number; completion: number }>;
+  budgetDaily: number | null;
+  configured: boolean;
+  since: number;
+  generatedAt: number;
+}
+
+export interface SelfMonitorDiagnosis {
+  summary: string;
+  rootCause: string;
+  confidence: "high" | "medium" | "low";
+  evidence: string[];
+  recommendations: string[];
+  engine: "llm" | "rule-based";
+  degraded: boolean;
+  generatedAt: number;
 }
 
 export interface SelfMonitorMetricSeries {
@@ -72,6 +124,29 @@ export const selfMonitorApi = {
       `/self-monitor/events${buildQuery({ limit })}`,
       { signal },
     ),
+
+  alerts: (limit = 50, signal?: AbortSignal) =>
+    requestPortalApi<{ active: SelfMonitorAlert[]; recent: SelfMonitorAlert[] }>(
+      `/self-monitor/alerts${buildQuery({ limit })}`,
+      { signal },
+    ),
+
+  topology: (windowS = 3600, signal?: AbortSignal) =>
+    requestPortalApi<SelfMonitorTopology>(
+      `/self-monitor/topology${buildQuery({ window_s: windowS })}`,
+      { signal },
+    ),
+
+  cost: (signal?: AbortSignal) =>
+    requestPortalApi<SelfMonitorCost>("/self-monitor/cost", { signal }),
+
+  diagnose: (windowS = 3600, signal?: AbortSignal) =>
+    requestPortalApi<SelfMonitorDiagnosis>("/self-monitor/diagnose", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ windowS }),
+      signal,
+    }),
 };
 
 /**

@@ -2,11 +2,15 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   selfMonitorApi,
   toDeltaBuckets,
+  type SelfMonitorAlert,
+  type SelfMonitorCost,
+  type SelfMonitorDiagnosis,
   type SelfMonitorEvent,
   type SelfMonitorLayer,
   type SelfMonitorMetricSeries,
   type SelfMonitorOverview,
   type SelfMonitorStatus,
+  type SelfMonitorTopology,
 } from "../../api/selfMonitor";
 import { EChart } from "../../components/big-screen/charts/EChart";
 import "../self-monitor.css";
@@ -63,6 +67,14 @@ export function SelfMonitorPanel() {
   const [events, setEvents] = useState<SelfMonitorEvent[]>([]);
   const [reqSeries, setReqSeries] = useState<SelfMonitorMetricSeries[]>([]);
   const [degradeSeries, setDegradeSeries] = useState<SelfMonitorMetricSeries[]>([]);
+  const [alerts, setAlerts] = useState<{ active: SelfMonitorAlert[]; recent: SelfMonitorAlert[] }>({
+    active: [],
+    recent: [],
+  });
+  const [cost, setCost] = useState<SelfMonitorCost | null>(null);
+  const [topology, setTopology] = useState<SelfMonitorTopology | null>(null);
+  const [diagnosis, setDiagnosis] = useState<SelfMonitorDiagnosis | null>(null);
+  const [diagLoading, setDiagLoading] = useState(false);
   const [error, setError] = useState("");
   const [loadedAt, setLoadedAt] = useState<number | null>(null);
   const [reloadNonce, setReloadNonce] = useState(0);
@@ -73,17 +85,23 @@ export function SelfMonitorPanel() {
     const load = async () => {
       const since = Date.now() / 1000 - windowS;
       try {
-        const [ov, ev, req, deg] = await Promise.all([
+        const [ov, ev, req, deg, al, co, topo] = await Promise.all([
           selfMonitorApi.overview(windowS, controller.signal),
           selfMonitorApi.events(60, controller.signal),
           selfMonitorApi.metrics("qwenpaw_llm_requests_total", since, controller.signal),
           selfMonitorApi.metrics("qwenpaw_degrade_events_total", since, controller.signal),
+          selfMonitorApi.alerts(30, controller.signal),
+          selfMonitorApi.cost(controller.signal),
+          selfMonitorApi.topology(windowS, controller.signal),
         ]);
         if (cancelled) return;
         setOverview(ov);
         setEvents(ev.items || []);
         setReqSeries(req.series || []);
         setDegradeSeries(deg.series || []);
+        setAlerts({ active: al.active || [], recent: al.recent || [] });
+        setCost(co);
+        setTopology(topo);
         setError("");
         setLoadedAt(Date.now() / 1000);
       } catch (err) {
@@ -101,6 +119,26 @@ export function SelfMonitorPanel() {
   }, [windowS, reloadNonce]);
 
   const refresh = useCallback(() => setReloadNonce((n) => n + 1), []);
+
+  const runDiagnose = useCallback(() => {
+    setDiagLoading(true);
+    selfMonitorApi
+      .diagnose(windowS)
+      .then((verdict) => setDiagnosis(verdict))
+      .catch((err) =>
+        setDiagnosis({
+          summary: "诊断请求失败",
+          rootCause: err instanceof Error ? err.message : String(err),
+          confidence: "low",
+          evidence: [],
+          recommendations: ["检查后端 /self-monitor/diagnose 接口"],
+          engine: "rule-based",
+          degraded: true,
+          generatedAt: Date.now() / 1000,
+        }),
+      )
+      .finally(() => setDiagLoading(false));
+  }, [windowS]);
 
   const state: SelfMonitorStatus = overview?.state ?? "unknown";
   const kpis = overview?.kpis;
@@ -189,6 +227,55 @@ export function SelfMonitorPanel() {
     return { chartOption: option, chartHasData: axis.length > 0 };
   }, [reqSeries, degradeSeries, windowS]);
 
+  const topoOption = useMemo(() => {
+    const nodes = topology?.nodes ?? [];
+    const edges = topology?.edges ?? [];
+    const statusColor: Record<string, string> = {
+      ok: "#34d399",
+      warn: "#fb923c",
+      crit: "#f87171",
+      unknown: "#9fb2cc",
+    };
+    const typeSize: Record<string, number> = {
+      core: 34,
+      worker: 22,
+      model: 18,
+      datasource: 16,
+    };
+    return {
+      backgroundColor: "transparent",
+      animation: false,
+      tooltip: {},
+      series: [
+        {
+          type: "graph",
+          layout: "force",
+          roam: false,
+          force: { repulsion: 220, edgeLength: [60, 130], gravity: 0.12 },
+          label: { show: true, color: "#cbd6e8", fontSize: 10, position: "bottom" },
+          lineStyle: { color: "rgba(159,178,204,.35)", curveness: 0.1 },
+          emphasis: { focus: "adjacency" },
+          data: nodes.map((node) => ({
+            id: node.id,
+            name: node.label,
+            symbolSize: typeSize[node.type] ?? 16,
+            itemStyle: {
+              color: node.type === "core" ? "#22d3ee" : statusColor[node.status] ?? "#9fb2cc",
+              shadowBlur: node.status === "crit" ? 14 : 6,
+              shadowColor:
+                node.status === "crit" ? "rgba(248,113,113,.8)" : "rgba(34,211,238,.35)",
+            },
+          })),
+          links: edges.map((edge) => ({
+            source: edge.source,
+            target: edge.target,
+            lineStyle: { width: Math.min(4, 1 + Math.log10(1 + (edge.value || 1))) },
+          })),
+        },
+      ],
+    };
+  }, [topology]);
+
   const stateMeta = STATE_META[state];
   const windowLabel =
     WINDOW_OPTIONS.find((o) => o.seconds === windowS)?.label ?? `${windowS}s`;
@@ -201,7 +288,7 @@ export function SelfMonitorPanel() {
       <div className="sm-cmd">
         <div>
           <div className="sm-cmd-title">
-            QwenPaw <em>自监控</em>
+            智观AI <em>自监控</em>
           </div>
           <div className="sm-cmd-sub">Self Monitor · Mission Console</div>
         </div>
@@ -218,6 +305,12 @@ export function SelfMonitorPanel() {
             </small>
           ) : null}
         </div>
+        {alerts.active.length > 0 ? (
+          <div className="sm-state crit">
+            <i />
+            {alerts.active.length} 条告警触发中
+          </div>
+        ) : null}
         <div className="sm-cmd-spacer" />
         <div className="sm-rangebar">
           {WINDOW_OPTIONS.map((option) => (
@@ -267,6 +360,26 @@ export function SelfMonitorPanel() {
                         <div>
                           <span>会话轮次</span>
                           <b>{num(metrics.chatTurns)}</b>
+                        </div>
+                        <div>
+                          <span>拨测</span>
+                          <b
+                            className={
+                              Object.values(
+                                (metrics.probes ?? {}) as Record<string, boolean>,
+                              ).some((up) => !up)
+                                ? "bad"
+                                : "up"
+                            }
+                          >
+                            {(() => {
+                              const probeMap = (metrics.probes ?? {}) as Record<string, boolean>;
+                              const total = Object.keys(probeMap).length;
+                              if (!total) return "—";
+                              const ok = Object.values(probeMap).filter(Boolean).length;
+                              return `${ok} / ${total}`;
+                            })()}
+                          </b>
                         </div>
                       </>
                     )}
@@ -390,6 +503,87 @@ export function SelfMonitorPanel() {
             </div>
           </section>
 
+          <section className="sm-subrow">
+            <div className="sm-panel">
+              <div className="sm-ph">
+                <i style={{ background: "var(--sm-red)" }} />
+                <h3>告警</h3>
+                <span className="sm-en">Alerts</span>
+                <span className="sm-right">
+                  触发中 {alerts.active.length} · 历史 {alerts.recent.length}
+                </span>
+              </div>
+              {alerts.active.length || alerts.recent.length ? (
+                <div className="sm-alert-list">
+                  {(alerts.active.length ? alerts.active : alerts.recent.slice(0, 5)).map(
+                    (alert) => (
+                      <div
+                        key={alert.id}
+                        className={`sm-alert ${alert.state} ${alert.severity}`}
+                      >
+                        <div className="sm-alert-head">
+                          <b>{alert.name}</b>
+                          <span className="sm-alert-state">
+                            {alert.state === "firing" ? "FIRING" : "已恢复"}
+                          </span>
+                          <time>{fmtTime(alert.startedAt)}</time>
+                        </div>
+                        <p>{alert.message}</p>
+                      </div>
+                    ),
+                  )}
+                </div>
+              ) : (
+                <div className="sm-empty">
+                  <b>无告警</b>
+                  <br />
+                  规则引擎随采集循环每 15s 评估;规则可经 self_monitor_rules.json 扩展。
+                </div>
+              )}
+            </div>
+
+            <div className="sm-panel">
+              <div className="sm-ph">
+                <i style={{ background: "var(--sm-violet)" }} />
+                <h3>AI 根因诊断</h3>
+                <span className="sm-en">Diagnose</span>
+                <button className="sm-refresh sm-right" onClick={runDiagnose} disabled={diagLoading}>
+                  {diagLoading ? "诊断中…" : "运行诊断"}
+                </button>
+              </div>
+              {diagnosis ? (
+                <div className="sm-diag">
+                  <div className="sm-diag-head">
+                    <b>{diagnosis.summary}</b>
+                    <span className={`sm-diag-engine ${diagnosis.engine}`}>
+                      {diagnosis.engine === "llm" ? "LLM" : "规则引擎"} ·{" "}
+                      {diagnosis.confidence}
+                    </span>
+                  </div>
+                  <p className="sm-diag-cause">{diagnosis.rootCause}</p>
+                  {diagnosis.evidence.length ? (
+                    <ul>
+                      {diagnosis.evidence.map((item, index) => (
+                        <li key={index}>{item}</li>
+                      ))}
+                    </ul>
+                  ) : null}
+                  {diagnosis.recommendations.length ? (
+                    <div className="sm-diag-reco">
+                      建议:{diagnosis.recommendations.join(";")}
+                    </div>
+                  ) : null}
+                </div>
+              ) : (
+                <div className="sm-empty">
+                  <b>点击「运行诊断」</b>
+                  <br />
+                  汇总四层快照交给 LLM 出根因;未配置模型时由规则引擎兜底。
+                </div>
+              )}
+            </div>
+          </section>
+
           <section className="sm-panel">
             <div className="sm-ph">
               <i />
@@ -475,6 +669,85 @@ export function SelfMonitorPanel() {
                   </div>
                 </div>
               </div>
+            </div>
+          </section>
+
+          <section className="sm-subrow">
+            <div className="sm-panel">
+              <div className="sm-ph">
+                <i style={{ background: "var(--sm-green)" }} />
+                <h3>依赖图谱</h3>
+                <span className="sm-en">Topology</span>
+                <span className="sm-right">
+                  {topology ? `${topology.nodes.length} 节点` : ""}
+                </span>
+              </div>
+              {topology && topology.nodes.length > 1 ? (
+                <div className="sm-chart-body" style={{ height: 220 }}>
+                  <EChart option={topoOption} />
+                </div>
+              ) : (
+                <div className="sm-empty">
+                  <b>图谱待数据</b>
+                  <br />
+                  worker / 模型 / 数据源关系由指标标签自动派生。
+                </div>
+              )}
+            </div>
+
+            <div className="sm-panel">
+              <div className="sm-ph">
+                <i style={{ background: "var(--sm-orange)" }} />
+                <h3>LLM 成本(今日)</h3>
+                <span className="sm-en">Cost</span>
+              </div>
+              {cost?.configured ? (
+                <div>
+                  <div className="sm-cost-total">
+                    <b>{cost.total == null ? "—" : cost.total.toFixed(2)}</b>
+                    <small>{cost.currency}</small>
+                    {cost.budgetDaily != null ? (
+                      <span className="sm-cost-budget">
+                        预算 {cost.budgetDaily.toFixed(0)} {cost.currency}
+                      </span>
+                    ) : null}
+                  </div>
+                  {cost.budgetDaily != null && cost.total != null ? (
+                    <div className={`sm-gauge ${cost.total > cost.budgetDaily ? "hot" : ""}`}>
+                      <div className="sm-bar">
+                        <i
+                          style={{
+                            width: `${Math.min(100, (cost.total / cost.budgetDaily) * 100)}%`,
+                          }}
+                        />
+                      </div>
+                    </div>
+                  ) : null}
+                  <div className="sm-cost-models">
+                    {Object.entries(cost.byModel)
+                      .slice(0, 4)
+                      .map(([model, amount]) => (
+                        <div key={model}>
+                          <span>{model}</span>
+                          <b>
+                            {amount.toFixed(2)} {cost.currency}
+                          </b>
+                        </div>
+                      ))}
+                    {cost.unpricedModels.length ? (
+                      <div className="sm-cost-unpriced">
+                        未配置单价: {cost.unpricedModels.join(", ")}
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
+              ) : (
+                <div className="sm-empty">
+                  <b>未配置模型单价</b>
+                  <br />
+                  在 self_monitor_costs.json 配置 prices/budgetDaily 后此卡与预算告警生效。
+                </div>
+              )}
             </div>
           </section>
         </main>
