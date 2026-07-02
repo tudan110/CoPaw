@@ -138,6 +138,10 @@ export default function App() {
         element={renderDeferredPage(<DigitalEmployeePage forcedSection="traces" />)}
       />
       <Route
+        path="/self-monitor"
+        element={renderDeferredPage(<DigitalEmployeePage forcedSection="self-monitor" />)}
+      />
+      <Route
         path="/alarm-registry"
         element={renderDeferredPage(<DigitalEmployeePage forcedSection="alarm-registry" />)}
       />

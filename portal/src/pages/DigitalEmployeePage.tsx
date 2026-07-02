@@ -162,6 +162,10 @@ const TracesCenterPanel = lazyNamed(
   () => import("./digital-employee/tracesCenterPanel"),
   "TracesCenterPanel",
 );
+const SelfMonitorPanel = lazyNamed(
+  () => import("./digital-employee/selfMonitorPanel"),
+  "SelfMonitorPanel",
+);
 const AlarmRegistryPanel = lazyNamed(
   () => import("./digital-employee/alarmRegistryPanel"),
   "AlarmRegistryPanel",
@@ -253,6 +257,7 @@ export default function DigitalEmployeePage({
   const isAiBigScreenMode = activeAdvancedPanel === "ai-big-screen";
   const isAppMarketMode = activeAdvancedPanel === "app-market";
   const isTracesMode = activeAdvancedPanel === "traces";
+  const isSelfMonitorMode = activeAdvancedPanel === "self-monitor";
   const isAlarmRegistryMode = activeAdvancedPanel === "alarm-registry";
   const isAppArtifactsMode = activeAdvancedPanel === "app-artifacts";
   const isAppWorkbenchMode = activeAdvancedPanel === "app-workbench";
@@ -1543,6 +1548,7 @@ export default function DigitalEmployeePage({
             isAiBigScreenActive={isAiBigScreenMode}
             isAppMarketActive={isAppMarketMode}
             isTracesActive={isTracesMode}
+            isSelfMonitorActive={isSelfMonitorMode}
             isAlarmRegistryActive={isAlarmRegistryMode}
             isAppArtifactsActive={isAppArtifactsMode}
             isProxyDatasourcesActive={isProxyDatasourcesMode}
@@ -1551,6 +1557,11 @@ export default function DigitalEmployeePage({
             onOpenTraces={() =>
               updateCurrentEmployeeRoute({
                 panel: "traces",
+              })
+            }
+            onOpenSelfMonitor={() =>
+              updateCurrentEmployeeRoute({
+                panel: "self-monitor",
               })
             }
             onOpenAlarmRegistry={() =>
@@ -1741,6 +1752,8 @@ export default function DigitalEmployeePage({
             renderDeferredPanel(<AppMarketPanel />)
           ) : isTracesMode ? (
             renderDeferredPanel(<TracesCenterPanel />)
+          ) : isSelfMonitorMode ? (
+            renderDeferredPanel(<SelfMonitorPanel />)
           ) : isAlarmRegistryMode ? (
             renderDeferredPanel(<AlarmRegistryPanel pageTheme={pageTheme} onOpenChat={(chatId) => {
               const employee = getEmployeeById("fault");

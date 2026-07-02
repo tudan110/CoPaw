@@ -229,6 +229,7 @@ export function AdvancedModelEntry({
   isAiBigScreenActive,
   isAppMarketActive,
   isTracesActive,
+  isSelfMonitorActive,
   isAlarmRegistryActive,
   isAppArtifactsActive,
   isProxyDatasourcesActive,
@@ -249,6 +250,7 @@ export function AdvancedModelEntry({
   onOpenInspiration,
   onOpenCli,
   onOpenTraces,
+  onOpenSelfMonitor,
   onOpenAlarmRegistry,
   onOpenAppArtifacts,
   onOpenProxyDatasources,
@@ -272,6 +274,7 @@ export function AdvancedModelEntry({
   isAiBigScreenActive?: boolean;
   isAppMarketActive?: boolean;
   isTracesActive?: boolean;
+  isSelfMonitorActive?: boolean;
   isAlarmRegistryActive?: boolean;
   isAppArtifactsActive?: boolean;
   isProxyDatasourcesActive?: boolean;
@@ -292,6 +295,7 @@ export function AdvancedModelEntry({
   onOpenInspiration: () => void;
   onOpenCli: () => void;
   onOpenTraces: () => void;
+  onOpenSelfMonitor: () => void;
   onOpenAlarmRegistry: () => void;
   onOpenAppArtifacts: () => void;
   onOpenProxyDatasources: () => void;
@@ -578,6 +582,19 @@ export function AdvancedModelEntry({
           <div className="sidebar-advanced-item-name">追溯中心</div>
           <div className="sidebar-advanced-item-desc">操作步骤全部留痕</div>
           <div className="sidebar-advanced-item-meta">会话 / 工具 / 推理 / 异常</div>
+        </button>
+        <button
+          className={isSelfMonitorActive ? "sidebar-advanced-item active" : "sidebar-advanced-item"}
+          onClick={onOpenSelfMonitor}
+        >
+          <div className="sidebar-advanced-item-icon">
+            <span role="img" aria-label="self-monitor">
+              📡
+            </span>
+          </div>
+          <div className="sidebar-advanced-item-name">自监控</div>
+          <div className="sidebar-advanced-item-desc">系统自身健康驾驶舱</div>
+          <div className="sidebar-advanced-item-meta">四层健康 / 降级 / 429 / 事件</div>
         </button>
         <button
           className={isAlarmRegistryActive ? "sidebar-advanced-item active" : "sidebar-advanced-item"}

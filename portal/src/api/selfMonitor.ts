@@ -1,0 +1,99 @@
+import { requestPortalApi } from "./portalWorkorders";
+
+/** Layer/overall status vocabulary from the self-monitor backend. */
+export type SelfMonitorStatus = "ok" | "warn" | "crit" | "unknown";
+
+export interface SelfMonitorLayer {
+  layer: "l1" | "l2" | "l3" | "l4";
+  status: SelfMonitorStatus;
+  metrics: Record<string, unknown>;
+}
+
+export interface SelfMonitorOverview {
+  generatedAt: number;
+  windowS: number;
+  enabled: boolean;
+  state: SelfMonitorStatus;
+  layers: SelfMonitorLayer[];
+  kpis: {
+    degradeEvents: number;
+    llm429: number;
+    workersUp: number;
+    chatSuccessRate: number | null;
+  };
+  eventCounts: Record<string, number>;
+}
+
+export interface SelfMonitorMetricSeries {
+  name: string;
+  labels: Record<string, string>;
+  worker: string;
+  kind: string;
+  layer: string;
+  points: [number, number][];
+}
+
+export interface SelfMonitorEvent {
+  ts: number;
+  type: string;
+  severity: "info" | "warn" | "error" | "critical";
+  layer: string;
+  source: string;
+  labels: Record<string, string>;
+  message: string;
+  dedupKey: string;
+  count: number;
+}
+
+function buildQuery(params: Record<string, string | number | undefined>) {
+  const search = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (value !== undefined && value !== "") search.set(key, String(value));
+  }
+  const query = search.toString();
+  return query ? `?${query}` : "";
+}
+
+export const selfMonitorApi = {
+  overview: (windowS: number, signal?: AbortSignal) =>
+    requestPortalApi<SelfMonitorOverview>(
+      `/self-monitor/overview${buildQuery({ window_s: windowS })}`,
+      { signal },
+    ),
+
+  metrics: (name: string, since: number, signal?: AbortSignal) =>
+    requestPortalApi<{ name: string; series: SelfMonitorMetricSeries[] }>(
+      `/self-monitor/metrics${buildQuery({ name, since })}`,
+      { signal },
+    ),
+
+  events: (limit = 60, signal?: AbortSignal) =>
+    requestPortalApi<{ items: SelfMonitorEvent[] }>(
+      `/self-monitor/events${buildQuery({ limit })}`,
+      { signal },
+    ),
+};
+
+/**
+ * Turn cumulative-counter rollup series into per-bucket increases,
+ * summed across all (labels, worker) series.  Mirrors the backend's
+ * counter_delta semantics: drops between samples are counter resets.
+ */
+export function toDeltaBuckets(
+  series: SelfMonitorMetricSeries[],
+  bucketS = 60,
+): [number, number][] {
+  const buckets = new Map<number, number>();
+  for (const one of series) {
+    let prev: number | null = null;
+    for (const [ts, value] of one.points) {
+      if (prev !== null) {
+        const delta = value >= prev ? value - prev : value;
+        const bucket = Math.floor(ts / bucketS) * bucketS;
+        buckets.set(bucket, (buckets.get(bucket) || 0) + delta);
+      }
+      prev = value;
+    }
+  }
+  return [...buckets.entries()].sort((a, b) => a[0] - b[0]);
+}
