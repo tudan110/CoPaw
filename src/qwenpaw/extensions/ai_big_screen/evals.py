@@ -62,6 +62,18 @@ GOLDEN_CASES: tuple[EvalCase, ...] = (
         expect_capabilities=frozenset({"system-logs", "web-live-data"}),
         min_components=2,
     ),
+    # LLM path: mixed prompt with a fabricated internal-system ask that
+    # is neither a catalog capability nor a public-web query. Proves the
+    # completeness patch (_fill_uncovered_clauses) is general, not a
+    # weather-specific keyword list: the unmatched clause must surface
+    # as an honest capability-gap, never vanish silently, while the
+    # matched clause still routes correctly.
+    EvalCase(
+        case_id="workorders-and-invented-source",
+        prompt="查询今日工单，以及库存管理系统的库存周转率",
+        expect_capabilities=frozenset({"workorders", "capability-gap"}),
+        min_components=2,
+    ),
     # LLM path: nothing in the catalog covers stock prices — the
     # honest answers are open-web retrieval or an explicit gap, never
     # a data-bearing wrong route
