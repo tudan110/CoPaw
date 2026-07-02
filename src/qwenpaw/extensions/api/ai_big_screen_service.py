@@ -295,6 +295,7 @@ async def patch_screen_asset(
             "degraded": bool(
                 isinstance(context, dict) and context.get("degraded"),
             ),
+            "lastError": str(outcome.get("lastError") or "")[:300],
             "preview": preview,
             "durationMs": int((time.monotonic() - started) * 1000),
             "screenId": screen_id,

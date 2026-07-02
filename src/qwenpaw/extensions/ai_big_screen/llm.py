@@ -155,12 +155,22 @@ async def structured_call(
     max_repair: int = 2,
     timeout: float = 120.0,
     fallback: Callable[[], T] | None = None,
+    retry_backoff: float = 1.5,
 ) -> StructuredCallResult[T]:
     """Call ``model`` until ``parser`` accepts the reply.
 
     ``parser`` must raise (``ValueError`` / pydantic ``ValidationError``)
     on bad payloads; the error text is fed back verbatim on the next
     repair round. Total attempts = 1 + ``max_repair``.
+
+    A transport/timeout failure (as opposed to a parser rejection) means
+    ``model`` already exhausted its own backed-off retries — or hit a
+    fast non-retryable/429 short-circuit — before raising here. Retrying
+    the exact same call again with zero delay just burns the whole
+    repair budget in milliseconds without giving a transient rate limit
+    any window to clear, so those two branches (not the parser-repair
+    one, which wants an immediate retry with the corrected prompt) wait
+    ``retry_backoff`` seconds before the next round.
     """
     conversation = [dict(message) for message in messages]
     last_error = ""
@@ -175,9 +185,13 @@ async def structured_call(
             )
         except asyncio.TimeoutError:
             last_error = f"模型响应超时（>{timeout}s）"
+            if _round < max_repair:
+                await asyncio.sleep(retry_backoff * attempts)
             continue
         except Exception as exc:  # provider/transport errors
             last_error = str(exc).strip() or exc.__class__.__name__
+            if _round < max_repair:
+                await asyncio.sleep(retry_backoff * attempts)
             continue
 
         try:

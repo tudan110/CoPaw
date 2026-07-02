@@ -141,6 +141,7 @@ class ScreenPlan(_CamelModel):
     layout: dict[str, Any] = Field(default_factory=dict)
     components: list[PlanComponent] = Field(default_factory=list)
     degraded: bool = False
+    last_error: str = ""
 
     @field_validator("components", mode="before")
     @classmethod

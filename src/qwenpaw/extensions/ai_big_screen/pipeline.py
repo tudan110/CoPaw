@@ -163,6 +163,7 @@ async def run_draft_pipeline(
             "kind": "draft",
             "success": True,
             "degraded": bool(plan.degraded),
+            "lastError": plan.last_error[:300],
             "durationMs": int((time.monotonic() - started) * 1000),
             "screenId": str(screen.get("id") or ""),
             "promptChars": len(normalized_prompt),

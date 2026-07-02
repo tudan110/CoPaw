@@ -715,6 +715,7 @@ async def apply_patch(
             "summary": summary,
             "preview": True,
             "diff": build_screen_diff(original, screen),
+            "lastError": result.last_error,
         }
 
     version_id = f"v{len(screen.get('versions') or []) + 1}"
@@ -725,7 +726,12 @@ async def apply_patch(
         requested_by=requested_by,
     )
     screen["versions"] = [*(screen.get("versions") or []), version]
-    return {"screen": screen, "version": version, "summary": summary}
+    return {
+        "screen": screen,
+        "version": version,
+        "summary": summary,
+        "lastError": result.last_error,
+    }
 
 
 def patch_component_id() -> str:

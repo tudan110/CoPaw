@@ -473,7 +473,7 @@ class TestDryRunPreview:
                 [_ops([{"op": "setThemePalette", "value": "executive"}])],
             ),
         )
-        assert set(outcome) == {"screen", "version", "summary"}
+        assert set(outcome) == {"screen", "version", "summary", "lastError"}
 
 
 class TestVersioningAndContext:

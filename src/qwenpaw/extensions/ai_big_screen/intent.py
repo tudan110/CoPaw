@@ -1419,7 +1419,9 @@ async def build_screen_plan(
         ),
     )
     if result.degraded:
-        return result.value
+        plan = result.value
+        plan.last_error = result.last_error
+        return plan
     return _normalize_llm_plan(
         result.value,
         prompt=normalized_prompt,

@@ -97,6 +97,46 @@ class TestRunCritique:
         assert screen["theme"]["palette"] == TARGET_PALETTE
         assert screen["aiConversationContext"]["critique"] == info
 
+    async def test_rebuild_bindings_failure_rolls_back_mutation(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """``_apply_operations`` mutates ``screen`` in place before
+        ``rebuild_data_bindings`` runs. If the rebuild throws, the applied
+        mutation must be rolled back — reporting ``applied: []`` while the
+        screen was actually changed would violate this function's own
+        "leaves the screen exactly as it was" contract."""
+        from qwenpaw.extensions.ai_big_screen import critique as critique_module
+
+        def _boom(**_kwargs: Any) -> Any:
+            raise RuntimeError("boom")
+
+        monkeypatch.setattr(critique_module, "rebuild_data_bindings", _boom)
+        screen = _screen()
+        before = copy.deepcopy(screen)
+        info = await run_critique(
+            screen,
+            model=ScriptedModel(
+                [
+                    _critique_json(
+                        operations=[
+                            {
+                                "op": "setComponentTitle",
+                                "componentId": "comp-1",
+                                "value": "今日工单明细",
+                            },
+                            {"op": "setThemePalette", "value": TARGET_PALETTE},
+                        ],
+                    ),
+                ],
+            ),
+        )
+        assert info is not None
+        assert info["applied"] == []
+        assert screen["components"] == before["components"]
+        assert screen["theme"] == before["theme"]
+        assert screen["dataBindings"] == before["dataBindings"]
+
     async def test_invalid_json_skips_silently(self) -> None:
         screen = _screen()
         before = copy.deepcopy(screen)
