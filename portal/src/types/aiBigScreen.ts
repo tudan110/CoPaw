@@ -110,6 +110,8 @@ export interface AiBigScreenApp {
   schemaVersion?: number;
   id: string;
   name: string;
+  /** Screen banner title (patch op setScreenTitle) — rendered top-center. */
+  title?: string;
   description?: string;
   owner?: string;
   status: "draft" | "published" | "archived" | string;

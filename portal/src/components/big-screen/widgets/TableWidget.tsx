@@ -32,7 +32,9 @@ export function TableWidget({ component }: WidgetProps) {
         <thead>
           <tr>
             {columns.map((c) => (
-              <th key={c.key}>{c.label}</th>
+              <th key={c.key} title={c.label}>
+                {c.label}
+              </th>
             ))}
           </tr>
         </thead>

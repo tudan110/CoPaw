@@ -993,3 +993,221 @@ class TestApplyPatchRenderedLayoutIntegration:
         payload = json.loads(model.last_messages[1]["content"])
         for component in payload["screen"]["components"]:
             assert "renderedPosition" not in component
+
+
+class TestScreenTitleOp:
+    async def test_set_screen_title_applies_and_diffs(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        invoked = _block_all_fetches(monkeypatch)
+        outcome = await apply_patch(
+            screen=_screen(),
+            instruction="在大屏上方中心增加一个标题：智观大屏",
+            model=FakeModel(
+                [_ops([{"op": "setScreenTitle", "value": "智观大屏"}])],
+            ),
+        )
+        assert not invoked  # 屏幕级标题不触发任何取数
+        assert outcome["screen"]["title"] == "智观大屏"
+        title_diffs = [
+            entry
+            for entry in outcome["diff"]
+            if entry["field"] == "title" and entry["componentId"] == ""
+        ]
+        assert title_diffs == [
+            {
+                "componentId": "",
+                "field": "title",
+                "before": "",
+                "after": "智观大屏",
+            },
+        ]
+
+    async def test_set_screen_title_clamps_length(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        _block_all_fetches(monkeypatch)
+        outcome = await apply_patch(
+            screen=_screen(),
+            instruction="加个超长标题",
+            model=FakeModel(
+                [_ops([{"op": "setScreenTitle", "value": "长" * 200}])],
+            ),
+        )
+        assert outcome["screen"]["title"] == "长" * 60
+
+    async def test_blank_screen_title_is_ignored(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        _block_all_fetches(monkeypatch)
+        screen = _screen()
+        outcome = await apply_patch(
+            screen=screen,
+            instruction="标题设为空",
+            model=FakeModel(
+                [
+                    _ops(
+                        [
+                            {"op": "setScreenTitle", "value": "   "},
+                            {
+                                "op": "setComponentTitle",
+                                "componentId": "comp-alarms",
+                                "value": "告警",
+                            },
+                        ],
+                    ),
+                ],
+            ),
+        )
+        assert "title" not in outcome["screen"] or not outcome["screen"].get(
+            "title",
+        )
+
+
+class TestRemoveComponentOp:
+    async def test_remove_component_deletes_and_diffs(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        _block_all_fetches(monkeypatch)
+        outcome = await apply_patch(
+            screen=_screen(),
+            instruction="删除系统日志组件",
+            model=FakeModel(
+                [
+                    _ops(
+                        [
+                            {
+                                "op": "removeComponent",
+                                "componentId": "comp-logs",
+                            },
+                        ],
+                    ),
+                ],
+            ),
+        )
+        ids = [c["id"] for c in outcome["screen"]["components"]]
+        assert ids == ["comp-alarms"]
+        removal_diffs = [
+            entry
+            for entry in outcome["diff"]
+            if entry["componentId"] == "comp-logs"
+            and entry["field"] == "component"
+        ]
+        assert len(removal_diffs) == 1
+        assert removal_diffs[0]["after"] is None
+        assert removal_diffs[0]["before"]["title"] == "系统日志"
+        # dataBindings rebuilt without the removed component
+        binding_component_ids = {
+            binding.get("componentId")
+            for binding in outcome["screen"].get("dataBindings") or []
+        }
+        assert "comp-logs" not in binding_component_ids
+
+    async def test_remove_component_respects_selection(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        _block_all_fetches(monkeypatch)
+        outcome = await apply_patch(
+            screen=_screen(),
+            instruction="删掉这个组件",
+            selected_component_ids=["comp-alarms"],
+            model=FakeModel(
+                [
+                    _ops(
+                        [
+                            {
+                                "op": "removeComponent",
+                                "componentId": "comp-logs",
+                            },
+                            {
+                                "op": "setComponentTitle",
+                                "componentId": "comp-alarms",
+                                "value": "还在",
+                            },
+                        ],
+                    ),
+                ],
+            ),
+        )
+        ids = {c["id"] for c in outcome["screen"]["components"]}
+        assert ids == {"comp-alarms", "comp-logs"}  # 越权删除被拦下
+
+
+class TestClearComponentLayoutOp:
+    async def test_clear_layout_unpins(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        _block_all_fetches(monkeypatch)
+        screen = _screen()
+        screen["components"][0]["layoutPosition"] = {
+            "x": 2,
+            "y": 1,
+            "w": 5,
+            "h": 6,
+            "pinned": True,
+        }
+        outcome = await apply_patch(
+            screen=screen,
+            instruction="告警流恢复自动排布",
+            selected_component_ids=["comp-alarms"],
+            model=FakeModel(
+                [
+                    _ops(
+                        [
+                            {
+                                "op": "clearComponentLayout",
+                                "componentId": "comp-alarms",
+                            },
+                        ],
+                    ),
+                ],
+            ),
+        )
+        components = {c["id"]: c for c in outcome["screen"]["components"]}
+        assert "layoutPosition" not in components["comp-alarms"]
+        layout_diffs = [
+            entry
+            for entry in outcome["diff"]
+            if entry["componentId"] == "comp-alarms"
+            and entry["field"] == "layoutPosition"
+        ]
+        assert len(layout_diffs) == 1
+        assert layout_diffs[0]["after"] is None
+
+    async def test_clear_layout_noop_when_already_auto(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        _block_all_fetches(monkeypatch)
+        screen = _screen()
+        screen["components"][0].pop("layoutPosition", None)
+        outcome = await apply_patch(
+            screen=screen,
+            instruction="恢复自动排布",
+            selected_component_ids=["comp-alarms"],
+            model=FakeModel(
+                [
+                    _ops(
+                        [
+                            {
+                                "op": "clearComponentLayout",
+                                "componentId": "comp-alarms",
+                            },
+                            {
+                                "op": "setComponentTitle",
+                                "componentId": "comp-alarms",
+                                "value": "改名以免空操作",
+                            },
+                        ],
+                    ),
+                ],
+            ),
+        )
+        components = {c["id"]: c for c in outcome["screen"]["components"]}
+        assert "layoutPosition" not in components["comp-alarms"]

@@ -94,6 +94,17 @@ def build_screen_diff(
     changes use an empty ``componentId`` and a dotted field name.
     """
     diffs: list[dict[str, Any]] = []
+    before_title = str(before.get("title") or "")
+    after_title = str(after.get("title") or "")
+    if before_title != after_title:
+        diffs.append(
+            {
+                "componentId": "",
+                "field": "title",
+                "before": before_title,
+                "after": after_title,
+            },
+        )
     before_theme = before.get("theme")
     after_theme = after.get("theme")
     before_palette = (
@@ -256,11 +267,17 @@ def _build_patch_messages(
         "由后端执行，不允许生成前端源码、SQL 或任意脚本。"
         "JSON 固定字段：summary, operations。"
         "operations 是数组，每项字段为 op、componentId 或 componentIds、value。"
-        "op 只能是：addComponent、setThemePalette、setComponentPalette、"
-        "setComponentType、setComponentLayout、setComponentTitle、"
-        "setComponentComposition、setComponentStyle、"
+        "op 只能是：addComponent、removeComponent、setScreenTitle、"
+        "setThemePalette、setComponentPalette、"
+        "setComponentType、setComponentLayout、clearComponentLayout、"
+        "setComponentTitle、setComponentComposition、setComponentStyle、"
         "setComponentQueryParams、setComponentFields。"
-        "value 语义：setComponentTitle=新标题字符串；"
+        "value 语义：setScreenTitle=大屏主标题字符串(屏幕级，渲染在大屏"
+        "顶部中央的横幅，不是数据组件)；"
+        "removeComponent=无 value，componentId/componentIds 指定要删除的"
+        "组件；clearComponentLayout=无 value，取消组件的固定位置，"
+        "恢复自动排布；"
+        "setComponentTitle=新标题字符串；"
         "setComponentType=组件类型字符串；"
         "setComponentLayout={x,y,w,h}(12 列网格数字，用于移动/定位组件，"
         "x∈0-11、w∈1-12、y≥0、h∈1-8)；"
@@ -295,6 +312,16 @@ def _build_patch_messages(
         "更突出/最重要→setComponentComposition=primary 或 emphasis=strong；"
         "移到左上/顶部/右侧/某位置→setComponentLayout 给出对应 12 列网格坐标"
         "(左上≈{x:0,y:0}、右侧≈{x:6}、顶部≈{y:0})。"
+        "给大屏加标题/改主标题/顶部标题→setScreenTitle，"
+        "绝不要用 addComponent 实现标题(那会生成一个数据能力缺口组件)；"
+        "删除/移除/去掉某组件→removeComponent；"
+        "变宽/变窄/变高/变矮(只调尺寸)→setComponentLayout，"
+        "以该组件 renderedPosition 为基线：只改被要求的维度"
+        "(变宽时 w 必须明显大于当前渲染宽度，至少 +2 列)，"
+        "其余 x/y/h 沿用 renderedPosition 的四舍五入值，不要自行挪动位置；"
+        "注意 setComponentLayout 会把组件固定住，其它未固定组件会绕开它"
+        "重新排布；用户抱怨组件被挤走/位置乱了/想恢复原来的排布→"
+        "clearComponentLayout。"
         "componentId 必须来自给定组件清单；用户说整个大屏时可对多个 "
         "componentIds 生效。"
         "如果用户选择了组件(selectedComponentIds 非空)，"
@@ -389,6 +416,19 @@ def _apply_set_layout(component: dict[str, Any], value: Any) -> bool:
     position = normalize_layout_position(value, 0)
     position["pinned"] = True
     component["layoutPosition"] = position
+    return True
+
+
+def _apply_clear_layout(component: dict[str, Any], value: Any) -> bool:
+    """Un-pin: drop the stored position so auto-layout owns geometry again.
+
+    The inverse of ``setComponentLayout`` — the escape hatch when a pinned
+    position turned out wrong or its reflow side-effects (auto components
+    dodging the pinned band) surprised the user.
+    """
+    if component.get("layoutPosition") is None:
+        return False
+    component.pop("layoutPosition", None)
     return True
 
 
@@ -514,12 +554,17 @@ _COMPONENT_OP_HANDLERS = {
     "setComponentTitle": _apply_set_title,
     "setComponentType": _apply_set_type,
     "setComponentLayout": _apply_set_layout,
+    "clearComponentLayout": _apply_clear_layout,
     "setComponentPalette": _apply_set_palette,
     "setComponentComposition": _apply_set_composition,
     "setComponentStyle": _apply_set_component_style,
     "setComponentQueryParams": _apply_set_query_params,
     "setComponentFields": _apply_set_fields,
 }
+
+#: hard cap keeps a runaway model output from turning the screen title
+#: into a paragraph — it renders as a single-line banner
+_MAX_SCREEN_TITLE_LENGTH = 60
 
 
 def _apply_operations(
@@ -548,6 +593,26 @@ def _apply_operations(
                 theme["palette"] = palette
                 screen["theme"] = theme
                 applied.append("setThemePalette")
+            continue
+
+        if operation.op == "setScreenTitle":
+            title = str(operation.value or "").strip()
+            title = title[:_MAX_SCREEN_TITLE_LENGTH]
+            if title and screen.get("title") != title:
+                screen["title"] = title
+                applied.append("setScreenTitle")
+            continue
+
+        if operation.op == "removeComponent":
+            for component_id in operation.target_ids():
+                if selection and component_id not in selection:
+                    continue  # 局部修改只影响选中
+                index = _component_index(components, component_id)
+                if index < 0:
+                    continue
+                components.pop(index)
+                needs_refetch.discard(component_id)
+                applied.append("removeComponent")
             continue
 
         if operation.op == "addComponent":
