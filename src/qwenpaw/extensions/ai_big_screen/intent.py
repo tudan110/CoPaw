@@ -13,6 +13,7 @@ from ``llm.py``:
   component titled 工单 can only bind ``workorders``) regardless of
   what capabilityId the model claimed.
 """
+
 from __future__ import annotations
 
 import copy
@@ -44,6 +45,11 @@ from qwenpaw.extensions.ai_big_screen.schemas import (
 )
 
 DEFAULT_SCREEN_NAME = "AI 实时运维大屏"
+
+# A capability-gap placeholder is titled ``待接入：<name>`` to warn that no
+# real source is wired yet. Both the fullwidth (：) and halfwidth (:) colon
+# variants are tolerated so an upstream/hand-authored title still reconciles.
+GAP_TITLE_PREFIXES = ("待接入：", "待接入:")
 
 # ALLOWED_PALETTES / ALLOWED_EMPHASIS are now canonical in ``sanitizer`` and
 # re-exported here for backward-compatible imports (e.g. ``patch``).
@@ -132,7 +138,9 @@ def extract_semantic_capability_ids(prompt: str) -> list[str]:
 
 def prompt_is_simple_data_query(prompt: str) -> bool:
     text = str(prompt or "")
-    if not any(term in text for term in ("查询", "查看", "看一下", "展示", "显示")):
+    if not any(
+        term in text for term in ("查询", "查看", "看一下", "展示", "显示")
+    ):
         return False
     expansion_terms = (
         "分析",
@@ -184,7 +192,10 @@ def _should_use_log_risk_fast_path(prompt: str) -> bool:
     text = str(prompt or "")
     if not text_requests_log_risk_analysis(text):
         return False
-    return any(term in text for term in ("分析", "高危", "危险", "动态", "突出", "有哪些"))
+    return any(
+        term in text
+        for term in ("分析", "高危", "危险", "动态", "突出", "有哪些")
+    )
 
 
 _REQUEST_SPLIT_RE = re.compile(r"[,，、;；]|和|以及|还有|还要|另外|顺便")
@@ -308,7 +319,8 @@ def _text_requests_workorder_stream_visual(text: str) -> bool:
     ):
         return False
     return any(
-        term in normalized for term in ("流转", "动态", "时间线", "状态流", "轮播")
+        term in normalized
+        for term in ("流转", "动态", "时间线", "状态流", "轮播")
     ) or any(term in lowered for term in ("stream", "timeline", "dynamic"))
 
 
@@ -523,7 +535,8 @@ def _infer_component_capability_id(
     lowered = text.lower()
     scores: dict[str, int] = {}
     if any(
-        term in text for term in ("工单", "待办", "待处理", "流程", "派单", "处置单")
+        term in text
+        for term in ("工单", "待办", "待处理", "流程", "派单", "处置单")
     ) or any(
         term in lowered
         for term in ("workorder", "work order", "ticket", "tickets")
@@ -612,9 +625,9 @@ def build_capability_gap_component(
     merged_query_params["requestedData"] = title
     merged_query_params["reason"] = reason
     if not merged_query_params.get("validationPlan"):
-        merged_query_params[
-            "validationPlan"
-        ] = "接入真实接口后以 sourceStatus=live 的响应作为展示依据。"
+        merged_query_params["validationPlan"] = (
+            "接入真实接口后以 sourceStatus=live 的响应作为展示依据。"
+        )
     if not merged_query_params.get("requiredInputs"):
         merged_query_params["requiredInputs"] = [
             "数据源地址",
@@ -623,8 +636,11 @@ def build_capability_gap_component(
             "返回字段映射",
         ]
     raw_component = {
-        "title": f"待接入：{title}",
-        "description": (f"{reason}。AI 已保留取数方案位置，" "接入真实能力前不展示模拟数据。"),
+        "title": f"{GAP_TITLE_PREFIXES[0]}{title}",
+        "description": (
+            f"{reason}。AI 已保留取数方案位置，"
+            "接入真实能力前不展示模拟数据。"
+        ),
         "capabilityId": "capability-gap",
         "visualType": "table",
         "queryParams": merged_query_params,
@@ -638,6 +654,32 @@ def build_capability_gap_component(
         index=index,
         inferred_lookback_minutes=15,
     )
+
+
+def reconcile_gap_title(component: Any) -> bool:
+    """Drop the ``待接入：`` prefix once a gap component's data goes live.
+
+    A capability-gap placeholder is titled ``待接入：<name>`` to warn that no
+    real source is wired yet. Once a refetch returns ``sourceStatus=live`` the
+    warning is a lie — the source *is* connected — so strip the prefix (only
+    the prefix; the rest of the title is preserved verbatim). Any non-live
+    status (gap/failed/empty) keeps the warning untouched. Call this right
+    after a component's ``data`` is replaced by a fresh fetch. Returns True
+    iff the title actually changed.
+    """
+    if not isinstance(component, dict):
+        return False
+    data = component.get("data")
+    if not isinstance(data, dict):
+        return False
+    if str(data.get("sourceStatus") or "").strip().lower() != "live":
+        return False
+    title = str(component.get("title") or "")
+    for prefix in GAP_TITLE_PREFIXES:
+        if title.startswith(prefix):
+            component["title"] = title[len(prefix) :]
+            return True
+    return False
 
 
 def normalize_plan_component(
