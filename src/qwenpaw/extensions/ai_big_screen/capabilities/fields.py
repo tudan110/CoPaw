@@ -5,6 +5,7 @@ Ported from the legacy monolith (``ai_big_screen_service.py``) so both
 the L2 fetchers and the L3 orchestrator can resolve user/LLM supplied
 field names (labels, aliases) onto canonical row keys.
 """
+
 from __future__ import annotations
 
 import re
@@ -214,6 +215,7 @@ def columns_for_capability_fields(
 
 
 def safe_int(value: Any, fallback: int) -> int:
+    """Coerce ``value`` to ``int``, returning ``fallback`` when it can't."""
     try:
         return int(value)
     except (TypeError, ValueError):
