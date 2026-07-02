@@ -16,6 +16,7 @@ Safety properties:
 """
 from __future__ import annotations
 
+import copy
 import json
 import logging
 import os
@@ -195,6 +196,15 @@ async def run_critique(
     ][:_MAX_OPERATIONS]
     applied: list[str] = []
     if allowed:
+        # ``_apply_operations`` mutates ``screen["components"]``/``["theme"]``
+        # in place. If ``rebuild_data_bindings`` (or the apply itself) then
+        # throws partway through, the mutation has already landed — without
+        # a snapshot, the except below would report applied=[] while the
+        # screen was in fact changed, breaking this function's documented
+        # "leaves the screen exactly as it was" contract.
+        components_snapshot = copy.deepcopy(screen.get("components"))
+        theme_snapshot = copy.deepcopy(screen.get("theme"))
+        bindings_snapshot = copy.deepcopy(screen.get("dataBindings"))
         try:
             _refetch, applied = _apply_operations(
                 screen=screen,
@@ -216,6 +226,9 @@ async def run_critique(
                 "big-screen critique revision failed",
                 exc_info=True,
             )
+            screen["components"] = components_snapshot
+            screen["theme"] = theme_snapshot
+            screen["dataBindings"] = bindings_snapshot
             applied = []
 
     info = {

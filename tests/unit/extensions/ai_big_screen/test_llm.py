@@ -134,9 +134,60 @@ async def test_model_exception_counts_as_failure() -> None:
         _messages(),
         parser=parse_screen_plan,
         max_repair=1,
+        retry_backoff=0,
     )
     assert result.value.name == "屏"
     assert result.attempts == 2
+
+
+async def test_transport_failure_backs_off_before_next_round(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A transport/timeout failure must not be retried with zero delay —
+    ``model`` already exhausted its own backoff before raising, so an
+    immediate retry just re-hits a still-active rate limit."""
+    sleeps: list[float] = []
+
+    async def _fake_sleep(seconds: float) -> None:
+        sleeps.append(seconds)
+
+    monkeypatch.setattr(llm.asyncio, "sleep", _fake_sleep)
+    model = FakeModel([RuntimeError("boom1"), RuntimeError("boom2"), _VALID])
+    result = await structured_call(
+        model,
+        _messages(),
+        parser=parse_screen_plan,
+        max_repair=2,
+        retry_backoff=1.5,
+    )
+    assert result.value.name == "屏"
+    assert result.attempts == 3
+    # one backoff after each transport-error round; none after the
+    # final (successful) round.
+    assert sleeps == [1.5, 3.0]
+
+
+async def test_parser_repair_round_has_no_backoff(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A parser rejection wants an immediate retry with the corrected
+    prompt, not a rate-limit-style pause."""
+    sleeps: list[float] = []
+
+    async def _fake_sleep(seconds: float) -> None:
+        sleeps.append(seconds)
+
+    monkeypatch.setattr(llm.asyncio, "sleep", _fake_sleep)
+    model = FakeModel([_INVALID, _VALID])
+    result = await structured_call(
+        model,
+        _messages(),
+        parser=parse_screen_plan,
+        max_repair=2,
+        retry_backoff=1.5,
+    )
+    assert result.value.name == "屏"
+    assert sleeps == []
 
 
 async def test_create_pipeline_model_maps_unconfigured_provider(
