@@ -571,6 +571,11 @@ class QwenPawAgent(CodingModeMixin, Agent):
         "no data",
         "no rows",
         "empty result",
+        # chat_with_agent returns this when a delegated sub-agent produced no
+        # text (see agent_management.py) — treat as empty so a delegation
+        # loop (repeatedly asking a sub-agent that keeps coming back empty)
+        # is caught and converged instead of spinning until timeout.
+        "no text content",
         '"data":null',
         '"data": null',
         '"count":0',

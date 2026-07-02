@@ -116,6 +116,22 @@ def test_marker_in_text_counts_as_empty():
     assert _agent(ctx)._detect_non_convergence() is not None
 
 
+def test_delegation_no_text_content_counts_as_empty():
+    # chat_with_agent to a sub-agent that keeps returning empty text → the
+    # "(No text content in response)" outputs must trip the empty streak so
+    # the delegation loop converges instead of spinning to timeout.
+    ctx = []
+    for i in range(4):
+        ctx += _pair(
+            "chat_with_agent",
+            {"to_agent": "query", "text": f"q{i}"},
+            "[SESSION: gateway:to:query:x] (No text content in response)",
+            i=i,
+        )
+    hint = _agent(ctx)._detect_non_convergence()
+    assert hint is not None
+
+
 # --------------------------------------------------------------------------
 # Healthy trajectories must NOT trigger (no false positives)
 # --------------------------------------------------------------------------
