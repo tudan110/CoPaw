@@ -31,6 +31,9 @@ export interface LegacyComponent {
 }
 export interface LegacyScreen {
   id?: string;
+  /** Screen banner title — the asset field the patch op setScreenTitle
+   * writes; rendered top-center by BigScreenRenderer when non-empty. */
+  title?: string;
   name?: string;
   status?: string;
   theme?: Record<string, unknown>;
@@ -186,7 +189,9 @@ export function adaptLegacyScreen(screen: LegacyScreen): DashboardSpec {
   return {
     schemaVersion: 1,
     id: String(screen.id ?? ""),
-    name: String(screen.name ?? ""),
+    // Prefer the asset's banner title (setScreenTitle) over the legacy
+    // internal name — the renderer shows spec.name as the screen heading.
+    name: String(screen.title ?? screen.name ?? ""),
     status: (screen.status as DashboardSpec["status"]) ?? "draft",
     layout: { designWidth: 1920, designHeight: 1080 },
     theme: (screen.theme as Record<string, unknown>) ?? {},

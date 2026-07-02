@@ -25,10 +25,13 @@ SourceStatus = Literal["live", "empty", "failed", "gap"]
 
 PatchOp = Literal[
     "addComponent",
+    "removeComponent",
+    "setScreenTitle",
     "setThemePalette",
     "setComponentPalette",
     "setComponentType",
     "setComponentLayout",
+    "clearComponentLayout",
     "setComponentTitle",
     "setComponentComposition",
     "setComponentQueryParams",

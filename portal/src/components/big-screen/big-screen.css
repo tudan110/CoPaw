@@ -694,6 +694,27 @@
   text-shadow: 0 0 16px rgba(34, 211, 238, 0.45);
 }
 
+/* Screen title banner — rendered top-center when the spec carries a name
+   (setScreenTitle); auto-layout reserves the band so nothing overlaps. */
+.bs-screen-title {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 34px;
+  font-weight: 700;
+  letter-spacing: 10px;
+  text-indent: 10px; /* visually re-center: letter-spacing pads the right */
+  color: var(--bs-text);
+  background: linear-gradient(180deg, #eaf2ff 20%, #7dd3fc 90%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  text-shadow: 0 0 24px rgba(34, 211, 238, 0.25);
+  pointer-events: none;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
 /* Table widget — multi-field tabular data (工单 / 资源等) */
 .bs-table-wrap {
   height: 100%;
@@ -718,6 +739,11 @@
 
 .bs-table {
   width: 100%;
+  /* Fixed layout shares the container width across ALL columns — with many
+     fields the rightmost columns used to run past the clipped wrap and
+     simply vanish; now every column stays visible and long values ellipsize
+     (full text on hover via the cells' title attribute). */
+  table-layout: fixed;
   border-collapse: collapse;
   color: var(--bs-label);
 }
@@ -732,6 +758,8 @@
   background: rgba(12, 22, 40, 0.92);
   padding: 6px 10px;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   border-bottom: 1px solid rgba(34, 211, 238, 0.25);
 }
 

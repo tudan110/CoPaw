@@ -75,6 +75,10 @@ function ComponentBody({ component }: { component: ScreenComponent }) {
 
 const DEFAULT_POS = { x: 0, y: 0, w: 480, h: 280 };
 
+/** Vertical band (design px, margin included) reserved for the screen title
+ *  banner when the spec carries a name — auto components flow below it. */
+const TITLE_BAND_HEIGHT = 96;
+
 /**
  * Auto-layout for un-pinned components, reserving the vertical band the
  * pinned components occupy so the two never overlap. v1: auto items flow into
@@ -168,13 +172,22 @@ export function BigScreenRenderer({
       pinnedRects.set(c.id, gridToPx(c.layoutPosition, s.layout));
     }
   }
+  const screenTitle = s.name.trim();
+  // The title banner occupies a full-width band at the top; feeding it to
+  // the band calculation as a synthetic pinned rect keeps auto components
+  // from rendering underneath it.
+  const reservedRects: Rect[] = [...pinnedRects.values()];
+  if (screenTitle) {
+    reservedRects.push({
+      x: LAYOUT_MARGIN,
+      y: 0,
+      w: s.layout.designWidth - 2 * LAYOUT_MARGIN,
+      h: TITLE_BAND_HEIGHT,
+    });
+  }
   const autoComponents = s.components.filter((c) => !c.layoutPosition);
   const autoPos = autoComponents.length
-    ? layoutAutoAroundPinned(
-        autoComponents,
-        [...pinnedRects.values()],
-        s.layout,
-      )
+    ? layoutAutoAroundPinned(autoComponents, reservedRects, s.layout)
     : null;
   const resolvedRects = new Map<string, Rect>();
   for (const c of s.components) {
@@ -223,6 +236,20 @@ export function BigScreenRenderer({
           </>
         }
       >
+        {screenTitle ? (
+          <div
+            className="bs-screen-title"
+            style={{
+              position: "absolute",
+              top: 0,
+              left: 0,
+              width: "100%",
+              height: TITLE_BAND_HEIGHT,
+            }}
+          >
+            {screenTitle}
+          </div>
+        ) : null}
         {s.components.map((c) => {
           const pos = resolvedRects.get(c.id) ?? DEFAULT_POS;
           const vsClasses = visualSpecClassTokens(c.visualSpec).join(" ");

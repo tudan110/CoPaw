@@ -183,3 +183,23 @@ test("workorder table stays a table and carries its columns as fields", () => {
   const row0 = c.data?.rows?.[0] as Record<string, unknown>;
   assert.equal(row0["status"], "处理中", "row cells preserved");
 });
+
+test("prefers the asset title over the legacy name for the screen heading", () => {
+  const withTitle = adaptLegacyScreen({
+    id: "s-title",
+    title: "智观大屏",
+    name: "internal-name",
+    components: [],
+  });
+  assert.equal(withTitle.name, "智观大屏");
+
+  const withoutTitle = adaptLegacyScreen({
+    id: "s-name",
+    name: "internal-name",
+    components: [],
+  });
+  assert.equal(withoutTitle.name, "internal-name");
+
+  const withNeither = adaptLegacyScreen({ id: "s-none", components: [] });
+  assert.equal(withNeither.name, "");
+});
