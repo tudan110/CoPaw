@@ -292,3 +292,43 @@ class TestRefreshScreenData:
         component = refreshed["components"][0]
         assert component["data"]["sourceStatus"] == "failed"
         assert "refresh outage" in component["data"]["message"]
+
+    async def test_refresh_strips_gap_title_prefix_when_live(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from qwenpaw.extensions.ai_big_screen.pipeline import (
+            refresh_screen_data,
+        )
+
+        _mock_workorders(monkeypatch)  # workorders -> sourceStatus=live
+        screen = self._screen()
+        # Mirrors screen-1f1fb22411: source long since wired (live) but the
+        # title still carries the stale "待接入：" warning.
+        screen["components"][0]["title"] = "待接入：CMDB 应用信息"
+        screen["components"][0]["data"] = {"sourceStatus": "gap"}
+        refreshed = await refresh_screen_data(screen)
+        component = refreshed["components"][0]
+        assert component["data"]["sourceStatus"] == "live"
+        assert component["title"] == "CMDB 应用信息"
+
+    async def test_refresh_keeps_gap_title_when_source_still_failed(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from qwenpaw.extensions.ai_big_screen.pipeline import (
+            refresh_screen_data,
+        )
+        from qwenpaw.extensions.integrations import order_workflow
+
+        monkeypatch.setattr(
+            order_workflow,
+            "query_order_workorders",
+            lambda **_kw: (_ for _ in ()).throw(ConnectionError("still down")),
+        )
+        screen = self._screen()
+        screen["components"][0]["title"] = "待接入：CMDB 应用信息"
+        refreshed = await refresh_screen_data(screen)
+        component = refreshed["components"][0]
+        assert component["data"]["sourceStatus"] == "failed"
+        assert component["title"] == "待接入：CMDB 应用信息"

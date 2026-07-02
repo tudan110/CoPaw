@@ -9,6 +9,7 @@ Drives real stage progression (the legacy task only ever reported
 A failed capability never blocks the screen — the component renders
 with an honest ``failed`` badge instead.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -28,6 +29,7 @@ from qwenpaw.extensions.ai_big_screen.rebalance import (
 from qwenpaw.extensions.ai_big_screen.intent import (
     build_screen_plan,
     prompt_is_simple_data_query,
+    reconcile_gap_title,
     should_use_semantic_fast_path,
 )
 from qwenpaw.extensions.ai_big_screen.llm import ModelCallable
@@ -224,4 +226,5 @@ async def refresh_screen_data(screen: dict[str, Any]) -> dict[str, Any]:
     )
     for component, result in fetched:
         component["data"] = result.to_legacy_data()
+        reconcile_gap_title(component)
     return screen

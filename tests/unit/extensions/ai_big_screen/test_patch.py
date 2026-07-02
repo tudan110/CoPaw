@@ -1211,3 +1211,103 @@ class TestClearComponentLayoutOp:
         )
         components = {c["id"]: c for c in outcome["screen"]["components"]}
         assert "layoutPosition" not in components["comp-alarms"]
+
+
+class TestReconcileGapTitle:
+    """``待接入：`` is a warning label; once data goes live it's a lie."""
+
+    def test_gap_title_with_live_data_strips_prefix(self) -> None:
+        from qwenpaw.extensions.ai_big_screen.intent import (
+            reconcile_gap_title,
+        )
+
+        component = {
+            "title": "待接入：CMDB 应用信息",
+            "data": {"sourceStatus": "live", "rows": [{"a": 1}]},
+        }
+        assert reconcile_gap_title(component) is True
+        assert component["title"] == "CMDB 应用信息"
+
+    def test_halfwidth_colon_variant_also_strips(self) -> None:
+        from qwenpaw.extensions.ai_big_screen.intent import (
+            reconcile_gap_title,
+        )
+
+        component = {
+            "title": "待接入:资产总览",
+            "data": {"sourceStatus": "live"},
+        }
+        assert reconcile_gap_title(component) is True
+        assert component["title"] == "资产总览"
+
+    def test_gap_title_still_gap_keeps_prefix(self) -> None:
+        from qwenpaw.extensions.ai_big_screen.intent import (
+            reconcile_gap_title,
+        )
+
+        component = {
+            "title": "待接入：CMDB 应用信息",
+            "data": {"sourceStatus": "gap"},
+        }
+        assert reconcile_gap_title(component) is False
+        assert component["title"] == "待接入：CMDB 应用信息"
+
+    def test_normal_title_with_live_data_untouched(self) -> None:
+        from qwenpaw.extensions.ai_big_screen.intent import (
+            reconcile_gap_title,
+        )
+
+        component = {
+            "title": "实时告警流",
+            "data": {"sourceStatus": "live"},
+        }
+        assert reconcile_gap_title(component) is False
+        assert component["title"] == "实时告警流"
+
+    def test_failed_and_empty_statuses_keep_prefix(self) -> None:
+        from qwenpaw.extensions.ai_big_screen.intent import (
+            reconcile_gap_title,
+        )
+
+        for status in ("failed", "empty"):
+            component = {
+                "title": "待接入：日志",
+                "data": {"sourceStatus": status},
+            }
+            assert reconcile_gap_title(component) is False
+            assert component["title"] == "待接入：日志"
+
+
+class TestGapTitleReconciledOnRefetch:
+    async def test_query_param_refetch_strips_gap_prefix_when_live(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        _block_all_fetches(monkeypatch)
+        _allow_log_fetch(monkeypatch)  # returns sourceStatus=live
+        screen = _screen()
+        # A component whose source is already wired (system-logs -> live) but
+        # whose title still carries the stale gap warning.
+        screen["components"][1]["title"] = "待接入：系统日志"
+        screen["components"][1]["data"] = {"sourceStatus": "gap"}
+        outcome = await apply_patch(
+            screen=screen,
+            instruction="日志改成最近60分钟",
+            selected_component_ids=["comp-logs"],
+            model=FakeModel(
+                [
+                    _ops(
+                        [
+                            {
+                                "op": "setComponentQueryParams",
+                                "componentId": "comp-logs",
+                                "value": {"lookbackMinutes": 60},
+                            },
+                        ],
+                    ),
+                ],
+            ),
+        )
+        components = {c["id"]: c for c in outcome["screen"]["components"]}
+        assert components["comp-logs"]["data"]["sourceStatus"] == "live"
+        assert components["comp-logs"]["title"] == "系统日志"

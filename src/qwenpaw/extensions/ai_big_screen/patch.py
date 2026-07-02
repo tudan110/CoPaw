@@ -11,6 +11,7 @@ structured-output plan over a whitelisted operation set (spec §9):
   and new components re-run L2 (fetch-once cache within one patch);
 - every patch appends an immutable version snapshot for rollback.
 """
+
 from __future__ import annotations
 
 import copy
@@ -33,6 +34,7 @@ from qwenpaw.extensions.ai_big_screen.intent import (
     extract_lookback_minutes,
     normalize_layout_position,
     normalize_plan_component,
+    reconcile_gap_title,
 )
 from qwenpaw.extensions.ai_big_screen.llm import (
     ModelCallable,
@@ -674,6 +676,7 @@ async def _refetch_components(
             cache=cache,
         )
         component["data"] = result.to_legacy_data()
+        reconcile_gap_title(component)
 
 
 # ---------------------------------------------------------------------------
