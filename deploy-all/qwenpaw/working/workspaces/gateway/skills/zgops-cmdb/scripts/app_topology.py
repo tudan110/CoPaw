@@ -14,6 +14,7 @@ from find_project import (
     CmdbHttpClient,
     _clean_text,
     _match_projects,
+    _normalize_token,
     _project_name,
     _resolve_zgops_env,
 )
@@ -44,6 +45,53 @@ SOFTWARE_TYPES = {
     "elasticsearch",
     "nginx",
     "apache",
+}
+
+
+# Some ZGOPS deployments encode a project's relationships as **inline attributes** on
+# the project CI itself instead of (or in addition to) `ci_relations` rows — e.g. the
+# project document carries `Kafka`, `mysql`, `redis`, `operatingsystem` fields whose
+# values are the names of related CIs. The map below is the fallback catalog used
+# when the live `/api/v0.1/ci_types` lookup is unavailable; keys are normalized
+# (lower-case, punctuation-stripped via `_normalize_token`), values are the
+# canonical `ci_type` to search.
+INLINE_RELATION_TYPES = {
+    "kafka": "Kafka",
+    "redis": "redis",
+    "elasticsearch": "elasticsearch",
+    "nginx": "nginx",
+    "apache": "apache",
+    "mysql": "mysql",
+    "postgresql": "PostgreSQL",
+    "database": "database",
+    "operatingsystem": "operatingsystem",
+    "physicalmachine": "PhysicalMachine",
+    "vserver": "vserver",
+    "docker": "docker",
+    "networkdevice": "networkdevice",
+    "product": "product",
+}
+
+
+# Per-ci_type list of attributes that may carry a CI's display name. Used to
+# match the values of inline relation attributes (which are typically display
+# names like "kafka-web01") against actual CIs returned by `/api/v0.1/ci/s`.
+_CI_TYPE_NAME_FIELDS: dict[str, list[str]] = {
+    "vserver": ["vserver_name", "name", "private_ip", "manage_ip"],
+    "docker": ["middleware_name", "name", "manage_ip", "private_ip"],
+    "database": ["db_instance", "name", "manage_ip", "db_ip"],
+    "mysql": ["db_instance", "name", "manage_ip", "db_ip"],
+    "PostgreSQL": ["db_instance", "name", "manage_ip", "db_ip"],
+    "redis": ["middleware_name", "name", "middleware_ip", "manage_ip"],
+    "Kafka": ["middleware_name", "name", "middleware_ip", "manage_ip"],
+    "elasticsearch": ["middleware_name", "name", "middleware_ip", "manage_ip"],
+    "nginx": ["middleware_name", "name", "middleware_ip", "manage_ip"],
+    "apache": ["middleware_name", "name", "middleware_ip", "manage_ip"],
+    "networkdevice": ["dev_name", "name", "manage_ip"],
+    "PhysicalMachine": ["host_name", "name", "private_ip", "manage_ip"],
+    "operatingsystem": ["name", "os_name", "host_name"],
+    "product": ["product_name", "name"],
+    "project": ["project_name", "name"],
 }
 
 
@@ -79,6 +127,152 @@ def _fetch_relations(client: CmdbHttpClient, root_id: Any) -> list[dict[str, Any
         if isinstance(result, list):
             return result
     return []
+
+
+def _fetch_ci_detail(client: CmdbHttpClient, ci_id: Any) -> dict[str, Any]:
+    """Fetch the full CI document so inline relation attributes are visible."""
+    try:
+        payload = client._request_json(  # noqa: SLF001
+            f"/api/v0.1/ci/{urllib.parse.quote(str(ci_id))}"
+        )
+    except Exception:
+        return {}
+    if isinstance(payload, dict):
+        result = payload.get("result")
+        if isinstance(result, dict):
+            return result
+        return payload
+    return {}
+
+
+def _fetch_ci_type_catalog(client: CmdbHttpClient) -> dict[str, str]:
+    """Return a catalog mapping normalized type names/aliases → canonical ci_type.
+
+    Pulls from `/api/v0.1/ci_types?per_page=200`; falls back to the hard-coded
+    `INLINE_RELATION_TYPES` map when the metadata endpoint is unreachable.
+    """
+    catalog: dict[str, str] = {}
+    try:
+        payload = client._request_json("/api/v0.1/ci_types?per_page=200")  # noqa: SLF001
+    except Exception:
+        payload = None
+
+    type_items: list[Any] = []
+    if isinstance(payload, dict):
+        for key in ("result", "ci_types", "items"):
+            value = payload.get(key)
+            if isinstance(value, list):
+                type_items = value
+                break
+    elif isinstance(payload, list):
+        type_items = payload
+
+    for entry in type_items:
+        if not isinstance(entry, dict):
+            continue
+        canonical = _clean_text(entry.get("name"))
+        if not canonical:
+            continue
+        for key in ("name", "alias", "show_name"):
+            token = _normalize_token(_clean_text(entry.get(key)))
+            if token:
+                catalog.setdefault(token, canonical)
+
+    for normalized_key, canonical in INLINE_RELATION_TYPES.items():
+        catalog.setdefault(normalized_key, canonical)
+    return catalog
+
+
+def _fetch_cis_by_type(client: CmdbHttpClient, ci_type: str) -> list[dict[str, Any]]:
+    query = urllib.parse.quote(f"_type:{ci_type}", safe=":_")
+    try:
+        payload = client._request_json(  # noqa: SLF001
+            f"/api/v0.1/ci/s?q={query}&count=10000&page=1"
+        )
+    except Exception:
+        return []
+    if isinstance(payload, dict):
+        result = payload.get("result")
+        if isinstance(result, list):
+            return result
+    if isinstance(payload, list):
+        return payload
+    return []
+
+
+def _candidate_name_fields(ci_type: str) -> list[str]:
+    return _CI_TYPE_NAME_FIELDS.get(ci_type, ["name"])
+
+
+def _item_matches_token(item: dict[str, Any], ci_type: str, token_set: set[str]) -> bool:
+    for field_name in _candidate_name_fields(ci_type):
+        for value in _split_values(item.get(field_name)):
+            if _normalize_token(value) in token_set:
+                return True
+    return False
+
+
+def _resolve_inline_resources(
+    client: CmdbHttpClient,
+    project_detail: dict[str, Any],
+) -> list[dict[str, Any]]:
+    """Walk a project's attributes and resolve inline ci-type fields into CIs.
+
+    Some ZGOPS environments record a project's related middleware/database/host
+    set as inline string fields (e.g. `Kafka: "kafka-web01, kafka-web02"`). The
+    `ci_relations` endpoint does not return those, so this is queried as a
+    complement to `_fetch_relations`. Returns CI items that can be merged into
+    the same items list `_build_tree` consumes.
+    """
+    if not isinstance(project_detail, dict) or not project_detail:
+        return []
+
+    catalog = _fetch_ci_type_catalog(client)
+
+    candidates_by_type: dict[str, set[str]] = defaultdict(set)
+    for key, value in project_detail.items():
+        if not isinstance(key, str):
+            continue
+        canonical = catalog.get(_normalize_token(key))
+        if not canonical or canonical == "project":
+            continue
+        for token in _split_values(value):
+            normalized = _normalize_token(token)
+            if normalized:
+                candidates_by_type[canonical].add(normalized)
+
+    resolved: list[dict[str, Any]] = []
+    for ci_type, token_set in candidates_by_type.items():
+        if not token_set:
+            continue
+        type_items = _fetch_cis_by_type(client, ci_type)
+        if not type_items:
+            continue
+        for item in type_items:
+            if _item_matches_token(item, ci_type, token_set):
+                if not _clean_text(item.get("ci_type")):
+                    item["ci_type"] = ci_type
+                resolved.append(item)
+    return resolved
+
+
+def _merge_items(
+    primary: list[dict[str, Any]],
+    extra: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Concatenate two CI lists, deduplicated by `_id` / `id`."""
+    seen: set[Any] = set()
+    merged: list[dict[str, Any]] = []
+    for item in list(primary) + list(extra):
+        if not isinstance(item, dict):
+            continue
+        ci_id = item.get("_id") or item.get("id")
+        key = ci_id if ci_id is not None else id(item)
+        if key in seen:
+            continue
+        seen.add(key)
+        merged.append(item)
+    return merged
 
 
 def _resource_label(item: dict[str, Any]) -> str:
@@ -313,7 +507,17 @@ def main() -> int:
 
     project = matched_projects[0]
     project_name = _project_name(project) or _clean_text(args.keyword)
-    items = _fetch_relations(client, project.get("_id") or project.get("id"))
+    project_id = project.get("_id") or project.get("id")
+    items = _fetch_relations(client, project_id)
+
+    # Some ZGOPS deployments express a project's relationships as inline
+    # attributes on the project CI itself (e.g. `Kafka`, `mysql`, `redis`,
+    # `operatingsystem` fields whose values are CI names). Always merge those
+    # in — `ci_relations` alone is not authoritative.
+    project_detail = _fetch_ci_detail(client, project_id) or project
+    inline_items = _resolve_inline_resources(client, project_detail)
+    items = _merge_items(items, inline_items)
+
     tree = _build_tree(project, items)
     option = _build_option(tree, f"{project_name} 应用关系拓扑")
 

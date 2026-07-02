@@ -66,6 +66,8 @@ class ZgopsCmdbEnvResolutionTests(unittest.TestCase):
             ) as resolve_env,
             patch.object(APP_TOPOLOGY, "CmdbHttpClient") as client_cls,
             patch.object(APP_TOPOLOGY, "_fetch_relations", return_value=[]),
+            patch.object(APP_TOPOLOGY, "_fetch_ci_detail", return_value={}),
+            patch.object(APP_TOPOLOGY, "_resolve_inline_resources", return_value=[]),
             patch.object(sys, "argv", ["app_topology.py", "demo"]),
             patch.object(APP_TOPOLOGY, "print"),
         ):
