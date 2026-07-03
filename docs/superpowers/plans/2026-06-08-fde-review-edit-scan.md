@@ -1,4 +1,4 @@
-# FDE 交付工作台 · 审查/编辑/安全扫描 Implementation Plan
+# FDE skill 构建助手 · 审查/编辑/安全扫描 Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 

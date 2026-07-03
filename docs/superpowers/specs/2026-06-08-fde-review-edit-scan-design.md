@@ -1,4 +1,4 @@
-# FDE 交付工作台 · 工作面一：审查 · 编辑 · 安全扫描可视化
+# FDE skill 构建助手 · 工作面一：审查 · 编辑 · 安全扫描可视化
 
 > Spec · 2026-06-08 · 分支 `feat/ai-big-screen-redesign`（FDE 改造在此分支继续）
 > 作者：与操作员（Vince）共同敲定，Opus 4.8
@@ -6,7 +6,7 @@
 
 ## 1. 背景与目标
 
-FDE 交付工作台（Portal「FDE 交付中心」）是把"带客户需求去现场 → 给方案 → 研发落地"压成一个回路的元技能工作台：
+FDE skill 构建助手（Portal「FDE 交付中心」）是把"带客户需求去现场 → 给方案 → 研发落地"压成一个回路的元技能工作台：
 **客户沟通 → 现状 → 生成 SKILL → 数字员工 → AI 自检 → 人工审查 → 确认安装 → 安全扫描**。
 
 双脑架构已就位：LLM 智能体（`fde-onboarding` 元技能，跑在独立 `fde` 业务智能体里）做智能生成（`edit_file` 改 staged 产物）；确定性工具（`fde_tools.py` + 后端 `fde_workbench_service.py`）做 scaffold / selfcheck / probe / install。
