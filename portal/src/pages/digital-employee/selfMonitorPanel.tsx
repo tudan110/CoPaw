@@ -14,9 +14,11 @@ import {
   type SelfMonitorSessions,
   type SelfMonitorStatus,
   type SelfMonitorTokens,
+  type SelfMonitorTools,
   type SelfMonitorTopology,
 } from "../../api/selfMonitor";
 import { EChart } from "../../components/big-screen/charts/EChart";
+import { TracesCenterPanel } from "./tracesCenterPanel";
 import "../self-monitor.css";
 
 const REFRESH_INTERVAL_MS = 15000;
@@ -173,25 +175,46 @@ export function SelfMonitorPanel() {
   const rssByWorker = (l4?.metrics?.rssBytesByWorker ?? {}) as Record<string, number>;
   const hasData = state !== "unknown";
 
-  // AI Agent observability tabs (对标阿里云:总览/模型/Token/会话/链路)
+  // AI Agent observability IA (对标阿里云):
+  // 总览 | 链路追踪(内嵌追溯中心) | 会话分析 | 场景化分析(四个子维度)
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState<
-    "overview" | "models" | "tokens" | "sessions"
-  >("overview");
+  type TopTab = "overview" | "traces" | "sessions" | "scenario";
+  type ScenarioTab = "tokens" | "model-perf" | "tools" | "users";
+  const [activeTab, setActiveTab] = useState<TopTab>(() => {
+    // /traces deep-links land here now that the standalone center is folded in
+    if (window.location.pathname === "/traces") return "traces";
+    const wanted = new URLSearchParams(window.location.search).get("tab");
+    return wanted === "traces" || wanted === "sessions" || wanted === "scenario"
+      ? wanted
+      : "overview";
+  });
+  const [scenarioTab, setScenarioTab] = useState<ScenarioTab>("tokens");
   const [models, setModels] = useState<SelfMonitorModels | null>(null);
   const [tokensData, setTokensData] = useState<SelfMonitorTokens | null>(null);
+  const [toolsData, setToolsData] = useState<SelfMonitorTools | null>(null);
   const [sessions, setSessions] = useState<SelfMonitorSessions | null>(null);
 
   useEffect(() => {
-    if (activeTab === "overview") return;
+    const wantModels = activeTab === "scenario" && scenarioTab === "model-perf";
+    const wantTokens = activeTab === "scenario" && scenarioTab === "tokens";
+    const wantTools = activeTab === "scenario" && scenarioTab === "tools";
+    const wantSessions =
+      activeTab === "sessions" ||
+      (activeTab === "scenario" && scenarioTab === "users");
+    if (!wantModels && !wantTokens && !wantTools && !wantSessions) return;
     const controller = new AbortController();
     const load = async () => {
       try {
-        if (activeTab === "models") {
+        if (wantModels) {
           setModels(await selfMonitorApi.models(windowS, controller.signal));
-        } else if (activeTab === "tokens") {
+        }
+        if (wantTokens) {
           setTokensData(await selfMonitorApi.tokens(windowS, controller.signal));
-        } else {
+        }
+        if (wantTools) {
+          setToolsData(await selfMonitorApi.tools(windowS, controller.signal));
+        }
+        if (wantSessions) {
           setSessions(await selfMonitorApi.sessions(7, controller.signal));
         }
       } catch {
@@ -199,15 +222,17 @@ export function SelfMonitorPanel() {
       }
     };
     void load();
+    // tools/sessions aggregate over files server-side (60s cache) —
+    // polling faster than the cache would just replay stale payloads
     const timerId = window.setInterval(
       () => void load(),
-      activeTab === "sessions" ? 60000 : REFRESH_INTERVAL_MS,
+      wantSessions || wantTools ? 60000 : REFRESH_INTERVAL_MS,
     );
     return () => {
       controller.abort();
       window.clearInterval(timerId);
     };
-  }, [activeTab, windowS, reloadNonce]);
+  }, [activeTab, scenarioTab, windowS, reloadNonce]);
 
   // click a layer node to focus the event stream on that layer
   const [layerFilter, setLayerFilter] = useState<string | null>(null);
@@ -253,7 +278,7 @@ export function SelfMonitorPanel() {
       legend: {
         top: 0,
         right: 0,
-        textStyle: { color: "#9fb2cc", fontSize: 10 },
+        textStyle: { color: "#64748b", fontSize: 10 },
         itemWidth: 12,
         itemHeight: 6,
       },
@@ -261,13 +286,13 @@ export function SelfMonitorPanel() {
       xAxis: {
         type: "category",
         data: axis.map((t) => fmtClock(t)),
-        axisLine: { lineStyle: { color: "rgba(255,255,255,.18)" } },
-        axisLabel: { color: "#9fb2cc", fontSize: 10 },
+        axisLine: { lineStyle: { color: "rgba(15,23,42,.18)" } },
+        axisLabel: { color: "#64748b", fontSize: 10 },
       },
       yAxis: {
         type: "value",
-        axisLabel: { color: "#9fb2cc", fontSize: 10 },
-        splitLine: { lineStyle: { color: "rgba(255,255,255,.06)" } },
+        axisLabel: { color: "#64748b", fontSize: 10 },
+        splitLine: { lineStyle: { color: "rgba(15,23,42,.07)" } },
       },
       series: [
         {
@@ -276,22 +301,22 @@ export function SelfMonitorPanel() {
           smooth: true,
           symbol: "none",
           data: axis.map((t) => at(okBuckets, t)),
-          lineStyle: { color: "#22d3ee", width: 2 },
-          itemStyle: { color: "#22d3ee" },
-          areaStyle: { color: "rgba(34,211,238,.10)" },
+          lineStyle: { color: "#0891b2", width: 2 },
+          itemStyle: { color: "#0891b2" },
+          areaStyle: { color: "rgba(8,145,178,.10)" },
         },
         {
           name: "429 限流",
           type: "bar",
           data: axis.map((t) => at(err429Buckets, t)),
-          itemStyle: { color: "rgba(251,146,60,.8)", borderRadius: [2, 2, 0, 0] },
+          itemStyle: { color: "rgba(217,119,6,.8)", borderRadius: [2, 2, 0, 0] },
           barMaxWidth: 10,
         },
         {
           name: "降级",
           type: "bar",
           data: axis.map((t) => at(degradeBuckets, t)),
-          itemStyle: { color: "rgba(248,113,113,.85)", borderRadius: [2, 2, 0, 0] },
+          itemStyle: { color: "rgba(220,38,38,.85)", borderRadius: [2, 2, 0, 0] },
           barMaxWidth: 10,
         },
       ],
@@ -303,10 +328,10 @@ export function SelfMonitorPanel() {
     const nodes = topology?.nodes ?? [];
     const edges = topology?.edges ?? [];
     const statusColor: Record<string, string> = {
-      ok: "#34d399",
-      warn: "#fb923c",
-      crit: "#f87171",
-      unknown: "#9fb2cc",
+      ok: "#059669",
+      warn: "#d97706",
+      crit: "#dc2626",
+      unknown: "#64748b",
     };
     const typeSize: Record<string, number> = {
       core: 34,
@@ -324,18 +349,18 @@ export function SelfMonitorPanel() {
           layout: "force",
           roam: false,
           force: { repulsion: 220, edgeLength: [60, 130], gravity: 0.12 },
-          label: { show: true, color: "#cbd6e8", fontSize: 10, position: "bottom" },
-          lineStyle: { color: "rgba(159,178,204,.35)", curveness: 0.1 },
+          label: { show: true, color: "#334155", fontSize: 10, position: "bottom" },
+          lineStyle: { color: "rgba(100,116,139,.35)", curveness: 0.1 },
           emphasis: { focus: "adjacency" },
           data: nodes.map((node) => ({
             id: node.id,
             name: node.label,
             symbolSize: typeSize[node.type] ?? 16,
             itemStyle: {
-              color: node.type === "core" ? "#22d3ee" : statusColor[node.status] ?? "#9fb2cc",
+              color: node.type === "core" ? "#0891b2" : statusColor[node.status] ?? "#64748b",
               shadowBlur: node.status === "crit" ? 14 : 6,
               shadowColor:
-                node.status === "crit" ? "rgba(248,113,113,.8)" : "rgba(34,211,238,.35)",
+                node.status === "crit" ? "rgba(220,38,38,.8)" : "rgba(8,145,178,.35)",
             },
           })),
           links: edges.map((edge) => ({
@@ -349,9 +374,9 @@ export function SelfMonitorPanel() {
   }, [topology]);
 
   const AXIS = {
-    axisLabel: { color: "#9fb2cc", fontSize: 10 },
-    axisLine: { lineStyle: { color: "rgba(255,255,255,.14)" } },
-    splitLine: { lineStyle: { color: "rgba(255,255,255,.06)" } },
+    axisLabel: { color: "#64748b", fontSize: 10 },
+    axisLine: { lineStyle: { color: "rgba(15,23,42,.16)" } },
+    splitLine: { lineStyle: { color: "rgba(15,23,42,.07)" } },
   };
 
   const tokenDonutOption = useMemo(() => {
@@ -365,13 +390,13 @@ export function SelfMonitorPanel() {
           type: "pie",
           radius: ["58%", "82%"],
           center: ["50%", "52%"],
-          label: { color: "#cbd6e8", fontSize: 10 },
-          itemStyle: { borderColor: "#0b1424", borderWidth: 2 },
+          label: { color: "#334155", fontSize: 10 },
+          itemStyle: { borderColor: "#ffffff", borderWidth: 2 },
           data: entries.map(([model, kinds]) => ({
             name: model,
             value: kinds.prompt + kinds.completion,
           })),
-          color: ["#22d3ee", "#34d399", "#a78bfa", "#fb923c", "#f87171"],
+          color: ["#0891b2", "#059669", "#7c3aed", "#d97706", "#dc2626"],
         },
       ],
     };
@@ -391,7 +416,7 @@ export function SelfMonitorPanel() {
       tooltip: { trigger: "axis" },
       legend: {
         data: ["输入 token", "输出 token"],
-        textStyle: { color: "#9fb2cc", fontSize: 10 },
+        textStyle: { color: "#64748b", fontSize: 10 },
         top: 0,
       },
       grid: { left: 54, right: 12, top: 28, bottom: 22 },
@@ -403,7 +428,7 @@ export function SelfMonitorPanel() {
           type: "bar",
           stack: "t",
           data: rows.map((row) => row.prompt),
-          itemStyle: { color: "rgba(34,211,238,.75)" },
+          itemStyle: { color: "rgba(8,145,178,.75)" },
           barMaxWidth: 14,
         },
         {
@@ -411,7 +436,7 @@ export function SelfMonitorPanel() {
           type: "bar",
           stack: "t",
           data: rows.map((row) => row.completion),
-          itemStyle: { color: "rgba(52,211,153,.8)" },
+          itemStyle: { color: "rgba(5,150,105,.8)" },
           barMaxWidth: 14,
         },
       ],
@@ -442,8 +467,8 @@ export function SelfMonitorPanel() {
           smooth: true,
           symbol: "none",
           data: rows.map((row) => row.avgTokens),
-          lineStyle: { color: "#a78bfa", width: 2 },
-          areaStyle: { color: "rgba(167,139,250,.12)" },
+          lineStyle: { color: "#7c3aed", width: 2 },
+          areaStyle: { color: "rgba(124,58,237,.12)" },
         },
       ],
     };
@@ -471,11 +496,11 @@ export function SelfMonitorPanel() {
           type: "bar",
           data: entries.map(([, total]) => total),
           barMaxWidth: 16,
-          itemStyle: { color: "#22d3ee", borderRadius: [0, 4, 4, 0] },
+          itemStyle: { color: "#0891b2", borderRadius: [0, 4, 4, 0] },
           label: {
             show: true,
             position: "right",
-            color: "#cbd6e8",
+            color: "#334155",
             fontSize: 10,
             formatter: (p: { value: number }) => fmtBig(p.value),
           },
@@ -492,7 +517,7 @@ export function SelfMonitorPanel() {
       tooltip: { trigger: "axis" },
       legend: {
         data: ["消息数", "活跃会话"],
-        textStyle: { color: "#9fb2cc", fontSize: 10 },
+        textStyle: { color: "#64748b", fontSize: 10 },
         top: 0,
       },
       grid: { left: 46, right: 40, top: 28, bottom: 22 },
@@ -510,7 +535,7 @@ export function SelfMonitorPanel() {
           name: "消息数",
           type: "bar",
           data: rows.map((row) => row.messages),
-          itemStyle: { color: "rgba(34,211,238,.7)" },
+          itemStyle: { color: "rgba(8,145,178,.7)" },
           barMaxWidth: 18,
         },
         {
@@ -519,12 +544,169 @@ export function SelfMonitorPanel() {
           yAxisIndex: 1,
           smooth: true,
           data: rows.map((row) => row.activeSessions),
-          lineStyle: { color: "#fb923c", width: 2 },
-          itemStyle: { color: "#fb923c" },
+          lineStyle: { color: "#d97706", width: 2 },
+          itemStyle: { color: "#d97706" },
         },
       ],
     };
   }, [sessions]);
+
+  const hhmm = (ts: number) =>
+    new Date(ts * 1000).toLocaleTimeString("zh-CN", {
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+
+  const callTrendOption = useMemo(() => {
+    const rows = models?.callTrend ?? [];
+    return {
+      backgroundColor: "transparent",
+      animation: false,
+      tooltip: { trigger: "axis" },
+      legend: {
+        data: ["调用量", "错误率"],
+        textStyle: { color: "#64748b", fontSize: 10 },
+        top: 0,
+      },
+      grid: { left: 44, right: 44, top: 28, bottom: 22 },
+      xAxis: { type: "category", data: rows.map((r) => hhmm(r.ts)), ...AXIS },
+      yAxis: [
+        { type: "value", ...AXIS },
+        {
+          type: "value",
+          ...AXIS,
+          splitLine: { show: false },
+          axisLabel: { ...AXIS.axisLabel, formatter: "{value}%" },
+        },
+      ],
+      series: [
+        {
+          name: "调用量",
+          type: "bar",
+          data: rows.map((r) => r.calls),
+          itemStyle: { color: "rgba(8,145,178,.75)" },
+          barMaxWidth: 14,
+        },
+        {
+          name: "错误率",
+          type: "line",
+          yAxisIndex: 1,
+          smooth: true,
+          symbol: "none",
+          data: rows.map((r) => Math.round(r.errRate * 1000) / 10),
+          lineStyle: { color: "#dc2626", width: 2 },
+        },
+      ],
+    };
+  }, [models]);
+
+  const errorTypesOption = useMemo(() => {
+    const entries = Object.entries(models?.errorTypes ?? {});
+    return {
+      backgroundColor: "transparent",
+      animation: false,
+      tooltip: { trigger: "item" },
+      series: [
+        {
+          type: "pie",
+          radius: ["55%", "80%"],
+          center: ["50%", "52%"],
+          label: { color: "#334155", fontSize: 10 },
+          itemStyle: { borderColor: "#ffffff", borderWidth: 2 },
+          data: entries.map(([status, count]) => ({
+            name: status,
+            value: count,
+          })),
+          color: ["#d97706", "#dc2626", "#7c3aed", "#64748b"],
+        },
+      ],
+    };
+  }, [models]);
+
+  const avgTrendOption = useCallback(
+    (rows: { ts: number; avgS: number }[], color: string) => ({
+      backgroundColor: "transparent",
+      animation: false,
+      tooltip: { trigger: "axis" },
+      grid: { left: 48, right: 12, top: 14, bottom: 22 },
+      xAxis: {
+        type: "category",
+        data: rows.map((r) => hhmm(r.ts)),
+        ...AXIS,
+      },
+      yAxis: { type: "value", name: "s", ...AXIS },
+      series: [
+        {
+          type: "line",
+          smooth: true,
+          symbol: "none",
+          data: rows.map((r) => r.avgS),
+          lineStyle: { color, width: 2 },
+          areaStyle: { color: `${color}1f` },
+        },
+      ],
+    }),
+    [],
+  );
+
+  const toolsTrendOption = useMemo(() => {
+    const rows = toolsData?.trend ?? [];
+    return {
+      backgroundColor: "transparent",
+      animation: false,
+      tooltip: { trigger: "axis" },
+      legend: {
+        data: ["调用次数", "错误"],
+        textStyle: { color: "#64748b", fontSize: 10 },
+        top: 0,
+      },
+      grid: { left: 44, right: 12, top: 28, bottom: 22 },
+      xAxis: { type: "category", data: rows.map((r) => hhmm(r.ts)), ...AXIS },
+      yAxis: { type: "value", ...AXIS },
+      series: [
+        {
+          name: "调用次数",
+          type: "bar",
+          data: rows.map((r) => r.calls),
+          itemStyle: { color: "rgba(8,145,178,.75)" },
+          barMaxWidth: 14,
+        },
+        {
+          name: "错误",
+          type: "bar",
+          data: rows.map((r) => r.errors),
+          itemStyle: { color: "rgba(220,38,38,.8)" },
+          barMaxWidth: 14,
+        },
+      ],
+    };
+  }, [toolsData]);
+
+  const toolsTopOption = useMemo(() => {
+    const rows = (toolsData?.byTool ?? []).slice(0, 8).reverse();
+    return {
+      backgroundColor: "transparent",
+      animation: false,
+      tooltip: {},
+      grid: { left: 130, right: 40, top: 8, bottom: 22 },
+      xAxis: { type: "value", ...AXIS },
+      yAxis: { type: "category", data: rows.map((r) => r.tool), ...AXIS },
+      series: [
+        {
+          type: "bar",
+          data: rows.map((r) => r.calls),
+          barMaxWidth: 14,
+          itemStyle: { color: "#0891b2", borderRadius: [0, 4, 4, 0] },
+          label: {
+            show: true,
+            position: "right",
+            color: "#334155",
+            fontSize: 10,
+          },
+        },
+      ],
+    };
+  }, [toolsData]);
 
   const stateMeta = STATE_META[state];
   const windowLabel =
@@ -589,9 +771,9 @@ export function SelfMonitorPanel() {
         {(
           [
             ["overview", "总览"],
-            ["models", "模型调用"],
-            ["tokens", "Token 分析"],
+            ["traces", "链路追踪"],
             ["sessions", "会话分析"],
+            ["scenario", "场景化分析"],
           ] as const
         ).map(([id, label]) => (
           <button
@@ -602,15 +784,39 @@ export function SelfMonitorPanel() {
             {label}
           </button>
         ))}
-        <button className="jump" onClick={() => navigate("/traces")}>
-          链路追踪 ↗
-        </button>
         <button className="jump" onClick={() => navigate("/token-usage")}>
           Token 明细 ↗
         </button>
       </nav>
 
-      {activeTab === "models" ? (
+      {activeTab === "traces" ? (
+        <div className="sm-view sm-traces-embed">
+          <TracesCenterPanel />
+        </div>
+      ) : null}
+
+      {activeTab === "scenario" ? (
+        <nav className="sm-tabs sm-subtabs">
+          {(
+            [
+              ["tokens", "Token 用量分析"],
+              ["model-perf", "模型性能分析"],
+              ["tools", "工具调用分析"],
+              ["users", "用户分析"],
+            ] as const
+          ).map(([id, label]) => (
+            <button
+              key={id}
+              className={scenarioTab === id ? "on" : ""}
+              onClick={() => setScenarioTab(id)}
+            >
+              {label}
+            </button>
+          ))}
+        </nav>
+      ) : null}
+
+      {activeTab === "scenario" && scenarioTab === "model-perf" ? (
         <div className="sm-view">
           <section className="sm-kpis">
             <div className="sm-panel sm-kpi good">
@@ -660,6 +866,76 @@ export function SelfMonitorPanel() {
                 <b>{models ? fmtSeconds(models.totals.avgTtftS) : "—"}</b>
               </div>
               <div className="sm-note">取号→首个流式 chunk(含限流等待)</div>
+            </div>
+          </section>
+
+          <section className="sm-subrow">
+            <div className="sm-panel">
+              <div className="sm-ph">
+                <i />
+                <h3>调用量趋势</h3>
+                <span className="sm-en">calls · err rate</span>
+              </div>
+              {models?.callTrend.length ? (
+                <div className="sm-chart-body" style={{ height: 200 }}>
+                  <EChart option={callTrendOption} />
+                </div>
+              ) : (
+                <div className="sm-empty">窗口内暂无调用</div>
+              )}
+            </div>
+            <div className="sm-panel">
+              <div className="sm-ph">
+                <i style={{ background: "var(--sm-red)" }} />
+                <h3>错误类型分布</h3>
+                <span className="sm-en">by status</span>
+              </div>
+              {Object.keys(models?.errorTypes ?? {}).length ? (
+                <div className="sm-chart-body" style={{ height: 200 }}>
+                  <EChart option={errorTypesOption} />
+                </div>
+              ) : (
+                <div className="sm-empty">
+                  <b>窗口内零错误</b>
+                  <br />
+                  429/error/timeout 终态会在这里按类型分布。
+                </div>
+              )}
+            </div>
+          </section>
+
+          <section className="sm-subrow">
+            <div className="sm-panel">
+              <div className="sm-ph">
+                <i style={{ background: "var(--sm-violet)" }} />
+                <h3>平均耗时趋势</h3>
+                <span className="sm-en">avg duration</span>
+              </div>
+              {models?.durationTrend.length ? (
+                <div className="sm-chart-body" style={{ height: 170 }}>
+                  <EChart option={avgTrendOption(models.durationTrend, "#7c3aed")} />
+                </div>
+              ) : (
+                <div className="sm-empty">窗口内暂无耗时样本</div>
+              )}
+            </div>
+            <div className="sm-panel">
+              <div className="sm-ph">
+                <i style={{ background: "var(--sm-green)" }} />
+                <h3>平均 TTFT 趋势</h3>
+                <span className="sm-en">first token</span>
+              </div>
+              {models?.ttftTrend.length ? (
+                <div className="sm-chart-body" style={{ height: 170 }}>
+                  <EChart option={avgTrendOption(models.ttftTrend, "#059669")} />
+                </div>
+              ) : (
+                <div className="sm-empty">
+                  <b>暂无 TTFT 样本</b>
+                  <br />
+                  流式调用的首 chunk 延迟会在这里成线。
+                </div>
+              )}
             </div>
           </section>
 
@@ -722,7 +998,7 @@ export function SelfMonitorPanel() {
         </div>
       ) : null}
 
-      {activeTab === "tokens" ? (
+      {activeTab === "scenario" && scenarioTab === "tokens" ? (
         <div className="sm-view">
           <section className="sm-kpis">
             <div className="sm-panel sm-kpi good">
@@ -832,6 +1108,325 @@ export function SelfMonitorPanel() {
                 </div>
               ) : (
                 <div className="sm-empty">窗口内暂无 token 记录</div>
+              )}
+            </div>
+          </section>
+        </div>
+      ) : null}
+
+      {activeTab === "scenario" && scenarioTab === "tools" ? (
+        <div className="sm-view">
+          <section className="sm-kpis">
+            <div className="sm-panel sm-kpi good">
+              <div className="sm-tag">
+                <span>工具调用次数</span>
+                <i className="sm-lyr">{windowLabel}</i>
+              </div>
+              <div className="sm-val">
+                <b>{toolsData ? fmtBig(toolsData.totals.calls) : "—"}</b>
+              </div>
+              <div className="sm-note">来自链路追踪的 tool_call 事件</div>
+            </div>
+            <div
+              className={`sm-panel sm-kpi ${
+                toolsData && toolsData.totals.errors > 0 ? "warned" : "good"
+              }`}
+            >
+              <div className="sm-tag">
+                <span>调用错误</span>
+                <i className="sm-lyr">errors</i>
+              </div>
+              <div className="sm-val">
+                <b>{toolsData ? fmtBig(toolsData.totals.errors) : "—"}</b>
+                <small>
+                  {toolsData
+                    ? `${(toolsData.totals.errRate * 100).toFixed(1)}%`
+                    : ""}
+                </small>
+              </div>
+              <div className="sm-note">outcome 非 ok 的调用</div>
+            </div>
+            <div className="sm-panel sm-kpi good">
+              <div className="sm-tag">
+                <span>平均耗时</span>
+                <i className="sm-lyr">avg</i>
+              </div>
+              <div className="sm-val">
+                <b>
+                  {toolsData?.totals.avgDurationMs == null
+                    ? "—"
+                    : toolsData.totals.avgDurationMs >= 1000
+                      ? `${(toolsData.totals.avgDurationMs / 1000).toFixed(2)} s`
+                      : `${toolsData.totals.avgDurationMs.toFixed(0)} ms`}
+                </b>
+              </div>
+              <div className="sm-note">工具执行 duration_ms 均值</div>
+            </div>
+            <div className="sm-panel sm-kpi good">
+              <div className="sm-tag">
+                <span>覆盖工具数</span>
+                <i className="sm-lyr">tools</i>
+              </div>
+              <div className="sm-val">
+                <b>{toolsData ? toolsData.byTool.length : "—"}</b>
+              </div>
+              <div className="sm-note">窗口内被调用过的工具种类</div>
+            </div>
+          </section>
+
+          <section className="sm-subrow">
+            <div className="sm-panel">
+              <div className="sm-ph">
+                <i />
+                <h3>工具调用趋势</h3>
+                <span className="sm-en">calls · errors</span>
+              </div>
+              {toolsData?.trend.length ? (
+                <div className="sm-chart-body" style={{ height: 210 }}>
+                  <EChart option={toolsTrendOption} />
+                </div>
+              ) : (
+                <div className="sm-empty">
+                  <b>窗口内暂无工具调用</b>
+                  <br />
+                  Agent 执行任意工具后,这里按时间分桶展示次数与错误。
+                </div>
+              )}
+            </div>
+            <div className="sm-panel">
+              <div className="sm-ph">
+                <i style={{ background: "var(--sm-violet)" }} />
+                <h3>工具调用 Top</h3>
+                <span className="sm-en">by tool</span>
+              </div>
+              {toolsData?.byTool.length ? (
+                <div className="sm-chart-body" style={{ height: 210 }}>
+                  <EChart option={toolsTopOption} />
+                </div>
+              ) : (
+                <div className="sm-empty">暂无数据</div>
+              )}
+            </div>
+          </section>
+
+          <section className="sm-subrow">
+            <div className="sm-panel">
+              <div className="sm-ph">
+                <i style={{ background: "var(--sm-green)" }} />
+                <h3>工具明细</h3>
+                <span className="sm-en">calls · errors · avg</span>
+              </div>
+              {toolsData?.byTool.length ? (
+                <div className="sm-table-wrap">
+                  <table className="sm-table">
+                    <thead>
+                      <tr>
+                        <th>工具</th>
+                        <th>调用</th>
+                        <th>错误</th>
+                        <th>错误率</th>
+                        <th>平均耗时</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {toolsData.byTool.map((row) => (
+                        <tr key={row.tool}>
+                          <td className="sm-td-model">{row.tool}</td>
+                          <td>{fmtBig(row.calls)}</td>
+                          <td className={row.errors > 0 ? "bad" : ""}>
+                            {fmtBig(row.errors)}
+                          </td>
+                          <td className={row.errRate > 0.05 ? "bad" : ""}>
+                            {(row.errRate * 100).toFixed(1)}%
+                          </td>
+                          <td>
+                            {row.avgDurationMs == null
+                              ? "—"
+                              : row.avgDurationMs >= 1000
+                                ? `${(row.avgDurationMs / 1000).toFixed(2)} s`
+                                : `${row.avgDurationMs.toFixed(0)} ms`}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div className="sm-empty">暂无数据</div>
+              )}
+            </div>
+            <div className="sm-panel">
+              <div className="sm-ph">
+                <i style={{ background: "var(--sm-orange)" }} />
+                <h3>按 Agent 分布</h3>
+                <span className="sm-en">by agent</span>
+              </div>
+              {toolsData?.byAgent.length ? (
+                <div className="sm-table-wrap">
+                  <table className="sm-table">
+                    <thead>
+                      <tr>
+                        <th>Agent</th>
+                        <th>工具调用</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {toolsData.byAgent.map((row) => (
+                        <tr key={row.agent}>
+                          <td className="sm-td-model">{row.agent}</td>
+                          <td>{fmtBig(row.calls)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div className="sm-empty">暂无数据</div>
+              )}
+            </div>
+          </section>
+        </div>
+      ) : null}
+
+      {activeTab === "scenario" && scenarioTab === "users" ? (
+        <div className="sm-view">
+          <div className="sm-note-banner">
+            单机部署没有终端用户账号维度——以下以 <b>渠道 / Workspace</b> 口径
+            替代阿里云的"用户分析",语义如实标注。
+          </div>
+          <section className="sm-kpis">
+            <div className="sm-panel sm-kpi good">
+              <div className="sm-tag">
+                <span>活跃 Workspace</span>
+                <i className="sm-lyr">{sessions?.days ?? 7}d</i>
+              </div>
+              <div className="sm-val">
+                <b>{sessions?.workspaces ? sessions.workspaces.length : "—"}</b>
+              </div>
+              <div className="sm-note">窗口内有会话活动的智能体空间</div>
+            </div>
+            <div className="sm-panel sm-kpi good">
+              <div className="sm-tag">
+                <span>活跃渠道</span>
+                <i className="sm-lyr">channels</i>
+              </div>
+              <div className="sm-val">
+                <b>{sessions?.byChannel ? sessions.byChannel.length : "—"}</b>
+              </div>
+              <div className="sm-note">portal / dingtalk / console …</div>
+            </div>
+            <div className="sm-panel sm-kpi good">
+              <div className="sm-tag">
+                <span>均会话数</span>
+                <i className="sm-lyr">/workspace</i>
+              </div>
+              <div className="sm-val">
+                <b>
+                  {sessions?.workspaces?.length
+                    ? (
+                        (sessions.totals?.activeSessions ?? 0) /
+                        sessions.workspaces.length
+                      ).toFixed(1)
+                    : "—"}
+                </b>
+              </div>
+              <div className="sm-note">活跃会话 ÷ 活跃 workspace</div>
+            </div>
+            <div className="sm-panel sm-kpi good">
+              <div className="sm-tag">
+                <span>均消息数</span>
+                <i className="sm-lyr">/session</i>
+              </div>
+              <div className="sm-val">
+                <b>
+                  {sessions?.totals?.activeSessions
+                    ? (
+                        sessions.totals.messages /
+                        sessions.totals.activeSessions
+                      ).toFixed(1)
+                    : "—"}
+                </b>
+              </div>
+              <div className="sm-note">消息数 ÷ 会话数(≈对话轮次×2)</div>
+            </div>
+          </section>
+
+          <section className="sm-subrow">
+            <div className="sm-panel">
+              <div className="sm-ph">
+                <i />
+                <h3>Workspace Token 消耗 Top</h3>
+                <span className="sm-en">prompt + completion</span>
+              </div>
+              {sessions?.workspaces?.length ? (
+                <div className="sm-table-wrap">
+                  <table className="sm-table">
+                    <thead>
+                      <tr>
+                        <th>Workspace</th>
+                        <th>输入token</th>
+                        <th>输出token</th>
+                        <th>合计</th>
+                        <th>LLM 调用</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {[...sessions.workspaces]
+                        .sort(
+                          (a, b) =>
+                            b.promptTokens +
+                            b.completionTokens -
+                            (a.promptTokens + a.completionTokens),
+                        )
+                        .map((row) => (
+                          <tr key={row.workspace}>
+                            <td className="sm-td-model">{row.workspace}</td>
+                            <td>{fmtBig(row.promptTokens)}</td>
+                            <td>{fmtBig(row.completionTokens)}</td>
+                            <td>
+                              {fmtBig(row.promptTokens + row.completionTokens)}
+                            </td>
+                            <td>{fmtBig(row.llmCalls)}</td>
+                          </tr>
+                        ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div className="sm-empty">窗口内暂无 workspace 活动</div>
+              )}
+            </div>
+            <div className="sm-panel">
+              <div className="sm-ph">
+                <i style={{ background: "var(--sm-green)" }} />
+                <h3>渠道会话 Top</h3>
+                <span className="sm-en">sessions by channel</span>
+              </div>
+              {sessions?.byChannel?.length ? (
+                <div className="sm-table-wrap">
+                  <table className="sm-table">
+                    <thead>
+                      <tr>
+                        <th>渠道</th>
+                        <th>会话数</th>
+                        <th>用户消息</th>
+                        <th>助手消息</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {sessions.byChannel.map((row) => (
+                        <tr key={row.channel}>
+                          <td className="sm-td-model">{row.channel}</td>
+                          <td>{fmtBig(row.sessions)}</td>
+                          <td>{fmtBig(row.userMessages)}</td>
+                          <td>{fmtBig(row.assistantMessages)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div className="sm-empty">暂无渠道数据</div>
               )}
             </div>
           </section>

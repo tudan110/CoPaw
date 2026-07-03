@@ -570,19 +570,7 @@ export function AdvancedModelEntry({
           <div className="sidebar-advanced-item-desc">任务调度中心</div>
           <div className="sidebar-advanced-item-meta">创建 / 启停 / 立即执行</div>
         </button>
-        <button
-          className={isTracesActive ? "sidebar-advanced-item active" : "sidebar-advanced-item"}
-          onClick={onOpenTraces}
-        >
-          <div className="sidebar-advanced-item-icon">
-            <span role="img" aria-label="traces">
-              🔍
-            </span>
-          </div>
-          <div className="sidebar-advanced-item-name">追溯中心</div>
-          <div className="sidebar-advanced-item-desc">操作步骤全部留痕</div>
-          <div className="sidebar-advanced-item-meta">会话 / 工具 / 推理 / 异常</div>
-        </button>
+        {/* 追溯中心入口已并入「自监控 → 链路追踪」tab(v5) */}
         <button
           className={isSelfMonitorActive ? "sidebar-advanced-item active" : "sidebar-advanced-item"}
           onClick={onOpenSelfMonitor}

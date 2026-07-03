@@ -496,11 +496,66 @@ def self_monitor_models(
     totals["errRate"] = (
         round(totals["errors"] / totals["calls"], 4) if totals["calls"] else 0.0
     )
+    # trends for the 模型性能分析 sub-tab: calls/errors per bucket plus
+    # windowed average duration / TTFT per bucket (Δsum/Δcount).
+    bucket_s = max(60, window_s // 48)
+    call_buckets = _bucket_increases(
+        store,
+        "qwenpaw_llm_requests_total",
+        since=since,
+        bucket_s=bucket_s,
+        split_label="status",
+    )
+    call_trend = []
+    for bucket_ts in sorted(call_buckets):
+        by_status = call_buckets[bucket_ts]
+        calls = sum(by_status.values())
+        bucket_errors = sum(v for k, v in by_status.items() if k != "ok")
+        call_trend.append(
+            {
+                "ts": bucket_ts,
+                "calls": round(calls),
+                "errors": round(bucket_errors),
+                "errRate": round(bucket_errors / calls, 4) if calls else 0.0,
+            }
+        )
+
+    def _avg_trend(name: str) -> list[dict[str, Any]]:
+        sums = _bucket_increases(store, f"{name}_sum", since=since, bucket_s=bucket_s)
+        counts = _bucket_increases(
+            store, f"{name}_count", since=since, bucket_s=bucket_s
+        )
+        trend = []
+        for bucket_ts in sorted(set(sums) | set(counts)):
+            total_sum = sum(sums.get(bucket_ts, {}).values())
+            total_count = sum(counts.get(bucket_ts, {}).values())
+            if total_count > 0:
+                trend.append(
+                    {
+                        "ts": bucket_ts,
+                        "avgS": round(total_sum / total_count, 3),
+                    }
+                )
+        return trend
+
+    error_types: dict[str, int] = {}
+    for row in rows.values():
+        for status, count in row["byStatus"].items():
+            if status != "ok" and count:
+                error_types[status] = error_types.get(status, 0) + count
+
     return {
         "generatedAt": int(now),
         "windowS": window_s,
+        "bucketS": bucket_s,
         "rows": sorted(rows.values(), key=lambda r: r["calls"], reverse=True),
         "totals": totals,
+        "callTrend": call_trend,
+        "durationTrend": _avg_trend("qwenpaw_llm_request_duration_seconds"),
+        "ttftTrend": _avg_trend("qwenpaw_llm_first_token_seconds"),
+        "errorTypes": dict(
+            sorted(error_types.items(), key=lambda kv: kv[1], reverse=True)
+        ),
     }
 
 
@@ -612,6 +667,124 @@ def self_monitor_tokens(
         "series": series,
         "perRequest": per_request,
     }
+
+
+# ── tool call analytics (对标 · 工具调用分析,数据来自 traces) ────
+
+_tools_cache: dict[str, Any] = {"key": None, "ts": 0.0, "payload": None}
+_TOOLS_CACHE_TTL_S = 60.0
+
+
+@router.get("/tools")
+def self_monitor_tools(
+    window_s: int = Query(default=86400, ge=600, le=31 * 86400),
+) -> dict:
+    """Tool-call statistics aggregated from the traceability JSONL
+    (``tool_call`` events already carry tool_name/duration_ms/outcome —
+    no extra instrumentation needed). mtime-pruned scan + 60s cache."""
+    now = time.time()
+    cache_key = f"w={window_s}"
+    if (
+        _tools_cache["key"] == cache_key
+        and now - _tools_cache["ts"] < _TOOLS_CACHE_TTL_S
+    ):
+        return _tools_cache["payload"]
+
+    since = now - window_s
+    bucket_s = max(60, window_s // 48)
+    trace_dir = WORKING_DIR / "chat_traces"
+
+    by_tool: dict[str, dict[str, float]] = {}
+    by_agent: dict[str, int] = {}
+    trend: dict[int, dict[str, int]] = {}
+    totals = {"calls": 0, "errors": 0, "durationMsSum": 0.0}
+
+    if trace_dir.exists():
+        for path in trace_dir.glob("*.jsonl"):
+            try:
+                if path.stat().st_mtime < since:
+                    continue  # file finished before the window opened
+                with path.open("r", encoding="utf-8") as handle:
+                    for line in handle:
+                        try:
+                            event = json.loads(line)
+                        except (ValueError, TypeError):
+                            continue
+                        if event.get("type") != "tool_call":
+                            continue
+                        ts = float(event.get("ts") or 0)
+                        if ts < since:
+                            continue
+                        tool = str(event.get("tool_name") or "unknown")
+                        outcome = str(event.get("outcome") or "ok")
+                        try:
+                            duration_ms = float(event.get("duration_ms") or 0)
+                        except (TypeError, ValueError):
+                            duration_ms = 0.0
+                        is_error = outcome not in ("ok", "success")
+                        entry = by_tool.setdefault(
+                            tool,
+                            {"calls": 0, "errors": 0, "durationMsSum": 0.0},
+                        )
+                        entry["calls"] += 1
+                        entry["durationMsSum"] += duration_ms
+                        totals["calls"] += 1
+                        totals["durationMsSum"] += duration_ms
+                        if is_error:
+                            entry["errors"] += 1
+                            totals["errors"] += 1
+                        agent = str(event.get("agent_id") or "unknown")
+                        by_agent[agent] = by_agent.get(agent, 0) + 1
+                        bucket_ts = int(ts) // bucket_s * bucket_s
+                        bucket = trend.setdefault(bucket_ts, {"calls": 0, "errors": 0})
+                        bucket["calls"] += 1
+                        if is_error:
+                            bucket["errors"] += 1
+            except OSError:
+                continue
+
+    tool_rows = [
+        {
+            "tool": tool,
+            "calls": int(entry["calls"]),
+            "errors": int(entry["errors"]),
+            "errRate": (
+                round(entry["errors"] / entry["calls"], 4) if entry["calls"] else 0.0
+            ),
+            "avgDurationMs": (
+                round(entry["durationMsSum"] / entry["calls"], 1)
+                if entry["calls"]
+                else None
+            ),
+        }
+        for tool, entry in by_tool.items()
+    ]
+    payload = {
+        "generatedAt": int(now),
+        "windowS": window_s,
+        "bucketS": bucket_s,
+        "totals": {
+            "calls": totals["calls"],
+            "errors": totals["errors"],
+            "errRate": (
+                round(totals["errors"] / totals["calls"], 4) if totals["calls"] else 0.0
+            ),
+            "avgDurationMs": (
+                round(totals["durationMsSum"] / totals["calls"], 1)
+                if totals["calls"]
+                else None
+            ),
+        },
+        "byTool": sorted(tool_rows, key=lambda r: r["calls"], reverse=True)[:15],
+        "byAgent": sorted(
+            ({"agent": agent, "calls": calls} for agent, calls in by_agent.items()),
+            key=lambda r: r["calls"],
+            reverse=True,
+        )[:10],
+        "trend": [{"ts": ts, **counts} for ts, counts in sorted(trend.items())],
+    }
+    _tools_cache.update(key=cache_key, ts=now, payload=payload)
+    return payload
 
 
 # ── session analytics (对标 · 会话分析,数据来自 agent_stats) ─────

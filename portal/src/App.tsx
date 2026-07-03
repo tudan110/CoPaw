@@ -133,9 +133,10 @@ export default function App() {
         path="/token-usage"
         element={renderDeferredPage(<DigitalEmployeePage forcedSection="token-usage" />)}
       />
+      {/* 追溯中心已并入智观AI 自监控(链路追踪 tab);老深链继续可用 */}
       <Route
         path="/traces"
-        element={renderDeferredPage(<DigitalEmployeePage forcedSection="traces" />)}
+        element={renderDeferredPage(<DigitalEmployeePage forcedSection="self-monitor" />)}
       />
       <Route
         path="/self-monitor"

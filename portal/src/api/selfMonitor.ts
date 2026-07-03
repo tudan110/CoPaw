@@ -82,6 +82,7 @@ export interface SelfMonitorModelRow {
 export interface SelfMonitorModels {
   generatedAt: number;
   windowS: number;
+  bucketS: number;
   rows: SelfMonitorModelRow[];
   totals: {
     calls: number;
@@ -93,6 +94,31 @@ export interface SelfMonitorModels {
     avgDurationS: number | null;
     avgTtftS: number | null;
   };
+  callTrend: { ts: number; calls: number; errors: number; errRate: number }[];
+  durationTrend: { ts: number; avgS: number }[];
+  ttftTrend: { ts: number; avgS: number }[];
+  errorTypes: Record<string, number>;
+}
+
+export interface SelfMonitorTools {
+  generatedAt: number;
+  windowS: number;
+  bucketS: number;
+  totals: {
+    calls: number;
+    errors: number;
+    errRate: number;
+    avgDurationMs: number | null;
+  };
+  byTool: {
+    tool: string;
+    calls: number;
+    errors: number;
+    errRate: number;
+    avgDurationMs: number | null;
+  }[];
+  byAgent: { agent: string; calls: number }[];
+  trend: { ts: number; calls: number; errors: number }[];
 }
 
 export interface SelfMonitorTokens {
@@ -231,6 +257,12 @@ export const selfMonitorApi = {
   tokens: (windowS = 86400, signal?: AbortSignal) =>
     requestPortalApi<SelfMonitorTokens>(
       `/self-monitor/tokens${buildQuery({ window_s: windowS })}`,
+      { signal },
+    ),
+
+  tools: (windowS = 86400, signal?: AbortSignal) =>
+    requestPortalApi<SelfMonitorTools>(
+      `/self-monitor/tools${buildQuery({ window_s: windowS })}`,
       { signal },
     ),
 
