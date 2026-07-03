@@ -99,6 +99,17 @@ COPY --from=console-builder /app/console/dist/ ./src/qwenpaw/console/
 COPY --from=uv-src /uv /bin/uv
 RUN uv pip install --no-cache-dir . && rm -rf ./build
 
+# fastmcp 3.4+ ships as fastmcp-slim (client-only) without server support, but
+# qwenpaw runs a FastMCP *server* per agent (memory_manager). Without the
+# [server] extra every agent dies at startup with "FastMCP server support is
+# not installed". Install it explicitly; it also pulls cachetools>=7 (drain3
+# pins 4.2.1, which lacks TLRUCache and breaks fastmcp's MemoryStore import).
+RUN uv pip install --python /app/venv/bin/python --no-cache-dir "fastmcp-slim[server]" "cachetools>=7"
+
+# Fail the build loudly if FastMCP server support is missing — a green build
+# then guarantees agents can start. Mirrors deploy-all/qwenpaw/Dockerfile.
+RUN /app/venv/bin/python -c "from fastmcp.server.server import FastMCP; print('fastmcp server support OK')"
+
 
 # QwenPaw app port (default 8088). Override at runtime with -e QWENPAW_PORT=3000.
 ENV QWENPAW_PORT=8088

@@ -183,6 +183,7 @@ RUN set -eux; \
 # A missing Python dep here is exactly what surfaced in the portal as
 # "No module named 'jieba'" / "cannot import name 'serializers'".
 RUN set -eux; \
+    /app/venv/bin/python -c "from fastmcp.server.server import FastMCP; print('fastmcp server support OK (per-agent memory_manager)')"; \
     /app/venv/bin/python -c "import jieba, sqlite_vec, tiktoken, pypdf, openpyxl, xlrd, pytesseract; from PIL import Image; print('knowledge-base python deps OK')"; \
     /app/venv/bin/python -c "import pypdfium2, pdfplumber, rapidocr_onnxruntime; print('multimodal deps OK')"; \
     ( cd /app/.working.backup/workspaces/knowledge/skills/knowledge-base \
