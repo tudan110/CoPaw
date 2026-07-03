@@ -16,6 +16,7 @@ import { COMPONENT_REGISTRY, resolveComponentType } from "./registry.ts";
 import { visualSpecClassTokens } from "./visualSpec.ts";
 import { computeAutoLayout } from "./autoLayout.ts";
 import { pickAutoBand } from "./autoLayoutBands.ts";
+import { computePatternLayout } from "./compositionLayout.ts";
 import { intrinsicSize } from "./intrinsicSize.ts";
 import { LAYOUT_MARGIN, gridToPx, pxToGrid, type Rect } from "./gridGeometry.ts";
 
@@ -179,9 +180,29 @@ export function BigScreenRenderer({
     });
   }
   const autoComponents = s.components.filter((c) => !c.layoutPosition);
-  const autoPos = autoComponents.length
-    ? layoutAutoAroundPinned(autoComponents, reservedRects, s.layout)
-    : null;
+  // Screen-level composition (T-018): when the planner picked a pattern and
+  // the user hasn't taken manual control (no pinned components), lay auto
+  // components out by role in the free band. Pattern preconditions unmet →
+  // null → the content-packing auto layout, so plans degrade gracefully.
+  const patternName = String(s.layoutPlan?.pattern ?? "");
+  const patternPos =
+    autoComponents.length && patternName && pinnedRects.size === 0
+      ? computePatternLayout(
+          patternName,
+          autoComponents.map((c) => ({
+            id: c.id,
+            role: String(c.compositionRole ?? ""),
+            ...intrinsicSize(c),
+          })),
+          s.layout,
+          pickAutoBand(reservedRects, s.layout),
+        )
+      : null;
+  const autoPos =
+    patternPos ??
+    (autoComponents.length
+      ? layoutAutoAroundPinned(autoComponents, reservedRects, s.layout)
+      : null);
   const resolvedRects = new Map<string, Rect>();
   for (const c of s.components) {
     resolvedRects.set(

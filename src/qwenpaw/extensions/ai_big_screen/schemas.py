@@ -28,6 +28,7 @@ PatchOp = Literal[
     "addComponent",
     "removeComponent",
     "setScreenTitle",
+    "setScreenLayoutPattern",
     "setThemePalette",
     "setComponentPalette",
     "setComponentType",
@@ -111,6 +112,10 @@ class PlanComponent(_CamelModel):
     type: str = "table"
     title: str = ""
     description: str = ""
+    # Composition role inside the screen-level layout pattern:
+    # "hero" (the single visual focus) / "support" / "context". Normalized
+    # in the intent layer; at most one hero survives.
+    role: str = ""
     capability_id: str = ""
     query_params: dict[str, Any] = Field(default_factory=dict)
     visual_config: dict[str, Any] = Field(default_factory=dict)
@@ -143,6 +148,11 @@ class ScreenPlan(_CamelModel):
     # top of the screen. The planner names it in-band (zero extra LLM call);
     # empty output falls back to a heuristic in the intent layer.
     screen_title: str = ""
+    # ``layoutPattern`` (wire alias): the screen-level composition the
+    # planner picks (focus-left / focus-right / kpi-top / balanced) — the
+    # macro design decision that keeps a screen from reading as stacked
+    # blocks. Normalized in the intent layer; empty falls back heuristic.
+    layout_pattern: str = ""
     description: str = ""
     summary: str = ""
     theme: dict[str, Any] = Field(default_factory=dict)

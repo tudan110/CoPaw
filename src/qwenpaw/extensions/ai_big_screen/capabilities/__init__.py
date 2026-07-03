@@ -246,7 +246,10 @@ _CLI_TRACE_RE = re.compile(
 _EXCEPTION_NOISE_RE = re.compile(
     r"HTTPS?ConnectionPool|Max retries exceeded|NewConnectionError"
     r"|getaddrinfo|\bConnect(?:ion)?Timeout\b|\bReadTimeout\b"
-    r"|[Cc]onnection (?:refused|aborted|reset)",
+    r"|[Cc]onnection (?:refused|aborted|reset)"
+    # requests' raise_for_status text ("503 Server Error: … for url: http://…")
+    # carries internal endpoints — collapse it like any transport noise.
+    r"|\b\d{3} (?:Server|Client) Error\b|for url:",
 )
 _TIMEOUT_HINT_RE = re.compile(r"timed? ?out|timeout|超时", re.IGNORECASE)
 

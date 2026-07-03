@@ -216,6 +216,80 @@ COMPONENT_TYPE_ALIASES: dict[str, str] = {
 }
 
 
+#: Screen-level composition patterns the renderer implements
+#: deterministically — the planner picks one per screen so the macro
+#: layout is a design decision, not a side effect of box packing.
+ALLOWED_SCREEN_PATTERNS = (
+    "focus-left",
+    "focus-right",
+    "kpi-top",
+    "balanced",
+)
+
+_COMPONENT_ROLES = ("hero", "support", "context")
+
+
+def normalize_screen_pattern(raw: Any) -> str:
+    """Canonical screen pattern for ``raw``, or ``""`` when unrecognized."""
+    text = str(raw or "").strip().lower()
+    return text if text in ALLOWED_SCREEN_PATTERNS else ""
+
+
+def normalize_component_role(raw: Any) -> str:
+    """Canonical composition role, tolerating common synonyms."""
+    text = str(raw or "").strip().lower()
+    if text in _COMPONENT_ROLES:
+        return text
+    return {
+        "primary": "hero",
+        "main": "hero",
+        "focus": "hero",
+        "主角": "hero",
+        "主视觉": "hero",
+        "secondary": "support",
+        "辅助": "support",
+        "supporting": "context",
+        "背景": "context",
+    }.get(text, "")
+
+
+def _enforce_single_hero(components: list[PlanComponent]) -> None:
+    """Demote every hero after the first — the pattern needs ONE focus."""
+    seen_hero = False
+    for component in components:
+        if component.role != "hero":
+            continue
+        if seen_hero:
+            component.role = "support"
+        seen_hero = True
+
+
+_SMALL_PATTERN_TYPES = {
+    "metric-kpi",
+    "metric-card",
+    "flip-number",
+    "gauge",
+    "liquid-ball",
+}
+
+
+def default_screen_pattern(components: list[PlanComponent]) -> str:
+    """Heuristic pattern when the planner didn't pick one.
+
+    A designated hero wants a focus composition; a cluster of small
+    numeric panels reads best as a KPI strip; everything else keeps the
+    balanced auto layout (zero change to legacy behaviour).
+    """
+    if any(component.role == "hero" for component in components):
+        return "focus-left"
+    small = sum(
+        1 for c in components if c.type in _SMALL_PATTERN_TYPES
+    )
+    if small >= 3 and small < len(components):
+        return "kpi-top"
+    return "balanced"
+
+
 def normalize_component_type(raw: Any) -> str:
     """Canonical widget type for ``raw``, or ``""`` when unrecognized.
 
@@ -953,6 +1027,7 @@ def normalize_plan_component(
     return PlanComponent(
         id=f"component-{index + 1}-{uuid.uuid4().hex[:6]}",
         type=component_type,
+        role=normalize_component_role(component.get("role")),
         title=(
             str(component.get("title") or "").strip()
             or str(capability.get("name") or capability_id)
@@ -1262,6 +1337,7 @@ def build_guardrail_plan(
     return ScreenPlan(
         name=requested_title or DEFAULT_SCREEN_NAME,
         screen_title=derive_screen_title(prompt, requested_title),
+        layout_pattern=default_screen_pattern(components),
         description=f"按数据意图查询：{prompt}",
         summary=f"已按数据意图生成 {capability_label} 查询组件。",
         theme=normalize_theme({}),
@@ -1314,9 +1390,14 @@ def _normalize_llm_plan(
         or plan.screen_title.strip()
         or derive_screen_title(prompt, requested_title),
     )
+    _enforce_single_hero(components)
+    layout_pattern = normalize_screen_pattern(
+        plan.layout_pattern,
+    ) or default_screen_pattern(components)
     return ScreenPlan(
         name=requested_title or plan.name.strip() or DEFAULT_SCREEN_NAME,
         screen_title=screen_title,
+        layout_pattern=layout_pattern,
         description=plan.description.strip(),
         summary=plan.summary.strip(),
         theme=normalize_theme(plan.theme),
@@ -1365,10 +1446,18 @@ def _build_intent_messages(prompt: str, title: str) -> list[dict[str, str]]:
         "suggestedApi、requiredInputs、validationPlan，"
         "不得用已有能力或样例数据伪装。"
         "只输出严格 JSON，不要输出 Markdown、解释或代码块。"
-        "JSON 字段固定为：name, screenTitle, description, theme, layout, "
-        "components, summary。"
+        "JSON 字段固定为：name, screenTitle, layoutPattern, description, "
+        "theme, layout, components, summary。"
         "screenTitle 是渲染在大屏顶部的主标题：一句话概括本屏主题，"
         "紧扣用户需求、不含'查询/生成/大屏'等动词，≤20 字（如'15分钟告警态势'）。"
+        "layoutPattern 是整屏构图，只能是：focus-left(左侧主视觉+右侧信息栏，"
+        "适合有明确核心指标/趋势的需求)、focus-right(镜像)、"
+        "kpi-top(顶部一排关键数字+下方内容区，适合多个小指标+明细)、"
+        "balanced(均衡网格，内容彼此平级时用)。"
+        "构图要服务需求语义：谁最重要就让谁当主视觉，不要千篇一律。"
+        "components 每项可带 role 字段：hero(全屏唯一视觉主角，"
+        "数据最核心/最动态的那个组件)、support(次级)、context(状态/辅助类)；"
+        "focus 构图必须恰好一个 hero。"
         "theme.palette 只能是 professional、industrial、aurora、mono、"
         "warm、cool、executive。"
         "components 是数组；每项必须包含 title, description, capabilityId, visualType, "
@@ -1442,6 +1531,7 @@ def _build_intent_messages(prompt: str, title: str) -> list[dict[str, str]]:
     output_example = {
         "name": "15分钟运行态势",
         "screenTitle": "15分钟运行态势",
+        "layoutPattern": "focus-left",
         "description": "围绕近期日志、告警和资源状态的实时大屏。",
         "theme": {
             "mode": "dark",
@@ -1455,6 +1545,7 @@ def _build_intent_messages(prompt: str, title: str) -> list[dict[str, str]]:
                 "description": "最近 15 分钟活动告警计数。",
                 "capabilityId": "real-alarms",
                 "visualType": "flip-number",
+                "role": "hero",
                 "queryParams": {"lookbackMinutes": 15, "limit": 200},
                 "visualSpec": {
                     "composition": "primary",
