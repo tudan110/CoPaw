@@ -8,8 +8,10 @@
 component 反查 path,使目录对"菜单改了路由"更鲁棒。拿不到菜单(未配置/
 网络失败)时调用方回退到目录里的兜底 route。
 
-配置复用 INOE 接入(``secrets/inoe.env`` 里的 ``INOE_API_BASE_URL`` /
-``INOE_API_TOKEN``,与 page-navigator / 告警同一后端)。
+配置优先用 operator 专属变量 ``OPERATOR_MENU_*``(门户「设置 - 操作」分类,
+会物化到 os.environ);未设置时回退共享菜单变量 ``INOE_MENU_*``、再回退 INOE
+接入 ``INOE_API_BASE_URL`` / ``INOE_API_TOKEN``(与 page-navigator / 告警同一
+后端,可来自 ``secrets/inoe.env``)。
 """
 from __future__ import annotations
 
@@ -54,28 +56,46 @@ def _load_shared_inoe_env() -> None:
 _load_shared_inoe_env()
 
 
+def _first_env(*names: str) -> str:
+    """返回 ``names`` 里第一个非空环境变量(已 strip)。"""
+    for name in names:
+        value = os.getenv(name)
+        if value and value.strip():
+            return value.strip()
+    return ""
+
+
 def _base_url() -> str:
-    base = (
-        os.getenv("INOE_MENU_BASE_URL")
-        or os.getenv("INOE_API_BASE_URL")
-        or ""
+    # operator 专属(设置页「操作」分类) > 共享菜单变量 > INOE 网关地址。
+    base = _first_env(
+        "OPERATOR_MENU_BASE_URL",
+        "INOE_MENU_BASE_URL",
+        "INOE_API_BASE_URL",
     )
-    return base.strip().rstrip("/")
+    return base.rstrip("/")
 
 
 def _token() -> str:
-    return (
-        os.getenv("INOE_API_TOKEN") or os.getenv("INOE_MENU_TOKEN") or ""
-    ).strip()
+    return _first_env(
+        "OPERATOR_MENU_TOKEN",
+        "INOE_API_TOKEN",
+        "INOE_MENU_TOKEN",
+    )
 
 
 def _app_code() -> str:
-    return (os.getenv("INOE_MENU_APP_CODE") or DEFAULT_APP_CODE).strip()
+    return (
+        _first_env("OPERATOR_MENU_APP_CODE", "INOE_MENU_APP_CODE")
+        or DEFAULT_APP_CODE
+    )
 
 
-def _float_env(name: str, default: float) -> float:
+def _float_env(default: float, *names: str) -> float:
+    raw = _first_env(*names)
+    if not raw:
+        return default
     try:
-        return float(os.getenv(name) or default)
+        return float(raw)
     except (TypeError, ValueError):
         return default
 
@@ -160,10 +180,15 @@ def _fetch_raw() -> list[dict]:
     base = _base_url()
     if not base:
         raise MenuClientError(
-            "未配置菜单接口地址(INOE_MENU_BASE_URL / INOE_API_BASE_URL)"
+            "未配置菜单接口地址"
+            "(OPERATOR_MENU_BASE_URL / INOE_MENU_BASE_URL / INOE_API_BASE_URL)"
         )
     url = f"{base}/admin/menu/getRouters/{_app_code()}"
-    timeout = _float_env("INOE_MENU_TIMEOUT_SECONDS", DEFAULT_TIMEOUT_SECONDS)
+    timeout = _float_env(
+        DEFAULT_TIMEOUT_SECONDS,
+        "OPERATOR_MENU_TIMEOUT_SECONDS",
+        "INOE_MENU_TIMEOUT_SECONDS",
+    )
     with httpx.Client(timeout=timeout) as client:
         resp = client.get(url, headers=_headers())
         resp.raise_for_status()
@@ -176,7 +201,11 @@ def _fetch_raw() -> list[dict]:
 
 def get_menu_tree(*, force_refresh: bool = False) -> list[dict]:
     """返回菜单树(带 TTL 缓存);拉取失败但有旧缓存时回退旧缓存。"""
-    ttl = _float_env("INOE_MENU_CACHE_TTL_SECONDS", DEFAULT_CACHE_TTL_SECONDS)
+    ttl = _float_env(
+        DEFAULT_CACHE_TTL_SECONDS,
+        "OPERATOR_MENU_CACHE_TTL_SECONDS",
+        "INOE_MENU_CACHE_TTL_SECONDS",
+    )
     now = time.monotonic()
     with _CACHE_LOCK:
         cached = _CACHE.get("tree")
