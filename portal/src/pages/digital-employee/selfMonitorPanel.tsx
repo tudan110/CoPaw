@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   selfMonitorApi,
   toDeltaBuckets,
@@ -8,8 +9,11 @@ import {
   type SelfMonitorEvent,
   type SelfMonitorLayer,
   type SelfMonitorMetricSeries,
+  type SelfMonitorModels,
   type SelfMonitorOverview,
+  type SelfMonitorSessions,
   type SelfMonitorStatus,
+  type SelfMonitorTokens,
   type SelfMonitorTopology,
 } from "../../api/selfMonitor";
 import { EChart } from "../../components/big-screen/charts/EChart";
@@ -55,6 +59,21 @@ function fmtBytes(bytes: number) {
   if (bytes >= 1 << 30) return `${(bytes / (1 << 30)).toFixed(1)}G`;
   if (bytes >= 1 << 20) return `${(bytes / (1 << 20)).toFixed(0)}M`;
   return `${Math.round(bytes / 1024)}K`;
+}
+
+function fmtBig(value: number | null | undefined): string {
+  const v = Number(value ?? 0);
+  if (!Number.isFinite(v)) return "—";
+  if (Math.abs(v) >= 1e6) return `${(v / 1e6).toFixed(2)}Mil`;
+  if (Math.abs(v) >= 1e3) return `${(v / 1e3).toFixed(1)}K`;
+  return String(Math.round(v));
+}
+
+function fmtSeconds(value: number | null | undefined): string {
+  if (value == null || !Number.isFinite(value)) return "—";
+  if (value < 0.001) return `${(value * 1e6).toFixed(0)} µs`;
+  if (value < 1) return `${(value * 1000).toFixed(0)} ms`;
+  return `${value.toFixed(2)} s`;
 }
 
 function num(value: unknown): number {
@@ -153,6 +172,42 @@ export function SelfMonitorPanel() {
   >;
   const rssByWorker = (l4?.metrics?.rssBytesByWorker ?? {}) as Record<string, number>;
   const hasData = state !== "unknown";
+
+  // AI Agent observability tabs (对标阿里云:总览/模型/Token/会话/链路)
+  const navigate = useNavigate();
+  const [activeTab, setActiveTab] = useState<
+    "overview" | "models" | "tokens" | "sessions"
+  >("overview");
+  const [models, setModels] = useState<SelfMonitorModels | null>(null);
+  const [tokensData, setTokensData] = useState<SelfMonitorTokens | null>(null);
+  const [sessions, setSessions] = useState<SelfMonitorSessions | null>(null);
+
+  useEffect(() => {
+    if (activeTab === "overview") return;
+    const controller = new AbortController();
+    const load = async () => {
+      try {
+        if (activeTab === "models") {
+          setModels(await selfMonitorApi.models(windowS, controller.signal));
+        } else if (activeTab === "tokens") {
+          setTokensData(await selfMonitorApi.tokens(windowS, controller.signal));
+        } else {
+          setSessions(await selfMonitorApi.sessions(7, controller.signal));
+        }
+      } catch {
+        /* keep the last good payload; overview banner reports API errors */
+      }
+    };
+    void load();
+    const timerId = window.setInterval(
+      () => void load(),
+      activeTab === "sessions" ? 60000 : REFRESH_INTERVAL_MS,
+    );
+    return () => {
+      controller.abort();
+      window.clearInterval(timerId);
+    };
+  }, [activeTab, windowS, reloadNonce]);
 
   // click a layer node to focus the event stream on that layer
   const [layerFilter, setLayerFilter] = useState<string | null>(null);
@@ -293,6 +348,184 @@ export function SelfMonitorPanel() {
     };
   }, [topology]);
 
+  const AXIS = {
+    axisLabel: { color: "#9fb2cc", fontSize: 10 },
+    axisLine: { lineStyle: { color: "rgba(255,255,255,.14)" } },
+    splitLine: { lineStyle: { color: "rgba(255,255,255,.06)" } },
+  };
+
+  const tokenDonutOption = useMemo(() => {
+    const entries = Object.entries(tokensData?.byModel ?? {});
+    return {
+      backgroundColor: "transparent",
+      animation: false,
+      tooltip: { trigger: "item" },
+      series: [
+        {
+          type: "pie",
+          radius: ["58%", "82%"],
+          center: ["50%", "52%"],
+          label: { color: "#cbd6e8", fontSize: 10 },
+          itemStyle: { borderColor: "#0b1424", borderWidth: 2 },
+          data: entries.map(([model, kinds]) => ({
+            name: model,
+            value: kinds.prompt + kinds.completion,
+          })),
+          color: ["#22d3ee", "#34d399", "#a78bfa", "#fb923c", "#f87171"],
+        },
+      ],
+    };
+  }, [tokensData]);
+
+  const tokenTrendOption = useMemo(() => {
+    const rows = tokensData?.series ?? [];
+    const axis = rows.map((row) =>
+      new Date(row.ts * 1000).toLocaleTimeString("zh-CN", {
+        hour: "2-digit",
+        minute: "2-digit",
+      }),
+    );
+    return {
+      backgroundColor: "transparent",
+      animation: false,
+      tooltip: { trigger: "axis" },
+      legend: {
+        data: ["输入 token", "输出 token"],
+        textStyle: { color: "#9fb2cc", fontSize: 10 },
+        top: 0,
+      },
+      grid: { left: 54, right: 12, top: 28, bottom: 22 },
+      xAxis: { type: "category", data: axis, ...AXIS },
+      yAxis: { type: "value", ...AXIS },
+      series: [
+        {
+          name: "输入 token",
+          type: "bar",
+          stack: "t",
+          data: rows.map((row) => row.prompt),
+          itemStyle: { color: "rgba(34,211,238,.75)" },
+          barMaxWidth: 14,
+        },
+        {
+          name: "输出 token",
+          type: "bar",
+          stack: "t",
+          data: rows.map((row) => row.completion),
+          itemStyle: { color: "rgba(52,211,153,.8)" },
+          barMaxWidth: 14,
+        },
+      ],
+    };
+  }, [tokensData]);
+
+  const perRequestOption = useMemo(() => {
+    const rows = tokensData?.perRequest ?? [];
+    return {
+      backgroundColor: "transparent",
+      animation: false,
+      tooltip: { trigger: "axis" },
+      grid: { left: 54, right: 12, top: 14, bottom: 22 },
+      xAxis: {
+        type: "category",
+        data: rows.map((row) =>
+          new Date(row.ts * 1000).toLocaleTimeString("zh-CN", {
+            hour: "2-digit",
+            minute: "2-digit",
+          }),
+        ),
+        ...AXIS,
+      },
+      yAxis: { type: "value", name: "token/req", ...AXIS },
+      series: [
+        {
+          type: "line",
+          smooth: true,
+          symbol: "none",
+          data: rows.map((row) => row.avgTokens),
+          lineStyle: { color: "#a78bfa", width: 2 },
+          areaStyle: { color: "rgba(167,139,250,.12)" },
+        },
+      ],
+    };
+  }, [tokensData]);
+
+  const tokenTopOption = useMemo(() => {
+    const entries = Object.entries(tokensData?.byModel ?? {})
+      .map(([model, kinds]) => [model, kinds.prompt + kinds.completion] as const)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5)
+      .reverse();
+    return {
+      backgroundColor: "transparent",
+      animation: false,
+      tooltip: {},
+      grid: { left: 120, right: 30, top: 8, bottom: 22 },
+      xAxis: { type: "value", ...AXIS },
+      yAxis: {
+        type: "category",
+        data: entries.map(([model]) => model),
+        ...AXIS,
+      },
+      series: [
+        {
+          type: "bar",
+          data: entries.map(([, total]) => total),
+          barMaxWidth: 16,
+          itemStyle: { color: "#22d3ee", borderRadius: [0, 4, 4, 0] },
+          label: {
+            show: true,
+            position: "right",
+            color: "#cbd6e8",
+            fontSize: 10,
+            formatter: (p: { value: number }) => fmtBig(p.value),
+          },
+        },
+      ],
+    };
+  }, [tokensData]);
+
+  const sessionTrendOption = useMemo(() => {
+    const rows = sessions?.byDate ?? [];
+    return {
+      backgroundColor: "transparent",
+      animation: false,
+      tooltip: { trigger: "axis" },
+      legend: {
+        data: ["消息数", "活跃会话"],
+        textStyle: { color: "#9fb2cc", fontSize: 10 },
+        top: 0,
+      },
+      grid: { left: 46, right: 40, top: 28, bottom: 22 },
+      xAxis: {
+        type: "category",
+        data: rows.map((row) => row.date.slice(5)),
+        ...AXIS,
+      },
+      yAxis: [
+        { type: "value", ...AXIS },
+        { type: "value", ...AXIS, splitLine: { show: false } },
+      ],
+      series: [
+        {
+          name: "消息数",
+          type: "bar",
+          data: rows.map((row) => row.messages),
+          itemStyle: { color: "rgba(34,211,238,.7)" },
+          barMaxWidth: 18,
+        },
+        {
+          name: "活跃会话",
+          type: "line",
+          yAxisIndex: 1,
+          smooth: true,
+          data: rows.map((row) => row.activeSessions),
+          lineStyle: { color: "#fb923c", width: 2 },
+          itemStyle: { color: "#fb923c" },
+        },
+      ],
+    };
+  }, [sessions]);
+
   const stateMeta = STATE_META[state];
   const windowLabel =
     WINDOW_OPTIONS.find((o) => o.seconds === windowS)?.label ?? `${windowS}s`;
@@ -352,7 +585,417 @@ export function SelfMonitorPanel() {
         <div className="sm-error-banner">自监控接口不可用:{error}</div>
       ) : null}
 
-      <div className="sm-shell">
+      <nav className="sm-tabs">
+        {(
+          [
+            ["overview", "总览"],
+            ["models", "模型调用"],
+            ["tokens", "Token 分析"],
+            ["sessions", "会话分析"],
+          ] as const
+        ).map(([id, label]) => (
+          <button
+            key={id}
+            className={activeTab === id ? "on" : ""}
+            onClick={() => setActiveTab(id)}
+          >
+            {label}
+          </button>
+        ))}
+        <button className="jump" onClick={() => navigate("/traces")}>
+          链路追踪 ↗
+        </button>
+        <button className="jump" onClick={() => navigate("/token-usage")}>
+          Token 明细 ↗
+        </button>
+      </nav>
+
+      {activeTab === "models" ? (
+        <div className="sm-view">
+          <section className="sm-kpis">
+            <div className="sm-panel sm-kpi good">
+              <div className="sm-tag">
+                <span>调用量</span>
+                <i className="sm-lyr">{windowLabel}</i>
+              </div>
+              <div className="sm-val">
+                <b>{models ? fmtBig(models.totals.calls) : "—"}</b>
+                <small>次</small>
+              </div>
+              <div className="sm-note">窗口内 LLM 请求终态样本数</div>
+            </div>
+            <div
+              className={`sm-panel sm-kpi ${
+                models && models.totals.errors > 0 ? "warned" : "good"
+              }`}
+            >
+              <div className="sm-tag">
+                <span>错误数</span>
+                <i className="sm-lyr">429/error</i>
+              </div>
+              <div className="sm-val">
+                <b>{models ? fmtBig(models.totals.errors) : "—"}</b>
+                <small>
+                  {models ? `${(models.totals.errRate * 100).toFixed(1)}%` : ""}
+                </small>
+              </div>
+              <div className="sm-note">非 ok 终态(含限流/超时)</div>
+            </div>
+            <div className="sm-panel sm-kpi good">
+              <div className="sm-tag">
+                <span>平均耗时</span>
+                <i className="sm-lyr">E2E</i>
+              </div>
+              <div className="sm-val">
+                <b>{models ? fmtSeconds(models.totals.avgDurationS) : "—"}</b>
+              </div>
+              <div className="sm-note">Δsum/Δcount(直方图窗口增量)</div>
+            </div>
+            <div className="sm-panel sm-kpi good">
+              <div className="sm-tag">
+                <span>平均 TTFT</span>
+                <i className="sm-lyr">首token</i>
+              </div>
+              <div className="sm-val">
+                <b>{models ? fmtSeconds(models.totals.avgTtftS) : "—"}</b>
+              </div>
+              <div className="sm-note">取号→首个流式 chunk(含限流等待)</div>
+            </div>
+          </section>
+
+          <section className="sm-panel">
+            <div className="sm-ph">
+              <i />
+              <h3>模型调用统计</h3>
+              <span className="sm-en">Model Calls · {windowLabel}</span>
+              <span className="sm-right">共 {models?.rows.length ?? 0} 个模型</span>
+            </div>
+            {models && models.rows.length ? (
+              <div className="sm-table-wrap">
+                <table className="sm-table">
+                  <thead>
+                    <tr>
+                      <th>模型名称</th>
+                      <th>调用量</th>
+                      <th>错误数</th>
+                      <th>错误率</th>
+                      <th>平均耗时</th>
+                      <th>平均TTFT</th>
+                      <th>平均TPOT</th>
+                      <th>输入token</th>
+                      <th>输出token</th>
+                      <th>Token消耗</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {models.rows.map((row) => (
+                      <tr key={row.model}>
+                        <td className="sm-td-model">{row.model}</td>
+                        <td>{fmtBig(row.calls)}</td>
+                        <td className={row.errors > 0 ? "bad" : ""}>
+                          {fmtBig(row.errors)}
+                        </td>
+                        <td className={row.errRate > 0.05 ? "bad" : ""}>
+                          {(row.errRate * 100).toFixed(1)}%
+                        </td>
+                        <td>{fmtSeconds(row.avgDurationS)}</td>
+                        <td>{fmtSeconds(row.avgTtftS)}</td>
+                        <td>
+                          {row.tpotS == null ? "—" : `${row.tpotS} s/token`}
+                        </td>
+                        <td>{fmtBig(row.promptTokens)}</td>
+                        <td>{fmtBig(row.completionTokens)}</td>
+                        <td>{fmtBig(row.totalTokens)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div className="sm-empty">
+                <b>窗口内暂无模型调用</b>
+                <br />
+                发起一次对话或大屏生成后,此表按 provider:model 维度聚合。
+              </div>
+            )}
+          </section>
+        </div>
+      ) : null}
+
+      {activeTab === "tokens" ? (
+        <div className="sm-view">
+          <section className="sm-kpis">
+            <div className="sm-panel sm-kpi good">
+              <div className="sm-tag">
+                <span>Token 消耗</span>
+                <i className="sm-lyr">{windowLabel}</i>
+              </div>
+              <div className="sm-val">
+                <b>{tokensData ? fmtBig(tokensData.totals.total) : "—"}</b>
+              </div>
+              <div className="sm-note">输入 + 输出合计</div>
+            </div>
+            <div className="sm-panel sm-kpi good">
+              <div className="sm-tag">
+                <span>输入 Token</span>
+                <i className="sm-lyr">prompt</i>
+              </div>
+              <div className="sm-val">
+                <b>{tokensData ? fmtBig(tokensData.totals.prompt) : "—"}</b>
+              </div>
+              <div className="sm-note">上下文/提示词侧</div>
+            </div>
+            <div className="sm-panel sm-kpi good">
+              <div className="sm-tag">
+                <span>输出 Token</span>
+                <i className="sm-lyr">completion</i>
+              </div>
+              <div className="sm-val">
+                <b>{tokensData ? fmtBig(tokensData.totals.completion) : "—"}</b>
+              </div>
+              <div className="sm-note">模型生成侧</div>
+            </div>
+            <div className="sm-panel sm-kpi good">
+              <div className="sm-tag">
+                <span>单请求均值</span>
+                <i className="sm-lyr">token/req</i>
+              </div>
+              <div className="sm-val">
+                <b>
+                  {tokensData?.perRequest.length
+                    ? fmtBig(
+                        tokensData.perRequest[tokensData.perRequest.length - 1]
+                          .avgTokens,
+                      )
+                    : "—"}
+                </b>
+              </div>
+              <div className="sm-note">最近一个分桶的平均</div>
+            </div>
+          </section>
+
+          <section className="sm-subrow">
+            <div className="sm-panel">
+              <div className="sm-ph">
+                <i style={{ background: "var(--sm-violet)" }} />
+                <h3>Token 消耗分布</h3>
+                <span className="sm-en">by model</span>
+              </div>
+              {Object.keys(tokensData?.byModel ?? {}).length ? (
+                <div className="sm-chart-body" style={{ height: 220 }}>
+                  <EChart option={tokenDonutOption} />
+                </div>
+              ) : (
+                <div className="sm-empty">窗口内暂无 token 记录</div>
+              )}
+            </div>
+            <div className="sm-panel">
+              <div className="sm-ph">
+                <i />
+                <h3>Token 消耗趋势</h3>
+                <span className="sm-en">stacked · {windowLabel}</span>
+              </div>
+              {tokensData?.series.length ? (
+                <div className="sm-chart-body" style={{ height: 220 }}>
+                  <EChart option={tokenTrendOption} />
+                </div>
+              ) : (
+                <div className="sm-empty">窗口内暂无 token 记录</div>
+              )}
+            </div>
+          </section>
+
+          <section className="sm-subrow">
+            <div className="sm-panel">
+              <div className="sm-ph">
+                <i style={{ background: "var(--sm-green)" }} />
+                <h3>平均单请求 Token 趋势</h3>
+                <span className="sm-en">tokens / request</span>
+              </div>
+              {tokensData?.perRequest.length ? (
+                <div className="sm-chart-body" style={{ height: 190 }}>
+                  <EChart option={perRequestOption} />
+                </div>
+              ) : (
+                <div className="sm-empty">窗口内暂无可计算的请求</div>
+              )}
+            </div>
+            <div className="sm-panel">
+              <div className="sm-ph">
+                <i style={{ background: "var(--sm-orange)" }} />
+                <h3>模型 Token 消耗 Top5</h3>
+                <span className="sm-en">Top models</span>
+              </div>
+              {Object.keys(tokensData?.byModel ?? {}).length ? (
+                <div className="sm-chart-body" style={{ height: 190 }}>
+                  <EChart option={tokenTopOption} />
+                </div>
+              ) : (
+                <div className="sm-empty">窗口内暂无 token 记录</div>
+              )}
+            </div>
+          </section>
+        </div>
+      ) : null}
+
+      {activeTab === "sessions" ? (
+        <div className="sm-view">
+          {sessions && !sessions.available ? (
+            <div className="sm-error-banner">
+              会话统计不可用:{sessions.reason || "agent_stats 未就绪"}
+            </div>
+          ) : null}
+          <section className="sm-kpis">
+            <div className="sm-panel sm-kpi good">
+              <div className="sm-tag">
+                <span>活跃会话</span>
+                <i className="sm-lyr">{sessions?.days ?? 7}d</i>
+              </div>
+              <div className="sm-val">
+                <b>{fmtBig(sessions?.totals?.activeSessions)}</b>
+              </div>
+              <div className="sm-note">全 workspace 汇总</div>
+            </div>
+            <div className="sm-panel sm-kpi good">
+              <div className="sm-tag">
+                <span>消息数</span>
+                <i className="sm-lyr">user+ai</i>
+              </div>
+              <div className="sm-val">
+                <b>{fmtBig(sessions?.totals?.messages)}</b>
+              </div>
+              <div className="sm-note">
+                用户 {fmtBig(sessions?.totals?.userMessages)} · 助手{" "}
+                {fmtBig(sessions?.totals?.assistantMessages)}
+              </div>
+            </div>
+            <div className="sm-panel sm-kpi good">
+              <div className="sm-tag">
+                <span>LLM 调用</span>
+                <i className="sm-lyr">calls</i>
+              </div>
+              <div className="sm-val">
+                <b>{fmtBig(sessions?.totals?.llmCalls)}</b>
+              </div>
+              <div className="sm-note">
+                tokens {fmtBig(
+                  (sessions?.totals?.promptTokens ?? 0) +
+                    (sessions?.totals?.completionTokens ?? 0),
+                )}
+              </div>
+            </div>
+            <div className="sm-panel sm-kpi good">
+              <div className="sm-tag">
+                <span>工具调用</span>
+                <i className="sm-lyr">tools</i>
+              </div>
+              <div className="sm-val">
+                <b>{fmtBig(sessions?.totals?.toolCalls)}</b>
+              </div>
+              <div className="sm-note">Agent 执行的工具次数</div>
+            </div>
+          </section>
+
+          <section className="sm-subrow">
+            <div className="sm-panel">
+              <div className="sm-ph">
+                <i />
+                <h3>会话趋势</h3>
+                <span className="sm-en">by day</span>
+              </div>
+              {sessions?.byDate?.length ? (
+                <div className="sm-chart-body" style={{ height: 210 }}>
+                  <EChart option={sessionTrendOption} />
+                </div>
+              ) : (
+                <div className="sm-empty">最近 {sessions?.days ?? 7} 天暂无会话</div>
+              )}
+            </div>
+            <div className="sm-panel">
+              <div className="sm-ph">
+                <i style={{ background: "var(--sm-green)" }} />
+                <h3>渠道分布</h3>
+                <span className="sm-en">by channel</span>
+              </div>
+              {sessions?.byChannel?.length ? (
+                <div className="sm-table-wrap">
+                  <table className="sm-table">
+                    <thead>
+                      <tr>
+                        <th>渠道</th>
+                        <th>会话数</th>
+                        <th>用户消息</th>
+                        <th>助手消息</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {sessions.byChannel.map((row) => (
+                        <tr key={row.channel}>
+                          <td className="sm-td-model">{row.channel}</td>
+                          <td>{fmtBig(row.sessions)}</td>
+                          <td>{fmtBig(row.userMessages)}</td>
+                          <td>{fmtBig(row.assistantMessages)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div className="sm-empty">暂无渠道数据</div>
+              )}
+            </div>
+          </section>
+
+          <section className="sm-panel">
+            <div className="sm-ph">
+              <i style={{ background: "var(--sm-violet)" }} />
+              <h3>Agent 调用统计</h3>
+              <span className="sm-en">by workspace</span>
+              <button className="sm-refresh sm-right" onClick={() => navigate("/traces")}>
+                单会话明细 → 链路追踪
+              </button>
+            </div>
+            {sessions?.workspaces?.length ? (
+              <div className="sm-table-wrap">
+                <table className="sm-table">
+                  <thead>
+                    <tr>
+                      <th>Workspace / Agent</th>
+                      <th>活跃会话</th>
+                      <th>消息数</th>
+                      <th>LLM 调用</th>
+                      <th>工具调用</th>
+                      <th>输入token</th>
+                      <th>输出token</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {sessions.workspaces.map((row) => (
+                      <tr key={row.workspace}>
+                        <td className="sm-td-model">{row.workspace}</td>
+                        <td>{fmtBig(row.activeSessions)}</td>
+                        <td>{fmtBig(row.messages)}</td>
+                        <td>{fmtBig(row.llmCalls)}</td>
+                        <td>{fmtBig(row.toolCalls)}</td>
+                        <td>{fmtBig(row.promptTokens)}</td>
+                        <td>{fmtBig(row.completionTokens)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div className="sm-empty">
+                <b>最近 {sessions?.days ?? 7} 天暂无 Agent 活动</b>
+                <br />
+                会话/消息由 agent_stats 从各 workspace 的 session 归档聚合。
+              </div>
+            )}
+          </section>
+        </div>
+      ) : null}
+
+      <div className="sm-shell" hidden={activeTab !== "overview"}>
         {/* ── layer spine ── */}
         <aside className="sm-spine">
           {(["l1", "l2", "l3", "l4"] as const).map((id) => {

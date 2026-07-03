@@ -24,6 +24,8 @@ export interface LegacyComponent {
   id: string;
   type?: string;
   title?: string;
+  /** Composition role from the screen-level layout plan (T-018). */
+  compositionRole?: string;
   capabilityId?: string;
   visualSpec?: Record<string, unknown>;
   data?: Record<string, unknown>;
@@ -36,6 +38,8 @@ export interface LegacyScreen {
   title?: string;
   name?: string;
   status?: string;
+  /** Screen-level composition decision from the planner (T-018). */
+  layoutPlan?: { pattern?: string };
   theme?: Record<string, unknown>;
   components?: LegacyComponent[];
 }
@@ -178,6 +182,7 @@ export function adaptLegacyScreen(screen: LegacyScreen): DashboardSpec {
         id: c.id,
         type: mapComponentType(String(c.type ?? "text")),
         title: String(c.title ?? ""),
+        compositionRole: c.compositionRole,
         // Generated coordinates are still dropped so auto-layout owns
         // geometry; only an explicit user "move" (pinned) is honoured —
         // it carries 12-col grid units the renderer converts to pixels.
@@ -194,6 +199,7 @@ export function adaptLegacyScreen(screen: LegacyScreen): DashboardSpec {
     name: String(screen.title ?? screen.name ?? ""),
     status: (screen.status as DashboardSpec["status"]) ?? "draft",
     layout: { designWidth: 1920, designHeight: 1080 },
+    layoutPlan: screen.layoutPlan,
     theme: (screen.theme as Record<string, unknown>) ?? {},
     components,
   };

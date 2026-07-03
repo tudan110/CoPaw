@@ -323,3 +323,64 @@ def test_build_version_requested_by_defaults_to_portal() -> None:
         requested_by="   ",
     )
     assert version["requestedBy"] == "portal"
+
+
+class TestCompositionPersistence:
+    def test_assemble_screen_persists_layout_plan_and_roles(self) -> None:
+        from qwenpaw.extensions.ai_big_screen.orchestration import (
+            assemble_screen,
+        )
+        from qwenpaw.extensions.ai_big_screen.schemas import (
+            PlanComponent,
+            ScreenPlan,
+        )
+
+        plan = ScreenPlan(
+            name="构图测试",
+            layout_pattern="focus-left",
+            components=[
+                PlanComponent(
+                    id="c-hero",
+                    title="告警趋势",
+                    capability_id="real-alarms",
+                    type="line-chart",
+                    role="hero",
+                ),
+                PlanComponent(
+                    id="c-side",
+                    title="工单",
+                    capability_id="workorders",
+                    type="table",
+                    role="context",
+                ),
+            ],
+        )
+        screen = assemble_screen(
+            plan=plan,
+            results={},
+            prompt="告警为主的健康大屏",
+            screen_id="screen-test-pattern",
+        )
+        assert screen["layoutPlan"] == {"pattern": "focus-left"}
+        by_id = {c["id"]: c for c in screen["components"]}
+        assert by_id["c-hero"]["compositionRole"] == "hero"
+        # role mirrors into visualSpec.composition for legacy consumers
+        assert by_id["c-hero"]["visualSpec"]["composition"] == "primary"
+        assert by_id["c-side"]["visualSpec"]["composition"] == "supporting"
+
+    def test_unassigned_role_leaves_component_untouched(self) -> None:
+        from qwenpaw.extensions.ai_big_screen.orchestration import (
+            assemble_component,
+        )
+        from qwenpaw.extensions.ai_big_screen.schemas import PlanComponent
+
+        component = assemble_component(
+            PlanComponent(
+                id="c-plain",
+                title="普通",
+                capability_id="workorders",
+                type="table",
+            ),
+            None,
+        )
+        assert "compositionRole" not in component

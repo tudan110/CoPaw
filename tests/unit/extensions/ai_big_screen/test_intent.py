@@ -565,3 +565,76 @@ class TestScreenTitlePlan:
         )
         assert plan.degraded is True
         assert plan.screen_title
+
+
+class TestCompositionGrammar:
+    def test_normalize_screen_pattern_whitelist(self) -> None:
+        from qwenpaw.extensions.ai_big_screen.intent import (
+            normalize_screen_pattern,
+        )
+
+        assert normalize_screen_pattern("focus-left") == "focus-left"
+        assert normalize_screen_pattern("FOCUS-RIGHT") == "focus-right"
+        assert normalize_screen_pattern("三栏") == ""
+        assert normalize_screen_pattern(None) == ""
+
+    def test_normalize_component_role_synonyms(self) -> None:
+        from qwenpaw.extensions.ai_big_screen.intent import (
+            normalize_component_role,
+        )
+
+        assert normalize_component_role("hero") == "hero"
+        assert normalize_component_role("主视觉") == "hero"
+        assert normalize_component_role("primary") == "hero"
+        assert normalize_component_role("secondary") == "support"
+        assert normalize_component_role("背景") == "context"
+        assert normalize_component_role("boss") == ""
+
+    def test_single_hero_enforced_and_pattern_defaulted(self) -> None:
+        from qwenpaw.extensions.ai_big_screen.intent import (
+            _normalize_llm_plan,
+        )
+        from qwenpaw.extensions.ai_big_screen.schemas import (
+            PlanComponent,
+            ScreenPlan,
+        )
+
+        plan = ScreenPlan(
+            name="双主角",
+            components=[
+                PlanComponent(
+                    title="告警",
+                    capability_id="real-alarms",
+                    type="table",
+                    role="hero",
+                ),
+                PlanComponent(
+                    title="工单",
+                    capability_id="workorders",
+                    type="table",
+                    role="hero",
+                ),
+            ],
+        )
+        normalized = _normalize_llm_plan(
+            plan,
+            prompt="查询告警和工单",
+            title="",
+        )
+        roles = [component.role for component in normalized.components]
+        assert roles.count("hero") == 1
+        # a hero exists → focus composition by default
+        assert normalized.layout_pattern == "focus-left"
+
+    def test_guardrail_plan_carries_default_pattern(self) -> None:
+        from qwenpaw.extensions.ai_big_screen.intent import (
+            build_guardrail_plan,
+        )
+
+        plan = build_guardrail_plan(prompt="查询告警和工单", title="")
+        assert plan.layout_pattern in {
+            "focus-left",
+            "focus-right",
+            "kpi-top",
+            "balanced",
+        }

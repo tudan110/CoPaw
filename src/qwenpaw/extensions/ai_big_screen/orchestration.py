@@ -87,6 +87,20 @@ def assemble_component(
     }
     if plan_component.visual_spec:
         component["visualSpec"] = copy.deepcopy(plan_component.visual_spec)
+    role = str(plan_component.role or "")
+    if role:
+        # The composition role drives the pattern layout on the frontend;
+        # mirror it into visualSpec.composition so legacy consumers
+        # (intrinsic sizing, critique) see a consistent importance signal.
+        component["compositionRole"] = role
+        visual_spec = dict(component.get("visualSpec") or {})
+        if not visual_spec.get("composition"):
+            visual_spec["composition"] = {
+                "hero": "primary",
+                "support": "secondary",
+                "context": "supporting",
+            }[role]
+            component["visualSpec"] = visual_spec
     return component
 
 
@@ -526,11 +540,15 @@ def assemble_screen(
         or clamp_screen_title(plan.name)
         or derive_screen_title(prompt)
     )
+    layout_plan = (
+        {"pattern": plan.layout_pattern} if plan.layout_pattern else {}
+    )
     screen: dict[str, Any] = {
         "schemaVersion": SCREEN_SCHEMA_VERSION,
         "id": screen_id,
         "name": plan.name,
         "title": screen_title,
+        "layoutPlan": layout_plan,
         "description": plan.description or f"由自然语言生成：{prompt}",
         "owner": owner,
         "status": "draft",

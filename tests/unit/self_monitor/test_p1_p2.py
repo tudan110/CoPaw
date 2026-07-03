@@ -305,3 +305,95 @@ def test_self_capability_and_connection(store, monkeypatch):
     status = connection_status("self")
     assert status["configured"] is True
     assert status["label"] == "智观AI 自监控"
+
+
+# ── analytics endpoints (对标 AI Agent 可观测) ───────────────────
+
+
+def _seed_model_traffic(store, now=None):
+    now = now or time.time()
+    reg = MetricRegistry()
+    req = reg.counter("qwenpaw_llm_requests_total", "l3", "t")
+    tok = reg.counter("qwenpaw_llm_tokens_total", "l3", "t")
+    dur = reg.histogram(
+        "qwenpaw_llm_request_duration_seconds", "l3", "t", (1, 5, 10, 60)
+    )
+    ttft = reg.histogram("qwenpaw_llm_first_token_seconds", "l3", "t", (1, 5, 10, 60))
+    for i in range(4):
+        req.inc({"model": "ctyun:glm", "status": "ok"}, 10)
+        req.inc({"model": "ctyun:glm", "status": "429"}, 1)
+        tok.inc({"provider": "ctyun", "model": "glm", "kind": "prompt"}, 10000)
+        tok.inc({"provider": "ctyun", "model": "glm", "kind": "completion"}, 2000)
+        dur.observe(10.0, {"model": "ctyun:glm", "status": "ok"})
+        ttft.observe(2.0, {"model": "ctyun:glm"})
+        store.write_rollup(now - (4 - i) * 60, "w1", reg.snapshot())
+    return now
+
+
+def test_models_endpoint_per_model_stats(client, store):
+    _seed_model_traffic(store)
+    data = client.get("/api/portal/self-monitor/models?window_s=3600").json()
+    row = data["rows"][0]
+    assert row["model"] == "ctyun:glm"
+    assert row["calls"] == 44 and row["errors"] == 4
+    assert row["avgDurationS"] == 10.0 and row["avgTtftS"] == 2.0
+    assert row["promptTokens"] == 40000
+    assert row["tpotS"] == pytest.approx((10.0 - 2.0) * 4 / 8000, abs=1e-4)
+    assert data["totals"]["calls"] == 44
+
+
+def test_tokens_endpoint_series_and_distribution(client, store):
+    _seed_model_traffic(store)
+    data = client.get("/api/portal/self-monitor/tokens?window_s=3600").json()
+    assert data["totals"] == {
+        "prompt": 40000,
+        "completion": 8000,
+        "total": 48000,
+    }
+    assert "ctyun:glm" in data["byModel"]
+    assert data["series"] and data["perRequest"]
+
+
+def test_sessions_endpoint_aggregates_workspaces(client, store, monkeypatch, tmp_path):
+    import json as _json
+    from datetime import datetime
+
+    from qwenpaw.extensions.api import self_monitor_api as api_mod
+
+    ws = tmp_path / "workspaces" / "demo" / "sessions" / "portal"
+    ws.mkdir(parents=True)
+    ts = datetime.now().isoformat()
+    ws.joinpath("s1.json").write_text(
+        _json.dumps(
+            {
+                "agent": {
+                    "state": {
+                        "context": [
+                            {
+                                "role": "user",
+                                "content": [{"type": "text", "text": "hi"}],
+                                "created_at": ts,
+                            },
+                            {
+                                "role": "assistant",
+                                "content": [
+                                    {"type": "tool_use", "name": "t"},
+                                    {"type": "text", "text": "ok"},
+                                ],
+                                "created_at": ts,
+                            },
+                        ]
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(api_mod, "WORKING_DIR", tmp_path)
+    api_mod._sessions_cache.update(key=None, ts=0.0, payload=None)
+    data = client.get("/api/portal/self-monitor/sessions?days=3").json()
+    assert data["available"] is True
+    assert data["totals"]["messages"] == 2
+    assert data["totals"]["toolCalls"] == 1
+    assert data["workspaces"][0]["workspace"] == "demo"
+    assert data["byChannel"][0]["channel"] == "portal"
