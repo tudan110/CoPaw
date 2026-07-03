@@ -336,7 +336,14 @@ class TestAssertPolicySSHCommands:
         assert decision.action == GovernanceAction.DENY
 
     def test_bash_harmless_command_is_sandbox_fallback(self, governor):
-        """Bash(ls) without sensitive paths uses SANDBOX_FALLBACK."""
+        """Bash(ls) without sensitive paths uses SANDBOX_FALLBACK.
+
+        The dev-default ``Bash(*)`` pass-through ALLOW is stripped first
+        so the no-rule-hit sandbox fallback path stays exercised.
+        """
+        governor._policy.user_rules = [
+            r for r in governor._policy.user_rules if r.match != "Bash(*)"
+        ]
         tc = _tc("Bash", "ls -la")
         decision = governor.assert_policy(tc)
         governor.audit(tc, decision)
@@ -464,7 +471,14 @@ class TestGovernancePolicyEvaluate:
             assert p.evaluate(tc).action == GovernanceAction.ASK, level
 
     def test_bash_no_match_fallback(self, policy):
-        """Bash with no rule match should return SANDBOX_FALLBACK."""
+        """Bash with no rule match should return SANDBOX_FALLBACK.
+
+        The dev-default ``Bash(*)`` pass-through ALLOW is stripped first
+        so the no-rule-hit sandbox fallback path stays exercised.
+        """
+        policy.user_rules = [
+            r for r in policy.user_rules if r.match != "Bash(*)"
+        ]
         tc = _tc("Bash", "echo hello")
         decision = policy.evaluate(tc)
         assert decision.action == GovernanceAction.SANDBOX_FALLBACK
@@ -542,10 +556,88 @@ class TestAssertPolicySandboxEscalation:
 
     def test_bash_echo_escalates_to_ask(self, governor_no_sandbox):
         """Bash(echo hello) — no rule match → SANDBOX_FALLBACK, but sandbox
-        unavailable → escalate to ASK."""
+        unavailable → escalate to ASK.
+
+        The dev-default ``Bash(*)`` pass-through ALLOW is stripped first
+        so the no-rule-hit sandbox fallback path stays exercised.
+        """
+        governor_no_sandbox._policy.user_rules = [
+            r
+            for r in governor_no_sandbox._policy.user_rules
+            if r.match != "Bash(*)"
+        ]
         tc = _tc("Bash", "echo hello")
         decision = governor_no_sandbox.assert_policy(tc)
         governor_no_sandbox.audit(tc, decision)
+        assert decision.action == GovernanceAction.ASK
+
+
+# ---------------------------------------------------------------------------
+# Test: dev-default two-layer credential guard + pass-through
+# ---------------------------------------------------------------------------
+
+
+class TestDevDefaultPassThrough:
+    """Dev-default rules: credential-store DENYs (file layer + Bash command
+    layer) must win over the broad WORKING_DIR / Bash pass-through ALLOWs
+    (first-match-wins order in DEFAULT_USER_RULES)."""
+
+    @pytest.fixture()
+    def policy(self):
+        return _create_default_policy(workspace_dir="/tmp/test-workspace")
+
+    def test_bash_harmless_default_allow(self, policy):
+        """Bash with no earlier rule hit falls to the dev-default ALLOW."""
+        decision = policy.evaluate(_tc("Bash", "ls -la /tmp"))
+        assert decision.action == GovernanceAction.ALLOW
+        assert "dev default" in decision.reason
+
+    def test_bash_sqlite3_denied_before_pass_through(self, policy):
+        """The Bash command layer blocks sqlite3 before Bash(*) applies."""
+        decision = policy.evaluate(_tc("Bash", "sqlite3 app.db .dump"))
+        assert decision.action == GovernanceAction.DENY
+
+    def test_bash_secrets_path_denied_before_pass_through(self, policy):
+        """The Bash command layer blocks commands touching secrets dirs."""
+        from qwenpaw.constant import WORKING_DIR
+
+        decision = policy.evaluate(
+            _tc("Bash", f"cat {WORKING_DIR}/secrets/n9e.token")
+        )
+        assert decision.action == GovernanceAction.DENY
+
+    def test_settings_store_denied_for_file_tools(self, policy):
+        """The file layer blocks the settings store (plaintext secrets)
+        for every tool, ahead of the broad WORKING_DIR read ALLOWs."""
+        from qwenpaw.constant import WORKING_DIR
+
+        target = f"{WORKING_DIR}/extensions/settings/settings.db"
+        for tool in ("Read", "Glob", "Grep"):
+            decision = policy.evaluate(_tc(tool, target))
+            assert decision.action == GovernanceAction.DENY, tool
+
+    def test_secrets_dir_denied_for_file_tools(self, policy):
+        """The file layer blocks the static secrets dir."""
+        from qwenpaw.constant import WORKING_DIR
+
+        decision = policy.evaluate(
+            _tc("Read", f"{WORKING_DIR}/secrets/n9e.token")
+        )
+        assert decision.action == GovernanceAction.DENY
+
+    def test_cross_workspace_read_allowed(self, policy):
+        """Read anywhere under WORKING_DIR (dev default) is allowed."""
+        from qwenpaw.constant import WORKING_DIR
+
+        decision = policy.evaluate(
+            _tc("Read", f"{WORKING_DIR}/workspaces/other/skills/foo/run.py")
+        )
+        assert decision.action == GovernanceAction.ALLOW
+
+    def test_read_outside_working_dir_still_asks(self, policy):
+        """The pass-through is scoped to WORKING_DIR — reads elsewhere
+        still fall through to fail-closed ASK."""
+        decision = policy.evaluate(_tc("Read", "/etc/hosts"))
         assert decision.action == GovernanceAction.ASK
 
 

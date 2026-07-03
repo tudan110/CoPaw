@@ -487,6 +487,52 @@ DEFAULT_USER_RULES: List[GovernanceRule] = [
         action=GovernanceAction.ALLOW,
         reason="File send within workspace",
     ),
+    # ── Dev-default two-layer credential guard ──
+    # 真凭证库 deny 在前：文件层 + Bash 命令层双重拦截 secrets /
+    # settings.db。first-match-wins，必须排在下方 WORKING_DIR 宽放行
+    # (Glob/Grep/Read) 之前；配套的 dev-default 放行在本列表末尾兜底。
+    # WORKING_DIR 占位在 load/cold-start 时替换成实际绝对路径（见
+    # _resolve_workspace_dir），让新建 agent 冷启动即默认可用、不撞审批。
+    GovernanceRule(
+        match="*(WORKING_DIR/extensions/settings/**)",
+        action=GovernanceAction.DENY,
+        reason="Block settings store (plaintext secrets)",
+    ),
+    GovernanceRule(
+        match="*(WORKING_DIR/secrets/**)",
+        action=GovernanceAction.DENY,
+        reason="Block static secrets dir",
+    ),
+    GovernanceRule(
+        match="*(WORKING_DIR/**/*.db)",
+        action=GovernanceAction.DENY,
+        reason="Block DB files (secrets / chat history)",
+    ),
+    GovernanceRule(
+        match="*(WORKING_DIR/**/*.sqlite*)",
+        action=GovernanceAction.DENY,
+        reason="Block sqlite files",
+    ),
+    GovernanceRule(
+        match="Bash(*sqlite3*)",
+        action=GovernanceAction.DENY,
+        reason="Block sqlite3 (would dump secrets)",
+    ),
+    GovernanceRule(
+        match="Bash(*settings.db*)",
+        action=GovernanceAction.DENY,
+        reason="Block commands touching settings.db",
+    ),
+    GovernanceRule(
+        match="Bash(*/extensions/settings/*)",
+        action=GovernanceAction.DENY,
+        reason="Block commands touching settings dir",
+    ),
+    GovernanceRule(
+        match="Bash(*/secrets/*)",
+        action=GovernanceAction.DENY,
+        reason="Block commands touching secrets dir",
+    ),
     # ── Working dir (read-only listing/search across the whole working
     # dir, plus report export writes outside the per-agent workspace) ──
     GovernanceRule(
@@ -532,6 +578,28 @@ DEFAULT_USER_RULES: List[GovernanceRule] = [
         match="*(CODING_PROJECT_DIR/**)",
         action=GovernanceAction.ALLOW,
         reason="Coding project dir",
+    ),
+    # ── Dev-default pass-through（与上方凭证 DENY 配套：deny 在前、
+    # 放行在后兜底）：技能代码/.env 可读、跨 workspace 可读、Bash 可用。──
+    GovernanceRule(
+        match="Read(WORKING_DIR/**/.env*)",
+        action=GovernanceAction.ALLOW,
+        reason="Per-skill dotenv (dev default)",
+    ),
+    GovernanceRule(
+        match="Read(WORKING_DIR/**/*.env)",
+        action=GovernanceAction.ALLOW,
+        reason="Per-skill .env (dev default)",
+    ),
+    GovernanceRule(
+        match="Read(WORKING_DIR/**)",
+        action=GovernanceAction.ALLOW,
+        reason="Cross-workspace read (dev default)",
+    ),
+    GovernanceRule(
+        match="Bash(*)",
+        action=GovernanceAction.ALLOW,
+        reason="Shell for running skills / pip install / 联调 (dev default)",
     ),
 ]
 
