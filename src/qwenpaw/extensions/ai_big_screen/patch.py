@@ -33,6 +33,7 @@ from qwenpaw.extensions.ai_big_screen.intent import (
     ALLOWED_PALETTES,
     MAX_SCREEN_TITLE_LENGTH,
     extract_lookback_minutes,
+    normalize_component_type,
     normalize_layout_position,
     normalize_plan_component,
     reconcile_gap_title,
@@ -276,7 +277,7 @@ def _build_patch_messages(
         "setComponentTitle、setComponentComposition、setComponentStyle、"
         "setComponentQueryParams、setComponentFields。"
         "value 语义：setScreenTitle=大屏主标题字符串(屏幕级，渲染在大屏"
-        "顶部中央的横幅，不是数据组件)；"
+        "顶部中央的横幅，不是数据组件)，传空字符串\"\"表示去掉主标题；"
         "removeComponent=无 value，componentId/componentIds 指定要删除的"
         "组件；clearComponentLayout=无 value，取消组件的固定位置，"
         "恢复自动排布；"
@@ -317,6 +318,10 @@ def _build_patch_messages(
         "(左上≈{x:0,y:0}、右侧≈{x:6}、顶部≈{y:0})。"
         "给大屏加标题/改主标题/顶部标题→setScreenTitle，"
         "绝不要用 addComponent 实现标题(那会生成一个数据能力缺口组件)；"
+        "去掉/不要/删除大屏主标题→setScreenTitle 且 value 为空字符串；"
+        "换个形式/换种图表/改成某图→setComponentType，类型可以用中文名"
+        "(柱状图/折线图/面积图/饼图/表格/指标卡/仪表盘/雷达图/热力图/"
+        "拓扑图/时间线/排行榜/漏斗图/水球图/文本等)，后端会归一化；"
         "删除/移除/去掉某组件→removeComponent；"
         "变宽/变窄/变高/变矮(只调尺寸)→setComponentLayout，"
         "以该组件 renderedPosition 为基线：只改被要求的维度"
@@ -577,23 +582,29 @@ def _apply_operations(
     operations: list[PatchOperation],
     selected_component_ids: list[str],
     instruction: str,
-) -> tuple[set[str], list[str]]:
+) -> tuple[set[str], list[str], list[str]]:
     """Apply whitelisted operations in place.
 
-    Returns ``(component ids needing refetch, applied summaries)``.
+    Returns ``(component ids needing refetch, applied summaries,
+    rejection reasons)``. Rejections describe operations the model
+    planned but the executor dropped (invalid value, outside the
+    selection, unknown target) — surfaced to the user so a "no visible
+    change" outcome carries the actual why instead of a generic retry
+    hint.
     """
     components: list[Any] = screen.get("components") or []
     selection = set(selected_component_ids)
     needs_refetch: set[str] = set()
     applied: list[str] = []
+    rejected: list[str] = []
 
     for operation in operations:
         if operation.op == "setThemePalette":
             palette = str(operation.value or "").strip()
             theme = dict(screen.get("theme") or {})
-            if palette in ALLOWED_PALETTES and theme.get("palette") != (
-                palette
-            ):
+            if palette not in ALLOWED_PALETTES:
+                rejected.append(f"配色「{palette}」不在支持列表")
+            elif theme.get("palette") != palette:
                 theme["palette"] = palette
                 screen["theme"] = theme
                 applied.append("setThemePalette")
@@ -602,7 +613,10 @@ def _apply_operations(
         if operation.op == "setScreenTitle":
             title = str(operation.value or "").strip()
             title = title[:_MAX_SCREEN_TITLE_LENGTH]
-            if title and screen.get("title") != title:
+            # An empty value is an explicit "remove the banner" — the op's
+            # presence carries the intent, so clearing must work; blocking
+            # blanks here once made "去掉标题" impossible to express.
+            if str(screen.get("title") or "") != title:
                 screen["title"] = title
                 applied.append("setScreenTitle")
             continue
@@ -610,9 +624,13 @@ def _apply_operations(
         if operation.op == "removeComponent":
             for component_id in operation.target_ids():
                 if selection and component_id not in selection:
+                    rejected.append(
+                        f"删除组件 {component_id} 不在选中范围，已跳过",
+                    )
                     continue  # 局部修改只影响选中
                 index = _component_index(components, component_id)
                 if index < 0:
+                    rejected.append(f"组件 {component_id} 不存在")
                     continue
                 components.pop(index)
                 needs_refetch.discard(component_id)
@@ -639,21 +657,40 @@ def _apply_operations(
             applied.append("addComponent")
             continue
 
+        if operation.op == "setComponentType":
+            # Normalize before dispatch so a colloquial name (柱状图/饼图/
+            # bar…) lands on the canonical widget type instead of being
+            # silently dropped — "换个形式呈现" must be expressible.
+            normalized_type = normalize_component_type(operation.value)
+            if not normalized_type:
+                rejected.append(
+                    f"组件类型「{operation.value}」不支持"
+                    "（可用：柱状图/折线图/面积图/饼图/表格/指标卡/"
+                    "仪表盘/雷达图/热力图/拓扑图/时间线/排行榜等）",
+                )
+                continue
+            operation.value = normalized_type
+
         handler = _COMPONENT_OP_HANDLERS.get(operation.op)
         if handler is None:
+            rejected.append(f"不支持的操作 {operation.op}")
             continue
         for component_id in operation.target_ids():
             if selection and component_id not in selection:
+                rejected.append(
+                    f"{operation.op} 目标 {component_id} 不在选中范围，已跳过",
+                )
                 continue  # 局部修改只影响选中
             index = _component_index(components, component_id)
             if index < 0:
+                rejected.append(f"组件 {component_id} 不存在")
                 continue
             if handler(components[index], operation.value):
                 applied.append(operation.op)
                 if operation.op in _DATA_AFFECTING_OPS:
                     needs_refetch.add(component_id)
     screen["components"] = components
-    return needs_refetch, applied
+    return needs_refetch, applied, rejected
 
 
 async def _refetch_components(
@@ -785,7 +822,7 @@ async def apply_patch(
     )
     plan = result.value
 
-    needs_refetch, applied = _apply_operations(
+    needs_refetch, applied, rejected = _apply_operations(
         screen=screen,
         operations=plan.operations,
         selected_component_ids=selection,
@@ -841,6 +878,12 @@ async def apply_patch(
         )
     elif not summary:
         summary = f"已应用 {len(applied)} 项大屏变更。"
+    if rejected:
+        # Honest rejection trail: the model planned these but the executor
+        # dropped them — without this, a fully-rejected plan reads as the
+        # generic "no visible change, try rewording", hiding the real cause.
+        reasons = "；".join(rejected[:3])
+        summary = f"{summary}（未生效：{reasons}）"
 
     if dry_run:
         return {
