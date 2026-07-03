@@ -147,9 +147,26 @@ export function SelfMonitorPanel() {
     layers.find((l) => l.layer === id);
   const l3 = layerOf("l3");
   const l4 = layerOf("l4");
-  const datasources = (l3?.metrics?.datasources ?? {}) as Record<string, boolean>;
+  const datasources = (l3?.metrics?.datasources ?? {}) as Record<
+    string,
+    { configured: boolean; up: boolean | null }
+  >;
   const rssByWorker = (l4?.metrics?.rssBytesByWorker ?? {}) as Record<string, number>;
   const hasData = state !== "unknown";
+
+  // click a layer node to focus the event stream on that layer
+  const [layerFilter, setLayerFilter] = useState<string | null>(null);
+  const [expandedEvent, setExpandedEvent] = useState<string | null>(null);
+  const [refreshSpin, setRefreshSpin] = useState(false);
+  const filteredEvents = useMemo(
+    () => (layerFilter ? events.filter((event) => event.layer === layerFilter) : events),
+    [events, layerFilter],
+  );
+  const spinRefresh = useCallback(() => {
+    setRefreshSpin(true);
+    refresh();
+    window.setTimeout(() => setRefreshSpin(false), 900);
+  }, [refresh]);
 
   const { chartOption, chartHasData } = useMemo(() => {
     const bucketS = windowS <= 3600 ? 60 : windowS <= 21600 ? 300 : 900;
@@ -323,7 +340,10 @@ export function SelfMonitorPanel() {
             </button>
           ))}
         </div>
-        <button className="sm-refresh" onClick={refresh}>
+        <button
+          className={`sm-refresh${refreshSpin ? " spinning" : ""}`}
+          onClick={spinRefresh}
+        >
           刷新{loadedAt ? ` · ${fmtTime(loadedAt)}` : ""}
         </button>
       </div>
@@ -340,7 +360,12 @@ export function SelfMonitorPanel() {
             const status = layer?.status ?? "unknown";
             const metrics = layer?.metrics ?? {};
             return (
-              <div key={id} className={`sm-lnode ${status}`}>
+              <div
+                key={id}
+                className={`sm-lnode ${status}${layerFilter === id ? " selected" : ""}`}
+                title={`点击${layerFilter === id ? "取消" : ""}按 ${id.toUpperCase()} 层过滤事件流`}
+                onClick={() => setLayerFilter((prev) => (prev === id ? null : id))}
+              >
                 <div className="sm-ring">{id.toUpperCase()}</div>
                 <div>
                   <h4>
@@ -459,7 +484,9 @@ export function SelfMonitorPanel() {
                 <i className="sm-lyr">L3</i>
               </div>
               <div className="sm-val">
-                <b>{kpis ? num(kpis.degradeEvents) : "—"}</b>
+                <b key={`degrade-${kpis ? num(kpis.degradeEvents) : "-"}`}>
+                  {kpis ? num(kpis.degradeEvents) : "—"}
+                </b>
                 <small>起 / {windowLabel}</small>
               </div>
               <div className="sm-note">任何组件退回模版/降级路径</div>
@@ -470,7 +497,9 @@ export function SelfMonitorPanel() {
                 <i className="sm-lyr">L3</i>
               </div>
               <div className="sm-val">
-                <b>{kpis ? num(kpis.llm429) : "—"}</b>
+                <b key={`llm429-${kpis ? num(kpis.llm429) : "-"}`}>
+                  {kpis ? num(kpis.llm429) : "—"}
+                </b>
                 <small>次 / {windowLabel}</small>
               </div>
               <div className="sm-note">上游 TPM 限流命中</div>
@@ -481,7 +510,9 @@ export function SelfMonitorPanel() {
                 <i className="sm-lyr">L4</i>
               </div>
               <div className="sm-val">
-                <b>{kpis ? num(kpis.workersUp) : "—"}</b>
+                <b key={`workers-${kpis ? num(kpis.workersUp) : "-"}`}>
+                  {kpis ? num(kpis.workersUp) : "—"}
+                </b>
                 <small>UP</small>
               </div>
               <div className="sm-note">心跳 &lt; 60s 的进程数</div>
@@ -492,7 +523,7 @@ export function SelfMonitorPanel() {
                 <i className="sm-lyr">L1</i>
               </div>
               <div className="sm-val">
-                <b>
+                <b key={`chat-${kpis?.chatSuccessRate ?? "-"}`}>
                   {kpis?.chatSuccessRate == null
                     ? "—"
                     : (num(kpis.chatSuccessRate) * 100).toFixed(1)}
@@ -613,18 +644,39 @@ export function SelfMonitorPanel() {
               </div>
               {Object.keys(datasources).length ? (
                 <div className="sm-dsgrid">
-                  {Object.entries(datasources).map(([source, up]) => (
-                    <div key={source} className={`sm-ds ${up ? "up" : "down"}`}>
-                      <i />
-                      {source}
-                      <span style={{ marginLeft: "auto", fontSize: 9, opacity: 0.7 }}>
-                        {up ? "ok" : "down"}
-                      </span>
-                    </div>
-                  ))}
+                  {Object.entries(datasources).map(([source, ds]) => {
+                    const cls = !ds.configured
+                      ? "unconfigured"
+                      : ds.up === null
+                        ? "probing"
+                        : ds.up
+                          ? "up"
+                          : "down";
+                    const label = !ds.configured
+                      ? "未配置"
+                      : ds.up === null
+                        ? "探测中"
+                        : ds.up
+                          ? "可达"
+                          : "断连";
+                    const title = !ds.configured
+                      ? `${source}: 连接参数未配置(去 设置 页配置后重启后端)`
+                      : `${source}: 对配置的 base URL 做真实 HTTP 探活(60s 周期)· 当前${label}`;
+                    return (
+                      <div key={source} className={`sm-ds ${cls}`} title={title}>
+                        <i />
+                        {source}
+                        <small>{label}</small>
+                      </div>
+                    );
+                  })}
                 </div>
               ) : (
-                <div className="sm-empty">暂无数据源探测结果</div>
+                <div className="sm-empty">
+                  <b>等待首轮探活</b>
+                  <br />
+                  数据源可达性由后端每 60s 真实 HTTP 探测,非配置检查。
+                </div>
               )}
             </div>
 
@@ -760,19 +812,40 @@ export function SelfMonitorPanel() {
               <h3>事件流</h3>
               <span className="sm-en">Events</span>
               <span className="sm-right">
-                24h:{" "}
-                {Object.entries(overview?.eventCounts ?? {})
-                  .map(([sev, count]) => `${sev} ${count}`)
-                  .join(" · ") || "0"}
+                {layerFilter ? (
+                  <span
+                    className="sm-filter-chip"
+                    onClick={() => setLayerFilter(null)}
+                    title="点击清除层过滤"
+                  >
+                    {layerFilter.toUpperCase()} 层 ✕
+                  </span>
+                ) : (
+                  <>
+                    24h:{" "}
+                    {Object.entries(overview?.eventCounts ?? {})
+                      .map(([sev, count]) => `${sev} ${count}`)
+                      .join(" · ") || "0"}
+                  </>
+                )}
               </span>
             </div>
           </div>
           <div className="sm-feed">
-            {events.length ? (
-              events.map((event, index) => (
+            {filteredEvents.length ? (
+              filteredEvents.map((event, index) => (
                 <div
                   key={`${event.dedupKey}-${event.ts}-${index}`}
-                  className={`sm-evt ${event.severity}`}
+                  className={`sm-evt ${event.severity}${
+                    expandedEvent === `${event.dedupKey}-${event.ts}` ? " expanded" : ""
+                  }`}
+                  onClick={() =>
+                    setExpandedEvent((prev) =>
+                      prev === `${event.dedupKey}-${event.ts}`
+                        ? null
+                        : `${event.dedupKey}-${event.ts}`,
+                    )
+                  }
                 >
                   <div className="sm-rail" />
                   <div>
@@ -782,12 +855,25 @@ export function SelfMonitorPanel() {
                       <time>{fmtTime(event.ts)}</time>
                     </div>
                     {event.message ? <p>{event.message}</p> : null}
+                    {event.message && event.message.length > 64 ? (
+                      <div className="sm-expand-hint">
+                        {expandedEvent === `${event.dedupKey}-${event.ts}`
+                          ? "点击收起"
+                          : "点击展开全文"}
+                      </div>
+                    ) : null}
                     <div className="sm-src">
                       {event.layer.toUpperCase()} · {event.source || "system"}
                     </div>
                   </div>
                 </div>
               ))
+            ) : layerFilter ? (
+              <div className="sm-empty">
+                <b>{layerFilter.toUpperCase()} 层暂无事件</b>
+                <br />
+                点击左侧选中的层节点(或上方过滤标签)可取消过滤。
+              </div>
             ) : (
               <div className="sm-empty">
                 <b>暂无事件</b>

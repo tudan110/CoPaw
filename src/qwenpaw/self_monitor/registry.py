@@ -136,6 +136,14 @@ class Gauge(_MetricBase):
         except Exception:  # pragma: no cover
             logger.debug("self_monitor gauge inc failed", exc_info=True)
 
+    def current(self, labels: Mapping[str, str] | None = None) -> float | None:
+        """Read the in-process value for one label set (None if unset)."""
+        try:
+            with self._lock:
+                return self._samples.get(_label_key(labels))
+        except Exception:  # pragma: no cover
+            return None
+
 
 class Histogram:
     """Fixed-bucket histogram (Prometheus semantics).
@@ -401,6 +409,12 @@ def _declare_builtin_metrics(reg: MetricRegistry) -> None:
         "qwenpaw_probe_up",
         "l1",
         "Synthetic probe target reachable (1|0)",
+    )
+    reg.gauge(
+        "qwenpaw_datasource_configured",
+        "l3",
+        "External datasource has configuration present (1|0) — "
+        "reachability is qwenpaw_datasource_up",
     )
     reg.histogram(
         "qwenpaw_probe_duration_seconds",

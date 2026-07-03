@@ -87,10 +87,25 @@ def self_monitor_overview(
             if row["name"] == "qwenpaw_worker_up" and row["value"] >= 1.0
         }
     )
-    datasources = {
+    ds_up = {
         row["labels"].get("source", ""): bool(row["value"] >= 1.0)
         for row in latest
         if row["name"] == "qwenpaw_datasource_up"
+    }
+    ds_configured = {
+        row["labels"].get("source", ""): bool(row["value"] >= 1.0)
+        for row in latest
+        if row["name"] == "qwenpaw_datasource_configured"
+    }
+    # three honest states per source: configured?  probed-reachable?
+    # (up is None until the first real probe lands — never faked)
+    datasources = {
+        source: {
+            "configured": ds_configured.get(source, source in ds_up),
+            "up": ds_up.get(source),
+        }
+        for source in sorted(set(ds_up) | set(ds_configured))
+        if source
     }
     probes = {
         row["labels"].get("target", ""): bool(row["value"] >= 1.0)
@@ -127,7 +142,12 @@ def self_monitor_overview(
         has_data,
         crit=degrade > 5,
         warn=(
-            degrade > 0 or llm_429 > 20 or any(not up for up in datasources.values())
+            degrade > 0
+            or llm_429 > 20
+            or any(
+                entry["configured"] and entry["up"] is False
+                for entry in datasources.values()
+            )
         ),
     )
     l4 = _status(

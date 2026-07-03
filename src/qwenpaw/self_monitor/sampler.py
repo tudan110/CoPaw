@@ -161,6 +161,7 @@ class SelfMonitorService:
         while True:
             try:
                 await runner.run_once()
+                await self._probe_datasources()
             except asyncio.CancelledError:
                 raise
             except Exception:
@@ -242,8 +243,13 @@ class SelfMonitorService:
             logger.debug("self_monitor limiter pull failed", exc_info=True)
 
     def _pull_datasources(self) -> None:
-        """Configured/reachable status of the external datasources the
-        big screen depends on (same checkers the workbench uses)."""
+        """Configuration status only (`qwenpaw_datasource_configured`).
+
+        Whether the source is actually REACHABLE is probed for real by
+        `_probe_datasources` on the probe cadence — configuration
+        presence must never masquerade as liveness (that was the
+        "fake data" smell: n9e showed ok merely because its env vars
+        existed)."""
         try:
             from ..extensions.ai_big_screen.connection_status import (
                 connection_status,
@@ -255,22 +261,74 @@ class SelfMonitorService:
             try:
                 status = connection_status(source)
                 configured = bool(status.get("configured"))
-                registry.gauge("qwenpaw_datasource_up").set(
+                registry.gauge("qwenpaw_datasource_configured").set(
                     {"source": source}, 1.0 if configured else 0.0
                 )
-                if not configured:
-                    emit_event(
-                        "datasource.down",
-                        severity="warn",
-                        layer="l3",
-                        source=source,
-                        message=str(status.get("reason") or "unavailable"),
-                        dedup_key=f"datasource.down|{source}",
-                    )
             except Exception:
                 logger.debug(
                     "self_monitor datasource pull failed: %s", source, exc_info=True
                 )
+
+    async def _probe_datasources(self) -> None:
+        """Real reachability probes for the configured datasources.
+
+        GET the configured base URL: any HTTP response < 500 counts as
+        reachable (4xx just means we knocked without credentials);
+        connect errors / timeouts / 5xx mean down. Unconfigured sources
+        get no `qwenpaw_datasource_up` sample at all — absence of data
+        is reported as absence, not as red."""
+        env_of = {
+            # keep in sync with extensions.ai_big_screen.connection_status
+            "inoe": "INOE_API_BASE_URL",
+            "n9e": "N9E_API_BASE_URL",
+            "zgops": "ZGOPS_BASE_URL",
+            "order": "ORDER_API_BASE_URL",
+        }
+        registry = get_registry()
+        try:
+            import os
+
+            import httpx
+
+            configured_bases = {}
+            for source, env_name in env_of.items():
+                base = str(os.environ.get(env_name) or "").strip()
+                if source == "order" and not base:
+                    # order falls back to the INOE gateway when it has no
+                    # dedicated base — mirror connection_status semantics
+                    # so "configured" order never sits at 探测中 forever.
+                    base = str(os.environ.get("INOE_API_BASE_URL") or "").strip()
+                latest_conf = registry.gauge("qwenpaw_datasource_configured").current(
+                    {"source": source}
+                )
+                if base and (latest_conf is None or latest_conf >= 1.0):
+                    configured_bases[source] = base
+            if not configured_bases:
+                return
+            async with httpx.AsyncClient(follow_redirects=True) as client:
+                for source, base in configured_bases.items():
+                    up, reason = False, ""
+                    try:
+                        response = await client.get(base, timeout=4.0)
+                        up = response.status_code < 500
+                        if not up:
+                            reason = f"HTTP {response.status_code}"
+                    except Exception as exc:
+                        reason = type(exc).__name__
+                    registry.gauge("qwenpaw_datasource_up").set(
+                        {"source": source}, 1.0 if up else 0.0
+                    )
+                    if not up:
+                        emit_event(
+                            "datasource.down",
+                            severity="warn",
+                            layer="l3",
+                            source=source,
+                            message=f"{source} 探测不可达: {reason}",
+                            dedup_key=f"datasource.down|{source}",
+                        )
+        except Exception:  # pragma: no cover - probes are fail-open
+            logger.debug("self_monitor datasource probe failed", exc_info=True)
 
 
 def _default_worker_id() -> str:

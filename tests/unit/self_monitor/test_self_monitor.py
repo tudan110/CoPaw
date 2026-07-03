@@ -229,7 +229,10 @@ def test_overview_layers_and_kpis(client, store):
     assert data["kpis"]["chatSuccessRate"] == pytest.approx(0.98)
     l3 = next(l for l in data["layers"] if l["layer"] == "l3")
     assert l3["status"] in ("warn", "crit")
-    assert l3["metrics"]["datasources"] == {"zgops": False}
+    # three-state contract: configured (env present) vs up (real probe)
+    assert l3["metrics"]["datasources"] == {
+        "zgops": {"configured": True, "up": False}
+    }
 
 
 def test_overview_unknown_when_empty(client):

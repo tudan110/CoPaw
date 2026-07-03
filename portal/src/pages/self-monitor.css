@@ -17,13 +17,46 @@
   --sm-line: rgba(255, 255, 255, 0.08);
   --sm-num-font: "DIN Alternate", "Bahnschrift", "Segoe UI", sans-serif;
   position: relative;
-  min-height: calc(100vh - 140px);
+  /* the digital-employee shell (.main-content.advanced-page-mode) is
+     overflow:hidden — this island must own its scrolling */
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
   border-radius: 16px;
-  overflow: hidden;
-  padding: 16px 18px 22px;
+  padding: 0 18px 22px;
   color: var(--sm-text);
   background: radial-gradient(120% 120% at 70% -10%, #11243f, #070c16 62%);
   font-size: 13px;
+  /* data console: stray clicks must not select text like a document */
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* error/diagnosis text is exactly what people copy — keep it selectable */
+.sm-evt p,
+.sm-alert p,
+.sm-diag,
+.sm-diag ul,
+.sm-empty,
+.sm-error {
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.sm-root::-webkit-scrollbar {
+  width: 8px;
+}
+.sm-root::-webkit-scrollbar-thumb {
+  background: rgba(159, 178, 204, 0.28);
+  border-radius: 4px;
+}
+.sm-root::-webkit-scrollbar-thumb:hover {
+  background: rgba(34, 211, 238, 0.45);
+}
+.sm-root::-webkit-scrollbar-track {
+  background: transparent;
 }
 
 .sm-aurora {
@@ -49,15 +82,20 @@
   opacity: 0.2;
 }
 
-/* ── command bar ─────────────────────────────────────────────── */
+/* ── command bar (sticky while the island scrolls) ───────────── */
 .sm-cmd {
-  position: relative;
-  z-index: 2;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  margin: 0 -18px 4px;
+  padding: 14px 18px 12px;
+  background: linear-gradient(180deg, #0d1728 72%, rgba(13, 23, 40, 0));
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
   display: flex;
   align-items: center;
   gap: 14px;
   flex-wrap: wrap;
-  padding-bottom: 14px;
 }
 .sm-cmd-title {
   font-size: 16px;
@@ -159,6 +197,18 @@
   border: 1px solid var(--sm-line);
   border-radius: 14px;
   padding: 13px 15px;
+  opacity: 0;
+  transform: translateY(10px);
+  animation: sm-rise 0.5s cubic-bezier(0.2, 0.7, 0.3, 1) forwards;
+  transition:
+    border-color 0.2s ease,
+    background 0.2s ease,
+    box-shadow 0.2s ease;
+}
+.sm-panel:hover {
+  border-color: rgba(34, 211, 238, 0.28);
+  background: rgba(255, 255, 255, 0.06);
+  box-shadow: 0 6px 28px rgba(4, 10, 22, 0.45);
 }
 .sm-panel::before,
 .sm-panel::after {
@@ -216,7 +266,31 @@
   border-radius: 12px;
   background: var(--sm-panel);
   padding: 10px 12px;
+  cursor: pointer;
+  opacity: 0;
+  transform: translateX(-10px);
+  animation: sm-slide 0.45s cubic-bezier(0.2, 0.7, 0.3, 1) forwards;
+  transition:
+    border-color 0.18s ease,
+    background 0.18s ease,
+    transform 0.12s ease;
 }
+.sm-lnode:hover {
+  background: rgba(255, 255, 255, 0.07);
+  border-color: rgba(34, 211, 238, 0.3);
+}
+.sm-lnode:active {
+  transform: scale(0.985);
+}
+.sm-lnode.selected {
+  border-color: var(--sm-cyan);
+  background: rgba(34, 211, 238, 0.08);
+  box-shadow: 0 0 0 1px rgba(34, 211, 238, 0.35) inset;
+}
+.sm-lnode:nth-child(1) { animation-delay: 0.05s; }
+.sm-lnode:nth-child(2) { animation-delay: 0.17s; }
+.sm-lnode:nth-child(3) { animation-delay: 0.29s; }
+.sm-lnode:nth-child(4) { animation-delay: 0.41s; }
 .sm-lnode .sm-ring {
   width: 24px;
   height: 24px;
@@ -360,7 +434,13 @@
 .sm-ds i { width: 7px; height: 7px; border-radius: 50%; flex: none; }
 .sm-ds.up i { background: var(--sm-green); box-shadow: 0 0 8px rgba(52, 211, 153, 0.6); }
 .sm-ds.down { border-color: rgba(248, 113, 113, 0.4); color: var(--sm-red); }
-.sm-ds.down i { background: var(--sm-red); box-shadow: 0 0 8px rgba(248, 113, 113, 0.6); }
+.sm-ds.down i { background: var(--sm-red); box-shadow: 0 0 8px rgba(248, 113, 113, 0.6); animation: sm-blink 1.2s step-end infinite; }
+.sm-ds.unconfigured { opacity: 0.55; }
+.sm-ds.unconfigured i { background: rgba(159, 178, 204, 0.45); }
+.sm-ds.probing i { background: var(--sm-orange); animation: sm-blink 1s step-end infinite; }
+.sm-ds { transition: background 0.15s ease, border-color 0.15s ease; }
+.sm-ds:hover { background: rgba(255, 255, 255, 0.06); }
+.sm-ds small { margin-left: auto; font-size: 9px; color: rgba(159, 178, 204, 0.6); }
 
 /* resource gauges */
 .sm-gauges { display: flex; flex-direction: column; gap: 10px; }
@@ -406,6 +486,32 @@
   border-radius: 10px;
   background: rgba(255, 255, 255, 0.03);
   padding: 9px 11px 9px 9px;
+  cursor: pointer;
+  animation: sm-rise 0.35s ease forwards;
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease;
+}
+.sm-evt:hover {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(159, 178, 204, 0.35);
+}
+.sm-evt p {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.sm-evt.expanded p {
+  display: block;
+  -webkit-line-clamp: none;
+  overflow: visible;
+}
+.sm-evt .sm-expand-hint {
+  font-size: 9px;
+  color: rgba(159, 178, 204, 0.5);
+  margin-top: 4px;
+  letter-spacing: 0.4px;
 }
 .sm-evt .sm-rail { border-radius: 2px; }
 .sm-evt.error .sm-rail, .sm-evt.critical .sm-rail { background: var(--sm-red); box-shadow: 0 0 8px rgba(248, 113, 113, 0.5); }
@@ -529,4 +635,120 @@
   padding: 9px 13px;
   font-size: 12px;
   margin-bottom: 12px;
+}
+
+/* ── motion & interaction layer (v3) ─────────────────────────── */
+@keyframes sm-rise {
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes sm-slide {
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes sm-blink {
+  50% {
+    opacity: 0.25;
+  }
+}
+@keyframes sm-value-flash {
+  0% {
+    text-shadow: 0 0 22px rgba(34, 211, 238, 0.9);
+    filter: brightness(1.6);
+  }
+  100% {
+    text-shadow: none;
+    filter: none;
+  }
+}
+@keyframes sm-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* staggered entrance across the main canvas */
+.sm-canvas > section:nth-of-type(1) .sm-panel { animation-delay: 0.1s; }
+.sm-canvas > section:nth-of-type(2) .sm-panel { animation-delay: 0.22s; }
+.sm-canvas > section:nth-of-type(3) .sm-panel { animation-delay: 0.34s; }
+.sm-canvas > section:nth-of-type(4) .sm-panel { animation-delay: 0.46s; }
+.sm-canvas > section:nth-of-type(5) .sm-panel { animation-delay: 0.58s; }
+.sm-events .sm-panel { animation-delay: 0.3s; }
+
+/* KPI cards lift on hover; value flash re-triggers via React key */
+.sm-kpi {
+  transition:
+    transform 0.16s ease,
+    border-color 0.2s ease,
+    background 0.2s ease,
+    box-shadow 0.2s ease;
+}
+.sm-kpi:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 10px 32px rgba(4, 10, 22, 0.55);
+}
+.sm-kpi .sm-val b {
+  animation: sm-value-flash 0.9s ease-out;
+}
+
+/* refresh button feedback */
+.sm-refresh:active {
+  transform: scale(0.95);
+}
+.sm-refresh.spinning::before {
+  content: "";
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  margin-right: 6px;
+  border-radius: 50%;
+  border: 1.5px solid rgba(34, 211, 238, 0.35);
+  border-top-color: var(--sm-cyan);
+  animation: sm-spin 0.7s linear infinite;
+  vertical-align: -1px;
+}
+
+/* event-stream layer filter chip */
+.sm-filter-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  color: var(--sm-cyan);
+  background: rgba(34, 211, 238, 0.1);
+  border: 1px solid rgba(34, 211, 238, 0.4);
+  border-radius: 999px;
+  padding: 2px 9px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+.sm-filter-chip:hover {
+  background: rgba(34, 211, 238, 0.2);
+}
+
+/* alerts hover */
+.sm-alert {
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+.sm-alert:hover {
+  background: rgba(255, 255, 255, 0.055);
+}
+
+/* respect users who opt out of motion */
+@media (prefers-reduced-motion: reduce) {
+  .sm-panel,
+  .sm-lnode,
+  .sm-evt {
+    animation-duration: 0.01s;
+    animation-delay: 0s;
+  }
+  .sm-kpi .sm-val b {
+    animation: none;
+  }
 }
