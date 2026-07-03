@@ -95,6 +95,64 @@ def _sm_count_retry() -> None:
         pass
 
 
+def _trace_llm_call(
+    model_key: str,
+    status: str,
+    duration_s: float,
+    usage: Any = None,
+    ttft_s: float | None = None,
+) -> None:
+    """Fire-and-forget ``llm_call`` trace event for the current session.
+
+    This is what turns the traceability center into a span view: every
+    terminal LLM attempt becomes one span row (model / duration / tokens
+    / TTFT). Background pipelines without a session context (big screen,
+    cron dreams) are skipped on purpose — they have no trace to join.
+    Strictly fail-open.
+    """
+    try:
+        from ..app.agent_context import (
+            get_current_agent_id,
+            get_current_channel,
+            get_current_session_id,
+            get_current_user_id,
+        )
+
+        session_id = str(get_current_session_id() or "")
+        if not session_id:
+            return
+        payload: dict[str, Any] = {
+            "model": model_key,
+            "status": status,
+            "duration_ms": round(duration_s * 1000.0, 1),
+        }
+        total_tokens = 0
+        if usage is not None:
+            prompt = int(getattr(usage, "input_tokens", 0) or 0)
+            completion = int(getattr(usage, "output_tokens", 0) or 0)
+            if prompt or completion:
+                payload["prompt_tokens"] = prompt
+                payload["completion_tokens"] = completion
+                total_tokens = prompt + completion
+        if ttft_s is not None:
+            payload["ttft_ms"] = round(max(0.0, ttft_s) * 1000.0, 1)
+
+        from qwenpaw.extensions.traceability import trace_store
+
+        coro = trace_store.record_event(
+            session_id,
+            "llm_call",
+            payload,
+            agent_id=str(get_current_agent_id() or "") or None,
+            user_id=str(get_current_user_id() or "") or None,
+            channel=str(get_current_channel() or "") or None,
+            index_extra={"add_tokens": total_tokens} if total_tokens else None,
+        )
+        asyncio.get_running_loop().create_task(coro)
+    except Exception:  # pragma: no cover - tracing must never break calls
+        pass
+
+
 def _sm_record_first_token(latency_s: float, model_key: str = "") -> None:
     """Self-monitor tap: slot request → first streamed chunk. The wait
     inside the limiter (cooldown/semaphore) is included on purpose —
@@ -427,6 +485,8 @@ class RetryChatModel(ChatModelBase):
                 ``on_success()`` so only stale pauses are cleared.
         """
         first_chunk = True
+        ttft_s: float | None = None
+        last_chunk: Any = None
         try:
             async for chunk in stream:
                 if first_chunk:
@@ -437,10 +497,19 @@ class RetryChatModel(ChatModelBase):
                     # subsequent callers (including user chats) are not
                     # held back by a pause set by a background task.
                     await limiter.on_success(acquired_at)
-                    _sm_record_first_token(
-                        time.monotonic() - acquired_at, self.model_key
-                    )
+                    ttft_s = time.monotonic() - acquired_at
+                    _sm_record_first_token(ttft_s, self.model_key)
+                last_chunk = chunk
                 yield chunk
+            # Stream drained normally: emit the llm_call span. Usage rides
+            # on the final chunk (cumulative) when the provider reports it.
+            _trace_llm_call(
+                self.model_key,
+                "ok",
+                time.monotonic() - acquired_at,
+                usage=getattr(last_chunk, "usage", None),
+                ttft_s=ttft_s,
+            )
         finally:
             await stream.aclose()
             if first_chunk:
@@ -552,11 +621,22 @@ class RetryChatModel(ChatModelBase):
                 # unrelated background task (e.g. dream/cron 429).
                 await limiter.on_success(acquired_at)
                 _sm_record_llm(key, "ok", time.monotonic() - attempt_started)
+                _trace_llm_call(
+                    key,
+                    "ok",
+                    time.monotonic() - attempt_started,
+                    usage=getattr(result, "usage", None),
+                )
                 return result
 
             except Exception as exc:
                 last_exc = exc
                 _sm_record_llm(
+                    key,
+                    "429" if _is_rate_limit(exc) else "error",
+                    time.monotonic() - attempt_started,
+                )
+                _trace_llm_call(
                     key,
                     "429" if _is_rate_limit(exc) else "error",
                     time.monotonic() - attempt_started,
@@ -636,9 +716,7 @@ class RetryChatModel(ChatModelBase):
                                 self._rate_limit_config.acquire_timeout,
                             ),
                             details={
-                                "reason": (
-                                    "Timed out waiting for execution slot"
-                                ),
+                                "reason": ("Timed out waiting for execution slot"),
                             },
                         ) from exc
 
@@ -686,8 +764,7 @@ class RetryChatModel(ChatModelBase):
 
                 retry_delay = _compute_backoff(attempt, self._retry_config)
                 logger.warning(
-                    "LLM stream failed (attempt %d/%d): %s. "
-                    "Retrying in %.1fs ...",
+                    "LLM stream failed (attempt %d/%d): %s. " "Retrying in %.1fs ...",
                     attempt,
                     max_attempts,
                     retry_exc,

@@ -13,6 +13,8 @@ export interface TraceSessionSummary {
   last_event_at: number;
   event_count: number;
   tool_call_count: number;
+  llm_call_count?: number;
+  total_tokens?: number;
   error_count: number;
   status: TraceSessionStatus;
 }
@@ -28,6 +30,7 @@ export type TraceEventType =
   | "user_message"
   | "agent_reply"
   | "tool_call"
+  | "llm_call"
   | "skill_trigger"
   | "agent_reasoning"
   | "error"
@@ -56,6 +59,12 @@ export interface TraceEvent {
   name?: string;
   display_name?: string;
   input?: string;
+  // LLM span fields (llm_call, emitted by retry_chat_model)
+  model?: string;
+  status?: string;
+  prompt_tokens?: number;
+  completion_tokens?: number;
+  ttft_ms?: number;
   // Error fields
   exception_type?: string;
   message?: string;
@@ -100,7 +109,54 @@ function buildQuery(params: TraceListParams = {}): string {
   return query ? `?${query}` : "";
 }
 
+export interface TraceTrendPoint {
+  ts: number;
+  traces: number;
+  avgDurationS: number;
+  tokens: number;
+}
+
+export interface TraceTrends {
+  generatedAt: number;
+  windowS: number;
+  bucketS: number;
+  points: TraceTrendPoint[];
+}
+
+export interface TraceSpan {
+  ts: number;
+  type: "llm_call" | "tool_call";
+  name: string;
+  sessionId: string;
+  agentId: string;
+  durationMs: number | null;
+  status: string;
+  promptTokens: number | null;
+  completionTokens: number | null;
+  ttftMs: number | null;
+}
+
 export const tracesApi = {
+  trends: (windowS = 30 * 86400, signal?: AbortSignal) =>
+    requestPortalApi<TraceTrends>(`/traces/trends?window_s=${windowS}`, {
+      signal,
+    }),
+
+  listSpans: (
+    params: { spanType?: string; keyword?: string; limit?: number } = {},
+    signal?: AbortSignal,
+  ) => {
+    const search = new URLSearchParams();
+    if (params.spanType) search.set("span_type", params.spanType);
+    if (params.keyword) search.set("keyword", params.keyword);
+    if (params.limit) search.set("limit", String(params.limit));
+    const query = search.toString();
+    return requestPortalApi<{ items: TraceSpan[]; scannedSessions: number }>(
+      `/traces/spans${query ? `?${query}` : ""}`,
+      { signal },
+    );
+  },
+
   listSessions: (params: TraceListParams = {}, signal?: AbortSignal) =>
     requestPortalApi<TraceSessionListResponse>(`/traces/sessions${buildQuery(params)}`, {
       signal,

@@ -23,6 +23,7 @@ by the UI):
 The store is callable from any async context.  Failures never
 propagate to the caller — tracing must not break the agent.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -153,9 +154,20 @@ def _update_index_entry(
     entry["event_count"] = int(entry.get("event_count", 0)) + 1
     if event_type == "tool_call":
         entry["tool_call_count"] = int(entry.get("tool_call_count", 0)) + 1
+    if event_type == "llm_call":
+        entry["llm_call_count"] = int(entry.get("llm_call_count", 0)) + 1
     if event_type == "error":
         entry["error_count"] = int(entry.get("error_count", 0)) + 1
         entry["status"] = "error"
+    if extra and extra.get("add_tokens"):
+        # llm_call events accumulate the trace's token total so the list
+        # view can show Total tokens without re-reading the JSONL.
+        try:
+            entry["total_tokens"] = int(entry.get("total_tokens", 0)) + int(
+                extra["add_tokens"]
+            )
+        except (TypeError, ValueError):
+            pass
     if extra:
         for key in ("user_id", "channel", "agent_id"):
             value = extra.get(key)
@@ -360,8 +372,7 @@ def stats() -> dict[str, Any]:
     now = _now()
     one_day = 24 * 3600
     recent = [
-        e for e in sessions
-        if (now - float(e.get("last_event_at", 0))) <= one_day
+        e for e in sessions if (now - float(e.get("last_event_at", 0))) <= one_day
     ]
     return {
         "session_count": len(sessions),
