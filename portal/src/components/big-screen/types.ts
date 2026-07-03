@@ -63,6 +63,9 @@ export interface ScreenComponent {
   type: string;            // validated against COMPONENT_REGISTRY at render
   title: string;
   layoutPosition?: LayoutPosition;
+  /** Composition role from the screen-level layout plan:
+   *  "hero" | "support" | "context" | "" (unassigned). */
+  compositionRole?: string;
   capabilityId?: string;
   dataRef?: string;        // id of a CapabilityResult in spec.data
   data?: CapabilityResult; // P1 fixtures inline data here
@@ -75,6 +78,8 @@ export interface DashboardSpec {
   name: string;
   status: "draft" | "published" | "archived";
   layout: { designWidth: number; designHeight: number };
+  /** Screen-level composition decision from the planner (T-018). */
+  layoutPlan?: { pattern?: string };
   theme: Record<string, unknown>;
   components: ScreenComponent[];
 }
@@ -87,6 +92,7 @@ export function normalizeSpec(input: Partial<DashboardSpec> & { components?: any
       type: String(c.type ?? "text"),
       title: String(c.title ?? ""),
       layoutPosition: c.layoutPosition,
+      compositionRole: c.compositionRole,
       capabilityId: c.capabilityId,
       dataRef: c.dataRef,
       data: c.data,
@@ -98,6 +104,7 @@ export function normalizeSpec(input: Partial<DashboardSpec> & { components?: any
     name: String(input.name ?? ""),
     status: input.status ?? "draft",
     layout: { designWidth: input.layout?.designWidth ?? 1920, designHeight: input.layout?.designHeight ?? 1080 },
+    layoutPlan: input.layoutPlan,
     theme: input.theme ?? {},
     components,
   };

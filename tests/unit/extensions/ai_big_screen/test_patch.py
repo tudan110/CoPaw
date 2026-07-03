@@ -1441,3 +1441,69 @@ class TestGapTitleReconciledOnRefetch:
         components = {c["id"]: c for c in outcome["screen"]["components"]}
         assert components["comp-logs"]["data"]["sourceStatus"] == "live"
         assert components["comp-logs"]["title"] == "系统日志"
+
+
+class TestScreenLayoutPatternOp:
+    async def test_set_pattern_applies_and_diffs(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        _block_all_fetches(monkeypatch)
+        outcome = await apply_patch(
+            screen=_screen(),
+            instruction="换个更大气的构图，告警做主视觉",
+            model=FakeModel(
+                [
+                    _ops(
+                        [
+                            {
+                                "op": "setScreenLayoutPattern",
+                                "value": "focus-left",
+                            },
+                        ],
+                    ),
+                ],
+            ),
+        )
+        assert outcome["screen"]["layoutPlan"]["pattern"] == "focus-left"
+        pattern_diffs = [
+            entry
+            for entry in outcome["diff"]
+            if entry["field"] == "layoutPlan.pattern"
+        ]
+        assert pattern_diffs == [
+            {
+                "componentId": "",
+                "field": "layoutPlan.pattern",
+                "before": "",
+                "after": "focus-left",
+            },
+        ]
+
+    async def test_unknown_pattern_rejected_with_reason(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        _block_all_fetches(monkeypatch)
+        outcome = await apply_patch(
+            screen=_screen(),
+            instruction="换成瀑布流",
+            model=FakeModel(
+                [
+                    _ops(
+                        [
+                            {
+                                "op": "setScreenLayoutPattern",
+                                "value": "瀑布流",
+                            },
+                        ],
+                        summary="切换为瀑布流构图",
+                    ),
+                ],
+            ),
+        )
+        assert "layoutPlan" not in outcome["screen"] or not (
+            outcome["screen"].get("layoutPlan") or {}
+        ).get("pattern")
+        assert "未生效" in outcome["summary"]
+        assert "瀑布流" in outcome["summary"]

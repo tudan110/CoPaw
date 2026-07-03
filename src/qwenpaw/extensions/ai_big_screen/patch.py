@@ -36,6 +36,7 @@ from qwenpaw.extensions.ai_big_screen.intent import (
     normalize_component_type,
     normalize_layout_position,
     normalize_plan_component,
+    normalize_screen_pattern,
     reconcile_gap_title,
 )
 from qwenpaw.extensions.ai_big_screen.llm import (
@@ -107,6 +108,21 @@ def build_screen_diff(
                 "field": "title",
                 "before": before_title,
                 "after": after_title,
+            },
+        )
+    before_pattern = str(
+        (before.get("layoutPlan") or {}).get("pattern") or "",
+    )
+    after_pattern = str(
+        (after.get("layoutPlan") or {}).get("pattern") or "",
+    )
+    if before_pattern != after_pattern:
+        diffs.append(
+            {
+                "componentId": "",
+                "field": "layoutPlan.pattern",
+                "before": before_pattern,
+                "after": after_pattern,
             },
         )
     before_theme = before.get("theme")
@@ -272,12 +288,14 @@ def _build_patch_messages(
         "JSON 固定字段：summary, operations。"
         "operations 是数组，每项字段为 op、componentId 或 componentIds、value。"
         "op 只能是：addComponent、removeComponent、setScreenTitle、"
-        "setThemePalette、setComponentPalette、"
+        "setScreenLayoutPattern、setThemePalette、setComponentPalette、"
         "setComponentType、setComponentLayout、clearComponentLayout、"
         "setComponentTitle、setComponentComposition、setComponentStyle、"
         "setComponentQueryParams、setComponentFields。"
         "value 语义：setScreenTitle=大屏主标题字符串(屏幕级，渲染在大屏"
         "顶部中央的横幅，不是数据组件)，传空字符串\"\"表示去掉主标题；"
+        "setScreenLayoutPattern=整屏构图(focus-left=左主视觉+右信息栏、"
+        "focus-right=镜像、kpi-top=顶部指标带+下方内容、balanced=均衡网格)；"
         "removeComponent=无 value，componentId/componentIds 指定要删除的"
         "组件；clearComponentLayout=无 value，取消组件的固定位置，"
         "恢复自动排布；"
@@ -319,6 +337,8 @@ def _build_patch_messages(
         "给大屏加标题/改主标题/顶部标题→setScreenTitle，"
         "绝不要用 addComponent 实现标题(那会生成一个数据能力缺口组件)；"
         "去掉/不要/删除大屏主标题→setScreenTitle 且 value 为空字符串；"
+        "换个构图/布局风格/排版/更大气/更有设计感→setScreenLayoutPattern，"
+        "并可配合 setComponentComposition 调整主次；"
         "换个形式/换种图表/改成某图→setComponentType，类型可以用中文名"
         "(柱状图/折线图/面积图/饼图/表格/指标卡/仪表盘/雷达图/热力图/"
         "拓扑图/时间线/排行榜/漏斗图/水球图/文本等)，后端会归一化；"
@@ -619,6 +639,21 @@ def _apply_operations(
             if str(screen.get("title") or "") != title:
                 screen["title"] = title
                 applied.append("setScreenTitle")
+            continue
+
+        if operation.op == "setScreenLayoutPattern":
+            pattern = normalize_screen_pattern(operation.value)
+            if not pattern:
+                rejected.append(
+                    f"构图「{operation.value}」不支持"
+                    "（可用：focus-left/focus-right/kpi-top/balanced）",
+                )
+                continue
+            layout_plan = dict(screen.get("layoutPlan") or {})
+            if layout_plan.get("pattern") != pattern:
+                layout_plan["pattern"] = pattern
+                screen["layoutPlan"] = layout_plan
+                applied.append("setScreenLayoutPattern")
             continue
 
         if operation.op == "removeComponent":

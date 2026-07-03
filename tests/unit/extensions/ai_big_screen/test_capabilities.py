@@ -612,3 +612,19 @@ class TestConcurrency:
 def test_registry_is_importable_without_heavy_modules() -> None:
     """Descriptor metadata must be importable without integrations."""
     assert capabilities.get_descriptor("system-logs") is not None
+
+
+class TestFriendlyFailureHttpNoise:
+    def test_requests_http_error_with_url_is_collapsed(self) -> None:
+        from qwenpaw.extensions.ai_big_screen.capabilities import (
+            friendly_failure_message,
+        )
+
+        raw = (
+            "503 Server Error: Service Unavailable for url: "
+            "http://82.156.83.38:30080/resource/alarm/statistics?x=1"
+        )
+        message = friendly_failure_message(raw, source="portal-alarm-api")
+        assert "http://" not in message
+        assert "503" not in message
+        assert "portal-alarm-api" in message
