@@ -29,7 +29,6 @@ from agentscope.tool import Toolkit
 from .skill_system import get_workspace_skills_dir
 from ..modes.coding import CodingModeMixin
 from ..constant import (
-    AUTO_CONTINUE_MESSAGE_TAG,
     FASTFAIL_CONVERGE_MESSAGE_TAG,
     MEDIA_UNSUPPORTED_PLACEHOLDER,
     QWENPAW_MESSAGE_TAG_KEY,
@@ -509,32 +508,6 @@ class QwenPawAgent(CodingModeMixin, Agent):
 
         yield final_msg
 
-    def _should_auto_continue(
-        self,
-        msg: Msg,
-        tool_choice: Literal["auto", "none", "required"] | None,
-    ) -> bool:
-        """Check if auto-continue should be triggered."""
-        running = getattr(self, "_agent_config", None)
-        running = getattr(running, "running", None)
-        if running is None or not getattr(
-            running,
-            "auto_continue_on_text_only",
-            False,
-        ):
-            return False
-
-        if msg is None or msg.has_content_blocks("tool_call"):
-            return False
-
-        if tool_choice == "none":
-            return False
-
-        if self.state.cur_iter >= self.react_config.max_iters - 1:
-            return False
-
-        return True
-
     # ------------------------------------------------------------------
     # Fast-fail: detect tool-call storms (repeated identical calls or a
     # run of empty/error tool results) and nudge the model to converge
@@ -649,9 +622,13 @@ class QwenPawAgent(CodingModeMixin, Agent):
             for item in output:
                 btype = self._block_type(item)
                 if btype == "text":
-                    parts.append(str(self._block_field(item, "text", "") or ""))
+                    parts.append(
+                        str(self._block_field(item, "text", "") or ""),
+                    )
                 elif btype in (None, "data"):
-                    parts.append(str(self._block_field(item, "data", "") or ""))
+                    parts.append(
+                        str(self._block_field(item, "data", "") or ""),
+                    )
             return "\n".join(p for p in parts if p)
         return str(output)
 
@@ -733,7 +710,11 @@ class QwenPawAgent(CodingModeMixin, Agent):
             if getattr(msg, "role", None) != "user":
                 continue
             md = getattr(msg, "metadata", None)
-            tag = md.get(QWENPAW_MESSAGE_TAG_KEY) if isinstance(md, dict) else None
+            tag = (
+                md.get(QWENPAW_MESSAGE_TAG_KEY)
+                if isinstance(md, dict)
+                else None
+            )
             if not tag:  # untagged user message == a real user turn
                 start = i
         return start
