@@ -1045,12 +1045,44 @@ class TestScreenTitleOp:
         )
         assert outcome["screen"]["title"] == "长" * 60
 
-    async def test_blank_screen_title_is_ignored(
+    async def test_blank_screen_title_clears_existing(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        # "我不要这个标题，帮我去掉" — an explicit empty value must CLEAR
+        # the banner; blocking blanks here once made removal impossible.
+        _block_all_fetches(monkeypatch)
+        screen = _screen()
+        screen["title"] = "旧主标题"
+        outcome = await apply_patch(
+            screen=screen,
+            instruction="我不要这个标题，帮我去掉",
+            model=FakeModel(
+                [_ops([{"op": "setScreenTitle", "value": ""}])],
+            ),
+        )
+        assert outcome["screen"]["title"] == ""
+        title_diffs = [
+            entry
+            for entry in outcome["diff"]
+            if entry["field"] == "title" and entry["componentId"] == ""
+        ]
+        assert title_diffs == [
+            {
+                "componentId": "",
+                "field": "title",
+                "before": "旧主标题",
+                "after": "",
+            },
+        ]
+
+    async def test_blank_title_on_titleless_screen_is_noop(
         self,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         _block_all_fetches(monkeypatch)
         screen = _screen()
+        screen.pop("title", None)
         outcome = await apply_patch(
             screen=screen,
             instruction="标题设为空",
@@ -1069,9 +1101,100 @@ class TestScreenTitleOp:
                 ],
             ),
         )
-        assert "title" not in outcome["screen"] or not outcome["screen"].get(
-            "title",
+        assert not outcome["screen"].get("title")
+        title_diffs = [
+            entry
+            for entry in outcome["diff"]
+            if entry["field"] == "title" and entry["componentId"] == ""
+        ]
+        assert title_diffs == []  # 本来就没标题，清空不是变化
+
+
+class TestTypeAliasAndRejectionHonesty:
+    async def test_chinese_type_alias_applies(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        # "换成柱状图" — colloquial names must land on canonical types
+        # instead of being silently dropped.
+        _block_all_fetches(monkeypatch)
+        outcome = await apply_patch(
+            screen=_screen(),
+            instruction="换个形式呈现，改成柱状图",
+            selected_component_ids=["comp-alarms"],
+            model=FakeModel(
+                [
+                    _ops(
+                        [
+                            {
+                                "op": "setComponentType",
+                                "componentId": "comp-alarms",
+                                "value": "柱状图",
+                            },
+                        ],
+                    ),
+                ],
+            ),
         )
+        components = {c["id"]: c for c in outcome["screen"]["components"]}
+        assert components["comp-alarms"]["type"] == "bar-chart"
+
+    async def test_unknown_type_rejection_reason_in_summary(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        _block_all_fetches(monkeypatch)
+        outcome = await apply_patch(
+            screen=_screen(),
+            instruction="换成全息投影",
+            selected_component_ids=["comp-alarms"],
+            model=FakeModel(
+                [
+                    _ops(
+                        [
+                            {
+                                "op": "setComponentType",
+                                "componentId": "comp-alarms",
+                                "value": "全息投影",
+                            },
+                        ],
+                        summary="将组件换成全息投影",
+                    ),
+                ],
+            ),
+        )
+        components = {c["id"]: c for c in outcome["screen"]["components"]}
+        assert components["comp-alarms"]["type"] == "alarm-stream"  # 未变
+        assert "未生效" in outcome["summary"]
+        assert "全息投影" in outcome["summary"]
+
+    async def test_selection_blocked_rejection_reason_in_summary(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        _block_all_fetches(monkeypatch)
+        outcome = await apply_patch(
+            screen=_screen(),
+            instruction="删掉日志组件",
+            selected_component_ids=["comp-alarms"],
+            model=FakeModel(
+                [
+                    _ops(
+                        [
+                            {
+                                "op": "removeComponent",
+                                "componentId": "comp-logs",
+                            },
+                        ],
+                        summary="删除系统日志组件",
+                    ),
+                ],
+            ),
+        )
+        ids = {c["id"] for c in outcome["screen"]["components"]}
+        assert ids == {"comp-alarms", "comp-logs"}
+        assert "未生效" in outcome["summary"]
+        assert "不在选中范围" in outcome["summary"]
 
 
 class TestRemoveComponentOp:

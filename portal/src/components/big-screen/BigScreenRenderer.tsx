@@ -15,6 +15,7 @@ import { GlassPanel } from "./panels/GlassPanel.tsx";
 import { COMPONENT_REGISTRY, resolveComponentType } from "./registry.ts";
 import { visualSpecClassTokens } from "./visualSpec.ts";
 import { computeAutoLayout } from "./autoLayout.ts";
+import { pickAutoBand } from "./autoLayoutBands.ts";
 import { intrinsicSize } from "./intrinsicSize.ts";
 import { LAYOUT_MARGIN, gridToPx, pxToGrid, type Rect } from "./gridGeometry.ts";
 
@@ -80,11 +81,12 @@ const DEFAULT_POS = { x: 0, y: 0, w: 480, h: 280 };
 const TITLE_BAND_HEIGHT = 96;
 
 /**
- * Auto-layout for un-pinned components, reserving the vertical band the
- * pinned components occupy so the two never overlap. v1: auto items flow into
- * the larger free band above or below the pinned span — overlap-safe and
- * predictable. With no pinned components this is identical to plain
- * auto-layout (zero change to generated screens).
+ * Auto-layout for un-pinned components, reserving the vertical bands the
+ * pinned components (and the title banner) occupy. The band is the largest
+ * FREE gap — including the gap between the title band and a low-pinned
+ * component — clamped on-canvas (see pickAutoBand; the old above/below
+ * split could exile auto components below the visible canvas). With no
+ * pinned components this is identical to plain auto-layout.
  */
 function layoutAutoAroundPinned(
   autoComponents: ScreenComponent[],
@@ -101,16 +103,7 @@ function layoutAutoAroundPinned(
       }).map((r) => [r.id, r]),
     );
   }
-  const top = LAYOUT_MARGIN;
-  const bottom = design.designHeight - LAYOUT_MARGIN;
-  const pinnedTop = Math.min(...pinnedRects.map((r) => r.y));
-  const pinnedBottom = Math.max(...pinnedRects.map((r) => r.y + r.h));
-  const above = pinnedTop - top;
-  const below = bottom - pinnedBottom;
-  const band =
-    above >= below
-      ? { y: top, height: Math.max(140, above) }
-      : { y: pinnedBottom, height: Math.max(140, below) };
+  const band = pickAutoBand(pinnedRects, design);
   const rects = computeAutoLayout(items, {
     width: design.designWidth,
     height: band.height,

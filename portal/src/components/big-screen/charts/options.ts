@@ -38,6 +38,55 @@ function darkYAxis(labelColor: string) {
   };
 }
 
+// ---------- axis key inference ----------
+
+const X_KEY_CANDIDATES = [
+  "x",
+  "name",
+  "label",
+  "title",
+  "category",
+  "time",
+  "date",
+  "key",
+];
+const Y_KEY_CANDIDATES = ["y", "value", "count", "total", "num", "score"];
+
+/**
+ * Resolve the x/y row keys for axis charts. An explicit binding wins; a
+ * missing binding falls back to common column names and finally to the
+ * first string-ish / numeric column. Without this, converting e.g. a
+ * metric card (rows of {name, value}) into a bar chart charted
+ * ``r["x"]``/``r["y"]`` — every label rendered the literal "undefined".
+ */
+export function inferAxisKeys(
+  rows: Array<Record<string, unknown>>,
+  xBinding?: string,
+  yBinding?: string,
+): { xKey: string; yKey: string } {
+  const sample = rows.find((r) => r && typeof r === "object") ?? {};
+  const keys = Object.keys(sample);
+  const has = (k: string) => k in sample;
+
+  let xKey = xBinding && has(xBinding) ? xBinding : "";
+  if (!xKey) {
+    xKey =
+      X_KEY_CANDIDATES.find(has) ??
+      keys.find((k) => typeof sample[k] === "string") ??
+      xBinding ??
+      "x";
+  }
+  let yKey = yBinding && has(yBinding) ? yBinding : "";
+  if (!yKey) {
+    yKey =
+      Y_KEY_CANDIDATES.find((k) => has(k) && k !== xKey) ??
+      keys.find((k) => k !== xKey && typeof sample[k] === "number") ??
+      yBinding ??
+      "y";
+  }
+  return { xKey, yKey };
+}
+
 // ---------- buildLineOption ----------
 
 export function buildLineOption(
@@ -46,8 +95,7 @@ export function buildLineOption(
   style: ResolvedChartStyle = DEFAULT_CHART_STYLE,
 ): Record<string, unknown> {
   const rows = data.rows ?? [];
-  const xKey = bindings?.x ?? "x";
-  const yKey = bindings?.y ?? "y";
+  const { xKey, yKey } = inferAxisKeys(rows, bindings?.x, bindings?.y);
   const xData = rows.map((r) => r[xKey]);
   const yData = rows.map((r) => r[yKey]);
   return {
@@ -77,8 +125,7 @@ export function buildBarOption(
   style: ResolvedChartStyle = DEFAULT_CHART_STYLE,
 ): Record<string, unknown> {
   const rows = data.rows ?? [];
-  const xKey = bindings?.x ?? "x";
-  const yKey = bindings?.y ?? "y";
+  const { xKey, yKey } = inferAxisKeys(rows, bindings?.x, bindings?.y);
   const xData = rows.map((r) => r[xKey]);
   const yData = rows.map((r) => r[yKey]);
   return {
@@ -105,8 +152,7 @@ export function buildAreaOption(
   style: ResolvedChartStyle = DEFAULT_CHART_STYLE,
 ): Record<string, unknown> {
   const rows = data.rows ?? [];
-  const xKey = bindings?.x ?? "x";
-  const yKey = bindings?.y ?? "y";
+  const { xKey, yKey } = inferAxisKeys(rows, bindings?.x, bindings?.y);
   const xData = rows.map((r) => r[xKey]);
   const yData = rows.map((r) => r[yKey]);
   return {

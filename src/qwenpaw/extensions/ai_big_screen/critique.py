@@ -206,7 +206,7 @@ async def run_critique(
         theme_snapshot = copy.deepcopy(screen.get("theme"))
         bindings_snapshot = copy.deepcopy(screen.get("dataBindings"))
         try:
-            _refetch, applied = _apply_operations(
+            _refetch, applied, _rejected = _apply_operations(
                 screen=screen,
                 operations=allowed,
                 selected_component_ids=[],

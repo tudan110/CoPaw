@@ -165,6 +165,74 @@ ALLOWED_COMPONENT_TYPES = {
     "composed",
 }
 
+#: Colloquial / Chinese names for component types, as an LLM (or a user
+#: instruction echoed by one) actually writes them. Keys are lowercase.
+COMPONENT_TYPE_ALIASES: dict[str, str] = {
+    "柱状图": "bar-chart",
+    "柱图": "bar-chart",
+    "条形图": "bar-chart",
+    "bar": "bar-chart",
+    "column": "bar-chart",
+    "折线图": "line-chart",
+    "曲线图": "line-chart",
+    "趋势图": "line-chart",
+    "line": "line-chart",
+    "面积图": "area-chart",
+    "area": "area-chart",
+    "饼图": "donut",
+    "环形图": "donut",
+    "圆环图": "donut",
+    "占比图": "donut",
+    "pie": "donut",
+    "表格": "table",
+    "列表": "table",
+    "明细表": "table",
+    "指标卡": "metric-kpi",
+    "数字卡": "metric-kpi",
+    "kpi": "metric-kpi",
+    "metric": "metric-kpi",
+    "翻牌器": "flip-number",
+    "数字翻牌": "flip-number",
+    "仪表盘": "gauge",
+    "仪表图": "gauge",
+    "雷达图": "radar",
+    "热力图": "heatmap",
+    "拓扑图": "graph",
+    "拓扑": "graph",
+    "关系图": "graph",
+    "时间线": "timeline",
+    "时间轴": "timeline",
+    "漏斗图": "funnel",
+    "漏斗": "funnel",
+    "水球图": "liquid-ball",
+    "水球": "liquid-ball",
+    "排行榜": "top-n",
+    "排名": "top-n",
+    "topn": "top-n",
+    "告警流": "alarm-stream",
+    "文本": "text",
+    "文字": "text",
+    "3d柱状图": "bar3d",
+}
+
+
+def normalize_component_type(raw: Any) -> str:
+    """Canonical widget type for ``raw``, or ``""`` when unrecognized.
+
+    Accepts canonical ids as-is (any case) and the colloquial names in
+    :data:`COMPONENT_TYPE_ALIASES` — an instruction like "换成柱状图"
+    must be executable without the model knowing internal type ids.
+    """
+    text = str(raw or "").strip()
+    if not text:
+        return ""
+    if text in ALLOWED_COMPONENT_TYPES:
+        return text
+    lowered = text.lower()
+    if lowered in ALLOWED_COMPONENT_TYPES:
+        return lowered
+    return COMPONENT_TYPE_ALIASES.get(lowered, "")
+
 _FALLBACK_POSITIONS = [
     {"x": 0, "y": 0, "w": 6, "h": 4},
     {"x": 6, "y": 0, "w": 6, "h": 4},
