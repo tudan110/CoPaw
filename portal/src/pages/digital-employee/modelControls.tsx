@@ -464,19 +464,22 @@ export function AdvancedModelEntry({
           <div className="sidebar-advanced-item-desc">探索 AI 运维新范式</div>
           <div className="sidebar-advanced-item-meta">场景 / 协作 / 自动化</div>
         </button>
-        <button
-          className={isNlCustomizationActive ? "sidebar-advanced-item active" : "sidebar-advanced-item"}
-          onClick={onOpenNlCustomization}
-        >
-          <div className="sidebar-advanced-item-icon">
-            <span role="img" aria-label="natural-language-customization">
-              ✨
-            </span>
-          </div>
-          <div className="sidebar-advanced-item-name">轻应用工坊</div>
-          <div className="sidebar-advanced-item-desc">一句话生成页面或任务应用</div>
-          <div className="sidebar-advanced-item-meta">报表页面 / 固化任务</div>
-        </button>
+        {/* 轻应用工坊：未开发完成，暂时隐藏 */}
+        {false && (
+          <button
+            className={isNlCustomizationActive ? "sidebar-advanced-item active" : "sidebar-advanced-item"}
+            onClick={onOpenNlCustomization}
+          >
+            <div className="sidebar-advanced-item-icon">
+              <span role="img" aria-label="natural-language-customization">
+                ✨
+              </span>
+            </div>
+            <div className="sidebar-advanced-item-name">轻应用工坊</div>
+            <div className="sidebar-advanced-item-desc">一句话生成页面或任务应用</div>
+            <div className="sidebar-advanced-item-meta">报表页面 / 固化任务</div>
+          </button>
+        )}
         <button
           className={isAiBigScreenActive ? "sidebar-advanced-item active" : "sidebar-advanced-item"}
           onClick={onOpenAiBigScreen}
@@ -490,19 +493,22 @@ export function AdvancedModelEntry({
           <div className="sidebar-advanced-item-desc">自然语言定制运维大屏</div>
           <div className="sidebar-advanced-item-meta">生成 / 修改 / 发布</div>
         </button>
-        <button
-          className={isAppMarketActive ? "sidebar-advanced-item active" : "sidebar-advanced-item"}
-          onClick={onOpenAppMarket}
-        >
-          <div className="sidebar-advanced-item-icon">
-            <span role="img" aria-label="app-market">
-              🛍️
-            </span>
-          </div>
-          <div className="sidebar-advanced-item-name">应用中心</div>
-          <div className="sidebar-advanced-item-desc">页面应用与任务应用统一货架</div>
-          <div className="sidebar-advanced-item-meta">页面应用 / 任务应用 / 一键启动</div>
-        </button>
+        {/* 应用中心：未开发完成，暂时隐藏 */}
+        {false && (
+          <button
+            className={isAppMarketActive ? "sidebar-advanced-item active" : "sidebar-advanced-item"}
+            onClick={onOpenAppMarket}
+          >
+            <div className="sidebar-advanced-item-icon">
+              <span role="img" aria-label="app-market">
+                🛍️
+              </span>
+            </div>
+            <div className="sidebar-advanced-item-name">应用中心</div>
+            <div className="sidebar-advanced-item-desc">页面应用与任务应用统一货架</div>
+            <div className="sidebar-advanced-item-meta">页面应用 / 任务应用 / 一键启动</div>
+          </button>
+        )}
         <button
           className={isAppArtifactsActive ? "sidebar-advanced-item active" : "sidebar-advanced-item"}
           onClick={onOpenAppArtifacts}
@@ -516,21 +522,24 @@ export function AdvancedModelEntry({
           <div className="sidebar-advanced-item-desc">AI 生成的页面与卡片</div>
           <div className="sidebar-advanced-item-meta">发布 / 上架 / 版本管理</div>
         </button>
-        <button
-          className={
-            isProxyDatasourcesActive ? "sidebar-advanced-item active" : "sidebar-advanced-item"
-          }
-          onClick={onOpenProxyDatasources}
-        >
-          <div className="sidebar-advanced-item-icon">
-            <span role="img" aria-label="proxy-datasources">
-              🔌
-            </span>
-          </div>
-          <div className="sidebar-advanced-item-name">数据源代理</div>
-          <div className="sidebar-advanced-item-desc">应用调用的外部接口</div>
-          <div className="sidebar-advanced-item-meta">配置 / 鉴权 / 转发</div>
-        </button>
+        {/* 数据源代理：未开发完成，暂时隐藏 */}
+        {false && (
+          <button
+            className={
+              isProxyDatasourcesActive ? "sidebar-advanced-item active" : "sidebar-advanced-item"
+            }
+            onClick={onOpenProxyDatasources}
+          >
+            <div className="sidebar-advanced-item-icon">
+              <span role="img" aria-label="proxy-datasources">
+                🔌
+              </span>
+            </div>
+            <div className="sidebar-advanced-item-name">数据源代理</div>
+            <div className="sidebar-advanced-item-desc">应用调用的外部接口</div>
+            <div className="sidebar-advanced-item-meta">配置 / 鉴权 / 转发</div>
+          </button>
+        )}
       </div>
 
       {/* 📊 运维中枢 */}
