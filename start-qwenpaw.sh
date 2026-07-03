@@ -34,6 +34,13 @@ export QWENPAW_WORKING_DIR="$WORKING_DIR"
 export KNOWLEDGE_BASE_RERANKER="${KNOWLEDGE_BASE_RERANKER:-llm}"
 export KNOWLEDGE_BASE_HYDE_ENABLED="${KNOWLEDGE_BASE_HYDE_ENABLED:-true}"
 
+# Tool-guard approval timeout (seconds). Upstream default is 300 (5 min): a tool
+# call that needs approval but isn't acted on blocks the agent for 5 minutes
+# before failing. Shorten it so blocked tools fail fast instead of hanging.
+# Keep it long enough to actually approve high-risk ops by hand. Override by
+# exporting QWENPAW_TOOL_GUARD_APPROVAL_TIMEOUT_SECONDS before launch.
+export QWENPAW_TOOL_GUARD_APPROVAL_TIMEOUT_SECONDS="${QWENPAW_TOOL_GUARD_APPROVAL_TIMEOUT_SECONDS:-60}"
+
 # NB: the security posture (skill_scanner mode, domain_guard, delete_ops_disabled,
 # tool_guard auto_denied_rules) lives in config.json -> "security" (it travels
 # with WORKING_DIR, so it survives any deployment method). The QWENPAW_*_MODE /
