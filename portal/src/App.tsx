@@ -4,7 +4,6 @@ import ChunkErrorBoundary from "./components/ChunkErrorBoundary";
 import DigitalEmployeePage from "./pages/DigitalEmployeePage";
 import { lazyWithRetry } from "./utils/lazyWithRetry";
 
-const AgentCenterPage = lazyWithRetry(() => import("./pages/AgentCenterPage"));
 const SsoCallbackPage = lazyWithRetry(() => import("./pages/SsoCallbackPage"));
 const KnowledgeBaseEmbedPage = lazyWithRetry(() => import("./pages/KnowledgeBaseEmbedPage"));
 const AiBigScreenViewPage = lazyWithRetry(() => import("./pages/AiBigScreenViewPage"));
@@ -69,7 +68,6 @@ export default function App() {
         path="/big-screen-preview"
         element={renderDeferredPage(<BigScreenPreviewPage />)}
       />
-      <Route path="/agent-center" element={renderDeferredPage(<AgentCenterPage />)} />
       <Route
         path="/nl-customization"
         element={renderDeferredPage(<DigitalEmployeePage forcedSection="nl-customization" />)}

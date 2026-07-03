@@ -219,6 +219,7 @@ class FeishuChannel(BaseChannel):
         on_reply_sent: OnReplySent = None,
         show_tool_details: bool = True,
         filter_tool_messages: bool = False,
+        no_text_debounce: bool = True,
         filter_thinking: bool = False,
         dm_policy: str = "open",
         group_policy: str = "open",
@@ -236,6 +237,7 @@ class FeishuChannel(BaseChannel):
             on_reply_sent=on_reply_sent,
             show_tool_details=show_tool_details,
             filter_tool_messages=filter_tool_messages,
+            no_text_debounce=no_text_debounce,
             filter_thinking=filter_thinking,
             dm_policy=dm_policy,
             group_policy=group_policy,
@@ -341,6 +343,7 @@ class FeishuChannel(BaseChannel):
         on_reply_sent: OnReplySent = None,
         show_tool_details: bool = True,
         filter_tool_messages: bool = False,
+        no_text_debounce: bool = True,
         filter_thinking: bool = False,
         workspace_dir: Path | None = None,
     ) -> "FeishuChannel":
@@ -357,6 +360,7 @@ class FeishuChannel(BaseChannel):
             on_reply_sent=on_reply_sent,
             show_tool_details=show_tool_details,
             filter_tool_messages=filter_tool_messages,
+            no_text_debounce=no_text_debounce,
             filter_thinking=filter_thinking,
             dm_policy=config.dm_policy or "open",
             group_policy=config.group_policy or "open",
@@ -681,16 +685,16 @@ class FeishuChannel(BaseChannel):
             while len(self._processed_message_ids) > FEISHU_PROCESSED_IDS_MAX:
                 self._processed_message_ids.popitem(last=False)
 
-            sender_type = getattr(sender, "sender_type", "") or ""
-            if sender_type == "bot":
-                return
-
             sender_id_obj = getattr(sender, "sender_id", None)
             sender_id = ""
             if sender_id_obj and getattr(sender_id_obj, "open_id", None):
                 sender_id = str(getattr(sender_id_obj, "open_id", "")).strip()
             if not sender_id:
                 sender_id = f"unknown_{message_id[:8]}"
+
+            sender_type = getattr(sender, "sender_type", "") or ""
+            if sender_type == "bot" and sender_id == self._bot_open_id:
+                return
 
             nickname = (
                 getattr(sender, "name", None)
