@@ -24,6 +24,7 @@ from typing import Any, List, Optional
 import yaml
 
 from .tool_registry import ToolRegistry, DEFAULT_REGISTRY
+from ..constant import WORKING_DIR
 from ..sandbox import SandboxConfig
 
 logger = logging.getLogger(__name__)
@@ -485,6 +486,33 @@ DEFAULT_USER_RULES: List[GovernanceRule] = [
         match="DesktopScreenshot(WORKSPACE_DIR/**)",
         action=GovernanceAction.ALLOW,
         reason="File send within workspace",
+    ),
+    # ── Working dir (read-only listing/search across the whole working
+    # dir, plus report export writes outside the per-agent workspace) ──
+    GovernanceRule(
+        match="Glob(WORKING_DIR/**)",
+        action=GovernanceAction.ALLOW,
+        reason="Read-only file listing within working dir",
+    ),
+    GovernanceRule(
+        match="Grep(WORKING_DIR/**)",
+        action=GovernanceAction.ALLOW,
+        reason="Read-only content search within working dir",
+    ),
+    GovernanceRule(
+        match="Write(WORKING_DIR/extensions/reports/**)",
+        action=GovernanceAction.ALLOW,
+        reason="Report export write access",
+    ),
+    GovernanceRule(
+        match="Edit(WORKING_DIR/extensions/reports/**)",
+        action=GovernanceAction.ALLOW,
+        reason="Report export write access",
+    ),
+    GovernanceRule(
+        match="Append(WORKING_DIR/extensions/reports/**)",
+        action=GovernanceAction.ALLOW,
+        reason="Report export write access",
     ),
     # ── Browser (treat as always allowed for now) ──
     GovernanceRule(
@@ -1178,8 +1206,15 @@ def _resolve_placeholders(
     workspace_dir: str,
     coding_project_dir: str = "",
 ):
-    """Replace WORKSPACE_DIR / CODING_PROJECT_DIR placeholders in rules
-    with the actual paths (in-place)."""
+    """Replace WORKSPACE_DIR / CODING_PROJECT_DIR / WORKING_DIR
+    placeholders in rules with the actual paths (in-place).
+
+    WORKING_DIR resolves from ``qwenpaw.constant.WORKING_DIR`` (env-var
+    driven: ``~/.qwenpaw`` locally, ``/app/working`` in the Docker/k3s
+    deployment) rather than a caller-supplied argument, since it is a
+    process-wide constant rather than a per-agent value.
+    """
+    working_dir = str(WORKING_DIR)
     for rule in rules:
         if workspace_dir and "WORKSPACE_DIR" in rule.match:
             rule.match = rule.match.replace("WORKSPACE_DIR", workspace_dir)
@@ -1188,6 +1223,8 @@ def _resolve_placeholders(
                 "CODING_PROJECT_DIR",
                 coding_project_dir,
             )
+        if "WORKING_DIR" in rule.match:
+            rule.match = rule.match.replace("WORKING_DIR", working_dir)
 
 
 def _unresolve_placeholders(
@@ -1196,20 +1233,22 @@ def _unresolve_placeholders(
     coding_project_dir: str = "",
 ):
     """Restore actual paths in rules back to WORKSPACE_DIR /
-    CODING_PROJECT_DIR placeholders (in-place).
+    CODING_PROJECT_DIR / WORKING_DIR placeholders (in-place).
 
     When ``coding_project_dir`` coincides with ``workspace_dir`` the two
     cannot be distinguished in an already-resolved pattern, so the shared
     path is restored as ``WORKSPACE_DIR`` (the coding dir is still covered
     by the workspace rules in that case).
     """
-    # Build (actual_path, placeholder) pairs, longest path first.
-    # avoiding CODING_PROJECT_DIR is substring of WORKSPACE_DIR
+    # Build (actual_path, placeholder) pairs, longest path first, so that
+    # WORKING_DIR (a prefix of workspace_dir/coding_project_dir) is only
+    # substituted after the more specific paths have already been restored.
     pairs: list[tuple[str, str]] = []
     if coding_project_dir and coding_project_dir != workspace_dir:
         pairs.append((coding_project_dir, "CODING_PROJECT_DIR"))
     if workspace_dir:
         pairs.append((workspace_dir, "WORKSPACE_DIR"))
+    pairs.append((str(WORKING_DIR), "WORKING_DIR"))
     pairs.sort(key=lambda pair: len(pair[0]), reverse=True)
 
     for rule in rules:
