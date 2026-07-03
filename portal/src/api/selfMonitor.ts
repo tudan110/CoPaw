@@ -65,6 +65,88 @@ export interface SelfMonitorCost {
   generatedAt: number;
 }
 
+export interface SelfMonitorModelRow {
+  model: string;
+  calls: number;
+  errors: number;
+  errRate: number;
+  byStatus: Record<string, number>;
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+  avgDurationS: number | null;
+  avgTtftS: number | null;
+  tpotS: number | null;
+}
+
+export interface SelfMonitorModels {
+  generatedAt: number;
+  windowS: number;
+  rows: SelfMonitorModelRow[];
+  totals: {
+    calls: number;
+    errors: number;
+    errRate: number;
+    promptTokens: number;
+    completionTokens: number;
+    totalTokens: number;
+    avgDurationS: number | null;
+    avgTtftS: number | null;
+  };
+}
+
+export interface SelfMonitorTokens {
+  generatedAt: number;
+  windowS: number;
+  bucketS: number;
+  totals: { prompt: number; completion: number; total: number };
+  byModel: Record<string, { prompt: number; completion: number }>;
+  series: { ts: number; prompt: number; completion: number }[];
+  perRequest: { ts: number; avgTokens: number }[];
+}
+
+export interface SelfMonitorSessions {
+  available: boolean;
+  reason?: string;
+  generatedAt?: number;
+  days?: number;
+  totals?: {
+    activeSessions: number;
+    messages: number;
+    userMessages: number;
+    assistantMessages: number;
+    llmCalls: number;
+    toolCalls: number;
+    promptTokens: number;
+    completionTokens: number;
+  };
+  workspaces?: {
+    workspace: string;
+    activeSessions: number;
+    messages: number;
+    userMessages: number;
+    assistantMessages: number;
+    llmCalls: number;
+    toolCalls: number;
+    promptTokens: number;
+    completionTokens: number;
+  }[];
+  byDate?: {
+    date: string;
+    chats: number;
+    activeSessions: number;
+    messages: number;
+    llmCalls: number;
+    toolCalls: number;
+  }[];
+  byChannel?: {
+    channel: string;
+    sessions: number;
+    userMessages: number;
+    assistantMessages: number;
+  }[];
+}
+
 export interface SelfMonitorDiagnosis {
   summary: string;
   rootCause: string;
@@ -139,6 +221,24 @@ export const selfMonitorApi = {
 
   cost: (signal?: AbortSignal) =>
     requestPortalApi<SelfMonitorCost>("/self-monitor/cost", { signal }),
+
+  models: (windowS = 86400, signal?: AbortSignal) =>
+    requestPortalApi<SelfMonitorModels>(
+      `/self-monitor/models${buildQuery({ window_s: windowS })}`,
+      { signal },
+    ),
+
+  tokens: (windowS = 86400, signal?: AbortSignal) =>
+    requestPortalApi<SelfMonitorTokens>(
+      `/self-monitor/tokens${buildQuery({ window_s: windowS })}`,
+      { signal },
+    ),
+
+  sessions: (days = 7, signal?: AbortSignal) =>
+    requestPortalApi<SelfMonitorSessions>(
+      `/self-monitor/sessions${buildQuery({ days })}`,
+      { signal },
+    ),
 
   diagnose: (windowS = 3600, signal?: AbortSignal) =>
     requestPortalApi<SelfMonitorDiagnosis>("/self-monitor/diagnose", {
