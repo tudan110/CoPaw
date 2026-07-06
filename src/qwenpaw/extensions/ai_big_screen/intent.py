@@ -324,7 +324,14 @@ def normalize_component_type(raw: Any) -> str:
     lowered = text.lower()
     if lowered in ALLOWED_COMPONENT_TYPES:
         return lowered
-    return COMPONENT_TYPE_ALIASES.get(lowered, "")
+    alias = COMPONENT_TYPE_ALIASES.get(lowered, "")
+    if alias:
+        return alias
+    # "应用列表/服务清单/告警明细"这类叫法都是表格 — 后缀规则兜住
+    # 全部组合，别让一个具体名词卡死用户的换型指令。
+    if text.endswith(("列表", "清单", "明细")):
+        return "table"
+    return ""
 
 _FALLBACK_POSITIONS = [
     {"x": 0, "y": 0, "w": 6, "h": 4},
@@ -1474,7 +1481,18 @@ def _build_intent_messages(prompt: str, title: str) -> list[dict[str, str]]:
         "只输出严格 JSON，不要输出 Markdown、解释或代码块。"
         "JSON 字段固定为：name, screenTitle, layoutPattern, description, "
         "theme, layout, components, summary。"
+        "当用户需求是可计算/静态知识/示例类内容(如乘法表、对照表、"
+        "口诀、公式或概念说明)，使用 capabilityId=ai-authored-content，"
+        "并把你生成的完整内容内联到该组件 queryParams.content："
+        "{columns:[{key,label}...], rows:[{...}...]}(表格类)或 "
+        "{text: 说明文字}(文本类)或 {metrics:{名:值}}(数值类)——"
+        "内容必须完整可用，不要留空让后端去取(它不会访问任何外部源)。"
+        "这类内容不要路由到 web-live-data 检索。"
+        "ai-authored-content 绝不可用于告警/工单/CMDB/资源/日志/监控等"
+        "运维数据：运维数据必须绑定真实数据能力，"
+        "没有对应能力时用 capability-gap 诚实标注，严禁编造。"
         "screenTitle 是渲染在大屏顶部的主标题：一句话概括本屏主题，"
+
         "紧扣用户需求、不含'查询/生成/大屏'等动词，≤20 字（如'15分钟告警态势'）。"
         "layoutPattern 是整屏构图，只能是：focus-left(左侧主视觉+右侧信息栏，"
         "适合有明确核心指标/趋势的需求)、focus-right(镜像)、"

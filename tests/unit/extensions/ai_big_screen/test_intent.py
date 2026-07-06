@@ -698,3 +698,59 @@ class TestPromptDeclinesTitle:
             title="运维总览",
         )
         assert plan.screen_title == "运维总览"
+
+
+class TestAuthoredCapabilityRouting:
+    def test_authored_claim_survives_for_computable_content(self) -> None:
+        from qwenpaw.extensions.ai_big_screen.intent import (
+            normalize_plan_component,
+        )
+
+        component = normalize_plan_component(
+            {
+                "title": "九九乘法表",
+                "capabilityId": "ai-authored-content",
+                "type": "table",
+                "queryParams": {
+                    "content": {
+                        "rows": [{"expr": "1×1", "result": 1}],
+                    },
+                },
+            },
+            index=0,
+            inferred_lookback_minutes=0,
+            prompt="写一个99乘法表",
+        )
+        assert component.capability_id == "ai-authored-content"
+        assert component.query_params["content"]["rows"][0]["result"] == 1
+
+    def test_ops_keywords_hijack_authored_claim(self) -> None:
+        # The anti-fake gate: an authored claim on an ops-titled component
+        # is re-routed to the REAL capability — authored content can never
+        # masquerade as telemetry.
+        from qwenpaw.extensions.ai_big_screen.intent import (
+            normalize_plan_component,
+        )
+
+        component = normalize_plan_component(
+            {
+                "title": "待办工单列表",
+                "capabilityId": "ai-authored-content",
+                "type": "table",
+                "queryParams": {"content": {"rows": [{"id": 1}]}},
+            },
+            index=0,
+            inferred_lookback_minutes=0,
+            prompt="工单大屏",
+        )
+        assert component.capability_id == "workorders"
+
+    def test_list_suffix_normalizes_to_table(self) -> None:
+        from qwenpaw.extensions.ai_big_screen.intent import (
+            normalize_component_type,
+        )
+
+        assert normalize_component_type("应用列表") == "table"
+        assert normalize_component_type("服务清单") == "table"
+        assert normalize_component_type("告警明细") == "table"
+        assert normalize_component_type("全息投影") == ""

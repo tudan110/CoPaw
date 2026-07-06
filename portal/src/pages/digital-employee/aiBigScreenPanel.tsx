@@ -236,6 +236,12 @@ export function AiBigScreenPanel() {
       null,
     [screen, selectedComponentId],
   );
+  // The screen-title banner is selectable via a sentinel id — it is not a
+  // component, so the region editor must recognize it explicitly or the
+  // editor never opens for a selected title (the "点击标题没反应" bug).
+  const titleSelected =
+    selectedComponentId === TITLE_SELECTION_ID ||
+    selectedComponentIds.includes(TITLE_SELECTION_ID);
   const externalTarget = getExternalTarget(screen);
   const screenStats = useMemo(
     () => ({
@@ -1072,15 +1078,25 @@ export function AiBigScreenPanel() {
             <AiBigScreenEmptyState />
           )}
 
-          {!loading && screen && selectedComponent && regionEditorOpen ? (
+          {!loading &&
+          screen &&
+          (selectedComponent || titleSelected) &&
+          regionEditorOpen ? (
             <section className="ai-big-screen-region-editor">
               <div className="ai-big-screen-region-editor-head">
                 <div>
                   <span>选中区域</span>
-                  <strong>{selectedComponent.title}</strong>
+                  <strong>
+                    {selectedComponent
+                      ? selectedComponent.title
+                      : `大屏主标题「${screen.title || "未命名"}」`}
+                  </strong>
                   <small>
-                    {selectedComponent.type} ·{" "}
-                    {selectedComponent.pluginId || "local"}
+                    {selectedComponent
+                      ? `${selectedComponent.type} · ${
+                          selectedComponent.pluginId || "local"
+                        }`
+                      : "屏幕主标题 · 可改文字/颜色/大小或去掉"}
                     {selectedComponentIds.length > 1
                       ? ` · 已选 ${selectedComponentIds.length} 个区域`
                       : ""}

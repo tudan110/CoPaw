@@ -200,6 +200,7 @@ class TestRegistry:
             "self-monitor-overview",
             "web-live-data",
             "capability-gap",
+            "ai-authored-content",
         }
 
     def test_metadata_keeps_legacy_shape(self) -> None:
@@ -628,3 +629,73 @@ class TestFriendlyFailureHttpNoise:
         assert "http://" not in message
         assert "503" not in message
         assert "portal-alarm-api" in message
+
+
+class TestAuthoredContentChannel:
+    def test_authored_rows_pass_through_with_provenance(self) -> None:
+        from qwenpaw.extensions.ai_big_screen.capabilities.descriptors import (
+            fetch_authored_content,
+        )
+
+        out = fetch_authored_content(
+            {
+                "content": {
+                    "columns": [
+                        {"key": "expr", "label": "算式"},
+                        {"key": "result", "label": "结果"},
+                    ],
+                    "rows": [
+                        {"expr": "1×1", "result": 1},
+                        {"expr": "9×9", "result": 81},
+                    ],
+                },
+            },
+        )
+        assert out["sourceStatus"] == "live"
+        assert out["source"] == "ai-authored"
+        assert "AI 即席生成" in out["trend"]
+        assert out["rows"][1]["result"] == 81
+        assert [c["key"] for c in out["columns"]] == ["expr", "result"]
+
+    def test_missing_content_is_honest_empty(self) -> None:
+        from qwenpaw.extensions.ai_big_screen.capabilities.descriptors import (
+            fetch_authored_content,
+        )
+
+        out = fetch_authored_content({})
+        assert out["sourceStatus"] == "empty"
+        assert "未在规划中内联内容" in out["message"]
+
+    def test_sanitizer_caps_and_scalar_only(self) -> None:
+        from qwenpaw.extensions.ai_big_screen.capabilities.descriptors import (
+            _sanitize_authored_content,
+        )
+
+        raw = {
+            "rows": [
+                {
+                    "name": "x" * 500,
+                    "nested": {"evil": 1},
+                    "arr": [1, 2],
+                    "num": 3,
+                },
+            ]
+            * 500,
+            "text": "y" * 5000,
+        }
+        clean = _sanitize_authored_content(raw)
+        assert len(clean["rows"]) == 200
+        row = clean["rows"][0]
+        assert len(row["name"]) == 200
+        assert "nested" not in row and "arr" not in row
+        assert row["num"] == 3
+        assert len(clean["text"]) == 2000
+
+    def test_text_content_reaches_metrics(self) -> None:
+        from qwenpaw.extensions.ai_big_screen.capabilities.descriptors import (
+            fetch_authored_content,
+        )
+
+        out = fetch_authored_content({"content": {"text": "九九八十一"}})
+        assert out["sourceStatus"] == "live"
+        assert out["metrics"]["text"] == "九九八十一"
