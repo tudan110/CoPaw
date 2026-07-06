@@ -112,6 +112,12 @@ def _install_tool_trace() -> None:
     # emit the trace once the stream finishes (or on error).
     async def _traced_acting(self: Any, tool_call: Any) -> Any:
         started = time.time()
+        # Runtime.run plants the trace context on the agent's model
+        # instance (object attributes cross tasks). _acting runs in a
+        # pipeline task where the agent contextvars are UNSET — reading
+        # them here silently dropped every tool_call since the Runtime
+        # 2.0 rework (same failure mode as the llm_call spans).
+        trace_ctx = getattr(getattr(self, "model", None), "_qp_trace_ctx", None)
         try:
             async for chunk in _orig_acting(self, tool_call):
                 yield chunk
@@ -121,12 +127,14 @@ def _install_tool_trace() -> None:
                 outcome="error",
                 started_at=started,
                 error=f"{type(exc).__name__}: {exc}",
+                trace_ctx=trace_ctx,
             )
             raise
         await _emit_tool_call(
             tool_call,
             outcome="ok",
             started_at=started,
+            trace_ctx=trace_ctx,
         )
 
     setattr(QwenPawAgent, "_acting", _traced_acting)
@@ -140,8 +148,13 @@ async def _emit_tool_call(
     outcome: str,
     started_at: float,
     error: str | None = None,
+    trace_ctx: dict | None = None,
 ) -> None:
-    """Build + emit a ``tool_call`` event. Never raises."""
+    """Build + emit a ``tool_call`` event. Never raises.
+
+    ``trace_ctx`` is the model-instance snapshot planted by Runtime.run;
+    the contextvars remain only as a fallback for direct callers.
+    """
     try:
         from qwenpaw.app.agent_context import (
             get_current_agent_id,
@@ -150,13 +163,18 @@ async def _emit_tool_call(
             get_current_user_id,
         )
 
-        session_id = str(get_current_session_id() or "")
+        ctx = trace_ctx or {}
+        session_id = str(ctx.get("session_id") or get_current_session_id() or "")
         if not session_id:
             return
 
         def _get(key: str) -> Any:
+            # agentscope 2.0 passes a ToolCallBlock OBJECT (id/name/input
+            # attributes); the pre-rework dict shape is kept as fallback.
             try:
-                return tool_call.get(key)
+                if isinstance(tool_call, dict):
+                    return tool_call.get(key)
+                return getattr(tool_call, key, None)
             except Exception:  # pylint: disable=broad-except
                 return None
 
@@ -174,9 +192,9 @@ async def _emit_tool_call(
             session_id,
             "tool_call",
             payload,
-            agent_id=str(get_current_agent_id() or "") or None,
-            user_id=str(get_current_user_id() or "") or None,
-            channel=str(get_current_channel() or "") or None,
+            agent_id=str(ctx.get("agent_id") or get_current_agent_id() or "") or None,
+            user_id=str(ctx.get("user_id") or get_current_user_id() or "") or None,
+            channel=str(ctx.get("channel") or get_current_channel() or "") or None,
         )
     except Exception:  # pylint: disable=broad-except
         logger.debug("tool_call trace build failed", exc_info=True)

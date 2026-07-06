@@ -225,3 +225,39 @@ async def test_streaming_llm_call_uses_model_instance_slot(store):
     assert llm[0]["prompt_tokens"] == 321
     assert llm[0]["completion_tokens"] == 17
     assert llm[0]["agent_id"] == "gateway"
+
+
+@pytest.mark.asyncio
+async def test_tool_call_emit_uses_instance_ctx_and_object_shape(store):
+    """Tool traces died twice over: contextvars are unset in the
+    pipeline task (same as llm_call), and agentscope 2.0 passes a
+    ToolCallBlock OBJECT where the old code expected a dict (.get()
+    raised, fields silently emptied). Emit must work from the planted
+    trace_ctx with attribute access."""
+    import qwenpaw.app.agent_context as agent_context
+    from qwenpaw.extensions.traceability.install import _emit_tool_call
+
+    class FakeToolCallBlock:
+        id = "call_1"
+        name = "execute_shell_command"
+        input = '{"command": "echo hi"}'
+
+    agent_context.set_current_session_id("")  # pipeline task shape
+    await _emit_tool_call(
+        FakeToolCallBlock(),
+        outcome="ok",
+        started_at=0.0,
+        trace_ctx={
+            "session_id": "tool-slot",
+            "agent_id": "gateway",
+            "user_id": "t",
+            "channel": "console",
+        },
+    )
+    detail = store.read_session("tool-slot")
+    tools = [e for e in detail.get("events", []) if e.get("type") == "tool_call"]
+    assert len(tools) == 1
+    assert tools[0]["tool_name"] == "execute_shell_command"
+    assert tools[0]["tool_call_id"] == "call_1"
+    assert tools[0]["args"] == '{"command": "echo hi"}'
+    assert tools[0]["agent_id"] == "gateway"
