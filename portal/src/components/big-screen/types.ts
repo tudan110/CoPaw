@@ -80,6 +80,8 @@ export interface DashboardSpec {
   layout: { designWidth: number; designHeight: number };
   /** Screen-level composition decision from the planner (T-018). */
   layoutPlan?: { pattern?: string };
+  /** Banner style from the setScreenTitleStyle patch op (T-021). */
+  titleStyle?: { color?: string; sizeScale?: number; emphasis?: string };
   theme: Record<string, unknown>;
   components: ScreenComponent[];
 }
@@ -105,6 +107,7 @@ export function normalizeSpec(input: Partial<DashboardSpec> & { components?: any
     status: input.status ?? "draft",
     layout: { designWidth: input.layout?.designWidth ?? 1920, designHeight: input.layout?.designHeight ?? 1080 },
     layoutPlan: input.layoutPlan,
+    titleStyle: input.titleStyle,
     theme: input.theme ?? {},
     components,
   };

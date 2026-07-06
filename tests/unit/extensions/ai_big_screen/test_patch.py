@@ -1507,3 +1507,100 @@ class TestScreenLayoutPatternOp:
         ).get("pattern")
         assert "未生效" in outcome["summary"]
         assert "瀑布流" in outcome["summary"]
+
+
+class TestScreenTitleStyleOp:
+    async def test_chinese_color_reaches_title_style_and_diff(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        # "标题太难看了…改成红色" — the banner style channel must exist;
+        # the model once had to reinterpret this as component accents.
+        _block_all_fetches(monkeypatch)
+        screen = _screen()
+        screen["title"] = "告警总览"
+        outcome = await apply_patch(
+            screen=screen,
+            instruction="标题太难看了，我可以修改样式吗？改成红色",
+            model=FakeModel(
+                [
+                    _ops(
+                        [
+                            {
+                                "op": "setScreenTitleStyle",
+                                "value": {"color": "红色"},
+                            },
+                        ],
+                        summary="将主标题改为红色",
+                    ),
+                ],
+            ),
+        )
+        assert outcome["screen"]["titleStyle"] == {"color": "#ef4444"}
+        style_diffs = [
+            entry
+            for entry in outcome["diff"]
+            if entry["field"] == "titleStyle"
+        ]
+        assert style_diffs == [
+            {
+                "componentId": "",
+                "field": "titleStyle",
+                "before": None,
+                "after": {"color": "#ef4444"},
+            },
+        ]
+
+    async def test_partial_edits_accumulate(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        _block_all_fetches(monkeypatch)
+        screen = _screen()
+        screen["titleStyle"] = {"color": "#ef4444"}
+        outcome = await apply_patch(
+            screen=screen,
+            instruction="标题再大一点",
+            model=FakeModel(
+                [
+                    _ops(
+                        [
+                            {
+                                "op": "setScreenTitleStyle",
+                                "value": {"sizeScale": 1.4},
+                            },
+                        ],
+                    ),
+                ],
+            ),
+        )
+        assert outcome["screen"]["titleStyle"] == {
+            "color": "#ef4444",
+            "sizeScale": 1.4,
+        }
+
+    async def test_invalid_style_rejected_with_vocabulary(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        _block_all_fetches(monkeypatch)
+        outcome = await apply_patch(
+            screen=_screen(),
+            instruction="标题加个跑马灯",
+            model=FakeModel(
+                [
+                    _ops(
+                        [
+                            {
+                                "op": "setScreenTitleStyle",
+                                "value": {"marquee": True},
+                            },
+                        ],
+                        summary="给标题加跑马灯",
+                    ),
+                ],
+            ),
+        )
+        assert not outcome["screen"].get("titleStyle")
+        assert "未生效" in outcome["summary"]
+        assert "color" in outcome["summary"]

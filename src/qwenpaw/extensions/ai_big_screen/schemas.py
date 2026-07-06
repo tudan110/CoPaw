@@ -28,6 +28,7 @@ PatchOp = Literal[
     "addComponent",
     "removeComponent",
     "setScreenTitle",
+    "setScreenTitleStyle",
     "setScreenLayoutPattern",
     "setThemePalette",
     "setComponentPalette",

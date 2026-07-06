@@ -454,6 +454,70 @@ def sanitize_component_style(raw_style: Any) -> dict[str, Any]:
     return style
 
 
+#: Common Chinese colour names an instruction like "标题改成红色" reaches us
+#: with — mapped to palette-consistent hexes so the banner colour channel is
+#: reachable in the user's own words, not just CSS vocabulary.
+_CHINESE_COLOR_NAMES = {
+    "红": "#ef4444",
+    "红色": "#ef4444",
+    "橙": "#fb923c",
+    "橙色": "#fb923c",
+    "黄": "#facc15",
+    "黄色": "#facc15",
+    "金": "#fbbf24",
+    "金色": "#fbbf24",
+    "绿": "#34d399",
+    "绿色": "#34d399",
+    "青": "#22d3ee",
+    "青色": "#22d3ee",
+    "蓝": "#3b82f6",
+    "蓝色": "#3b82f6",
+    "紫": "#a78bfa",
+    "紫色": "#a78bfa",
+    "粉": "#f472b6",
+    "粉色": "#f472b6",
+    "白": "#ffffff",
+    "白色": "#ffffff",
+}
+
+
+def sanitize_screen_title_color(raw: Any) -> str:
+    """One colour token for the screen banner: hex / CSS name / 中文色名."""
+    text = str(raw or "").strip()
+    if not text:
+        return ""
+    mapped = _CHINESE_COLOR_NAMES.get(text)
+    if mapped:
+        return mapped
+    token = safe_visual_token(text, max_length=20)
+    if token and _ACCENT_COLOR_RE.match(token):
+        return token
+    return ""
+
+
+def sanitize_screen_title_style(raw_style: Any) -> dict[str, Any]:
+    """Whitelist-sanitize the screen banner style (patch op
+    ``setScreenTitleStyle``). Same philosophy as component styles: enums,
+    clamped numbers and a strict colour token — never raw CSS. Unknown or
+    invalid fields are dropped; an empty dict means "nothing usable".
+    """
+    if not isinstance(raw_style, Mapping):
+        # tolerate a bare colour string ("红色" / "#f00")
+        color = sanitize_screen_title_color(raw_style)
+        return {"color": color} if color else {}
+    style: dict[str, Any] = {}
+    color = sanitize_screen_title_color(raw_style.get("color"))
+    if color:
+        style["color"] = color
+    size_scale = _clamp_number(raw_style.get("sizeScale"), 0.5, 2.0)
+    if size_scale is not None:
+        style["sizeScale"] = round(float(size_scale), 2)
+    emphasis = str(raw_style.get("emphasis") or "").strip()
+    if emphasis in ALLOWED_EMPHASIS:
+        style["emphasis"] = emphasis
+    return style
+
+
 def sanitize_visual_spec(raw_visual_spec: Any) -> dict[str, Any]:
     """Whitelist-sanitize an AI-supplied ``visualSpec``.
 

@@ -40,6 +40,8 @@ export interface LegacyScreen {
   status?: string;
   /** Screen-level composition decision from the planner (T-018). */
   layoutPlan?: { pattern?: string };
+  /** Banner style from the setScreenTitleStyle patch op (T-021). */
+  titleStyle?: { color?: string; sizeScale?: number; emphasis?: string };
   theme?: Record<string, unknown>;
   components?: LegacyComponent[];
 }
@@ -200,6 +202,7 @@ export function adaptLegacyScreen(screen: LegacyScreen): DashboardSpec {
     status: (screen.status as DashboardSpec["status"]) ?? "draft",
     layout: { designWidth: 1920, designHeight: 1080 },
     layoutPlan: screen.layoutPlan,
+    titleStyle: screen.titleStyle,
     theme: (screen.theme as Record<string, unknown>) ?? {},
     components,
   };
