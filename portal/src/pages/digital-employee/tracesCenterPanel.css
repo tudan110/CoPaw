@@ -1029,3 +1029,76 @@ body.theme-dark .trace-stat {
 .tc2-span-table-wrap {
   box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04);
 }
+
+/* ═══ v3.2 细节修正(用户反馈)═══════════════════════════════ */
+
+/* "搜索到 N 条" 独立于表格容器之外,左对齐小字 */
+.tc2-table-meta {
+  padding: 2px 2px 8px;
+  font-size: 12.5px;
+  color: #475569;
+}
+.tc2-table-meta::before {
+  content: "";
+  display: inline-block;
+  width: 3px;
+  height: 12px;
+  border-radius: 2px;
+  background: #2563eb;
+  margin-right: 8px;
+  vertical-align: -1px;
+}
+
+/* 详情头:箭头 + 标题紧凑左对齐,按钮推右;去掉居中空隙 */
+.tc2-detail-page .traces-detail-header {
+  justify-content: flex-start;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  border-bottom: 1px solid #e2e8f0;
+  margin-bottom: 10px;
+}
+.tc2-detail-page .traces-detail-header > div {
+  flex: 1;
+  min-width: 0;
+}
+.tc2-detail-page .traces-detail-header h3 {
+  font-size: 15px;
+  font-weight: 700;
+  color: #0f172a;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tc2-detail-page .traces-detail-meta {
+  margin-top: 4px;
+}
+.tc2-detail-page .traces-detail-actions {
+  margin-left: auto;
+  flex: none;
+}
+.tc2-back {
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+  background: #f8fafc;
+  color: #475569;
+  font-size: 13px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-right: 0;
+  transition: all 0.15s ease;
+}
+.tc2-back:hover {
+  background: #eff6ff;
+  border-color: #bfdbfe;
+  color: #2563eb;
+}
+
+/* 事件卡:折叠态只保留标题行(不再吊一段截断正文) */
+.trace-event-preview { display: none; }

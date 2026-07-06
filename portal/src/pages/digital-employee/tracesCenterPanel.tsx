@@ -167,13 +167,6 @@ function EventCard({
     return "";
   }, [event, isError, isTool]);
 
-  // Whether collapsing actually hides anything. When the body fits inside
-  // the preview budget there is nothing to reveal, so we render it in full
-  // (no 3-line clamp) — otherwise expanding a short reply feels like a no-op.
-  const PREVIEW_CHARS = 200;
-  const previewTruncated =
-    previewBody.length > PREVIEW_CHARS || previewBody.split("\n").length > 3;
-
   const cardClass = `trace-event ${event.type}${
     isError ? " err" : event.outcome === "error" ? " err" : ""
   }`;
@@ -214,12 +207,6 @@ function EventCard({
             <summary>原始事件 JSON</summary>
             <pre>{jsonPretty(event)}</pre>
           </details>
-        </div>
-      ) : previewBody ? (
-        <div
-          className={`trace-event-preview${previewTruncated ? "" : " full"}`}
-        >
-          {previewTruncated ? truncate(previewBody, PREVIEW_CHARS) : previewBody}
         </div>
       ) : null}
     </div>
@@ -1070,10 +1057,11 @@ export function TracesCenterPanel() {
           {listError ? <div className="traces-error">{listError}</div> : null}
 
           {viewMode === "traces" ? (
+            <>
+            <div className="tc2-table-meta">
+              搜索到 {total} 条 Trace{listLoading ? " · 加载中…" : ""}
+            </div>
             <div className="tc2-span-table-wrap">
-              <div className="tc2-table-meta">
-                搜索到 {total} 条 Trace{listLoading ? " · 加载中…" : ""}
-              </div>
               <table className="tc2-span-table tc2-trace-table">
                 <thead>
                   <tr>
@@ -1108,11 +1096,11 @@ export function TracesCenterPanel() {
                           {s.session_id.length > 18 ? "…" : ""}
                         </span>
                       </td>
-                      <td className="tc2-td-clip" title={s.title}>
-                        {s.title || "—"}
+                      <td title={s.title}>
+                        <div className="tc2-td-clip">{s.title || "—"}</div>
                       </td>
-                      <td className="tc2-td-clip" title={s.preview}>
-                        {s.preview || "—"}
+                      <td title={s.preview}>
+                        <div className="tc2-td-clip">{s.preview || "—"}</div>
                       </td>
                       <td>
                         {s.last_event_at > s.first_event_at
@@ -1149,6 +1137,7 @@ export function TracesCenterPanel() {
                 </tbody>
               </table>
             </div>
+            </>
           ) : null}
         </>
       ) : null}
