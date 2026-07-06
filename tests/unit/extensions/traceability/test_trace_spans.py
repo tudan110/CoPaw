@@ -93,7 +93,61 @@ async def test_trends_and_spans_endpoints(store):
     assert all(s["name"] == "ctyun:glm-5.1" for s in llm_rows)
     assert {s["ttftMs"] for s in llm_rows} == {2500.0, None}
 
-    only_tools = client.get(
-        "/api/portal/traces/spans?span_type=tool_call"
-    ).json()
+    only_tools = client.get("/api/portal/traces/spans?span_type=tool_call").json()
     assert [s["name"] for s in only_tools["items"]] == ["query_alarm"]
+
+
+@pytest.mark.asyncio
+async def test_streaming_llm_call_survives_consumer_break(store, monkeypatch, tmp_path):
+    """agentscope consumers break on ``is_last`` then aclose() — the
+    llm_call span must still be emitted (regression: it used to sit
+    after ``async for`` and never ran for real chats)."""
+    from agentscope.message import TextBlock
+    from agentscope.model._model_response import ChatResponse
+
+    import qwenpaw.app.agent_context as agent_context
+    from qwenpaw.providers.retry_chat_model import RetryChatModel
+
+    class FakeUsage:
+        input_tokens = 1000
+        output_tokens = 50
+
+    class FakeInner:
+        model = "glm-5.1"
+        _provider_id = "ctyun"
+        stream = True
+
+        async def __call__(self, *args, **kwargs):
+            async def gen():
+                for i in range(3):
+                    last = i == 2
+                    response = ChatResponse(
+                        content=[TextBlock(type="text", text=f"c{i}")],
+                        is_last=last,
+                    )
+                    if last:
+                        response.usage = FakeUsage()
+                    yield response
+
+            return gen()
+
+    agent_context.set_current_session_id("stream-break")
+    agent_context.set_current_agent_id("gateway")
+    model = RetryChatModel(FakeInner())
+
+    gen = await model(stream=True)
+    async for chunk in gen:
+        if getattr(chunk, "is_last", False):
+            break  # the real-world consumption pattern
+    await gen.aclose()
+    import asyncio as _asyncio
+
+    await _asyncio.sleep(0.3)  # let the fire-and-forget task land
+
+    detail = store.read_session("stream-break")
+    llm = [e for e in detail.get("events", []) if e.get("type") == "llm_call"]
+    assert len(llm) == 1
+    assert llm[0]["status"] == "ok"
+    assert llm[0]["prompt_tokens"] == 1000
+    assert llm[0]["completion_tokens"] == 50
+    assert llm[0]["ttft_ms"] is not None

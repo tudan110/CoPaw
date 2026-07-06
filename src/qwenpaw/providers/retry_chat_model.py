@@ -148,9 +148,17 @@ def _trace_llm_call(
             channel=str(get_current_channel() or "") or None,
             index_extra={"add_tokens": total_tokens} if total_tokens else None,
         )
-        asyncio.get_running_loop().create_task(coro)
+        # Keep a strong reference: bare create_task results may be
+        # garbage-collected before they run (asyncio docs warn about this),
+        # which would silently drop spans.
+        task = asyncio.get_running_loop().create_task(coro)
+        _TRACE_TASKS.add(task)
+        task.add_done_callback(_TRACE_TASKS.discard)
     except Exception:  # pragma: no cover - tracing must never break calls
         pass
+
+
+_TRACE_TASKS: set = set()
 
 
 def _sm_record_first_token(latency_s: float, model_key: str = "") -> None:
@@ -487,6 +495,7 @@ class RetryChatModel(ChatModelBase):
         first_chunk = True
         ttft_s: float | None = None
         last_chunk: Any = None
+        error: BaseException | None = None
         try:
             async for chunk in stream:
                 if first_chunk:
@@ -501,21 +510,35 @@ class RetryChatModel(ChatModelBase):
                     _sm_record_first_token(ttft_s, self.model_key)
                 last_chunk = chunk
                 yield chunk
-            # Stream drained normally: emit the llm_call span. Usage rides
-            # on the final chunk (cumulative) when the provider reports it.
-            _trace_llm_call(
-                self.model_key,
-                "ok",
-                time.monotonic() - acquired_at,
-                usage=getattr(last_chunk, "usage", None),
-                ttft_s=ttft_s,
-            )
+        except BaseException as exc:  # noqa: BLE001 - re-raised below
+            error = exc
+            raise
         finally:
             await stream.aclose()
             if first_chunk:
                 # Stream failed before producing any chunk;
                 # slot not yet released.
                 limiter.release()
+            else:
+                # The llm_call span MUST be emitted here, not after the
+                # loop: agentscope consumers break on ``is_last`` and then
+                # aclose(), which raises GeneratorExit inside this
+                # generator — code after ``async for`` never runs for real
+                # chats. Once at least one chunk was delivered the upstream
+                # call itself succeeded, so consumer-initiated shutdown
+                # (GeneratorExit / cancellation) still records "ok"; only a
+                # genuine mid-stream failure records "error". Usage rides
+                # on the final chunk seen (cumulative when reported).
+                consumer_close = error is None or isinstance(
+                    error, (GeneratorExit, asyncio.CancelledError)
+                )
+                _trace_llm_call(
+                    self.model_key,
+                    "ok" if consumer_close else "error",
+                    time.monotonic() - acquired_at,
+                    usage=getattr(last_chunk, "usage", None),
+                    ttft_s=ttft_s,
+                )
 
     async def generate_structured_output(
         self,
