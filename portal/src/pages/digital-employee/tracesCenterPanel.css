@@ -1102,3 +1102,19 @@ body.theme-dark .trace-stat {
 
 /* 事件卡:折叠态只保留标题行(不再吊一段截断正文) */
 .trace-event-preview { display: none; }
+
+/* ═══ v3.3 输入/输出列改单行省略(两行 clamp 会腰斩第三行)═════ */
+.tc2-trace-table .tc2-td-clip {
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  -webkit-line-clamp: unset;
+  -webkit-box-orient: unset;
+  line-height: 1.6;
+}
+.tc2-trace-table td {
+  vertical-align: middle;
+  padding-top: 10px;
+  padding-bottom: 10px;
+}
