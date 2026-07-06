@@ -754,3 +754,51 @@ class TestAuthoredCapabilityRouting:
         assert normalize_component_type("服务清单") == "table"
         assert normalize_component_type("告警明细") == "table"
         assert normalize_component_type("全息投影") == ""
+
+
+class TestAuthoredClauseCoverage:
+    def _authored(self, title: str, description: str = "") -> object:
+        from qwenpaw.extensions.ai_big_screen.schemas import PlanComponent
+
+        return PlanComponent(
+            id="c-authored",
+            title=title,
+            description=description,
+            capability_id="ai-authored-content",
+            type="table",
+        )
+
+    def test_authored_component_covers_its_clause(self) -> None:
+        # "同时写一个99乘法表" used to gap right next to a perfectly good
+        # 九九乘法表 authored component — the completeness fallback only
+        # knew capability keywords, not the authored channel.
+        from qwenpaw.extensions.ai_big_screen.intent import (
+            _fill_uncovered_clauses,
+        )
+
+        out = _fill_uncovered_clauses(
+            [self._authored("九九乘法表")],
+            prompt="查询待办工单、告警，同时写一个99乘法表",
+        )
+        gap_titles = [
+            c.title for c in out if c.capability_id == "capability-gap"
+        ]
+        assert gap_titles == []
+
+    def test_truly_uncovered_clause_still_gaps(self) -> None:
+        from qwenpaw.extensions.ai_big_screen.intent import (
+            _fill_uncovered_clauses,
+        )
+
+        out = _fill_uncovered_clauses(
+            [self._authored("九九乘法表")],
+            prompt="写一个99乘法表，接入库存管理系统的周转率",
+        )
+        assert any(c.capability_id == "capability-gap" for c in out)
+
+    def test_shared_bigram_semantics(self) -> None:
+        from qwenpaw.extensions.ai_big_screen.intent import _shared_bigram
+
+        assert _shared_bigram("99乘法表", "九九乘法表")
+        assert not _shared_bigram("库存周转率", "九九乘法表")
+        assert not _shared_bigram("表", "乘法表")  # 单字不构成覆盖
