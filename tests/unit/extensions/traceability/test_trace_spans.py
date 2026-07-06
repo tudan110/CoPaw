@@ -135,13 +135,23 @@ async def test_streaming_llm_call_survives_consumer_break(store, monkeypatch, tm
     agent_context.set_current_agent_id("gateway")
     model = RetryChatModel(FakeInner())
 
+    # __call__ runs in the agent task (contextvars set)…
     gen = await model(stream=True)
-    async for chunk in gen:
-        if getattr(chunk, "is_last", False):
-            break  # the real-world consumption pattern
-    await gen.aclose()
+
+    # …but consumption + the generator's finally run in a response-
+    # streaming task where the contextvars are UNSET (Starlette
+    # behaviour). The span must survive via the __call__ snapshot.
     import asyncio as _asyncio
 
+    async def _consume_without_context():
+        agent_context.set_current_session_id("")
+        agent_context.set_current_agent_id("")
+        async for chunk in gen:
+            if getattr(chunk, "is_last", False):
+                break  # the real-world consumption pattern
+        await gen.aclose()
+
+    await _asyncio.get_running_loop().create_task(_consume_without_context())
     await _asyncio.sleep(0.3)  # let the fire-and-forget task land
 
     detail = store.read_session("stream-break")

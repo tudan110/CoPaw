@@ -95,20 +95,16 @@ def _sm_count_retry() -> None:
         pass
 
 
-def _trace_llm_call(
-    model_key: str,
-    status: str,
-    duration_s: float,
-    usage: Any = None,
-    ttft_s: float | None = None,
-) -> None:
-    """Fire-and-forget ``llm_call`` trace event for the current session.
+def _capture_trace_ctx() -> dict[str, str] | None:
+    """Snapshot the agent-context contextvars for later span emission.
 
-    This is what turns the traceability center into a span view: every
-    terminal LLM attempt becomes one span row (model / duration / tokens
-    / TTFT). Background pipelines without a session context (big screen,
-    cron dreams) are skipped on purpose — they have no trace to join.
-    Strictly fail-open.
+    MUST be called where the caller's context is still alive (i.e. in
+    ``__call__``, which runs in the agent's reply task). Streaming spans
+    are emitted from the generator's ``finally``, which executes in the
+    RESPONSE-STREAMING task where these contextvars are unset — reading
+    them there silently returns "" and the span is dropped (the exact
+    bug that made real chats record zero LLM spans while the
+    contextvar-free metrics tap kept counting).
     """
     try:
         from ..app.agent_context import (
@@ -120,6 +116,35 @@ def _trace_llm_call(
 
         session_id = str(get_current_session_id() or "")
         if not session_id:
+            return None  # background pipeline (big screen, cron) — no trace
+        return {
+            "session_id": session_id,
+            "agent_id": str(get_current_agent_id() or ""),
+            "user_id": str(get_current_user_id() or ""),
+            "channel": str(get_current_channel() or ""),
+        }
+    except Exception:  # pragma: no cover
+        return None
+
+
+def _trace_llm_call(
+    model_key: str,
+    status: str,
+    duration_s: float,
+    usage: Any = None,
+    ttft_s: float | None = None,
+    ctx: dict[str, str] | None = None,
+) -> None:
+    """Fire-and-forget ``llm_call`` trace event for one LLM attempt.
+
+    ``ctx`` is the snapshot from :func:`_capture_trace_ctx`; when omitted
+    (non-streaming callers still in the original task) it is captured on
+    the spot. Strictly fail-open.
+    """
+    try:
+        if ctx is None:
+            ctx = _capture_trace_ctx()
+        if not ctx:
             return
         payload: dict[str, Any] = {
             "model": model_key,
@@ -140,12 +165,12 @@ def _trace_llm_call(
         from qwenpaw.extensions.traceability import trace_store
 
         coro = trace_store.record_event(
-            session_id,
+            ctx["session_id"],
             "llm_call",
             payload,
-            agent_id=str(get_current_agent_id() or "") or None,
-            user_id=str(get_current_user_id() or "") or None,
-            channel=str(get_current_channel() or "") or None,
+            agent_id=ctx.get("agent_id") or None,
+            user_id=ctx.get("user_id") or None,
+            channel=ctx.get("channel") or None,
             index_extra={"add_tokens": total_tokens} if total_tokens else None,
         )
         # Keep a strong reference: bare create_task results may be
@@ -473,6 +498,7 @@ class RetryChatModel(ChatModelBase):
         stream: AsyncGenerator[ChatResponse, None],
         limiter: LLMRateLimiter,
         acquired_at: float,
+        trace_ctx: dict[str, str] | None = None,
     ) -> AsyncGenerator[ChatResponse, None]:
         """Yield all chunks from *stream*, managing the semaphore slot
         lifecycle.
@@ -532,12 +558,16 @@ class RetryChatModel(ChatModelBase):
                 consumer_close = error is None or isinstance(
                     error, (GeneratorExit, asyncio.CancelledError)
                 )
+                # trace_ctx was snapshotted in __call__ — this finally runs
+                # in the response-streaming task where the agent-context
+                # contextvars are UNSET; reading them here loses the span.
                 _trace_llm_call(
                     self.model_key,
                     "ok" if consumer_close else "error",
                     time.monotonic() - acquired_at,
                     usage=getattr(last_chunk, "usage", None),
                     ttft_s=ttft_s,
+                    ctx=trace_ctx,
                 )
 
     async def generate_structured_output(
@@ -572,6 +602,10 @@ class RetryChatModel(ChatModelBase):
         retries = self._retry_config.max_retries if self._retry_config.enabled else 0
         attempts = retries + 1
         last_exc: Exception | None = None
+        # Snapshot the agent-context NOW: streaming spans are emitted from
+        # a different task where these contextvars are unset (see
+        # _capture_trace_ctx docstring for the full story).
+        trace_ctx = _capture_trace_ctx()
 
         for attempt in range(1, attempts + 1):
             # Acquire a semaphore slot, with a timeout to prevent
@@ -637,6 +671,7 @@ class RetryChatModel(ChatModelBase):
                         attempts,
                         limiter,
                         acquired_at,
+                        trace_ctx=trace_ctx,
                     )
 
                 # Non-streaming success: clear any stale rate-limit pause so
@@ -649,6 +684,7 @@ class RetryChatModel(ChatModelBase):
                     "ok",
                     time.monotonic() - attempt_started,
                     usage=getattr(result, "usage", None),
+                    ctx=trace_ctx,
                 )
                 return result
 
@@ -663,6 +699,7 @@ class RetryChatModel(ChatModelBase):
                     key,
                     "429" if _is_rate_limit(exc) else "error",
                     time.monotonic() - attempt_started,
+                    ctx=trace_ctx,
                 )
                 await self._handle_rate_limit_exc(exc, limiter)
 
@@ -697,6 +734,7 @@ class RetryChatModel(ChatModelBase):
         max_attempts: int,
         limiter: LLMRateLimiter,
         acquired_at: float = 0.0,
+        trace_ctx: dict[str, str] | None = None,
     ) -> AsyncGenerator[ChatResponse, None]:
         """Yield chunks from *stream*; on transient failure, retry the full
         request and yield from the new stream instead.
@@ -718,6 +756,7 @@ class RetryChatModel(ChatModelBase):
                         pending_stream,
                         limiter,
                         pending_acquired_at,
+                        trace_ctx=trace_ctx,
                     ):
                         yield chunk
                     return  # stream completed without error

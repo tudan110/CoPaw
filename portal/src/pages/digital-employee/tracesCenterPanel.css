@@ -932,3 +932,27 @@ body.theme-dark .trace-stat {
   .tc2-ana-grid { grid-template-columns: 1fr; }
   .tc2-timeline { grid-template-columns: 1fr; }
 }
+
+/* toolbar must stay one horizontal row on the right */
+.tc2-toolbar {
+  flex-wrap: nowrap;
+  white-space: nowrap;
+}
+.tc2-toolbar .traces-checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin: 0;
+  font-size: 12px;
+  color: #64748b;
+}
+.tc2-toolbar .traces-refresh {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+}
+@media (max-width: 1100px) {
+  .tc2-toolbar { margin-left: 0; width: 100%; }
+  .tc2-toolbar input[type="text"] { flex: 1; }
+}

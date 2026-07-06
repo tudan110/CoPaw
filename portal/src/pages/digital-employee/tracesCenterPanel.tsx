@@ -120,23 +120,6 @@ function outcomeLabel(outcome: string | undefined) {
   }
 }
 
-function StatTile({
-  label,
-  value,
-  tone,
-}: {
-  label: string;
-  value: number;
-  tone?: "default" | "warn" | "err";
-}) {
-  return (
-    <div className={`trace-stat ${tone || "default"}`}>
-      <div className="trace-stat-value">{value.toLocaleString()}</div>
-      <div className="trace-stat-label">{label}</div>
-    </div>
-  );
-}
-
 function EventCard({
   event,
   index,
@@ -989,24 +972,6 @@ export function TracesCenterPanel() {
 
   return (
     <div className="traces-center">
-      <header className="traces-header">
-        <div className="traces-header-titles">
-          <h2>追溯中心</h2>
-          <p>每一次会话、每一次工具调用、每一次推理与回复，全部留痕可溯源。</p>
-        </div>
-        <div className="traces-header-stats">
-          <StatTile label="会话总数" value={stats?.session_count ?? 0} />
-          <StatTile label="24h 会话" value={stats?.session_count_24h ?? 0} />
-          <StatTile label="事件总数" value={stats?.event_count ?? 0} />
-          <StatTile label="工具调用" value={stats?.tool_call_count ?? 0} />
-          <StatTile
-            label="异常计数"
-            value={stats?.error_count ?? 0}
-            tone={(stats?.error_count ?? 0) > 0 ? "err" : "default"}
-          />
-        </div>
-      </header>
-
       {!selectedId ? (
         <>
           <div className="tc2-trends">
@@ -1062,7 +1027,129 @@ export function TracesCenterPanel() {
                 ))}
               </div>
             ) : null}
+            <div className="tc2-toolbar">
+              <input
+                type="text"
+                placeholder="按会话 / 用户 / 标题搜索…"
+                value={filter.keyword}
+                onChange={(e) =>
+                  setFilter((f) => ({ ...f, keyword: e.target.value }))
+                }
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") handleManualRefresh();
+                }}
+              />
+              <label className="traces-checkbox">
+                <input
+                  type="checkbox"
+                  checked={filter.onlyErrors}
+                  onChange={(e) =>
+                    setFilter((f) => ({ ...f, onlyErrors: e.target.checked }))
+                  }
+                />
+                仅看异常
+              </label>
+              <label className="traces-checkbox">
+                <input
+                  type="checkbox"
+                  checked={autoRefresh}
+                  onChange={(e) => setAutoRefresh(e.target.checked)}
+                />
+                自动刷新
+              </label>
+              <button
+                type="button"
+                onClick={handleManualRefresh}
+                className="traces-refresh"
+              >
+                <i className="fas fa-rotate" /> 刷新
+              </button>
+            </div>
           </div>
+
+          {listError ? <div className="traces-error">{listError}</div> : null}
+
+          {viewMode === "traces" ? (
+            <div className="tc2-span-table-wrap">
+              <div className="tc2-table-meta">
+                搜索到 {total} 条 Trace{listLoading ? " · 加载中…" : ""}
+              </div>
+              <table className="tc2-span-table">
+                <thead>
+                  <tr>
+                    <th>Trace ID</th>
+                    <th>输入</th>
+                    <th>输出</th>
+                    <th>耗时</th>
+                    <th>Total tokens</th>
+                    <th>LLM 调用</th>
+                    <th>工具调用</th>
+                    <th>入口 Agent</th>
+                    <th>渠道</th>
+                    <th>开始时间</th>
+                    <th>操作</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {sessions.map((s) => (
+                    <tr
+                      key={s.session_id}
+                      className={s.status === "error" ? "err" : ""}
+                      onClick={() => setSelectedId(s.session_id)}
+                    >
+                      <td>
+                        <span
+                          className={`tc2-status-bar ${
+                            s.status === "error" ? "err" : "ok"
+                          }`}
+                        />
+                        <span className="tc2-trace-id" title={s.session_id}>
+                          {s.session_id.slice(0, 18)}
+                          {s.session_id.length > 18 ? "…" : ""}
+                        </span>
+                      </td>
+                      <td className="tc2-td-clip" title={s.title}>
+                        {s.title || "—"}
+                      </td>
+                      <td className="tc2-td-clip" title={s.preview}>
+                        {s.preview || "—"}
+                      </td>
+                      <td>
+                        {s.last_event_at > s.first_event_at
+                          ? `${(s.last_event_at - s.first_event_at).toFixed(2)}s`
+                          : "—"}
+                      </td>
+                      <td>{fmtTokens(s.total_tokens)}</td>
+                      <td>{s.llm_call_count ?? 0}</td>
+                      <td>{s.tool_call_count}</td>
+                      <td>{s.agent_id || "—"}</td>
+                      <td>{s.channel || "—"}</td>
+                      <td>{formatTs(s.first_event_at)}</td>
+                      <td>
+                        <button
+                          type="button"
+                          className="tc2-link"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedId(s.session_id);
+                          }}
+                        >
+                          详情
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                  {!sessions.length && !listLoading ? (
+                    <tr>
+                      <td colSpan={11} className="tc2-span-empty">
+                        暂无追溯记录——完成一次对话后会自动出现在这里。
+                      </td>
+                    </tr>
+                  ) : null}
+                </tbody>
+              </table>
+            </div>
+          ) : null}
         </>
       ) : null}
 
@@ -1123,107 +1210,11 @@ export function TracesCenterPanel() {
         </div>
       ) : null}
 
-      <div
-        className="traces-body"
-        style={!selectedId && viewMode === "spans" ? { display: "none" } : undefined}
-      >
-        <aside className="traces-sidebar">
-          <div className="traces-filter">
-            <input
-              type="text"
-              placeholder="按会话/用户/标题搜索…"
-              value={filter.keyword}
-              onChange={(e) => setFilter((f) => ({ ...f, keyword: e.target.value }))}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") handleManualRefresh();
-              }}
-            />
-            <label className="traces-checkbox">
-              <input
-                type="checkbox"
-                checked={filter.onlyErrors}
-                onChange={(e) =>
-                  setFilter((f) => ({ ...f, onlyErrors: e.target.checked }))
-                }
-              />
-              仅看异常
-            </label>
-            <label className="traces-checkbox">
-              <input
-                type="checkbox"
-                checked={autoRefresh}
-                onChange={(e) => setAutoRefresh(e.target.checked)}
-              />
-              自动刷新 (15s)
-            </label>
-            <button type="button" onClick={handleManualRefresh} className="traces-refresh">
-              <i className="fas fa-rotate" /> 刷新
-            </button>
-          </div>
-          <div className="traces-list-meta">
-            共 {total} 个会话{listLoading ? " · 加载中…" : ""}
-          </div>
-          {listError ? <div className="traces-error">{listError}</div> : null}
-          <div className="traces-list">
-            {sessions.length === 0 && !listLoading ? (
-              <div className="traces-empty">
-                <i className="fas fa-clipboard-list" />
-                <p>暂无追溯记录</p>
-                <p className="hint">完成一次对话或工具调用后会自动出现在这里。</p>
-              </div>
-            ) : null}
-            {sessions.map((s) => (
-              <button
-                key={s.session_id}
-                type="button"
-                className={`traces-list-item${
-                  s.session_id === selectedId ? " active" : ""
-                }${s.status === "error" ? " err" : ""}`}
-                onClick={() => setSelectedId(s.session_id)}
-              >
-                <div className="traces-list-title">
-                  {s.title || s.session_id.slice(0, 16) + "…"}
-                </div>
-                <div className="traces-list-preview">{s.preview || "—"}</div>
-                <div className="traces-list-row">
-                  <span className="traces-list-id" title={s.session_id}>
-                    <i className="fas fa-hashtag" /> {s.session_id.slice(0, 10)}
-                  </span>
-                  <span className="traces-list-channel">
-                    <i className="fas fa-plug" /> {s.channel || "—"}
-                  </span>
-                </div>
-                <div className="traces-list-row meta">
-                  <span title="LLM 调用数">
-                    <i className="fas fa-microchip" /> {s.llm_call_count ?? 0}
-                  </span>
-                  <span title="工具调用数">
-                    <i className="fas fa-screwdriver-wrench" /> {s.tool_call_count}
-                  </span>
-                  {s.total_tokens ? (
-                    <span title="Total tokens">
-                      <i className="fas fa-coins" /> {fmtTokens(s.total_tokens)}
-                    </span>
-                  ) : null}
-                  {s.error_count > 0 ? (
-                    <span title="异常计数" className="err">
-                      <i className="fas fa-triangle-exclamation" /> {s.error_count}
-                    </span>
-                  ) : null}
-                  <span className="traces-list-time">{formatRelative(s.last_event_at)}</span>
-                </div>
-              </button>
-            ))}
-          </div>
-        </aside>
+      {selectedId ? (
+        <div className="tc2-detail-page">
 
         <main className="traces-detail">
-          {!selectedId ? (
-            <div className="traces-detail-empty">
-              <i className="fas fa-arrow-left" />
-              <p>从左侧选择一个会话查看完整时间线</p>
-            </div>
-          ) : detailLoading ? (
+          {detailLoading ? (
             <div className="traces-detail-empty">
               <i className="fas fa-spinner fa-spin" />
               <p>加载时间线…</p>
@@ -1236,6 +1227,14 @@ export function TracesCenterPanel() {
           ) : detail ? (
             <>
               <div className="traces-detail-header">
+                <button
+                  type="button"
+                  className="tc2-back"
+                  onClick={() => setSelectedId(null)}
+                  title="返回 Trace 列表"
+                >
+                  <i className="fas fa-arrow-left" />
+                </button>
                 <div>
                   <h3>{selectedSummary?.title || selectedId}</h3>
                   <div className="traces-detail-meta">
@@ -1341,7 +1340,8 @@ export function TracesCenterPanel() {
             </>
           ) : null}
         </main>
-      </div>
+        </div>
+      ) : null}
     </div>
   );
 }
