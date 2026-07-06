@@ -5,10 +5,10 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, Any, Dict, List, Literal, Type
-from pydantic import BaseModel, Field
-from pydantic import ConfigDict
 
 from agentscope.model import ChatModelBase
+from pydantic import BaseModel, ConfigDict, Field
+
 from qwenpaw.exceptions import ProviderError
 
 if TYPE_CHECKING:
@@ -153,6 +153,14 @@ class ProviderInfo(BaseModel):
     api_key_prefix: str = Field(
         default="",
         description="Expected prefix for the API key (e.g., 'sk-')",
+    )
+    api_key_prefixes: List[str] = Field(
+        default_factory=list,
+        description=(
+            "List of accepted API key prefixes. "
+            "When non-empty, validation accepts any prefix in this list; "
+            "otherwise it falls back to api_key_prefix."
+        ),
     )
     is_local: bool = Field(
         default=False,
@@ -326,6 +334,13 @@ class Provider(ProviderInfo, ABC):
             self.chat_model = str(config["chat_model"])
         if "api_key_prefix" in config and config["api_key_prefix"] is not None:
             self.api_key_prefix = str(config["api_key_prefix"])
+        if (
+            "api_key_prefixes" in config
+            and config["api_key_prefixes"] is not None
+        ):
+            self.api_key_prefixes = [
+                str(p) for p in config["api_key_prefixes"] if p is not None
+            ]
         if (
             "generate_kwargs" in config
             and config["generate_kwargs"] is not None
@@ -550,11 +565,23 @@ class Provider(ProviderInfo, ABC):
 
     async def get_info(self, mock_secret: bool = True) -> ProviderInfo:
         """Return a ProviderInfo instance with the provider's details."""
-        api_key = (
-            self.api_key_prefix + "*" * 6
-            if mock_secret and self.api_key
-            else self.api_key
-        )
+        if mock_secret and self.api_key:
+            # Determine which prefix to show in the masked key.
+            # If api_key_prefixes is set, pick the one matching the
+            # actual key; otherwise fall back to api_key_prefix.
+            prefix_for_mask = self.api_key_prefix
+            if self.api_key_prefixes:
+                prefix_for_mask = next(
+                    (
+                        p
+                        for p in self.api_key_prefixes
+                        if self.api_key.startswith(p)
+                    ),
+                    self.api_key_prefix,
+                )
+            api_key = prefix_for_mask + "*" * 6
+        else:
+            api_key = self.api_key
         # Serialize models/extra_models to plain dicts so that
         # ProviderInfo constructs fresh ModelInfo instances using
         # the class in its own module scope.  This avoids pydantic
@@ -570,6 +597,7 @@ class Provider(ProviderInfo, ABC):
             models=[m.model_dump() for m in self.models],
             extra_models=[m.model_dump() for m in self.extra_models],
             api_key_prefix=self.api_key_prefix,
+            api_key_prefixes=self.api_key_prefixes,
             is_local=self.is_local,
             is_custom=self.is_custom,
             support_model_discovery=self.support_model_discovery,

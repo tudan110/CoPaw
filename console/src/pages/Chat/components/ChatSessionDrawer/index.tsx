@@ -28,7 +28,7 @@ import type { ContextMenuItem } from "../../../../components/ContextMenu";
 import { useIsMobile } from "../../../../hooks/useIsMobile";
 import { useCodingMode } from "../../../../stores/codingModeStore";
 import { useCreateNewSession } from "../../hooks/useCreateNewSession";
-import ChatSessionItem from "../ChatSessionItem";
+import SessionItem from "../../../../components/SessionItem";
 import { getChannelLabel } from "../../../Control/Channels/components";
 import { chatApi } from "../../../../api/modules/chat";
 import sessionApi from "../../sessionApi";
@@ -123,7 +123,8 @@ const VirtualRow = React.memo(function VirtualRow({
 
   return (
     <div style={style}>
-      <ChatSessionItem
+      <SessionItem
+        variant="drawer"
         sessionId={session.id!}
         name={session.name || "New Chat"}
         time={formatCreatedAtCached(
@@ -351,21 +352,10 @@ const ChatSessionDrawer: React.FC<ChatSessionDrawerProps> = (props) => {
       try {
         const list = await sessionApi.getSessionList();
         if (!isCancelled) {
-          // Shallow compare to avoid unnecessary state updates
-          const changed =
-            list.length !== lastPolledSessionsRef.current.length ||
-            list.some((s, i) => {
-              const prev = lastPolledSessionsRef.current[i];
-              return (
-                !prev ||
-                s.id !== prev.id ||
-                (s as ExtendedChatSession).updatedAt !==
-                  (prev as ExtendedChatSession).updatedAt ||
-                (s as ExtendedChatSession).generating !==
-                  (prev as ExtendedChatSession).generating
-              );
-            });
-          if (changed) {
+          // sessionApi already returns the previous array reference when the
+          // list hasn't changed, so a reference check is enough to skip no-op
+          // state updates and avoid a full re-render cascade.
+          if (list !== lastPolledSessionsRef.current) {
             lastPolledSessionsRef.current = list;
             setSessions(list);
           }
@@ -387,21 +377,10 @@ const ChatSessionDrawer: React.FC<ChatSessionDrawerProps> = (props) => {
       try {
         const list = await sessionApi.getSessionList();
         if (!isCancelled) {
-          // Shallow compare to avoid unnecessary state updates
-          const changed =
-            list.length !== lastPolledSessionsRef.current.length ||
-            list.some((s, i) => {
-              const prev = lastPolledSessionsRef.current[i];
-              return (
-                !prev ||
-                s.id !== prev.id ||
-                (s as ExtendedChatSession).updatedAt !==
-                  (prev as ExtendedChatSession).updatedAt ||
-                (s as ExtendedChatSession).generating !==
-                  (prev as ExtendedChatSession).generating
-              );
-            });
-          if (changed) {
+          // sessionApi already returns the previous array reference when the
+          // list hasn't changed, so a reference check is enough to skip no-op
+          // state updates and avoid a full re-render cascade.
+          if (list !== lastPolledSessionsRef.current) {
             lastPolledSessionsRef.current = list;
             setSessions(list);
           }
