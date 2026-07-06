@@ -1247,6 +1247,40 @@ def _dedupe_simple_query_components(
     return deduped
 
 
+def _shared_bigram(a: str, b: str) -> bool:
+    """True when ``a`` and ``b`` share a contiguous 2-char content segment."""
+    a_clean = re.sub(r"[\s\d，。、；：,.;:!？?！~～]", "", a)
+    b_clean = re.sub(r"[\s\d，。、；：,.;:!？?！~～]", "", b)
+    if len(a_clean) < 2 or len(b_clean) < 2:
+        return False
+    bigrams = {a_clean[i : i + 2] for i in range(len(a_clean) - 1)}
+    return any(b_clean[i : i + 2] in bigrams for i in range(len(b_clean) - 1))
+
+
+def _clause_covered_by_authored(
+    clause: str,
+    components: list[PlanComponent],
+) -> bool:
+    """A clause the planner routed to the authored-content channel IS
+    covered — coverage there has no capability keyword to match, so the
+    clause-completeness fallback would misfire an honest-gap card next to
+    a perfectly good authored component ("同时写一个99乘法表" gapping
+    while 九九乘法表 renders right above it). Text-overlap check is
+    deliberately scoped to authored components only, so the T-007
+    protection for ops/data clauses stays intact.
+    """
+    stripped = _CLAUSE_NOISE_RE.sub("", str(clause or ""))
+    if not stripped.strip():
+        return False
+    for component in components:
+        if component.capability_id != "ai-authored-content":
+            continue
+        component_text = f"{component.title} {component.description}"
+        if _shared_bigram(stripped, component_text):
+            return True
+    return False
+
+
 def _fill_uncovered_clauses(
     components: list[PlanComponent],
     *,
@@ -1279,6 +1313,8 @@ def _fill_uncovered_clauses(
         if extract_semantic_capability_ids(clause):
             continue
         if not _clause_has_substance(clause):
+            continue
+        if _clause_covered_by_authored(clause, out):
             continue
         if _text_is_web_live(clause):
             if "web-live-data" in present:
