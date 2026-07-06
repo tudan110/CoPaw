@@ -23,6 +23,7 @@ from qwenpaw.extensions.ai_big_screen.capabilities.fields import (
 from qwenpaw.extensions.ai_big_screen.intent import (
     clamp_screen_title,
     derive_screen_title,
+    prompt_declines_title,
     prompt_is_simple_data_query,
 )
 from qwenpaw.extensions.ai_big_screen.schemas import (
@@ -535,11 +536,17 @@ def assemble_screen(
     # dedicated field setScreenTitle edits and the renderer prefers over name.
     # Clamped identically to the patch op; falls back through name → heuristic
     # so a hand-built plan without a screenTitle still renders a real banner.
-    screen_title = (
-        clamp_screen_title(plan.screen_title)
-        or clamp_screen_title(plan.name)
-        or derive_screen_title(prompt)
-    )
+    if prompt_declines_title(prompt):
+        # An explicit "不要标题" wins over every fallback — auto-titles are
+        # a convenience, not a mandate (the banner stays user-controllable
+        # at generation time, not just via a follow-up patch).
+        screen_title = clamp_screen_title(plan.screen_title)
+    else:
+        screen_title = (
+            clamp_screen_title(plan.screen_title)
+            or clamp_screen_title(plan.name)
+            or derive_screen_title(prompt)
+        )
     layout_plan = (
         {"pattern": plan.layout_pattern} if plan.layout_pattern else {}
     )

@@ -81,6 +81,13 @@ const DEFAULT_POS = { x: 0, y: 0, w: 480, h: 280 };
  *  banner when the spec carries a name — auto components flow below it. */
 const TITLE_BAND_HEIGHT = 96;
 
+/** Sentinel selection id for the screen title banner — the banner is a
+ *  first-class selectable element in the authoring view (same interaction
+ *  as components), but it is not a component; the backend patch layer
+ *  recognizes this id and scopes the edit to title operations. Mirrors
+ *  patch.py's TITLE_SELECTION_ID. */
+export const TITLE_SELECTION_ID = "__screen-title__";
+
 /**
  * Auto-layout for un-pinned components, reserving the vertical bands the
  * pinned components (and the title banner) occupy. The band is the largest
@@ -259,8 +266,26 @@ export function BigScreenRenderer({
               left: 0,
               width: "100%",
               height: TITLE_BAND_HEIGHT,
+              // The banner is a selectable element in the authoring view —
+              // same interaction contract as components (click → select →
+              // natural-language edit). The CSS default is pointer-events:
+              // none so published/view screens stay click-through.
+              pointerEvents: interactive ? "auto" : undefined,
+              cursor: interactive ? "pointer" : undefined,
+              outline: selectedSet.has(TITLE_SELECTION_ID)
+                ? "2px solid #22d3ee"
+                : undefined,
+              outlineOffset: -2,
               ...screenTitleCss(s.titleStyle),
             }}
+            onClick={
+              interactive
+                ? (e) =>
+                    onSelectComponent?.(TITLE_SELECTION_ID, {
+                      additive: e.shiftKey || e.metaKey || e.ctrlKey,
+                    })
+                : undefined
+            }
           >
             {screenTitle}
           </div>
