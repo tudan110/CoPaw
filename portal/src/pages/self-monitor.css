@@ -100,8 +100,10 @@
   letter-spacing: 0.5px;
 }
 .sm-cmd-title em {
+  /* dark-mockup accent leftover — on the light theme a two-tone title
+     reads as broken, keep it one colour */
   font-style: normal;
-  color: var(--sm-cyan);
+  color: inherit;
 }
 .sm-cmd-sub {
   font-size: 10px;
