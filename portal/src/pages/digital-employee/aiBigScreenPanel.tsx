@@ -14,7 +14,10 @@ import {
   renameAiBigScreen,
   saveAiBigScreen,
 } from "../../api/aiBigScreen";
-import { BigScreenRenderer } from "../../components/big-screen/BigScreenRenderer.tsx";
+import {
+  BigScreenRenderer,
+  TITLE_SELECTION_ID,
+} from "../../components/big-screen/BigScreenRenderer.tsx";
 import { adaptLegacyScreen } from "../../components/big-screen/adaptLegacyScreen.ts";
 import { summarizePatchDiff } from "../../components/big-screen/patchDiff.ts";
 import {
@@ -365,11 +368,12 @@ export function AiBigScreenPanel() {
         renderedLayout,
         selectionContext: {
           selectedTitles: selectedComponentIds
-            .map(
-              (componentId) =>
-                saved.components?.find(
-                  (component) => component.id === componentId,
-                )?.title,
+            .map((componentId) =>
+              componentId === TITLE_SELECTION_ID
+                ? "大屏主标题"
+                : saved.components?.find(
+                    (component) => component.id === componentId,
+                  )?.title,
             )
             .filter(Boolean),
         },
@@ -437,11 +441,12 @@ export function AiBigScreenPanel() {
         renderedLayout,
         selectionContext: {
           selectedTitles: selectedComponentIds
-            .map(
-              (componentId) =>
-                saved.components?.find(
-                  (component) => component.id === componentId,
-                )?.title,
+            .map((componentId) =>
+              componentId === TITLE_SELECTION_ID
+                ? "大屏主标题"
+                : saved.components?.find(
+                    (component) => component.id === componentId,
+                  )?.title,
             )
             .filter(Boolean),
         },

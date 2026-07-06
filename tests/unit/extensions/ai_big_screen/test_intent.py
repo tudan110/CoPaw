@@ -638,3 +638,63 @@ class TestCompositionGrammar:
             "kpi-top",
             "balanced",
         }
+
+
+class TestPromptDeclinesTitle:
+    def test_decline_expressions_detected(self) -> None:
+        from qwenpaw.extensions.ai_big_screen.intent import (
+            prompt_declines_title,
+        )
+
+        assert prompt_declines_title("生成告警大屏，不要标题")
+        assert prompt_declines_title("做一个工单看板，不需要主标题")
+        assert prompt_declines_title("无标题，只要告警和工单")
+        assert prompt_declines_title("别加大屏标题")
+        assert not prompt_declines_title("生成告警大屏")
+        assert not prompt_declines_title("标题写运维总览")
+
+    def test_guardrail_plan_honors_decline(self) -> None:
+        from qwenpaw.extensions.ai_big_screen.intent import (
+            build_guardrail_plan,
+        )
+
+        plan = build_guardrail_plan(
+            prompt="查询告警和工单，不要标题",
+            title="",
+        )
+        assert plan.screen_title == ""
+        titled = build_guardrail_plan(prompt="查询告警和工单", title="")
+        assert titled.screen_title != ""
+
+    def test_assemble_screen_honors_decline(self) -> None:
+        from qwenpaw.extensions.ai_big_screen.intent import (
+            build_guardrail_plan,
+        )
+        from qwenpaw.extensions.ai_big_screen.orchestration import (
+            assemble_screen,
+        )
+
+        plan = build_guardrail_plan(
+            prompt="查询告警和工单，不要标题",
+            title="",
+        )
+        screen = assemble_screen(
+            plan=plan,
+            results={},
+            prompt="查询告警和工单，不要标题",
+            screen_id="screen-no-title",
+        )
+        assert screen["title"] == ""
+
+    def test_explicit_title_wins_over_decline(self) -> None:
+        # An explicit requested title beats the decline heuristic — the
+        # user contradicting themselves resolves toward the concrete ask.
+        from qwenpaw.extensions.ai_big_screen.intent import (
+            build_guardrail_plan,
+        )
+
+        plan = build_guardrail_plan(
+            prompt="查询告警，不要标题",
+            title="运维总览",
+        )
+        assert plan.screen_title == "运维总览"

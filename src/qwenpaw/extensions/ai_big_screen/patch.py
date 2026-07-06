@@ -65,6 +65,12 @@ from qwenpaw.extensions.ai_big_screen.schemas import (
 
 DEGRADED_PATCH_SUMMARY = "AI 降级：未生成可执行的大屏配置变更，已保持原状。"
 
+#: Sentinel "component id" the frontend sends when the user selects the
+#: screen title banner — the banner is a first-class selectable element in
+#: the authoring view, but it is not a component; apply_patch strips this
+#: id from the component selection and scopes the edit to title operations.
+TITLE_SELECTION_ID = "__screen-title__"
+
 _DATA_AFFECTING_OPS = {"setComponentQueryParams", "setComponentFields"}
 
 #: component fields surfaced in the preview diff; data rows are
@@ -259,6 +265,7 @@ def _build_patch_messages(
     instruction: str,
     selected_component_ids: list[str],
     rendered_layout: Mapping[str, Any] | None = None,
+    title_selected: bool = False,
 ) -> list[dict[str, str]]:
     rendered_layout = rendered_layout or {}
     component_catalog = []
@@ -373,6 +380,9 @@ def _build_patch_messages(
         "componentIds 生效。"
         "如果用户选择了组件(selectedComponentIds 非空)，"
         "只允许修改选中的组件，不要生成针对其他组件的操作。"
+        "如果 titleSelected 为 true，说明用户当前选中的是大屏主标题横幅："
+        "本次修改只针对主标题，使用 setScreenTitle(改文字/清空)或 "
+        "setScreenTitleStyle(颜色/大小/发光)，不要生成任何组件操作。"
         "如果用户要求查询最后一次有数据/最近有日志/空结果后继续找历史日志，"
         "对系统日志组件使用 setComponentQueryParams 设置 "
         "searchStrategy=latest_non_empty、timeMode=latest_non_empty、"
@@ -417,9 +427,12 @@ def _build_patch_messages(
                 {
                     "instruction": instruction,
                     "selectedComponentIds": selected_component_ids,
+                    "titleSelected": title_selected,
                     "screen": {
                         "id": screen.get("id"),
                         "name": screen.get("name"),
+                        "title": screen.get("title"),
+                        "titleStyle": screen.get("titleStyle"),
                         "theme": screen.get("theme"),
                         "components": component_catalog,
                     },
@@ -621,6 +634,7 @@ def _apply_operations(
     operations: list[PatchOperation],
     selected_component_ids: list[str],
     instruction: str,
+    title_selected: bool = False,
 ) -> tuple[set[str], list[str], list[str]]:
     """Apply whitelisted operations in place.
 
@@ -692,6 +706,11 @@ def _apply_operations(
             continue
 
         if operation.op == "removeComponent":
+            if title_selected and not selection:
+                rejected.append(
+                    "当前选中的是大屏主标题，组件删除操作已跳过",
+                )
+                continue
             for component_id in operation.target_ids():
                 if selection and component_id not in selection:
                     rejected.append(
@@ -708,6 +727,11 @@ def _apply_operations(
             continue
 
         if operation.op == "addComponent":
+            if title_selected and not selection:
+                rejected.append(
+                    "当前选中的是大屏主标题，新增组件操作已跳过",
+                )
+                continue
             raw = operation.value if isinstance(operation.value, dict) else {}
             if not raw:
                 continue
@@ -744,6 +768,11 @@ def _apply_operations(
         handler = _COMPONENT_OP_HANDLERS.get(operation.op)
         if handler is None:
             rejected.append(f"不支持的操作 {operation.op}")
+            continue
+        if title_selected and not selection:
+            rejected.append(
+                f"当前选中的是大屏主标题，{operation.op} 组件操作已跳过",
+            )
             continue
         for component_id in operation.target_ids():
             if selection and component_id not in selection:
@@ -858,6 +887,15 @@ async def apply_patch(
         selected_component_ids,
         str(selected_component_id or "").strip(),
     )
+    # The screen-title banner is selectable in the authoring view but is
+    # not a component — pull its sentinel out before component validation
+    # and scope the edit to title operations instead.
+    title_selected = TITLE_SELECTION_ID in selection
+    selection = [
+        component_id
+        for component_id in selection
+        if component_id != TITLE_SELECTION_ID
+    ]
     for component_id in selection:
         if _component_index(components, component_id) < 0:
             raise ValueError(f"未找到组件：{component_id}")
@@ -880,6 +918,7 @@ async def apply_patch(
             instruction=normalized_instruction,
             selected_component_ids=selection,
             rendered_layout=rendered_layout,
+            title_selected=title_selected,
         ),
         parser=_parse_patch_plan_require_ops,
         max_repair=max_repair,
@@ -897,6 +936,7 @@ async def apply_patch(
         operations=plan.operations,
         selected_component_ids=selection,
         instruction=normalized_instruction,
+        title_selected=title_selected,
     )
     await _refetch_components(screen, needs_refetch)
 

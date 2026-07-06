@@ -1604,3 +1604,103 @@ class TestScreenTitleStyleOp:
         assert not outcome["screen"].get("titleStyle")
         assert "未生效" in outcome["summary"]
         assert "color" in outcome["summary"]
+
+
+class TestTitleSelection:
+    async def test_title_sentinel_scopes_edit_to_title(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        # Selecting the banner (sentinel id) must not trip component
+        # validation, must surface titleSelected to the model, and the
+        # title op must apply.
+        from qwenpaw.extensions.ai_big_screen.patch import TITLE_SELECTION_ID
+
+        _block_all_fetches(monkeypatch)
+        screen = _screen()
+        screen["title"] = "旧标题"
+        model = FakeModel(
+            [
+                _ops(
+                    [{"op": "setScreenTitleStyle", "value": {"color": "红色"}}],
+                    summary="主标题改红",
+                ),
+            ],
+        )
+        outcome = await apply_patch(
+            screen=screen,
+            instruction="标题改成红色",
+            selected_component_ids=[TITLE_SELECTION_ID],
+            model=model,
+        )
+        assert outcome["screen"]["titleStyle"] == {"color": "#ef4444"}
+        assert model.last_messages is not None
+        payload = json.loads(model.last_messages[1]["content"])
+        assert payload["titleSelected"] is True
+        assert payload["selectedComponentIds"] == []
+        assert payload["screen"]["title"] == "旧标题"
+
+    async def test_component_ops_blocked_when_only_title_selected(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from qwenpaw.extensions.ai_big_screen.patch import TITLE_SELECTION_ID
+
+        _block_all_fetches(monkeypatch)
+        outcome = await apply_patch(
+            screen=_screen(),
+            instruction="标题改一下",
+            selected_component_ids=[TITLE_SELECTION_ID],
+            model=FakeModel(
+                [
+                    _ops(
+                        [
+                            {
+                                "op": "setComponentTitle",
+                                "componentId": "comp-alarms",
+                                "value": "越权",
+                            },
+                            {
+                                "op": "removeComponent",
+                                "componentId": "comp-logs",
+                            },
+                        ],
+                        summary="顺手改组件",
+                    ),
+                ],
+            ),
+        )
+        components = {c["id"]: c for c in outcome["screen"]["components"]}
+        assert components["comp-alarms"]["title"] == "告警流"
+        assert set(components) == {"comp-alarms", "comp-logs"}
+        assert "主标题" in outcome["summary"]  # rejection reasons surfaced
+
+    async def test_mixed_selection_allows_selected_component(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from qwenpaw.extensions.ai_big_screen.patch import TITLE_SELECTION_ID
+
+        _block_all_fetches(monkeypatch)
+        outcome = await apply_patch(
+            screen=_screen(),
+            instruction="标题和告警流都改",
+            selected_component_ids=[TITLE_SELECTION_ID, "comp-alarms"],
+            model=FakeModel(
+                [
+                    _ops(
+                        [
+                            {"op": "setScreenTitle", "value": "新主标题"},
+                            {
+                                "op": "setComponentTitle",
+                                "componentId": "comp-alarms",
+                                "value": "新告警名",
+                            },
+                        ],
+                    ),
+                ],
+            ),
+        )
+        assert outcome["screen"]["title"] == "新主标题"
+        components = {c["id"]: c for c in outcome["screen"]["components"]}
+        assert components["comp-alarms"]["title"] == "新告警名"

@@ -101,6 +101,25 @@ _SCREEN_TITLE_STOP_TERMS = tuple(
 )
 
 
+_DECLINE_TITLE_RE = re.compile(
+    r"不要(?:加|带|生成|显示)?(?:大屏)?(?:主)?标题"
+    r"|不(?:需|用)要?(?:大屏)?(?:主)?标题"
+    r"|无(?:主)?标题"
+    r"|别(?:加|带|生成|放)(?:大屏)?(?:主)?标题"
+    r"|去掉(?:大屏)?(?:主)?标题",
+)
+
+
+def prompt_declines_title(prompt: str) -> bool:
+    """User explicitly asked for a title-less screen in the draft prompt.
+
+    The auto-title fallback (T-015) must yield to an explicit "不要标题" —
+    auto-generation is a convenience, never something the user can't
+    decline at generation time.
+    """
+    return bool(_DECLINE_TITLE_RE.search(str(prompt or "")))
+
+
 def derive_screen_title(prompt: str, title: str = "") -> str:
     """Heuristic banner title for paths without an LLM ``screenTitle``.
 
@@ -1336,7 +1355,11 @@ def build_guardrail_plan(
     requested_title = str(title or "").strip()
     return ScreenPlan(
         name=requested_title or DEFAULT_SCREEN_NAME,
-        screen_title=derive_screen_title(prompt, requested_title),
+        screen_title=(
+            ""
+            if prompt_declines_title(prompt) and not requested_title
+            else derive_screen_title(prompt, requested_title)
+        ),
         layout_pattern=default_screen_pattern(components),
         description=f"按数据意图查询：{prompt}",
         summary=f"已按数据意图生成 {capability_label} 查询组件。",
@@ -1385,11 +1408,14 @@ def _normalize_llm_plan(
     requested_title = str(title or "").strip()
     # Banner title priority: explicit override → planner's in-band screenTitle
     # → heuristic recovered from the prompt. Clamped like setScreenTitle.
-    screen_title = clamp_screen_title(
-        requested_title
-        or plan.screen_title.strip()
-        or derive_screen_title(prompt, requested_title),
-    )
+    if prompt_declines_title(prompt) and not requested_title:
+        screen_title = ""
+    else:
+        screen_title = clamp_screen_title(
+            requested_title
+            or plan.screen_title.strip()
+            or derive_screen_title(prompt, requested_title),
+        )
     _enforce_single_hero(components)
     layout_pattern = normalize_screen_pattern(
         plan.layout_pattern,
