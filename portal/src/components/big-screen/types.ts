@@ -31,6 +31,9 @@ export interface VisualStyle {
   lineOpacity?: number;      // 0–100    chart line / area / link brightness
   labelBrightness?: number;  // -100..100 lighten/darken labels
   emphasis?: "standard" | "strong";
+  /** Table/list marquee control: auto (row threshold) / off (static,
+   *  manual scrollbar) / on (force marquee). */
+  scroll?: "auto" | "off" | "on";
 }
 
 export interface VisualSpec {

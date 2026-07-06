@@ -428,3 +428,16 @@ class TestSafeInt:
         assert safe_int(None, 5) == 5
         assert safe_int([], 5) == 5
         assert safe_int({}, 5) == 5
+
+
+class TestScrollStyleKnob:
+    def test_scroll_enum_accepted(self) -> None:
+        from qwenpaw.extensions.ai_big_screen.sanitizer import (
+            sanitize_component_style,
+        )
+
+        assert sanitize_component_style({"scroll": "off"}) == {
+            "scroll": "off",
+        }
+        assert sanitize_component_style({"scroll": "ON"}) == {"scroll": "on"}
+        assert sanitize_component_style({"scroll": "marquee-fast"}) == {}
