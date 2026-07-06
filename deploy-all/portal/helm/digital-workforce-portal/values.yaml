@@ -16,7 +16,7 @@ securityContext:
 
 # 环境变量
 env:
-  timezone: "Asia/Shanghai"
+  TZ: "Asia/Shanghai"
   PORTAL_APP_TITLE: "数字员工门户"
 
 # 资源限制

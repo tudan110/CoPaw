@@ -114,6 +114,6 @@ helm install digital-workforce-portal ./deploy-all/portal/helm/digital-workforce
 
 ```yaml
 env:
-  timezone: Asia/Shanghai
+  TZ: Asia/Shanghai
   PORTAL_APP_TITLE: 数字员工门户
 ```
