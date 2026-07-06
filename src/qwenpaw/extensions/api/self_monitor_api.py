@@ -669,6 +669,69 @@ def self_monitor_tokens(
     }
 
 
+# ── token ledger (持久明细账,合并自原「Token 明细」页) ──────────
+
+
+@router.get("/token-ledger")
+async def self_monitor_token_ledger(
+    days: int = Query(default=30, ge=1, le=365),
+) -> dict:
+    """Durable per-model / per-day token ledger from token_usage.json.
+
+    Complements the rollup-based /tokens view: the rollup keeps only
+    QWENPAW_SELF_MONITOR_RETENTION_DAYS of high-resolution samples,
+    while this ledger is the long-horizon daily book of record — the
+    standalone Token 明细 page folded into 自监控 (its /token-usage
+    API stays for the skill tool).
+    """
+    from datetime import date, timedelta
+
+    try:
+        from ...token_usage import get_token_usage_manager
+    except Exception:
+        return {"available": False, "reason": "token_usage 模块不可用"}
+
+    end_date = date.today()
+    start_date = end_date - timedelta(days=days - 1)
+    summary = await get_token_usage_manager().get_summary(
+        start_date=start_date, end_date=end_date
+    )
+    by_model = [
+        {
+            "model": key,
+            "provider": getattr(stats, "provider_id", "") or "",
+            "calls": stats.call_count,
+            "promptTokens": stats.prompt_tokens,
+            "completionTokens": stats.completion_tokens,
+            "totalTokens": stats.prompt_tokens + stats.completion_tokens,
+        }
+        for key, stats in (summary.by_model or {}).items()
+    ]
+    by_date = [
+        {
+            "date": key,
+            "calls": stats.call_count,
+            "promptTokens": stats.prompt_tokens,
+            "completionTokens": stats.completion_tokens,
+            "totalTokens": stats.prompt_tokens + stats.completion_tokens,
+        }
+        for key, stats in sorted((summary.by_date or {}).items())
+    ]
+    return {
+        "available": True,
+        "days": days,
+        "totals": {
+            "calls": summary.total_calls,
+            "promptTokens": summary.total_prompt_tokens,
+            "completionTokens": summary.total_completion_tokens,
+            "totalTokens": summary.total_prompt_tokens
+            + summary.total_completion_tokens,
+        },
+        "byModel": sorted(by_model, key=lambda r: r["totalTokens"], reverse=True),
+        "byDate": by_date,
+    }
+
+
 # ── tool call analytics (对标 · 工具调用分析,数据来自 traces) ────
 
 _tools_cache: dict[str, Any] = {"key": None, "ts": 0.0, "payload": None}

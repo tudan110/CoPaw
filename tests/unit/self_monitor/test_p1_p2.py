@@ -397,3 +397,56 @@ def test_sessions_endpoint_aggregates_workspaces(client, store, monkeypatch, tmp
     assert data["totals"]["toolCalls"] == 1
     assert data["workspaces"][0]["workspace"] == "demo"
     assert data["byChannel"][0]["channel"] == "portal"
+
+
+# ── token ledger (合并自原 Token 明细页) ─────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_token_ledger_merges_durable_book(client, monkeypatch, tmp_path):
+    import importlib
+    import json as _json
+    from datetime import date
+
+    monkeypatch.setenv("QWENPAW_WORKING_DIR", str(tmp_path))
+    today = date.today().isoformat()
+    (tmp_path / "token_usage.json").write_text(
+        _json.dumps(
+            {
+                today: {
+                    "ctyun:glm-5.1": {
+                        "provider_id": "ctyun",
+                        "model_name": "glm-5.1",
+                        "prompt_tokens": 20000,
+                        "completion_tokens": 3000,
+                        "call_count": 7,
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    import qwenpaw.token_usage.buffer as buffer_mod
+    import qwenpaw.token_usage.manager as manager_mod
+
+    monkeypatch.setattr(
+        buffer_mod.TokenUsageBuffer,
+        "_default_path",
+        lambda self: tmp_path / "token_usage.json",
+        raising=False,
+    )
+    # fresh manager singleton bound to the tmp ledger
+    manager_mod._manager = None
+    importlib.reload(manager_mod)
+    from qwenpaw.token_usage import get_token_usage_manager
+
+    manager = get_token_usage_manager()
+    if hasattr(manager, "_buffer"):
+        manager._buffer._path = tmp_path / "token_usage.json"
+        manager._buffer._cache_loaded = False
+
+    data = client.get("/api/portal/self-monitor/token-ledger?days=7").json()
+    assert data["available"] is True
+    assert data["totals"]["totalTokens"] == 23000
+    assert data["byModel"][0]["model"] == "ctyun:glm-5.1"
+    assert data["byDate"][0]["calls"] == 7

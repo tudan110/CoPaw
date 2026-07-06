@@ -100,6 +100,33 @@ export interface SelfMonitorModels {
   errorTypes: Record<string, number>;
 }
 
+export interface SelfMonitorTokenLedger {
+  available: boolean;
+  reason?: string;
+  days: number;
+  totals: {
+    calls: number;
+    promptTokens: number;
+    completionTokens: number;
+    totalTokens: number;
+  };
+  byModel: {
+    model: string;
+    provider: string;
+    calls: number;
+    promptTokens: number;
+    completionTokens: number;
+    totalTokens: number;
+  }[];
+  byDate: {
+    date: string;
+    calls: number;
+    promptTokens: number;
+    completionTokens: number;
+    totalTokens: number;
+  }[];
+}
+
 export interface SelfMonitorTools {
   generatedAt: number;
   windowS: number;
@@ -257,6 +284,12 @@ export const selfMonitorApi = {
   tokens: (windowS = 86400, signal?: AbortSignal) =>
     requestPortalApi<SelfMonitorTokens>(
       `/self-monitor/tokens${buildQuery({ window_s: windowS })}`,
+      { signal },
+    ),
+
+  tokenLedger: (days = 30, signal?: AbortSignal) =>
+    requestPortalApi<SelfMonitorTokenLedger>(
+      `/self-monitor/token-ledger${buildQuery({ days })}`,
       { signal },
     ),
 

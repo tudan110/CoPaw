@@ -13,6 +13,7 @@ import {
   type SelfMonitorOverview,
   type SelfMonitorSessions,
   type SelfMonitorStatus,
+  type SelfMonitorTokenLedger,
   type SelfMonitorTokens,
   type SelfMonitorTools,
   type SelfMonitorTopology,
@@ -181,8 +182,9 @@ export function SelfMonitorPanel() {
   type TopTab = "overview" | "traces" | "sessions" | "scenario";
   type ScenarioTab = "tokens" | "model-perf" | "tools" | "users";
   const [activeTab, setActiveTab] = useState<TopTab>(() => {
-    // /traces deep-links land here now that the standalone center is folded in
+    // deep-links from the folded-in standalone pages keep working
     if (window.location.pathname === "/traces") return "traces";
+    if (window.location.pathname === "/token-usage") return "scenario";
     const wanted = new URLSearchParams(window.location.search).get("tab");
     return wanted === "traces" || wanted === "sessions" || wanted === "scenario"
       ? wanted
@@ -191,6 +193,7 @@ export function SelfMonitorPanel() {
   const [scenarioTab, setScenarioTab] = useState<ScenarioTab>("tokens");
   const [models, setModels] = useState<SelfMonitorModels | null>(null);
   const [tokensData, setTokensData] = useState<SelfMonitorTokens | null>(null);
+  const [ledger, setLedger] = useState<SelfMonitorTokenLedger | null>(null);
   const [toolsData, setToolsData] = useState<SelfMonitorTools | null>(null);
   const [sessions, setSessions] = useState<SelfMonitorSessions | null>(null);
 
@@ -210,6 +213,7 @@ export function SelfMonitorPanel() {
         }
         if (wantTokens) {
           setTokensData(await selfMonitorApi.tokens(windowS, controller.signal));
+          setLedger(await selfMonitorApi.tokenLedger(30, controller.signal));
         }
         if (wantTools) {
           setToolsData(await selfMonitorApi.tools(windowS, controller.signal));
@@ -509,6 +513,45 @@ export function SelfMonitorPanel() {
     };
   }, [tokensData]);
 
+  const ledgerTrendOption = useMemo(() => {
+    const rows = ledger?.byDate ?? [];
+    return {
+      backgroundColor: "transparent",
+      animation: false,
+      tooltip: { trigger: "axis" },
+      legend: {
+        data: ["输入 token", "输出 token"],
+        textStyle: { color: "#64748b", fontSize: 10 },
+        top: 0,
+      },
+      grid: { left: 58, right: 12, top: 28, bottom: 22 },
+      xAxis: {
+        type: "category",
+        data: rows.map((row) => row.date.slice(5)),
+        ...AXIS,
+      },
+      yAxis: { type: "value", ...AXIS },
+      series: [
+        {
+          name: "输入 token",
+          type: "bar",
+          stack: "ledger",
+          data: rows.map((row) => row.promptTokens),
+          itemStyle: { color: "rgba(8,145,178,.75)" },
+          barMaxWidth: 16,
+        },
+        {
+          name: "输出 token",
+          type: "bar",
+          stack: "ledger",
+          data: rows.map((row) => row.completionTokens),
+          itemStyle: { color: "rgba(5,150,105,.8)" },
+          barMaxWidth: 16,
+        },
+      ],
+    };
+  }, [ledger]);
+
   const sessionTrendOption = useMemo(() => {
     const rows = sessions?.byDate ?? [];
     return {
@@ -784,9 +827,6 @@ export function SelfMonitorPanel() {
             {label}
           </button>
         ))}
-        <button className="jump" onClick={() => navigate("/token-usage")}>
-          Token 明细 ↗
-        </button>
       </nav>
 
       {activeTab === "traces" ? (
@@ -1108,6 +1148,76 @@ export function SelfMonitorPanel() {
                 </div>
               ) : (
                 <div className="sm-empty">窗口内暂无 token 记录</div>
+              )}
+            </div>
+          </section>
+
+          <div className="sm-note-banner">
+            以上为<b>近窗高精度观测</b>(自监控采样,保留期约 7
+            天);以下为<b>按日持久账本</b>(token_usage.json,长期留存)——
+            原独立「Token 明细」页已并入此处。
+          </div>
+
+          <section className="sm-subrow">
+            <div className="sm-panel">
+              <div className="sm-ph">
+                <i />
+                <h3>按日 Token 账本</h3>
+                <span className="sm-en">last {ledger?.days ?? 30}d</span>
+                <span className="sm-right">
+                  {ledger
+                    ? `合计 ${fmtBig(ledger.totals.totalTokens)} · ${fmtBig(
+                        ledger.totals.calls,
+                      )} 次调用`
+                    : ""}
+                </span>
+              </div>
+              {ledger?.byDate.length ? (
+                <div className="sm-chart-body" style={{ height: 210 }}>
+                  <EChart option={ledgerTrendOption} />
+                </div>
+              ) : (
+                <div className="sm-empty">
+                  {ledger && !ledger.available
+                    ? ledger.reason || "账本不可用"
+                    : "账本暂无记录"}
+                </div>
+              )}
+            </div>
+
+            <div className="sm-panel">
+              <div className="sm-ph">
+                <i style={{ background: "var(--sm-green)" }} />
+                <h3>按模型明细</h3>
+                <span className="sm-en">durable ledger</span>
+              </div>
+              {ledger?.byModel.length ? (
+                <div className="sm-table-wrap">
+                  <table className="sm-table">
+                    <thead>
+                      <tr>
+                        <th>模型</th>
+                        <th>调用次数</th>
+                        <th>输入token</th>
+                        <th>输出token</th>
+                        <th>合计</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {ledger.byModel.map((row) => (
+                        <tr key={row.model}>
+                          <td className="sm-td-model">{row.model}</td>
+                          <td>{fmtBig(row.calls)}</td>
+                          <td>{fmtBig(row.promptTokens)}</td>
+                          <td>{fmtBig(row.completionTokens)}</td>
+                          <td>{fmtBig(row.totalTokens)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div className="sm-empty">最近 30 天暂无模型调用记录</div>
               )}
             </div>
           </section>

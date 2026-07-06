@@ -606,19 +606,7 @@ export function AdvancedModelEntry({
           <div className="sidebar-advanced-item-desc">告警处置状态一览</div>
           <div className="sidebar-advanced-item-meta">列表 / 状态 / 导出</div>
         </button>
-        <button
-          className={isTokenUsageActive ? "sidebar-advanced-item active" : "sidebar-advanced-item"}
-          onClick={onOpenTokenUsage}
-        >
-          <div className="sidebar-advanced-item-icon">
-            <span role="img" aria-label="token-usage">
-              📊
-            </span>
-          </div>
-          <div className="sidebar-advanced-item-name">Token统计</div>
-          <div className="sidebar-advanced-item-desc">资源消耗分析</div>
-          <div className="sidebar-advanced-item-meta">按模型 / 日期统计</div>
-        </button>
+        {/* Token统计入口已并入「自监控 → 场景化分析 → Token 用量分析」(v7) */}
       </div>
     </div>
   );
