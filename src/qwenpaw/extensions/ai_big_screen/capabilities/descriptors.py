@@ -564,6 +564,111 @@ def fetch_topology_impact(query_params: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
+_AUTHORED_MAX_ROWS = 200
+_AUTHORED_MAX_COLUMNS = 12
+_AUTHORED_MAX_CELL_CHARS = 200
+_AUTHORED_MAX_TEXT_CHARS = 2000
+
+
+def _sanitize_authored_content(raw: Any) -> dict[str, Any]:
+    """Whitelist-sanitize planner-authored inline content.
+
+    Scalars only, hard size caps — the authored channel opens the
+    creation window without opening a code/markup channel (the
+    no-arbitrary-code gate applies to authored content too).
+    """
+    if not isinstance(raw, Mapping):
+        return {}
+    out: dict[str, Any] = {}
+    raw_columns = raw.get("columns")
+    if isinstance(raw_columns, list):
+        columns: list[dict[str, str]] = []
+        for item in raw_columns[:_AUTHORED_MAX_COLUMNS]:
+            if isinstance(item, Mapping):
+                key = str(item.get("key") or "").strip()[:40]
+                label = str(item.get("label") or key).strip()[:40]
+            else:
+                key = str(item or "").strip()[:40]
+                label = key
+            if key:
+                columns.append({"key": key, "label": label or key})
+        if columns:
+            out["columns"] = columns
+    raw_rows = raw.get("rows")
+    if isinstance(raw_rows, list):
+        rows: list[dict[str, Any]] = []
+        for item in raw_rows[:_AUTHORED_MAX_ROWS]:
+            if not isinstance(item, Mapping):
+                continue
+            row: dict[str, Any] = {}
+            for key, value in list(item.items())[:_AUTHORED_MAX_COLUMNS]:
+                cell_key = str(key)[:40]
+                if isinstance(value, bool):
+                    row[cell_key] = value
+                elif isinstance(value, (int, float)):
+                    row[cell_key] = value
+                elif isinstance(value, str):
+                    row[cell_key] = value[:_AUTHORED_MAX_CELL_CHARS]
+            if row:
+                rows.append(row)
+        if rows:
+            out["rows"] = rows
+    raw_metrics = raw.get("metrics")
+    if isinstance(raw_metrics, Mapping):
+        metrics: dict[str, Any] = {}
+        for key, value in list(raw_metrics.items())[:12]:
+            if isinstance(value, bool):
+                continue
+            if isinstance(value, (int, float)):
+                metrics[str(key)[:40]] = value
+            elif isinstance(value, str):
+                metrics[str(key)[:40]] = value[:_AUTHORED_MAX_CELL_CHARS]
+        if metrics:
+            out["metrics"] = metrics
+    raw_text = raw.get("text")
+    if isinstance(raw_text, str) and raw_text.strip():
+        out["text"] = raw_text.strip()[:_AUTHORED_MAX_TEXT_CHARS]
+    return out
+
+
+def fetch_authored_content(query_params: Mapping[str, Any]) -> dict[str, Any]:
+    """AI-authored inline content — the legitimate creation channel.
+
+    The planner supplies the content itself (queryParams.content); this
+    fetcher never touches a network. Provenance is explicit ("AI 生成")
+    so authored content can never masquerade as an external data source
+    — which is what the no-fake-data gate actually forbids.
+    """
+    content = _sanitize_authored_content(query_params.get("content"))
+    rows = content.get("rows") or []
+    columns = content.get("columns") or (
+        [{"key": key, "label": key} for key in rows[0].keys()]
+        if rows
+        else []
+    )
+    metrics = dict(content.get("metrics") or {})
+    if content.get("text"):
+        metrics.setdefault("text", content["text"])
+    has_content = bool(rows or metrics)
+    payload: dict[str, Any] = {
+        "source": "ai-authored",
+        "sourceStatus": "live" if has_content else "empty",
+        "trend": "内容由 AI 即席生成（非外部数据源）",
+        "message": (
+            ""
+            if has_content
+            else "AI 未在规划中内联内容——请把需求描述得更具体后重试。"
+        ),
+        "columns": columns,
+        "rows": rows,
+    }
+    if metrics:
+        payload["metrics"] = metrics
+        if "value" not in metrics and len(metrics) == 1:
+            payload["value"] = next(iter(metrics.values()))
+    return payload
+
+
 def fetch_capability_gap(query_params: Mapping[str, Any]) -> dict[str, Any]:
     requested_data = str(
         query_params.get("requestedData") or "未接入数据",
@@ -906,6 +1011,38 @@ CAPABILITY_METADATA: list[dict[str, Any]] = [
         "examplePrompts": ["需要还没接入的数据", "帮我设计新的取数逻辑"],
     },
     {
+        "id": "ai-authored-content",
+        "name": "AI 创作内容",
+        "domain": "authored",
+        "description": (
+            "由规划模型即席生成的静态/可计算内容(乘法表、对照表、口诀、"
+            "公式/知识说明等),内容随组件内联在 queryParams.content,"
+            "零外部访问,来源明示为 AI 生成。绝不可用于告警/工单/CMDB/"
+            "资源/日志/监控等运维数据——运维数据必须走真实数据能力。"
+        ),
+        "inputSchema": {"content": {}},
+        "outputSchema": {
+            "columns": "array",
+            "rows": "array",
+            "metrics": "object",
+        },
+        "supportedVisuals": [
+            "table",
+            "text",
+            "metric-kpi",
+            "flip-number",
+            "bar-chart",
+            "line-chart",
+            "donut",
+            "composed",
+        ],
+        "permissionScope": "authored:read",
+        "cachePolicy": {"ttlSeconds": 0},
+        "refreshPolicy": {"intervalSeconds": 0},
+        "dataSource": "llm-authored",
+        "examplePrompts": ["写一个99乘法表", "做一张常用端口对照表"],
+    },
+    {
         "id": "self-monitor-overview",
         "name": "智观AI 自监控",
         "domain": "monitor",
@@ -954,6 +1091,7 @@ _CAPABILITY_CLASSIFICATION: dict[str, tuple[str, str]] = {
     "topology-impact": ("cmdb", "inoe"),
     "web-live-data": ("web", ""),
     "capability-gap": ("", ""),
+    "ai-authored-content": ("authored", ""),
     "self-monitor-overview": ("monitor", "self"),
 }
 
@@ -1141,5 +1279,6 @@ FETCHERS: dict[str, Fetcher] = {
     "topology-impact": fetch_topology_impact,
     "web-live-data": fetch_web_live,
     "capability-gap": fetch_capability_gap,
+    "ai-authored-content": fetch_authored_content,
     "self-monitor-overview": fetch_self_monitor_overview,
 }
