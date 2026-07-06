@@ -54,6 +54,7 @@ from qwenpaw.extensions.ai_big_screen.orchestration import (
 )
 from qwenpaw.extensions.ai_big_screen.sanitizer import (
     sanitize_component_style,
+    sanitize_screen_title_style,
     sanitize_visual_spec,
 )
 from qwenpaw.extensions.ai_big_screen.schemas import (
@@ -108,6 +109,17 @@ def build_screen_diff(
                 "field": "title",
                 "before": before_title,
                 "after": after_title,
+            },
+        )
+    before_title_style = dict(before.get("titleStyle") or {})
+    after_title_style = dict(after.get("titleStyle") or {})
+    if before_title_style != after_title_style:
+        diffs.append(
+            {
+                "componentId": "",
+                "field": "titleStyle",
+                "before": before_title_style or None,
+                "after": after_title_style or None,
             },
         )
     before_pattern = str(
@@ -288,12 +300,17 @@ def _build_patch_messages(
         "JSON 固定字段：summary, operations。"
         "operations 是数组，每项字段为 op、componentId 或 componentIds、value。"
         "op 只能是：addComponent、removeComponent、setScreenTitle、"
+        "setScreenTitleStyle、"
         "setScreenLayoutPattern、setThemePalette、setComponentPalette、"
         "setComponentType、setComponentLayout、clearComponentLayout、"
         "setComponentTitle、setComponentComposition、setComponentStyle、"
         "setComponentQueryParams、setComponentFields。"
         "value 语义：setScreenTitle=大屏主标题字符串(屏幕级，渲染在大屏"
         "顶部中央的横幅，不是数据组件)，传空字符串\"\"表示去掉主标题；"
+        "setScreenTitleStyle=大屏主标题样式对象 "
+        "{color: #十六进制或颜色名(支持中文色名如红色), "
+        "sizeScale: 0.5-2.0(标题变大变小), emphasis: standard|strong(发光)}，"
+        "只作用于顶部主标题横幅；"
         "setScreenLayoutPattern=整屏构图(focus-left=左主视觉+右信息栏、"
         "focus-right=镜像、kpi-top=顶部指标带+下方内容、balanced=均衡网格)；"
         "removeComponent=无 value，componentId/componentIds 指定要删除的"
@@ -337,6 +354,8 @@ def _build_patch_messages(
         "给大屏加标题/改主标题/顶部标题→setScreenTitle，"
         "绝不要用 addComponent 实现标题(那会生成一个数据能力缺口组件)；"
         "去掉/不要/删除大屏主标题→setScreenTitle 且 value 为空字符串；"
+        "主标题颜色/大小/样式(如'标题改成红色''标题太小')→setScreenTitleStyle，"
+        "不要用 setComponentStyle(那只改组件，碰不到主标题)；"
         "换个构图/布局风格/排版/更大气/更有设计感→setScreenLayoutPattern，"
         "并可配合 setComponentComposition 调整主次；"
         "换个形式/换种图表/改成某图→setComponentType，类型可以用中文名"
@@ -639,6 +658,22 @@ def _apply_operations(
             if str(screen.get("title") or "") != title:
                 screen["title"] = title
                 applied.append("setScreenTitle")
+            continue
+
+        if operation.op == "setScreenTitleStyle":
+            style = sanitize_screen_title_style(operation.value)
+            if not style:
+                rejected.append(
+                    f"主标题样式「{operation.value}」无有效字段"
+                    "（可用：color=#hex/颜色名/中文色名、sizeScale 0.5-2、"
+                    "emphasis standard|strong）",
+                )
+                continue
+            current = dict(screen.get("titleStyle") or {})
+            merged = {**current, **style}  # accumulate partial edits
+            if merged != current:
+                screen["titleStyle"] = merged
+                applied.append("setScreenTitleStyle")
             continue
 
         if operation.op == "setScreenLayoutPattern":

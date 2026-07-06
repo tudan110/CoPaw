@@ -13,7 +13,7 @@ import { AuroraBackground } from "./panels/AuroraBackground.tsx";
 import { ParticleLayer } from "./panels/ParticleLayer.tsx";
 import { GlassPanel } from "./panels/GlassPanel.tsx";
 import { COMPONENT_REGISTRY, resolveComponentType } from "./registry.ts";
-import { visualSpecClassTokens } from "./visualSpec.ts";
+import { screenTitleCss, visualSpecClassTokens } from "./visualSpec.ts";
 import { computeAutoLayout } from "./autoLayout.ts";
 import { pickAutoBand } from "./autoLayoutBands.ts";
 import { computePatternLayout } from "./compositionLayout.ts";
@@ -259,6 +259,7 @@ export function BigScreenRenderer({
               left: 0,
               width: "100%",
               height: TITLE_BAND_HEIGHT,
+              ...screenTitleCss(s.titleStyle),
             }}
           >
             {screenTitle}

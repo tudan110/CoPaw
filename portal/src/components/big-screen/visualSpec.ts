@@ -25,3 +25,43 @@ export function visualSpecClassTokens(vs: VisualSpec | undefined): string[] {
   if (vs.style?.emphasis === "strong") out.push("bs-emphasis-strong");
   return out;
 }
+
+/** Screen banner style (patch op setScreenTitleStyle) — sanitized upstream,
+ *  re-checked here (defence in depth on an adapted payload). */
+export interface ScreenTitleStyle {
+  color?: string;
+  sizeScale?: number;
+  emphasis?: string;
+}
+
+const TITLE_BASE_FONT = 34;
+const TITLE_COLOR_RE = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$|^[a-zA-Z]{3,20}$/;
+
+/**
+ * Inline CSS for the screen title banner. The default look is a gradient
+ * text (background-clip) — an explicit color must disable the gradient and
+ * the transparent fill or it would be invisible.
+ */
+export function screenTitleCss(
+  ts: ScreenTitleStyle | undefined,
+): Record<string, string | number> {
+  const out: Record<string, string | number> = {};
+  if (!ts) return out;
+  const scale = Number(ts.sizeScale);
+  if (Number.isFinite(scale) && scale > 0) {
+    const clamped = Math.min(2, Math.max(0.5, scale));
+    out.fontSize = Math.round(TITLE_BASE_FONT * clamped);
+  }
+  const color = String(ts.color ?? "").trim();
+  if (color && TITLE_COLOR_RE.test(color)) {
+    out.background = "none";
+    out.WebkitTextFillColor = color;
+    out.color = color;
+    out.textShadow = `0 0 24px ${color}40`;
+  }
+  if (ts.emphasis === "strong") {
+    const glow = color && TITLE_COLOR_RE.test(color) ? color : "#22d3ee";
+    out.textShadow = `0 0 14px ${glow}, 0 0 42px ${glow}66`;
+  }
+  return out;
+}
