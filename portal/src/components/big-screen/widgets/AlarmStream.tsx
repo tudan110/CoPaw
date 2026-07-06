@@ -1,5 +1,6 @@
 import { evaluateRules } from "../rules.ts";
 import type { WidgetProps } from "../registry.ts";
+import { resolveScrollMode } from "../visualSpec.ts";
 
 const TONE_DOT: Record<string, string> = {
   critical: "bs-dot--critical",
@@ -22,11 +23,14 @@ export function AlarmStream({ component }: WidgetProps) {
   const timeKey = bindings?.["time"] ?? "time";
   const toneKey = bindings?.["tone"] ?? "severity";
 
-  // Duplicate items for seamless infinite scroll
-  const items = rows.length > 0 ? [...rows, ...rows] : [];
+  // A stream marquees by default; scroll:"off" pins it static with a
+  // manual scrollbar (same control vocabulary as tables).
+  const mode = resolveScrollMode(component.visualSpec?.style, rows.length, 0);
+  const marquee = mode === "marquee";
+  const items = marquee && rows.length > 0 ? [...rows, ...rows] : rows;
 
   return (
-    <div className="bs-stream">
+    <div className={`bs-stream${marquee ? "" : " bs-stream--static"}`}>
       <ul className="bs-stream-list">
         {items.map((row, i) => {
           const tone =

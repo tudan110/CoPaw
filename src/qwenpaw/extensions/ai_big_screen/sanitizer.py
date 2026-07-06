@@ -451,6 +451,14 @@ def sanitize_component_style(raw_style: Any) -> dict[str, Any]:
     if accent and _ACCENT_COLOR_RE.match(accent):
         style["accentColor"] = accent
 
+    # In-widget presentation behaviour: list/table auto-marquee control.
+    # "off" = static (manual scrollbar), "on" = force marquee, "auto" =
+    # row-count threshold (the legacy default). A hardcoded marquee was
+    # an uncontrollable element — "不要滚动" must be expressible.
+    scroll = str(raw_style.get("scroll") or "").strip().lower()
+    if scroll in {"auto", "off", "on"}:
+        style["scroll"] = scroll
+
     return style
 
 

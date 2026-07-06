@@ -1,4 +1,5 @@
 import type { WidgetProps } from "../registry.ts";
+import { resolveScrollMode } from "../visualSpec.ts";
 import { cell, deriveColumns } from "./tableColumns.ts";
 
 /**
@@ -21,13 +22,23 @@ export function TableWidget({ component }: WidgetProps) {
     return <div className="bs-table-empty">暂无可展示的字段</div>;
   }
 
-  // Auto-scroll long tables: duplicate rows for a seamless vertical loop
-  // (no manual scrollbar). Sticky header stays put; hover pauses (in CSS).
-  const scroll = rows.length > SCROLL_ROW_THRESHOLD;
+  // Marquee vs static is user-controllable (visualSpec.style.scroll);
+  // "auto" keeps the legacy row-count threshold. Static shows every row
+  // with a manual scrollbar instead of duplicating rows for a loop.
+  const mode = resolveScrollMode(
+    component.visualSpec?.style,
+    rows.length,
+    SCROLL_ROW_THRESHOLD,
+  );
+  const scroll = mode === "marquee";
   const body = scroll ? [...rows, ...rows] : rows;
 
   return (
-    <div className={`bs-table-wrap${scroll ? " bs-table-wrap--scroll" : ""}`}>
+    <div
+      className={`bs-table-wrap${
+        scroll ? " bs-table-wrap--scroll" : " bs-table-wrap--static"
+      }`}
+    >
       <table className="bs-table">
         <thead>
           <tr>

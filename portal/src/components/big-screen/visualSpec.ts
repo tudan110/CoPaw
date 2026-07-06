@@ -65,3 +65,20 @@ export function screenTitleCss(
   }
   return out;
 }
+
+/**
+ * Marquee-or-static decision for row widgets (table / alarm stream).
+ * An explicit style wins; "auto" keeps the legacy row-count threshold.
+ * A hardcoded marquee was an uncontrollable element — "不要滚动" must be
+ * expressible per component.
+ */
+export function resolveScrollMode(
+  style: { scroll?: string } | undefined,
+  rowCount: number,
+  autoThreshold: number,
+): "marquee" | "static" {
+  const mode = String(style?.scroll ?? "auto");
+  if (mode === "off") return "static";
+  if (mode === "on") return rowCount > 0 ? "marquee" : "static";
+  return rowCount > autoThreshold ? "marquee" : "static";
+}

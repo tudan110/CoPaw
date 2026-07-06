@@ -722,6 +722,36 @@
   font-size: 12px;
 }
 
+/* Static mode (scroll:"off"): every row reachable via a manual, thin
+   scrollbar — the marquee is user-declinable per component. */
+.bs-table-wrap--static {
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(34, 211, 238, 0.35) transparent;
+}
+
+.bs-stream--static {
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(34, 211, 238, 0.35) transparent;
+}
+
+.bs-stream--static .bs-stream-list {
+  animation: none;
+}
+
+/* Density knob finally reaches tables: compact squeezes row height so a
+   static table shows more rows before needing the scrollbar. */
+.bs-density-compact .bs-table tbody td {
+  padding: 3px 8px;
+  font-size: 11px;
+}
+
+.bs-density-compact .bs-table thead th {
+  padding: 4px 8px;
+  font-size: 11px;
+}
+
 /* Auto-scroll (marquee) when there are more rows than fit; fade the bottom
    edge and pause on hover so it stays readable. */
 .bs-table-wrap--scroll {

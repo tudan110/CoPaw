@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  resolveScrollMode,
   safeToken,
   screenTitleCss,
   visualSpecClassTokens,
@@ -54,4 +55,19 @@ test("screenTitleCss: garbage color is ignored (defence in depth)", () => {
 test("screenTitleCss: empty style yields no overrides", () => {
   assert.deepEqual(screenTitleCss(undefined), {});
   assert.deepEqual(screenTitleCss({}), {});
+});
+
+test("resolveScrollMode: off pins static regardless of row count", () => {
+  assert.equal(resolveScrollMode({ scroll: "off" }, 500, 7), "static");
+});
+
+test("resolveScrollMode: on forces marquee when rows exist", () => {
+  assert.equal(resolveScrollMode({ scroll: "on" }, 3, 7), "marquee");
+  assert.equal(resolveScrollMode({ scroll: "on" }, 0, 7), "static");
+});
+
+test("resolveScrollMode: auto keeps the legacy threshold", () => {
+  assert.equal(resolveScrollMode(undefined, 8, 7), "marquee");
+  assert.equal(resolveScrollMode({}, 7, 7), "static");
+  assert.equal(resolveScrollMode({ scroll: "auto" }, 20, 7), "marquee");
 });
