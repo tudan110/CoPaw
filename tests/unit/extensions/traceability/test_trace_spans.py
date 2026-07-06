@@ -161,3 +161,67 @@ async def test_streaming_llm_call_survives_consumer_break(store, monkeypatch, tm
     assert llm[0]["prompt_tokens"] == 1000
     assert llm[0]["completion_tokens"] == 50
     assert llm[0]["ttft_ms"] is not None
+
+
+@pytest.mark.asyncio
+async def test_streaming_llm_call_uses_model_instance_slot(store):
+    """Real runtime topology: NO task in the pipeline carries the agent
+    contextvars (Runtime.run is an async generator driven by varying
+    tasks). Runtime.run plants the trace context on the model instance;
+    the span must be emitted from that slot alone."""
+    from agentscope.message import TextBlock
+    from agentscope.model._model_response import ChatResponse
+
+    import qwenpaw.app.agent_context as agent_context
+    from qwenpaw.providers.retry_chat_model import RetryChatModel
+
+    class FakeUsage:
+        input_tokens = 321
+        output_tokens = 17
+
+    class FakeInner:
+        model = "mock-glm"
+        _provider_id = "mock"
+        stream = True
+
+        async def __call__(self, *args, **kwargs):
+            async def gen():
+                for i in range(2):
+                    last = i == 1
+                    response = ChatResponse(
+                        content=[TextBlock(type="text", text=f"c{i}")],
+                        is_last=last,
+                    )
+                    if last:
+                        response.usage = FakeUsage()
+                    yield response
+
+            return gen()
+
+    # contextvars empty EVERYWHERE — the real pipeline shape
+    agent_context.set_current_session_id("")
+    agent_context.set_current_agent_id("")
+    model = RetryChatModel(FakeInner())
+    # what Runtime.run does before executing the agent
+    model._qp_trace_ctx = {
+        "session_id": "slot-session",
+        "agent_id": "gateway",
+        "user_id": "t",
+        "channel": "console",
+    }
+
+    gen = await model(stream=True)
+    async for chunk in gen:
+        if getattr(chunk, "is_last", False):
+            break
+    await gen.aclose()
+    import asyncio as _asyncio
+
+    await _asyncio.sleep(0.3)
+
+    detail = store.read_session("slot-session")
+    llm = [e for e in detail.get("events", []) if e.get("type") == "llm_call"]
+    assert len(llm) == 1
+    assert llm[0]["prompt_tokens"] == 321
+    assert llm[0]["completion_tokens"] == 17
+    assert llm[0]["agent_id"] == "gateway"

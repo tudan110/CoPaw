@@ -1074,7 +1074,7 @@ export function TracesCenterPanel() {
               <div className="tc2-table-meta">
                 搜索到 {total} 条 Trace{listLoading ? " · 加载中…" : ""}
               </div>
-              <table className="tc2-span-table">
+              <table className="tc2-span-table tc2-trace-table">
                 <thead>
                   <tr>
                     <th>Trace ID</th>

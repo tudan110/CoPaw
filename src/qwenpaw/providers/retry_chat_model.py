@@ -602,10 +602,11 @@ class RetryChatModel(ChatModelBase):
         retries = self._retry_config.max_retries if self._retry_config.enabled else 0
         attempts = retries + 1
         last_exc: Exception | None = None
-        # Snapshot the agent-context NOW: streaming spans are emitted from
-        # a different task where these contextvars are unset (see
-        # _capture_trace_ctx docstring for the full story).
-        trace_ctx = _capture_trace_ctx()
+        # Trace context: Runtime.run plants it on this model instance
+        # (object attributes cross tasks; contextvars do not survive the
+        # async-generator pipeline — see runtime.py). The contextvar
+        # snapshot stays as a fallback for direct callers.
+        trace_ctx = getattr(self, "_qp_trace_ctx", None) or _capture_trace_ctx()
 
         for attempt in range(1, attempts + 1):
             # Acquire a semaphore slot, with a timeout to prevent

@@ -55,6 +55,32 @@ class Runtime:
         ctx = self._build_context(request)
         hooks = self.workspace.plugins.hook_registry
 
+        # Set the agent-context contextvars HERE, in the run task itself.
+        # ContextVarsSetupHook performs the same sets inside the
+        # PRE_DISPATCH chain — but HookRegistry executes hooks in a child
+        # task, so those sets are invisible to this task and everything
+        # spawned below it (model wrappers, per-session token attribution
+        # and llm_call tracing all read empty values). Setting at the root
+        # fixes the whole subtree; the hook stays as a harmless re-set.
+        try:
+            from ..app.agent_context import (
+                set_current_agent_id,
+                set_current_channel,
+                set_current_root_session_id,
+                set_current_session_id,
+                set_current_user_id,
+            )
+
+            set_current_session_id(ctx.session_id or "")
+            set_current_root_session_id(
+                getattr(ctx, "root_session_id", "") or ctx.session_id or ""
+            )
+            set_current_agent_id(getattr(ctx, "agent_id", "") or "default")
+            set_current_user_id(getattr(ctx.request, "user_id", "") or "")
+            set_current_channel(getattr(ctx.request, "channel", None))
+        except Exception:  # pragma: no cover - never block the run
+            logger.debug("agent contextvars root-set failed", exc_info=True)
+
         envelope = Envelope(session_id=ctx.session_id)
         skip_agent = False
 
@@ -117,6 +143,26 @@ class Runtime:
 
             if not skip_agent:
                 self._apply_context_injections(ctx)
+                # Attach the trace context to the MODEL INSTANCE. Runtime.run
+                # is an async generator driven by different pipeline tasks on
+                # each asend, so contextvars set anywhere in this body do not
+                # survive to the model-call tasks (verified: hook sets landed
+                # in a child task; executor/model frames read empty vars).
+                # An object attribute crosses tasks. Concurrent replies on
+                # the same agent would overwrite each other (last-writer
+                # wins) — acceptable: agent replies are effectively serial
+                # per instance, and a mislabeled span beats a dropped one.
+                model = getattr(ctx.agent, "model", None)
+                if model is not None:
+                    try:
+                        model._qp_trace_ctx = {  # pylint: disable=protected-access
+                            "session_id": str(ctx.session_id or ""),
+                            "agent_id": str(getattr(ctx, "agent_id", "") or "default"),
+                            "user_id": str(getattr(ctx.request, "user_id", "") or ""),
+                            "channel": str(getattr(ctx.request, "channel", "") or ""),
+                        }
+                    except Exception:  # pragma: no cover
+                        pass
                 # --- [fixed 3] execute agent ---
                 async for ev in envelope.emit_response_created():
                     yield ev
