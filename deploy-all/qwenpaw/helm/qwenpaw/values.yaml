@@ -16,7 +16,7 @@ securityContext:
 
 # 环境变量
 env:
-  timezone: "Asia/Shanghai"
+  TZ: "Asia/Shanghai"
   QWENPAW_PORT: "8088"
   QWENPAW_APP_WORKERS: "2"
   QWENPAW_APP_BACKLOG: "2048"
