@@ -456,6 +456,29 @@ def sanitize_component_style(raw_style: Any) -> dict[str, Any]:
     # row-count threshold (the legacy default). A hardcoded marquee was
     # an uncontrollable element — "不要滚动" must be expressible.
     scroll = str(raw_style.get("scroll") or "").strip().lower()
+    # Tolerate the words a model actually reaches for ("static"/"固定"…)
+    # — an exact three-token enum turned "设置为静态表格" into a silent
+    # no-op. Same forgiveness philosophy as colour names / type aliases.
+    scroll = {
+        "static": "off",
+        "fixed": "off",
+        "none": "off",
+        "no": "off",
+        "false": "off",
+        "stop": "off",
+        "disabled": "off",
+        "静态": "off",
+        "固定": "off",
+        "关闭": "off",
+        "停止": "off",
+        "marquee": "on",
+        "loop": "on",
+        "scrolling": "on",
+        "true": "on",
+        "yes": "on",
+        "滚动": "on",
+        "轮播": "on",
+    }.get(scroll, scroll)
     if scroll in {"auto", "off", "on"}:
         style["scroll"] = scroll
 
