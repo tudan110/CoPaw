@@ -36,6 +36,46 @@ Fetcher = Callable[[Mapping[str, Any]], dict[str, Any]]
 # ---------------------------------------------------------------------------
 
 
+# T-017: raw payload keys like "resourceTypeStats.硬件设备.totalCount" made
+# metric tables unreadable. Pure envelope segments are dropped, known leaf
+# keys are translated, and the remaining path joins with "·"; unknown keys
+# pass through untranslated so rows stay honest rather than pretty-but-wrong.
+_METRIC_ENVELOPE_SEGMENTS = {
+    "resourceTypeStats",
+    "hostResourceTop",
+    "data",
+    "stats",
+    "statistics",
+}
+
+_METRIC_SEGMENT_LABELS = {
+    "totalCount": "总数",
+    "normalCount": "正常",
+    "alarmCount": "告警",
+    "abnormalCount": "异常",
+    "onlineCount": "在线",
+    "offlineCount": "离线",
+    "totalResources": "资源总数",
+    "healthRate": "健康率",
+    "healthStatus": "健康状态",
+    "usageRate": "使用率",
+    "resourceName": "资源名称",
+    "queryTime": "查询时间",
+    "physical": "物理机",
+    "virtual": "虚拟机",
+    "cpuTop5": "CPU TOP5",
+    "memoryTop5": "内存 TOP5",
+    "storageTop5": "存储 TOP5",
+}
+
+
+def _metric_row_label(prefix: str, key: str) -> str:
+    segment = _METRIC_SEGMENT_LABELS.get(key, str(key))
+    if not prefix:
+        return segment
+    return f"{prefix}·{segment}"
+
+
 def _build_metric_rows(
     data: Any,
     *,
@@ -45,21 +85,36 @@ def _build_metric_rows(
     rows: list[dict[str, Any]] = []
     if isinstance(data, dict):
         for key, value in data.items():
-            label = f"{prefix}.{key}" if prefix else str(key)
+            key_text = str(key)
+            if isinstance(value, dict):
+                # Envelope containers ("resourceTypeStats") carry no
+                # meaning of their own — flatten them out of the label.
+                child_prefix = (
+                    prefix
+                    if key_text in _METRIC_ENVELOPE_SEGMENTS
+                    else _metric_row_label(prefix, key_text)
+                )
+                rows.extend(
+                    _build_metric_rows(
+                        value,
+                        prefix=child_prefix,
+                        limit=limit - len(rows),
+                    ),
+                )
+                if len(rows) >= limit:
+                    break
+                continue
+            label = _metric_row_label(prefix, key_text)
+            if isinstance(value, str) and value in prefix.split("·"):
+                # Echo attribute (e.g. resourceTypeName repeating the
+                # parent segment) — pure noise, save the row budget.
+                continue
             if isinstance(value, (str, int, float, bool)) or value is None:
                 rows.append(
                     {"name": label, "value": "--" if value is None else value},
                 )
             elif isinstance(value, list):
                 rows.append({"name": label, "value": len(value)})
-            elif isinstance(value, dict):
-                rows.extend(
-                    _build_metric_rows(
-                        value,
-                        prefix=label,
-                        limit=limit - len(rows),
-                    ),
-                )
             if len(rows) >= limit:
                 break
     elif isinstance(data, list):
@@ -194,9 +249,7 @@ def _score_system_log_risk(
     if isinstance(risk_keywords, list):
         for keyword in risk_keywords:
             normalized = str(keyword or "").strip()
-            if normalized and (
-                normalized.lower() in lowered or normalized in message
-            ):
+            if normalized and (normalized.lower() in lowered or normalized in message):
                 score = max(score, 76)
                 reasons.append(normalized)
 
@@ -295,9 +348,7 @@ def fetch_system_logs(query_params: Mapping[str, Any]) -> dict[str, Any]:
         lookback_minutes=lookback_minutes,
         query=str(query_params.get("query") or ""),
         from_time=str(
-            query_params.get("fromTime")
-            or query_params.get("from_time")
-            or "",
+            query_params.get("fromTime") or query_params.get("from_time") or "",
         ),
         to_time=str(
             query_params.get("toTime") or query_params.get("to_time") or "",
@@ -311,9 +362,7 @@ def fetch_system_logs(query_params: Mapping[str, Any]) -> dict[str, Any]:
         query_params.get("fields"),
     )
     analysis_mode = str(
-        query_params.get("analysisMode")
-        or query_params.get("analysis_mode")
-        or "",
+        query_params.get("analysisMode") or query_params.get("analysis_mode") or "",
     ).strip()
     resolved_time_range = (
         payload.get("resolvedTimeRange")
@@ -337,9 +386,7 @@ def fetch_system_logs(query_params: Mapping[str, Any]) -> dict[str, Any]:
         "lookbackMinutes": lookback_minutes,
         "timeMode": time_mode
         or (
-            "latest_non_empty"
-            if search_strategy == "latest_non_empty"
-            else "relative"
+            "latest_non_empty" if search_strategy == "latest_non_empty" else "relative"
         ),
         "searchStrategy": str(
             payload.get("searchStrategy") or search_strategy,
@@ -401,9 +448,7 @@ def fetch_real_alarms(query_params: Mapping[str, Any]) -> dict[str, Any]:
     else:
         lookback_minutes = _ALARM_QUERY_ALL_MINUTES
     alarm_status = str(
-        query_params.get("alarmStatus")
-        or query_params.get("alarmstatus")
-        or "",
+        query_params.get("alarmStatus") or query_params.get("alarmstatus") or "",
     ).strip()
     payload = portal_real_alarms.query_portal_real_alarms(
         limit=limit,
@@ -446,6 +491,33 @@ def fetch_real_alarms(query_params: Mapping[str, Any]) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 
+def _shape_asset_overview_rows(data: Any) -> list[dict[str, Any]]:
+    """Typed per-resource-type rows from the asset-overview payload.
+
+    Returns ``[]`` when the payload doesn't match the known
+    ``resourceTypeStats`` schema so the caller can fall back to the
+    generic metric walk.
+    """
+    if not isinstance(data, dict):
+        return []
+    stats = data.get("resourceTypeStats")
+    if not isinstance(stats, dict) or not stats:
+        return []
+    rows: list[dict[str, Any]] = []
+    for type_name, entry in stats.items():
+        if not isinstance(entry, dict):
+            continue
+        rows.append(
+            {
+                "type": str(entry.get("resourceTypeName") or type_name),
+                "total": safe_int(entry.get("totalCount"), 0),
+                "normal": safe_int(entry.get("normalCount"), 0),
+                "alarm": safe_int(entry.get("alarmCount"), 0),
+            },
+        )
+    return rows
+
+
 def fetch_cmdb_resources(query_params: Mapping[str, Any]) -> dict[str, Any]:
     from qwenpaw.extensions.integrations import portal_monitoring_overview
 
@@ -457,27 +529,116 @@ def fetch_cmdb_resources(query_params: Mapping[str, Any]) -> dict[str, Any]:
         if isinstance(envelope, dict)
         else "接口不可用"
     )
-    rows = _build_metric_rows(data)
-    columns = columns_for_capability_fields(
-        "cmdb-resources",
-        query_params.get("fields"),
-    )
-    value = _first_numeric_value(data)
-    if value is None:
-        value = len(rows)
+    rows = _shape_asset_overview_rows(data)
+    if rows:
+        columns = columns_for_capability_fields(
+            "cmdb-resources",
+            query_params.get("fields"),
+        )
+        value = _first_numeric_value(
+            (data or {}).get("totalResources") if isinstance(data, dict) else None,
+        )
+        if value is None:
+            value = sum(safe_int(row.get("total"), 0) for row in rows)
+        health_rate = (data or {}).get("healthRate")
+        trend = "来自 CMDB/资源概览接口"
+        if isinstance(health_rate, (int, float)):
+            trend = f"资源健康率 {health_rate}%"
+    else:
+        # Unknown payload shape — generic metric walk keeps name/value
+        # semantics, so the columns must follow the rows, not the
+        # capability field catalog.
+        rows = _build_metric_rows(data)
+        columns = [
+            {"key": "name", "label": "指标"},
+            {"key": "value", "label": "值"},
+        ]
+        value = _first_numeric_value(data)
+        if value is None:
+            value = len(rows)
+        trend = "来自 CMDB/资源概览接口" if source_status == "live" else message
     return {
         "source": "portal-asset-overview-api",
         "sourceStatus": source_status,
         "scope": str(query_params.get("scope") or "all"),
         "value": value,
         "unit": "项",
-        "trend": (
-            "来自 CMDB/资源概览接口" if source_status == "live" else message
-        ),
+        "trend": trend if source_status == "live" else message,
         "message": "" if source_status == "live" else message,
         "columns": columns,
         "rows": rows,
         "raw": data,
+    }
+
+
+def _map_application_ci(ci: Mapping[str, Any]) -> dict[str, Any]:
+    """Veops project CI → big-screen row (same fields the chat answer shows)."""
+    op_duty = ci.get("op_duty")
+    if isinstance(op_duty, list):
+        op_duty_text = "、".join(
+            str(item).strip() for item in op_duty if str(item).strip()
+        )
+    else:
+        op_duty_text = str(op_duty or "").strip()
+    alarm_raw = ci.get("alarm_status")
+    alarm_text = str(alarm_raw).strip() if alarm_raw is not None else ""
+    # Only "-1" has a verified meaning (no alarms); anything else passes
+    # through raw rather than guessing an enum.
+    alarm_label = "无告警" if alarm_text == "-1" else (alarm_text or "--")
+    status = str(ci.get("status") or "").strip()
+    project_status = str(ci.get("project_status") or "").strip()
+    if status and project_status and status != project_status:
+        status_text = f"{status}（{project_status}）"
+    else:
+        status_text = status or project_status or "--"
+    ci_id = ci.get("_id")
+    return {
+        "name": str(ci.get("project_name") or ci.get("name") or "--"),
+        "ciId": ci_id if ci_id is not None else "--",
+        "appType": str(ci.get("project_type") or "--"),
+        "status": status_text,
+        "alarmStatus": alarm_label,
+        "level": str(ci.get("Level") or ci.get("level") or "--"),
+        "opDuty": op_duty_text or "--",
+        "installDate": str(ci.get("installation_date") or "--"),
+    }
+
+
+def fetch_cmdb_applications(query_params: Mapping[str, Any]) -> dict[str, Any]:
+    from qwenpaw.extensions.integrations import working_secrets
+
+    # ZGOPS_* credentials come from the settings page «CMDB / 资源导入»
+    # (env-file candidates + os.environ overrides) — same config
+    # authority as the resource-import flow.
+    working_secrets.ensure_working_secrets_loaded()
+    from qwenpaw.extensions.integrations.zgops_cmdb import application_query
+
+    limit = max(1, min(200, safe_int(query_params.get("limit"), 50)))
+    payload = application_query.query_application_cis(limit=limit)
+    columns = columns_for_capability_fields(
+        "cmdb-applications",
+        query_params.get("fields"),
+    )
+    source_status = str(payload.get("source") or "error")
+    if source_status == "error":
+        source_status = "unavailable"
+    rows = [
+        _map_application_ci(item)
+        for item in payload.get("items") or []
+        if isinstance(item, Mapping)
+    ]
+    total = safe_int(payload.get("total"), len(rows))
+    message = str(payload.get("message") or "")
+    return {
+        "source": application_query.ZGOPS_SOURCE,
+        "sourceStatus": source_status,
+        "value": total,
+        "unit": "个",
+        "trend": "CMDB 应用系统清单" if rows else message,
+        "message": "" if source_status == "live" else message,
+        "columns": columns,
+        "rows": rows[:limit],
+        "total": total,
     }
 
 
@@ -642,9 +803,7 @@ def fetch_authored_content(query_params: Mapping[str, Any]) -> dict[str, Any]:
     content = _sanitize_authored_content(query_params.get("content"))
     rows = content.get("rows") or []
     columns = content.get("columns") or (
-        [{"key": key, "label": key} for key in rows[0].keys()]
-        if rows
-        else []
+        [{"key": key, "label": key} for key in rows[0].keys()] if rows else []
     )
     metrics = dict(content.get("metrics") or {})
     if content.get("text"):
@@ -655,9 +814,7 @@ def fetch_authored_content(query_params: Mapping[str, Any]) -> dict[str, Any]:
         "sourceStatus": "live" if has_content else "empty",
         "trend": "内容由 AI 即席生成（非外部数据源）",
         "message": (
-            ""
-            if has_content
-            else "AI 未在规划中内联内容——请把需求描述得更具体后重试。"
+            "" if has_content else "AI 未在规划中内联内容——请把需求描述得更具体后重试。"
         ),
         "columns": columns,
         "rows": rows,
@@ -679,9 +836,7 @@ def fetch_capability_gap(query_params: Mapping[str, Any]) -> dict[str, Any]:
     suggested_skill = (
         str(query_params.get("suggestedSkillName") or "--").strip() or "--"
     )
-    suggested_api = (
-        str(query_params.get("suggestedApi") or "--").strip() or "--"
-    )
+    suggested_api = str(query_params.get("suggestedApi") or "--").strip() or "--"
     required_inputs = query_params.get("requiredInputs")
     validation_plan = str(
         query_params.get("validationPlan")
@@ -698,8 +853,7 @@ def fetch_capability_gap(query_params: Mapping[str, Any]) -> dict[str, Any]:
                 "、".join(str(item) for item in required_inputs)
                 if isinstance(required_inputs, list)
                 else str(
-                    required_inputs
-                    or "数据源地址、鉴权方式、查询参数、返回字段映射",
+                    required_inputs or "数据源地址、鉴权方式、查询参数、返回字段映射",
                 )
             ),
         },
@@ -708,9 +862,7 @@ def fetch_capability_gap(query_params: Mapping[str, Any]) -> dict[str, Any]:
     return {
         "source": "ai-capability-planning",
         "sourceStatus": "unavailable",
-        "message": (
-            "当前没有可复用的真实数据能力，已生成接入方案，未展示模拟数据。"
-        ),
+        "message": ("当前没有可复用的真实数据能力，已生成接入方案，未展示模拟数据。"),
         "columns": [
             {"key": "name", "label": "事项"},
             {"key": "value", "label": "方案"},
@@ -832,9 +984,13 @@ CAPABILITY_METADATA: list[dict[str, Any]] = [
     },
     {
         "id": "cmdb-resources",
-        "name": "CMDB 资源信息",
+        "name": "CMDB 资源统计",
         "domain": "resource",
-        "description": "调用资源/资产概览接口读取 CMDB 资源统计和资源状态。",
+        "description": (
+            "调用资源/资产概览接口读取 CMDB 资源类型统计"
+            "（各类型总数/正常/告警）与健康率；这是统计汇总，"
+            "不含应用记录，查询具体应用清单请用 cmdb-applications。"
+        ),
         "inputSchema": {
             "scope": "all",
             "fields": DEFAULT_CAPABILITY_FIELDS["cmdb-resources"],
@@ -862,7 +1018,48 @@ CAPABILITY_METADATA: list[dict[str, Any]] = [
         "cachePolicy": {"ttlSeconds": 120},
         "refreshPolicy": {"intervalSeconds": 120},
         "dataSource": "portal-asset-overview-api",
-        "examplePrompts": ["CMDB资源信息", "资产资源概览"],
+        "examplePrompts": ["CMDB资源统计", "资产资源概览"],
+    },
+    {
+        "id": "cmdb-applications",
+        "name": "CMDB 应用信息",
+        "domain": "resource",
+        "description": (
+            "调用 Veops CMDB 查询应用系统（project CI）的真实清单："
+            "应用名称、CI ID、应用类型、应用状态、告警状态、等级、"
+            "运维负责人、纳管时间。「应用信息/应用列表/应用系统」"
+            "类请求用这个，而不是 cmdb-resources 的类型统计。"
+        ),
+        "inputSchema": {
+            "limit": 50,
+            "fields": DEFAULT_CAPABILITY_FIELDS["cmdb-applications"],
+        },
+        "outputSchema": {
+            "columns": "array",
+            "rows": "array",
+            "total": "number",
+        },
+        "availableFields": CAPABILITY_FIELD_DEFINITIONS["cmdb-applications"],
+        "supportedVisuals": [
+            "table",
+            "metric-card",
+            "metric-kpi",
+            "flip-number",
+            "top-n",
+            "status-stream",
+            "donut",
+            "bar-chart",
+            "composed",
+        ],
+        "permissionScope": "resource:read",
+        "cachePolicy": {"ttlSeconds": 120},
+        "refreshPolicy": {"intervalSeconds": 120},
+        "dataSource": "zgops-veops-cmdb-api",
+        "examplePrompts": [
+            "CMDB应用信息表",
+            "应用系统列表",
+            "查询应用状态",
+        ],
     },
     {
         "id": "workorders",
@@ -1086,6 +1283,7 @@ _CAPABILITY_CLASSIFICATION: dict[str, tuple[str, str]] = {
     "system-logs": ("logs", "n9e"),
     "real-alarms": ("alarm", "inoe"),
     "cmdb-resources": ("cmdb", "inoe"),
+    "cmdb-applications": ("cmdb", "zgops"),
     "workorders": ("workorder", "order"),
     "alarm-top5": ("alarm", "inoe"),
     "topology-impact": ("cmdb", "inoe"),
@@ -1123,9 +1321,7 @@ def fetch_self_monitor_overview(
     try:
         from qwenpaw.self_monitor.store import SelfMonitorStore
 
-        window_s = max(
-            300, min(86400 * 7, safe_int(query_params.get("windowS"), 3600))
-        )
+        window_s = max(300, min(86400 * 7, safe_int(query_params.get("windowS"), 3600)))
         store = SelfMonitorStore()
         now = _time.time()
         since = now - window_s
@@ -1140,17 +1336,13 @@ def fetch_self_monitor_overview(
                 "columns": [],
             }
 
-        degrade = store.counter_delta(
-            "qwenpaw_degrade_events_total", since=since
-        )
+        degrade = store.counter_delta("qwenpaw_degrade_events_total", since=since)
         llm_429 = store.counter_delta(
             "qwenpaw_llm_requests_total",
             since=since,
             label_filter={"status": "429"},
         )
-        chat_total = store.counter_delta(
-            "qwenpaw_chat_turns_total", since=since
-        )
+        chat_total = store.counter_delta("qwenpaw_chat_turns_total", since=since)
         chat_ok = store.counter_delta(
             "qwenpaw_chat_turns_total",
             since=since,
@@ -1160,15 +1352,13 @@ def fetch_self_monitor_overview(
             {
                 row["worker_id"]
                 for row in latest
-                if row["name"] == "qwenpaw_worker_up"
-                and row["value"] >= 1.0
+                if row["name"] == "qwenpaw_worker_up" and row["value"] >= 1.0
             }
         )
         datasources_down = [
             str(row["labels"].get("source") or "")
             for row in latest
-            if row["name"] == "qwenpaw_datasource_up"
-            and row["value"] < 1.0
+            if row["name"] == "qwenpaw_datasource_up" and row["value"] < 1.0
         ]
         probes_down = [
             str(row["labels"].get("target") or "")
@@ -1213,15 +1403,11 @@ def fetch_self_monitor_overview(
         # llm request pulse, bucketed server-side for line charts
         bucket_s = max(60, window_s // 60)
         buckets: dict[int, float] = {}
-        for row in store.query_metrics(
-            "qwenpaw_llm_requests_total", since=since
-        ):
+        for row in store.query_metrics("qwenpaw_llm_requests_total", since=since):
             key = int(row["ts"]) // bucket_s * bucket_s
             buckets.setdefault(key, 0.0)
         prev_by_series: dict[str, float] = {}
-        for row in store.query_metrics(
-            "qwenpaw_llm_requests_total", since=since
-        ):
+        for row in store.query_metrics("qwenpaw_llm_requests_total", since=since):
             series_key = f'{row["worker_id"]}|{row["labels"]}'
             value = row["value"]
             prev = prev_by_series.get(series_key)
@@ -1231,10 +1417,7 @@ def fetch_self_monitor_overview(
                 buckets[key] = buckets.get(key, 0.0) + delta
             prev_by_series[series_key] = value
         ordered = sorted(buckets.items())
-        categories = [
-            _time.strftime("%H:%M", _time.localtime(ts))
-            for ts, _ in ordered
-        ]
+        categories = [_time.strftime("%H:%M", _time.localtime(ts)) for ts, _ in ordered]
         series = [round(v, 1) for _, v in ordered]
 
         return {
@@ -1253,9 +1436,7 @@ def fetch_self_monitor_overview(
                 "LLM 429": int(llm_429),
                 "Worker 存活": len(workers),
                 "会话成功率": (
-                    round(chat_ok / chat_total * 100, 1)
-                    if chat_total > 0
-                    else None
+                    round(chat_ok / chat_total * 100, 1) if chat_total > 0 else None
                 ),
             },
             "total": len(rows),
@@ -1274,6 +1455,7 @@ FETCHERS: dict[str, Fetcher] = {
     "system-logs": fetch_system_logs,
     "real-alarms": fetch_real_alarms,
     "cmdb-resources": fetch_cmdb_resources,
+    "cmdb-applications": fetch_cmdb_applications,
     "workorders": fetch_workorders,
     "alarm-top5": fetch_alarm_top5,
     "topology-impact": fetch_topology_impact,

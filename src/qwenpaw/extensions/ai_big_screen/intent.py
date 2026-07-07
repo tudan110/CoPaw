@@ -301,9 +301,7 @@ def default_screen_pattern(components: list[PlanComponent]) -> str:
     """
     if any(component.role == "hero" for component in components):
         return "focus-left"
-    small = sum(
-        1 for c in components if c.type in _SMALL_PATTERN_TYPES
-    )
+    small = sum(1 for c in components if c.type in _SMALL_PATTERN_TYPES)
     if small >= 3 and small < len(components):
         return "kpi-top"
     return "balanced"
@@ -333,6 +331,7 @@ def normalize_component_type(raw: Any) -> str:
         return "table"
     return ""
 
+
 _FALLBACK_POSITIONS = [
     {"x": 0, "y": 0, "w": 6, "h": 4},
     {"x": 6, "y": 0, "w": 6, "h": 4},
@@ -346,6 +345,18 @@ _SEMANTIC_CAPABILITY_CHECKS = [
     ("system-logs", ("日志", "log", "logs")),
     ("real-alarms", ("告警", "报警", "alarm", "alarms")),
     ("workorders", ("工单", "workorder", "ticket", "tickets")),
+    (
+        "cmdb-applications",
+        (
+            "应用信息",
+            "应用列表",
+            "应用系统",
+            "应用清单",
+            "应用状态",
+            "应用详情",
+            "application",
+        ),
+    ),
     ("cmdb-resources", ("cmdb", "资源", "资产", "resource", "asset")),
     ("topology-impact", ("拓扑", "链路", "影响范围", "topology")),
     (
@@ -353,6 +364,12 @@ _SEMANTIC_CAPABILITY_CHECKS = [
         ("自监控", "self-monitor", "自身健康", "系统健康"),
     ),
 ]
+
+# In "CMDB的应用信息" the "cmdb" token is a namespace qualifier, not a
+# request for the resource-type statistics capability. When the application
+# capability matched and the only resource trigger was the bare namespace
+# word, yield to the application list.
+_CMDB_RESOURCE_SPECIFIC_TERMS = ("资源", "资产", "resource", "asset")
 
 
 def _capability_meta(capability_id: str) -> dict[str, Any]:
@@ -383,14 +400,18 @@ def extract_semantic_capability_ids(prompt: str) -> list[str]:
     for _, _, capability_id in matches:
         if capability_id not in capability_ids:
             capability_ids.append(capability_id)
+    if (
+        "cmdb-applications" in capability_ids
+        and "cmdb-resources" in capability_ids
+        and not any(term in normalized for term in _CMDB_RESOURCE_SPECIFIC_TERMS)
+    ):
+        capability_ids.remove("cmdb-resources")
     return capability_ids
 
 
 def prompt_is_simple_data_query(prompt: str) -> bool:
     text = str(prompt or "")
-    if not any(
-        term in text for term in ("查询", "查看", "看一下", "展示", "显示")
-    ):
+    if not any(term in text for term in ("查询", "查看", "看一下", "展示", "显示")):
         return False
     expansion_terms = (
         "分析",
@@ -443,8 +464,7 @@ def _should_use_log_risk_fast_path(prompt: str) -> bool:
     if not text_requests_log_risk_analysis(text):
         return False
     return any(
-        term in text
-        for term in ("分析", "高危", "危险", "动态", "突出", "有哪些")
+        term in text for term in ("分析", "高危", "危险", "动态", "突出", "有哪些")
     )
 
 
@@ -475,9 +495,7 @@ def _has_uncovered_request(prompt: str) -> bool:
     to the LLM, which turns the unknown ask into an honest capability-gap
     instead of the keyword fast-path silently dropping it."""
     clauses = [
-        c.strip()
-        for c in _REQUEST_SPLIT_RE.split(str(prompt or ""))
-        if c.strip()
+        c.strip() for c in _REQUEST_SPLIT_RE.split(str(prompt or "")) if c.strip()
     ]
     if len(clauses) <= 1:
         return False
@@ -534,8 +552,7 @@ def capability_time_window_applies(prompt: str, capability_id: str) -> bool:
         if "当前" in prefix or "活动" in prefix or "实时" in prefix:
             continue
         if any(
-            time_match.start() <= alarm_match.start()
-            for time_match in time_matches
+            time_match.start() <= alarm_match.start() for time_match in time_matches
         ):
             return True
     return False
@@ -569,8 +586,7 @@ def _text_requests_workorder_stream_visual(text: str) -> bool:
     ):
         return False
     return any(
-        term in normalized
-        for term in ("流转", "动态", "时间线", "状态流", "轮播")
+        term in normalized for term in ("流转", "动态", "时间线", "状态流", "轮播")
     ) or any(term in lowered for term in ("stream", "timeline", "dynamic"))
 
 
@@ -590,8 +606,7 @@ def normalize_theme(raw_theme: Any) -> dict[str, Any]:
     return {
         "mode": "dark",
         "palette": palette,
-        "density": str(theme.get("density") or "dashboard").strip()
-        or "dashboard",
+        "density": str(theme.get("density") or "dashboard").strip() or "dashboard",
     }
 
 
@@ -624,9 +639,7 @@ def normalize_layout_position(raw_position: Any, index: int) -> dict[str, int]:
 
 
 def _normalize_visual_config(raw_visual_config: Any) -> dict[str, str]:
-    visual_config = (
-        raw_visual_config if isinstance(raw_visual_config, dict) else {}
-    )
+    visual_config = raw_visual_config if isinstance(raw_visual_config, dict) else {}
     palette = _normalize_palette(visual_config.get("palette")) or "industrial"
     emphasis = str(visual_config.get("emphasis") or "standard").strip()
     return {
@@ -791,11 +804,9 @@ def _infer_component_capability_id(
     lowered = text.lower()
     scores: dict[str, int] = {}
     if any(
-        term in text
-        for term in ("工单", "待办", "待处理", "流程", "派单", "处置单")
+        term in text for term in ("工单", "待办", "待处理", "流程", "派单", "处置单")
     ) or any(
-        term in lowered
-        for term in ("workorder", "work order", "ticket", "tickets")
+        term in lowered for term in ("workorder", "work order", "ticket", "tickets")
     ):
         scores["workorders"] = 10
     if any(term in text for term in ("日志", "智观日志")) or any(
@@ -810,6 +821,24 @@ def _infer_component_capability_id(
         term in lowered for term in ("cmdb", "resource", "asset")
     ):
         scores["cmdb-resources"] = 6
+    # Application-list asks outrank the statistics capability: a title
+    # like "CMDB 应用信息表" matches both, and the record list is what
+    # the user means (the "cmdb" token is just the namespace).
+    if (
+        any(
+            term in text
+            for term in (
+                "应用信息",
+                "应用列表",
+                "应用系统",
+                "应用清单",
+                "应用状态",
+                "应用详情",
+            )
+        )
+        or "application" in lowered
+    ):
+        scores["cmdb-applications"] = 7
     if (
         any(term in text for term in ("拓扑", "链路", "影响范围"))
         or "topology" in lowered
@@ -894,16 +923,13 @@ def build_capability_gap_component(
     raw_component = {
         "title": f"{GAP_TITLE_PREFIXES[0]}{title}",
         "description": (
-            f"{reason}。AI 已保留取数方案位置，"
-            "接入真实能力前不展示模拟数据。"
+            f"{reason}。AI 已保留取数方案位置，" "接入真实能力前不展示模拟数据。"
         ),
         "capabilityId": "capability-gap",
         "visualType": "table",
         "queryParams": merged_query_params,
-        "layoutPosition": layout_position
-        or normalize_layout_position({}, index),
-        "visualConfig": visual_config
-        or {"palette": "cool", "emphasis": "standard"},
+        "layoutPosition": layout_position or normalize_layout_position({}, index),
+        "visualConfig": visual_config or {"palette": "cool", "emphasis": "standard"},
     }
     return normalize_plan_component(
         raw_component,
@@ -990,9 +1016,7 @@ def normalize_plan_component(
     requested_type = str(
         component.get("visualType") or component.get("type") or "",
     ).strip()
-    component_type = (
-        requested_type if requested_type in supported_visuals else ""
-    )
+    component_type = requested_type if requested_type in supported_visuals else ""
     if not component_type:
         component_type = supported_visuals[0] if supported_visuals else "table"
     if (
@@ -1017,14 +1041,13 @@ def normalize_plan_component(
             query_params.get("query") or "",
         ).strip()
     ):
-        query_params["query"] = (
-            str(component.get("title") or "").strip() or prompt
-        )[:60]
+        query_params["query"] = (str(component.get("title") or "").strip() or prompt)[
+            :60
+        ]
     visual_config = _normalize_visual_config(component.get("visualConfig"))
     visual_spec = sanitize_visual_spec(component.get("visualSpec"))
     explicit_log_risk = (
-        capability_id == "system-logs"
-        and text_requests_log_risk_analysis(prompt)
+        capability_id == "system-logs" and text_requests_log_risk_analysis(prompt)
     )
     if (
         capability_id == "system-logs"
@@ -1198,9 +1221,7 @@ def build_semantic_component(
         "visualConfig": {"palette": "industrial", "emphasis": "standard"},
     }
     if inferred_lookback_minutes and uses_time_window:
-        raw_component["queryParams"][
-            "lookbackMinutes"
-        ] = inferred_lookback_minutes
+        raw_component["queryParams"]["lookbackMinutes"] = inferred_lookback_minutes
     if capability_id == "system-logs" and text_requests_log_risk_analysis(
         prompt,
     ):
@@ -1323,9 +1344,7 @@ def _fill_uncovered_clauses(
     whatever the user happens to ask for next).
     """
     clauses = [
-        c.strip()
-        for c in _REQUEST_SPLIT_RE.split(str(prompt or ""))
-        if c.strip()
+        c.strip() for c in _REQUEST_SPLIT_RE.split(str(prompt or "")) if c.strip()
     ]
     if len(clauses) <= 1:
         return components
@@ -1573,7 +1592,6 @@ def _build_intent_messages(prompt: str, title: str) -> list[dict[str, str]]:
         "运维数据：运维数据必须绑定真实数据能力，"
         "没有对应能力时用 capability-gap 诚实标注，严禁编造。"
         "screenTitle 是渲染在大屏顶部的主标题：一句话概括本屏主题，"
-
         "紧扣用户需求、不含'查询/生成/大屏'等动词，≤20 字（如'15分钟告警态势'）。"
         "layoutPattern 是整屏构图，只能是：focus-left(左侧主视觉+右侧信息栏，"
         "适合有明确核心指标/趋势的需求)、focus-right(镜像)、"

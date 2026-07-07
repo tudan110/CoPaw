@@ -187,6 +187,256 @@ class TestFetchOnceCache:
         assert len(calls) == 1
 
 
+class TestCmdbApplications:
+    """T-031: the big screen must serve real application records, not
+    resource-type statistics, for "CMDB 应用信息" asks."""
+
+    @pytest.fixture(autouse=True)
+    def _no_secrets_io(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(
+            "qwenpaw.extensions.integrations.working_secrets"
+            ".ensure_working_secrets_loaded",
+            lambda: None,
+        )
+
+    _VEOPS_CI = {
+        "Level": "普通",
+        "_id": 7954,
+        "alarm_status": "-1",
+        "ci_type": "project",
+        "ci_type_alias": "应用系统",
+        "installation_date": "2026-06-12 20:55:56",
+        "name": "天翼智观",
+        "op_duty": ["运维人员"],
+        "project_name": "天翼智观",
+        "project_status": "normal",
+        "project_type": "web",
+        "status": "在线",
+    }
+
+    async def test_live_rows_match_chat_fields(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from qwenpaw.extensions.integrations.zgops_cmdb import (
+            application_query,
+        )
+
+        monkeypatch.setattr(
+            application_query,
+            "query_application_cis",
+            lambda **_kwargs: {
+                "source": "live",
+                "items": [dict(self._VEOPS_CI)],
+                "total": 1,
+                "message": "",
+            },
+        )
+        result = await execute_capability(
+            {},
+            capability_id="cmdb-applications",
+            fresh=True,
+        )
+        assert result.source_status == "live"
+        assert result.total == 1
+        assert result.rows == [
+            {
+                "name": "天翼智观",
+                "ciId": 7954,
+                "appType": "web",
+                "status": "在线（normal）",
+                "alarmStatus": "无告警",
+                "level": "普通",
+                "opDuty": "运维人员",
+                "installDate": "2026-06-12 20:55:56",
+            },
+        ]
+        labels = [column["label"] for column in result.columns or []]
+        assert labels == [
+            "应用名称",
+            "CI ID",
+            "应用类型",
+            "应用状态",
+            "告警状态",
+            "等级",
+            "运维负责人",
+            "纳管时间",
+        ]
+
+    async def test_error_envelope_is_failed(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from qwenpaw.extensions.integrations.zgops_cmdb import (
+            application_query,
+        )
+
+        monkeypatch.setattr(
+            application_query,
+            "query_application_cis",
+            lambda **_kwargs: {
+                "source": "error",
+                "items": [],
+                "total": 0,
+                "message": "CMDB 连接未配置（设置页«CMDB / 资源导入»）",
+            },
+        )
+        result = await execute_capability(
+            {},
+            capability_id="cmdb-applications",
+            fresh=True,
+        )
+        assert result.source_status == "failed"
+        assert "CMDB" in result.message
+
+    async def test_fields_param_narrows_columns(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from qwenpaw.extensions.integrations.zgops_cmdb import (
+            application_query,
+        )
+
+        monkeypatch.setattr(
+            application_query,
+            "query_application_cis",
+            lambda **_kwargs: {
+                "source": "live",
+                "items": [dict(self._VEOPS_CI)],
+                "total": 1,
+                "message": "",
+            },
+        )
+        result = await execute_capability(
+            {"fields": ["应用名称", "状态", "负责人"]},
+            capability_id="cmdb-applications",
+            fresh=True,
+        )
+        assert [column["key"] for column in result.columns or []] == [
+            "name",
+            "status",
+            "opDuty",
+        ]
+
+
+class TestCmdbResourceShaping:
+    """T-017: resource statistics render typed readable columns instead
+    of dotted machine paths."""
+
+    _OVERVIEW = {
+        "resourceTypeStats": {
+            "硬件设备": {
+                "resourceTypeName": "硬件设备",
+                "totalCount": 1,
+                "normalCount": 1,
+                "alarmCount": 0,
+            },
+            "软件服务-中间件": {
+                "resourceTypeName": "软件服务-中间件",
+                "totalCount": 3,
+                "normalCount": 2,
+                "alarmCount": 1,
+            },
+        },
+        "totalResources": 10,
+        "healthRate": 90.0,
+        "healthStatus": "green",
+    }
+
+    async def test_typed_rows_and_columns(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from qwenpaw.extensions.integrations import portal_monitoring_overview
+
+        monkeypatch.setattr(
+            portal_monitoring_overview,
+            "query_asset_overview",
+            lambda: {"code": 200, "msg": None, "data": dict(self._OVERVIEW)},
+        )
+        result = await execute_capability(
+            {},
+            capability_id="cmdb-resources",
+            fresh=True,
+        )
+        assert result.source_status == "live"
+        assert result.rows == [
+            {"type": "硬件设备", "total": 1, "normal": 1, "alarm": 0},
+            {"type": "软件服务-中间件", "total": 3, "normal": 2, "alarm": 1},
+        ]
+        assert [column["label"] for column in result.columns or []] == [
+            "资源类型",
+            "总数",
+            "正常",
+            "告警",
+        ]
+        assert result.extra.get("value") == 10
+        assert "健康率" in str(result.extra.get("trend") or "")
+
+    async def test_unknown_shape_falls_back_to_metric_walk(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from qwenpaw.extensions.integrations import portal_monitoring_overview
+
+        monkeypatch.setattr(
+            portal_monitoring_overview,
+            "query_asset_overview",
+            lambda: {"code": 200, "msg": None, "data": {"custom": 7}},
+        )
+        result = await execute_capability(
+            {},
+            capability_id="cmdb-resources",
+            fresh=True,
+        )
+        assert result.rows == [{"name": "custom", "value": 7}]
+        # columns must follow the fallback row shape, not the catalog
+        assert [column["key"] for column in result.columns or []] == [
+            "name",
+            "value",
+        ]
+
+
+class TestMetricRowLabels:
+    """T-017: generic metric walk emits readable · labels."""
+
+    def test_dotted_paths_become_readable(self) -> None:
+        from qwenpaw.extensions.ai_big_screen.capabilities.descriptors import (
+            _build_metric_rows,
+        )
+
+        rows = _build_metric_rows(
+            {
+                "resourceTypeStats": {
+                    "硬件设备": {
+                        "resourceTypeName": "硬件设备",
+                        "totalCount": 1,
+                        "alarmCount": 0,
+                    },
+                },
+                "totalResources": 10,
+                "healthRate": 90.0,
+            },
+        )
+        names = [row["name"] for row in rows]
+        assert "硬件设备·总数" in names
+        assert "硬件设备·告警" in names
+        assert "资源总数" in names
+        assert "健康率" in names
+        # echo attribute rows and raw dotted paths must be gone
+        assert not any("resourceTypeName" in name for name in names)
+        assert not any("." in name for name in names)
+        assert not any("resourceTypeStats" in name for name in names)
+
+    def test_unknown_keys_pass_through(self) -> None:
+        from qwenpaw.extensions.ai_big_screen.capabilities.descriptors import (
+            _build_metric_rows,
+        )
+
+        rows = _build_metric_rows({"outer": {"customMetric": 5}})
+        assert rows == [{"name": "outer·customMetric", "value": 5}]
+
+
 class TestRegistry:
     def test_all_legacy_capabilities_registered(self) -> None:
         ids = {item["id"] for item in list_capability_metadata()}
@@ -194,6 +444,7 @@ class TestRegistry:
             "system-logs",
             "real-alarms",
             "cmdb-resources",
+            "cmdb-applications",
             "workorders",
             "alarm-top5",
             "topology-impact",
@@ -228,6 +479,8 @@ class TestRegistry:
         assert by_id["workorders"]["category"] == "workorder"
         assert by_id["workorders"]["connection"] == "order"
         assert by_id["cmdb-resources"]["category"] == "cmdb"
+        assert by_id["cmdb-applications"]["category"] == "cmdb"
+        assert by_id["cmdb-applications"]["connection"] == "zgops"
         assert by_id["system-logs"]["category"] == "logs"
         assert by_id["system-logs"]["connection"] == "n9e"
         # web/gap need no connection

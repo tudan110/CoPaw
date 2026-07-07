@@ -50,6 +50,20 @@ class TestPromptHeuristics:
         ids = extract_semantic_capability_ids("查询日志和告警，再看下工单")
         assert ids == ["system-logs", "real-alarms", "workorders"]
 
+    def test_cmdb_application_ask_routes_to_application_list(self) -> None:
+        # T-031: "cmdb" here is a namespace qualifier — the record list
+        # capability must win, not the resource-type statistics.
+        ids = extract_semantic_capability_ids("给出CMDB的应用信息表")
+        assert ids == ["cmdb-applications"]
+
+    def test_cmdb_resource_and_application_can_coexist(self) -> None:
+        ids = extract_semantic_capability_ids("CMDB资源统计和应用列表")
+        assert set(ids) == {"cmdb-resources", "cmdb-applications"}
+
+    def test_bare_cmdb_still_routes_to_resources(self) -> None:
+        ids = extract_semantic_capability_ids("查看CMDB资源")
+        assert ids == ["cmdb-resources"]
+
     def test_simple_query_fast_path(self) -> None:
         assert should_use_semantic_fast_path("查询最近15分钟告警") is True
 
@@ -108,9 +122,7 @@ class TestFastPath:
         spy = SpyModel()
         plan = await build_screen_plan("查询最近15分钟系统日志", model=spy)
         assert spy.calls == 0
-        log = next(
-            c for c in plan.components if c.capability_id == "system-logs"
-        )
+        log = next(c for c in plan.components if c.capability_id == "system-logs")
         assert log.query_params.get("searchStrategy") == "latest_non_empty"
 
 
@@ -134,9 +146,7 @@ class TestLlmPathNormalization:
         assert model.calls == 1
         gap = plan.components[0]
         assert gap.capability_id == "capability-gap"
-        assert gap.query_params.get("suggestedCapabilityId") == (
-            "kubernetes-metrics"
-        )
+        assert gap.query_params.get("suggestedCapabilityId") == ("kubernetes-metrics")
 
     def test_topology_component_born_with_visible_style(self) -> None:
         component = intent.normalize_plan_component(
@@ -320,6 +330,19 @@ class TestDegradedFallback:
         assert plan.components
         assert plan.components[0].capability_id == "capability-gap"
 
+    async def test_guardrail_cmdb_application_ask_binds_record_list(
+        self,
+    ) -> None:
+        # T-031: even the degraded path must serve real application
+        # records for the exact prompt the user reported.
+        plan = build_guardrail_plan(
+            prompt="给出CMDB的应用信息表",
+            title="",
+        )
+        ids = [c.capability_id for c in plan.components]
+        assert ids == ["cmdb-applications"]
+        assert plan.components[0].type == "table"
+
 
 class TestTitleOverride:
     async def test_requested_title_wins(self) -> None:
@@ -360,9 +383,7 @@ class TestWebLiveRouting:
         )
         caps = [(c.type, c.capability_id) for c in plan.components]
         assert ("table", "web-live-data") in caps
-        weather = next(
-            c for c in plan.components if c.capability_id == "web-live-data"
-        )
+        weather = next(c for c in plan.components if c.capability_id == "web-live-data")
         assert weather.query_params.get("query") == "南京天气"
 
     def test_public_web_infers_but_internal_wins_collision(self) -> None:
@@ -374,6 +395,19 @@ class TestWebLiveRouting:
         assert (
             intent._infer_component_capability_id({"title": "资讯中心告警"})
             == "real-alarms"
+        )
+
+    def test_application_title_outranks_cmdb_statistics(self) -> None:
+        # T-031: title inference overrides the LLM's claimed capability,
+        # so "CMDB 应用信息表" must resolve to the record list — this was
+        # the exact mechanism that force-bound it to resource statistics.
+        assert (
+            intent._infer_component_capability_id({"title": "CMDB 应用信息表"})
+            == "cmdb-applications"
+        )
+        assert (
+            intent._infer_component_capability_id({"title": "CMDB 资源统计"})
+            == "cmdb-resources"
         )
 
     def test_unknown_weather_capability_reroutes_not_gapped(self) -> None:
@@ -404,9 +438,7 @@ class TestUncoveredClauseCompleteness:
         caps = [c.capability_id for c in plan.components]
         assert "workorders" in caps
         assert "real-alarms" in caps
-        gap = next(
-            c for c in plan.components if c.capability_id == "capability-gap"
-        )
+        gap = next(c for c in plan.components if c.capability_id == "capability-gap")
         assert "库存周转率" in gap.query_params.get("requestedData", "")
 
     def test_guardrail_fully_covered_prompt_has_no_gap(self) -> None:
@@ -439,9 +471,7 @@ class TestUncoveredClauseCompleteness:
             model=model,
         )
         assert model.calls == 1
-        gap = next(
-            c for c in plan.components if c.capability_id == "capability-gap"
-        )
+        gap = next(c for c in plan.components if c.capability_id == "capability-gap")
         assert "库存周转率" in gap.query_params.get("requestedData", "")
 
     async def test_llm_path_no_gap_when_already_complete(self) -> None:
@@ -780,9 +810,7 @@ class TestAuthoredClauseCoverage:
             [self._authored("九九乘法表")],
             prompt="查询待办工单、告警，同时写一个99乘法表",
         )
-        gap_titles = [
-            c.title for c in out if c.capability_id == "capability-gap"
-        ]
+        gap_titles = [c.title for c in out if c.capability_id == "capability-gap"]
         assert gap_titles == []
 
     def test_truly_uncovered_clause_still_gaps(self) -> None:
@@ -815,9 +843,7 @@ class TestDegradedGapHonesty:
             title="",
             degraded=True,
         )
-        gaps = [
-            c for c in plan.components if c.capability_id == "capability-gap"
-        ]
+        gaps = [c for c in plan.components if c.capability_id == "capability-gap"]
         assert len(gaps) == 1
         reason = str(gaps[0].query_params.get("reason") or "")
         assert "重新生成" in reason
@@ -836,9 +862,7 @@ class TestDegradedGapHonesty:
             title="",
             degraded=False,
         )
-        gaps = [
-            c for c in plan.components if c.capability_id == "capability-gap"
-        ]
+        gaps = [c for c in plan.components if c.capability_id == "capability-gap"]
         assert len(gaps) == 1
         reason = str(gaps[0].query_params.get("reason") or "")
         assert "未匹配到已接入能力" in reason

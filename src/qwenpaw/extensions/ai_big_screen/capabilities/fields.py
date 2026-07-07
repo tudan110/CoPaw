@@ -66,8 +66,50 @@ CAPABILITY_FIELD_DEFINITIONS: dict[str, list[dict[str, Any]]] = {
         {"key": "count", "label": "触发次数", "aliases": ["次数", "告警次数"]},
     ],
     "cmdb-resources": [
-        {"key": "name", "label": "指标", "aliases": ["名称", "资源指标"]},
-        {"key": "value", "label": "值", "aliases": ["数量", "指标值"]},
+        # "name"/"value" kept as aliases so screens saved before the
+        # typed-column upgrade still resolve onto real columns.
+        {
+            "key": "type",
+            "label": "资源类型",
+            "aliases": ["name", "名称", "类型", "资源指标", "指标"],
+        },
+        {
+            "key": "total",
+            "label": "总数",
+            "aliases": ["value", "数量", "值", "指标值"],
+        },
+        {"key": "normal", "label": "正常", "aliases": ["正常数", "健康"]},
+        {"key": "alarm", "label": "告警", "aliases": ["告警数", "异常"]},
+    ],
+    "cmdb-applications": [
+        {
+            "key": "name",
+            "label": "应用名称",
+            "aliases": ["应用", "名称", "应用系统", "系统名称"],
+        },
+        {
+            "key": "ciId",
+            "label": "CI ID",
+            "aliases": ["CIID", "配置项ID", "资源ID", "id"],
+        },
+        {"key": "appType", "label": "应用类型", "aliases": ["类型"]},
+        {
+            "key": "status",
+            "label": "应用状态",
+            "aliases": ["状态", "在线状态", "运行状态"],
+        },
+        {"key": "alarmStatus", "label": "告警状态", "aliases": ["告警"]},
+        {"key": "level", "label": "等级", "aliases": ["级别", "重要等级"]},
+        {
+            "key": "opDuty",
+            "label": "运维负责人",
+            "aliases": ["负责人", "运维人员", "责任人"],
+        },
+        {
+            "key": "installDate",
+            "label": "纳管时间",
+            "aliases": ["接入时间", "安装时间", "创建时间"],
+        },
     ],
     "workorders": [
         {
@@ -126,7 +168,17 @@ DEFAULT_CAPABILITY_FIELDS: dict[str, list[str]] = {
         "eventTime",
         "statusName",
     ],
-    "cmdb-resources": ["name", "value"],
+    "cmdb-resources": ["type", "total", "normal", "alarm"],
+    "cmdb-applications": [
+        "name",
+        "ciId",
+        "appType",
+        "status",
+        "alarmStatus",
+        "level",
+        "opDuty",
+        "installDate",
+    ],
     "workorders": ["workorderNo", "title", "status", "severity", "eventTime"],
     "self-monitor-overview": ["layer", "status", "detail"],
 }
@@ -157,14 +209,10 @@ def resolve_capability_field_key(capability_id: str, value: str) -> str:
     for field in CAPABILITY_FIELD_DEFINITIONS.get(capability_id, []):
         key = str(field.get("key") or "")
         label = str(field.get("label") or "")
-        aliases = [
-            str(item) for item in field.get("aliases", []) if str(item).strip()
-        ]
+        aliases = [str(item) for item in field.get("aliases", []) if str(item).strip()]
         if lowered == key.lower() or candidate == label:
             return key
-        if any(
-            lowered == alias.lower() or candidate == alias for alias in aliases
-        ):
+        if any(lowered == alias.lower() or candidate == alias for alias in aliases):
             return key
     return ""
 
