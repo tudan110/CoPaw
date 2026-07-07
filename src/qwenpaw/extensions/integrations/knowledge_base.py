@@ -355,16 +355,26 @@ async def synthesize_answer(
     )
 
     from qwenpaw.agents.model_factory import create_model_and_formatter
+    from agentscope.message import Msg, TextBlock
 
     model_agent_id = str(agent_id or "").strip() or "knowledge"
     model_metadata = _resolve_active_model_metadata(model_agent_id)
     model, _ = create_model_and_formatter(agent_id=model_agent_id)
-    response = await model(
-        [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt},
-        ],
-    )
+    # agentscope's ChatModelBase expects Msg objects (it applies the formatter
+    # internally). Passing role/content dicts raises "Expected Msg object, got
+    # dict" — the same trap the big-screen pipeline hit; convert first.
+    messages = [
+        Msg(
+            name=role,
+            role=role,
+            content=[TextBlock(type="text", text=text)],
+        )
+        for role, text in (
+            ("system", system_prompt),
+            ("user", user_prompt),
+        )
+    ]
+    response = await model(messages)
     answer = await asyncio.wait_for(_consume_model_text(response), timeout=120)
     return {
         "answer": answer,
