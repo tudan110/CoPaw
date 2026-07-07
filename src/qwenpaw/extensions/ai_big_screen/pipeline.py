@@ -61,7 +61,7 @@ async def run_draft_pipeline(
     requested_by: str = "portal",
     model: ModelCallable | None = None,
     on_stage: StageCallback | None = None,
-    llm_timeout: float = 120.0,
+    llm_timeout: float = 300.0,
     max_repair: int = 2,
 ) -> dict[str, Any]:
     """Generate a full screen draft (legacy ``AiBigScreenApp`` dict)."""

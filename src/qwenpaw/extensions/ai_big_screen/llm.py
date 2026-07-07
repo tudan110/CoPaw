@@ -185,9 +185,15 @@ async def structured_call(
             )
         except asyncio.TimeoutError:
             last_error = f"模型响应超时（>{timeout}s）"
-            if _round < max_repair:
-                await asyncio.sleep(retry_backoff * attempts)
-            continue
+            # A timeout at this (already generous) per-attempt budget means
+            # the generation is genuinely too slow — heavy inline content,
+            # a stalled provider — not a transient blip (the model wrapper
+            # already retried those internally). Retrying the identical
+            # prompt just burns another full timeout window, turning one
+            # slow request into minutes of dead wait. Go straight to the
+            # fallback with a single clean attempt spent, rather than
+            # 1+max_repair timeout windows.
+            break
         except Exception as exc:  # provider/transport errors
             last_error = str(exc).strip() or exc.__class__.__name__
             if _round < max_repair:
