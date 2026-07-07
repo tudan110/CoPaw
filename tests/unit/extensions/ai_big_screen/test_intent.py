@@ -843,3 +843,31 @@ class TestDegradedGapHonesty:
         reason = str(gaps[0].query_params.get("reason") or "")
         assert "未匹配到已接入能力" in reason
         assert "重新生成" not in reason
+
+
+class TestLayoutConflictKeepsWidth:
+    def test_overflow_shifts_x_instead_of_shrinking_w(self) -> None:
+        # "全宽12列 at x=4" used to silently become w=8 — width is the
+        # semantic half of the request, position is approximate.
+        from qwenpaw.extensions.ai_big_screen.intent import (
+            normalize_layout_position,
+        )
+
+        assert normalize_layout_position(
+            {"x": 4, "y": 8, "w": 12, "h": 3},
+            0,
+        ) == {"x": 0, "y": 8, "w": 12, "h": 3}
+        assert normalize_layout_position(
+            {"x": 8, "y": 0, "w": 6, "h": 4},
+            0,
+        ) == {"x": 6, "y": 0, "w": 6, "h": 4}
+
+    def test_fitting_positions_unchanged(self) -> None:
+        from qwenpaw.extensions.ai_big_screen.intent import (
+            normalize_layout_position,
+        )
+
+        assert normalize_layout_position(
+            {"x": 6, "y": 0, "w": 6, "h": 4},
+            0,
+        ) == {"x": 6, "y": 0, "w": 6, "h": 4}

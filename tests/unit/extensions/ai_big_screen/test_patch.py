@@ -1799,3 +1799,107 @@ class TestStyleValueHonesty:
         )
         assert "已是所求状态" in outcome["summary"]
         assert "刷新页面" in outcome["summary"]
+
+
+class TestMatchWidthOf:
+    async def test_alignment_resolved_from_rendered_layout(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        # The model names the reference component; code takes its x/w
+        # exactly — no LLM arithmetic, no "全宽但位置不变" contradictions.
+        _block_all_fetches(monkeypatch)
+        outcome = await apply_patch(
+            screen=_screen(),
+            instruction="日志表格宽度和上方告警流保持一致",
+            selected_component_ids=["comp-logs"],
+            rendered_layout={
+                "comp-alarms": {"x": 0.3, "y": 0.2, "w": 11.4, "h": 4.0},
+                "comp-logs": {"x": 4.1, "y": 4.6, "w": 6.2, "h": 3.1},
+            },
+            model=FakeModel(
+                [
+                    _ops(
+                        [
+                            {
+                                "op": "setComponentLayout",
+                                "componentId": "comp-logs",
+                                "value": {"matchWidthOf": "comp-alarms"},
+                            },
+                        ],
+                        summary="宽度对齐告警流",
+                    ),
+                ],
+            ),
+        )
+        components = {c["id"]: c for c in outcome["screen"]["components"]}
+        lp = components["comp-logs"]["layoutPosition"]
+        assert lp["pinned"] is True
+        assert lp["x"] == 0 and lp["w"] == 11  # target 的 x/w 四舍五入
+        assert lp["y"] == 5 and lp["h"] == 3  # 自己的纵向位置保留
+
+    async def test_alignment_falls_back_to_pinned_target(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        _block_all_fetches(monkeypatch)
+        screen = _screen()
+        screen["components"][0]["layoutPosition"] = {
+            "x": 0,
+            "y": 0,
+            "w": 12,
+            "h": 8,
+            "pinned": True,
+        }
+        outcome = await apply_patch(
+            screen=screen,
+            instruction="宽度和告警流一致",
+            selected_component_ids=["comp-logs"],
+            model=FakeModel(
+                [
+                    _ops(
+                        [
+                            {
+                                "op": "setComponentLayout",
+                                "componentId": "comp-logs",
+                                "value": {"matchWidthOf": "comp-alarms"},
+                            },
+                        ],
+                    ),
+                ],
+            ),
+        )
+        components = {c["id"]: c for c in outcome["screen"]["components"]}
+        lp = components["comp-logs"]["layoutPosition"]
+        assert lp["x"] == 0 and lp["w"] == 12
+
+    async def test_missing_target_rejected_with_reason(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        _block_all_fetches(monkeypatch)
+        outcome = await apply_patch(
+            screen=_screen(),
+            instruction="宽度对齐",
+            selected_component_ids=["comp-logs"],
+            model=FakeModel(
+                [
+                    _ops(
+                        [
+                            {
+                                "op": "setComponentLayout",
+                                "componentId": "comp-logs",
+                                "value": {"matchWidthOf": "comp-ghost"},
+                            },
+                        ],
+                        summary="对齐幽灵组件",
+                    ),
+                ],
+            ),
+        )
+        components = {c["id"]: c for c in outcome["screen"]["components"]}
+        assert "pinned" not in (
+            components["comp-logs"].get("layoutPosition") or {}
+        )
+        assert "未生效" in outcome["summary"]
+        assert "comp-ghost" in outcome["summary"]
