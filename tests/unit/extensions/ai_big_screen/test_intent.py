@@ -755,9 +755,9 @@ class TestAuthoredCapabilityRouting:
         assert component.query_params["content"]["rows"][0]["result"] == 1
 
     def test_ops_keywords_hijack_authored_claim(self) -> None:
-        # The anti-fake gate: an authored claim on an ops-titled component
-        # is re-routed to the REAL capability — authored content can never
-        # masquerade as telemetry.
+        # The anti-fake gate: an authored claim for LIVE ops data (待办
+        # workorders) is re-routed to the REAL capability — authored
+        # content can never masquerade as live telemetry.
         from qwenpaw.extensions.ai_big_screen.intent import (
             normalize_plan_component,
         )
@@ -774,6 +774,77 @@ class TestAuthoredCapabilityRouting:
             prompt="工单大屏",
         )
         assert component.capability_id == "workorders"
+
+    def test_reference_table_with_ops_word_stays_authored(self) -> None:
+        # The generalized anti-fake gate (T-033): a static REFERENCE table
+        # whose title merely names an ops domain ("告警级别对照表") is a
+        # deliberate creation, not fabricated telemetry — its authored
+        # content must survive. Before, the blanket ops-keyword hijack
+        # silently discarded the payload and bound real-alarms instead.
+        from qwenpaw.extensions.ai_big_screen.intent import (
+            normalize_plan_component,
+        )
+
+        for title, prompt in (
+            ("告警级别对照表", "增加一个告警级别对照表"),
+            ("工单状态说明", "加一个工单状态说明"),
+            ("CMDB字段字典", "来一个CMDB字段字典"),
+        ):
+            component = normalize_plan_component(
+                {
+                    "title": title,
+                    "capabilityId": "ai-authored-content",
+                    "type": "table",
+                    "queryParams": {
+                        "content": {"rows": [{"名称": "严重", "说明": "x"}]},
+                    },
+                },
+                index=0,
+                inferred_lookback_minutes=0,
+                prompt=prompt,
+            )
+            assert component.capability_id == "ai-authored-content", title
+            assert component.query_params["content"]["rows"]
+
+    def test_live_query_of_ops_word_still_hijacks(self) -> None:
+        # But an explicit LIVE query ("查询…告警") must bind the real
+        # source even if phrased like a table — the user asked to query.
+        from qwenpaw.extensions.ai_big_screen.intent import (
+            normalize_plan_component,
+        )
+
+        component = normalize_plan_component(
+            {
+                "title": "最近告警对照表",
+                "capabilityId": "ai-authored-content",
+                "type": "table",
+                "queryParams": {"content": {"rows": [{"a": 1}]}},
+            },
+            index=0,
+            inferred_lookback_minutes=0,
+            prompt="查询最近告警对照表",
+        )
+        assert component.capability_id == "real-alarms"
+
+    def test_authored_claim_without_content_is_not_protected(self) -> None:
+        # An authored claim with no usable payload can't be protected —
+        # it would render empty. Fall back to the real capability.
+        from qwenpaw.extensions.ai_big_screen.intent import (
+            normalize_plan_component,
+        )
+
+        component = normalize_plan_component(
+            {
+                "title": "告警等级说明",
+                "capabilityId": "ai-authored-content",
+                "type": "table",
+                "queryParams": {},
+            },
+            index=0,
+            inferred_lookback_minutes=0,
+            prompt="加一个告警等级说明",
+        )
+        assert component.capability_id == "real-alarms"
 
     def test_list_suffix_normalizes_to_table(self) -> None:
         from qwenpaw.extensions.ai_big_screen.intent import (

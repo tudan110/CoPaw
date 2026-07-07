@@ -854,10 +854,74 @@ def _infer_component_capability_id(
     return max(scores.items(), key=lambda item: item[1])[0]
 
 
+# Live-operational-data markers. The anti-fake gate hijacks an authored
+# claim onto the real capability ONLY when the ask reads as a request for
+# live telemetry — not merely because the title mentions an ops domain.
+# This is what lets "告警级别对照表" / "工单状态说明" (static reference
+# tables) stay authored while "查询最近告警" / "待办工单列表" (live data)
+# still bind the real source. Keyword-based and imperfect by nature, but
+# the rule is uniform across every topic, not a per-content special case.
+_LIVE_OPS_DATA_MARKERS = (
+    "查询",
+    "查看",
+    "看一下",
+    "实时",
+    "最近",
+    "当前",
+    "待办",
+    "待处理",
+    "在线",
+    "监控",
+    "统计",
+    "接入",
+    "实况",
+    "近",
+)
+
+
+def _authored_has_inline_content(component: Mapping[str, Any]) -> bool:
+    """True when the component carries a usable inlined authored payload.
+
+    An authored claim with no real content is worthless as authored, so
+    it is not protected from the ops hijack (it would render empty).
+    """
+    query_params = component.get("queryParams")
+    if not isinstance(query_params, Mapping):
+        return False
+    content = query_params.get("content")
+    if not isinstance(content, Mapping):
+        return False
+    return bool(
+        content.get("rows")
+        or content.get("text")
+        or content.get("metrics")
+        or content.get("columns"),
+    )
+
+
+def _reads_as_live_ops_request(
+    component: Mapping[str, Any],
+    prompt: str,
+) -> bool:
+    """True when the ask wants live operational data (not static content).
+
+    Combines the component's own text with the originating prompt so an
+    append like "增加一个告警级别对照表" (no live marker) is treated as
+    authorable while "查询最近告警" (live marker) is not.
+    """
+    text = " ".join(
+        str(component.get(key) or "")
+        for key in ("title", "name", "summary", "description")
+    )
+    text = f"{text} {prompt or ''}"
+    return any(marker in text for marker in _LIVE_OPS_DATA_MARKERS)
+
+
 def _resolve_component_capability_id(
     *,
     raw_capability_id: str,
     component: Mapping[str, Any],
+    prompt: str = "",
 ) -> str:
     # Dynamic capabilities — operator connectors (proxy:<id>) and
     # skill-backed (skill:<ws>:<skill>) — are explicit choices; keep
@@ -867,6 +931,25 @@ def _resolve_component_capability_id(
         raw_capability_id,
     ):
         return raw_capability_id
+    # Explicit authored-content claims: the anti-fake gate re-routes them
+    # to a real capability ONLY when the ask reads as live telemetry.
+    # An authored claim carrying a real payload for a static/reference
+    # table (even one whose title names an ops domain, e.g. "告警级别对照
+    # 表") is a deliberate creation and must survive — the blanket
+    # ops-keyword hijack was the exact reason such tables silently lost
+    # their content and rendered the wrong live data instead.
+    if raw_capability_id == "ai-authored-content":
+        ops_target = _infer_component_capability_id(
+            component,
+            keys=("title", "name", "summary"),
+        )
+        if ops_target in ("", "web-live-data"):
+            return "ai-authored-content"
+        if _authored_has_inline_content(component) and not (
+            _reads_as_live_ops_request(component, prompt)
+        ):
+            return "ai-authored-content"
+        return ops_target
     if raw_capability_id and not _capability_meta(raw_capability_id):
         # Unknown claimed capability. Public web data (天气/汇率/新闻) has a real
         # capability — route it there instead of an honest-gap placeholder;
@@ -986,6 +1069,7 @@ def normalize_plan_component(
     capability_id = _resolve_component_capability_id(
         raw_capability_id=raw_capability_id,
         component=component,
+        prompt=prompt,
     )
     capability = _capability_meta(capability_id)
     if not capability:
