@@ -335,6 +335,90 @@ class TestDataAffectingPatch:
         assert new_component["data"]["rows"] == [{"message": "refetched"}]
         assert len(screen["dataBindings"]) == 3
 
+    async def test_append_authored_content_renders_rows_not_gap(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        # T-032: 追加到当前大屏 goes through the patch flow; a creation
+        # ask (99乘法表) must render real authored rows, not a
+        # capability-gap card. Only the authored fetcher may run.
+        _block_all_fetches(monkeypatch)
+        from qwenpaw.extensions.ai_big_screen.capabilities import descriptors
+
+        real_authored = descriptors.fetch_authored_content
+        monkeypatch.setitem(
+            descriptors.FETCHERS,
+            "ai-authored-content",
+            real_authored,
+        )
+        outcome = await apply_patch(
+            screen=_screen(),
+            instruction="增加一个99乘法表",
+            model=FakeModel(
+                [
+                    _ops(
+                        [
+                            {
+                                "op": "addComponent",
+                                "value": {
+                                    "title": "99乘法表",
+                                    "capabilityId": "ai-authored-content",
+                                    "visualType": "table",
+                                    "queryParams": {
+                                        "content": {
+                                            "columns": [
+                                                {"key": "a", "label": "被乘数"},
+                                                {"key": "b", "label": "乘数"},
+                                                {"key": "p", "label": "积"},
+                                            ],
+                                            "rows": [
+                                                {"a": 1, "b": 1, "p": 1},
+                                                {"a": 2, "b": 3, "p": 6},
+                                            ],
+                                        },
+                                    },
+                                },
+                            },
+                        ],
+                    ),
+                ],
+            ),
+        )
+        screen = outcome["screen"]
+        assert len(screen["components"]) == 3
+        new_component = screen["components"][-1]
+        assert new_component["capabilityId"] == "ai-authored-content"
+        data = new_component["data"]
+        assert data["sourceStatus"] == "live"
+        assert data["rows"] == [
+            {"a": 1, "b": 1, "p": 1},
+            {"a": 2, "b": 3, "p": 6},
+        ]
+        # capability-gap card fields must be absent
+        assert "suggestedCapabilityId" not in (data.get("rows") or [{}])[0]
+
+    async def test_patch_messages_expose_capability_catalog(self) -> None:
+        # The append LLM must see the capability catalog (incl. the
+        # authored channel) or it binds blind and gaps.
+        from qwenpaw.extensions.ai_big_screen.patch import (
+            _build_patch_messages,
+        )
+
+        messages = _build_patch_messages(
+            screen=_screen(),
+            instruction="增加一个元素周期表",
+            selected_component_ids=[],
+        )
+        user_payload = json.loads(messages[1]["content"])
+        catalog_ids = {
+            item["id"] for item in user_payload["dataCapabilities"]
+        }
+        assert "ai-authored-content" in catalog_ids
+        assert "cmdb-applications" in catalog_ids
+        # the honest placeholder is never an addable capability
+        assert "capability-gap" not in catalog_ids
+        assert "ai-authored-content" in messages[0]["content"]
+
 
 class TestDryRunPreview:
     async def test_preview_mutates_copy_only_no_version(

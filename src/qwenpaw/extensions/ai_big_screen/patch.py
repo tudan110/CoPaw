@@ -22,6 +22,7 @@ from typing import Any, Mapping
 from qwenpaw.extensions.ai_big_screen.capabilities import (
     CapabilityCache,
     execute_capability,
+    list_capability_metadata,
 )
 from qwenpaw.extensions.ai_big_screen.capabilities.fields import (
     CAPABILITY_FIELD_DEFINITIONS,
@@ -259,6 +260,37 @@ def _normalize_rendered_position(raw: Any) -> dict[str, float] | None:
     }
 
 
+def _addable_capability_catalog() -> list[dict[str, Any]]:
+    """Capabilities the LLM may bind when adding a component via patch.
+
+    Append (追加到当前大屏) routes through the patch flow, so without
+    this catalog the model guesses a capabilityId blindly and creation
+    asks (乘法表/周期表) fall through to a capability-gap card. Mirrors
+    the draft path's ``dataCapabilities`` but trimmed to the fields the
+    model needs to choose and populate an ``addComponent`` op.
+    """
+    catalog: list[dict[str, Any]] = []
+    for item in list_capability_metadata():
+        capability_id = str(item.get("id") or "")
+        # capability-gap is an honest placeholder, never something the
+        # model should deliberately select for a new component.
+        if not capability_id or capability_id == "capability-gap":
+            continue
+        catalog.append(
+            {
+                "id": capability_id,
+                "name": str(item.get("name") or ""),
+                "domain": str(item.get("domain") or ""),
+                "description": str(item.get("description") or ""),
+                "inputSchema": copy.deepcopy(item.get("inputSchema") or {}),
+                "supportedVisuals": copy.deepcopy(
+                    item.get("supportedVisuals") or [],
+                ),
+            },
+        )
+    return catalog
+
+
 def _build_patch_messages(
     *,
     screen: Mapping[str, Any],
@@ -350,7 +382,20 @@ def _build_patch_messages(
         "字段 key 必须来自该组件 availableFields；"
         "addComponent=完整组件描述 "
         "{title, description, capabilityId, visualType, queryParams, "
-        "layoutPosition, visualSpec?}。"
+        "layoutPosition, visualSpec?}；新增组件时 capabilityId 必须来自"
+        "下方 dataCapabilities 清单，按用户语义选真实数据能力(工单→"
+        "workorders、告警→real-alarms、CMDB应用→cmdb-applications、"
+        "资源统计→cmdb-resources、日志→system-logs 等)。"
+        "【创作通道】当用户要新增的是可计算/静态知识/示例类内容"
+        "(如乘法表、对照表、口诀、公式、概念说明、自定义表格或文本，"
+        "这类没有对应运维数据源)，addComponent 用 "
+        "capabilityId=ai-authored-content，并把你生成的完整内容内联到 "
+        "queryParams.content：{columns:[{key,label}...], rows:[{...}...]}"
+        "(表格类)或{text:说明文字}(文本类)或{metrics:{名:值}}(数值类)——"
+        "内容必须完整可用，后端不会访问任何外部源；行数多(超过50行)时"
+        "只保留最关键的3-4列但行数必须完整，绝不截断或用省略号。"
+        "ai-authored-content 绝不可用于告警/工单/CMDB/资源/日志/监控等"
+        "运维数据(运维数据必须绑真实能力，没有对应能力才诚实缺口，严禁编造)。"
         "palette 只能是 professional、industrial、aurora、mono、warm、cool、"
         "executive；用户说太丑、美化、高级、领导看且未指定颜色时优先 executive。"
         "外观类诉求映射：太小/看不清/放大→setComponentStyle.sizeScale 1.3-1.8；"
@@ -438,6 +483,7 @@ def _build_patch_messages(
                     "instruction": instruction,
                     "selectedComponentIds": selected_component_ids,
                     "titleSelected": title_selected,
+                    "dataCapabilities": _addable_capability_catalog(),
                     "screen": {
                         "id": screen.get("id"),
                         "name": screen.get("name"),
