@@ -441,3 +441,19 @@ class TestScrollStyleKnob:
         }
         assert sanitize_component_style({"scroll": "ON"}) == {"scroll": "on"}
         assert sanitize_component_style({"scroll": "marquee-fast"}) == {}
+
+    def test_scroll_synonyms_normalize(self) -> None:
+        from qwenpaw.extensions.ai_big_screen.sanitizer import (
+            sanitize_component_style,
+        )
+
+        # "设置为静态表格" reaches us as static/固定/… — must land on off.
+        for raw in ("static", "fixed", "静态", "固定", "none", "FALSE"):
+            assert sanitize_component_style({"scroll": raw}) == {
+                "scroll": "off",
+            }, raw
+        for raw in ("marquee", "轮播", "scrolling", "loop"):
+            assert sanitize_component_style({"scroll": raw}) == {
+                "scroll": "on",
+            }, raw
+        assert sanitize_component_style({"scroll": "sideways"}) == {}

@@ -364,7 +364,8 @@ def _build_patch_messages(
         "去掉/不要/删除大屏主标题→setScreenTitle 且 value 为空字符串；"
         "主标题颜色/大小/样式(如'标题改成红色''标题太小')→setScreenTitleStyle，"
         "不要用 setComponentStyle(那只改组件，碰不到主标题)；"
-        "不要滚动/别轮动/停止轮播/固定显示/显示全部内容→"
+        "不要滚动/别轮动/停止轮播/固定显示/显示全部内容/静态表格/"
+        "excel式表格/像excel一样→"
         "setComponentStyle {scroll:'off'}(表格变静态，放不下的部分出现"
         "滚动条可手动查看，可配合 sizeScale 变大多显示几行)；"
         "要求轮播/滚动展示→setComponentStyle {scroll:'on'}；"
@@ -755,6 +756,47 @@ def _apply_operations(
             needs_refetch.add(plan_component.id)
             applied.append("addComponent")
             continue
+
+        if operation.op == "setComponentStyle":
+            # Pre-validate so an unusable style value surfaces a reason
+            # instead of the handler silently returning False — "没有产生
+            # 可见变化" with zero explanation hid a dropped scroll synonym.
+            sanitized_style = sanitize_component_style(operation.value)
+            if not sanitized_style:
+                rejected.append(
+                    f"样式值「{operation.value}」无有效字段"
+                    "（可用：sizeScale 0.5-2/palette/accentColor/"
+                    "lineOpacity 0-100/labelBrightness ±100/"
+                    "emphasis standard|strong/scroll auto|off|on）",
+                )
+                continue
+            operation.value = sanitized_style
+            # "Already in the requested state" reads very differently from
+            # a generic no-op — say it, and point at the page refresh (the
+            # usual reason a correctly-stored state still LOOKS wrong).
+            resolved_any = False
+            already = True
+            for component_id in operation.target_ids():
+                index = _component_index(components, component_id)
+                if index < 0:
+                    continue
+                resolved_any = True
+                current_style = dict(
+                    (components[index].get("visualSpec") or {}).get("style")
+                    or {},
+                )
+                if any(
+                    current_style.get(key) != value
+                    for key, value in sanitized_style.items()
+                ):
+                    already = False
+                    break
+            if resolved_any and already:
+                rejected.append(
+                    "该组件样式已是所求状态，无需修改；"
+                    "若页面显示未更新，刷新页面即可",
+                )
+                continue
 
         if operation.op == "setComponentType":
             # Normalize before dispatch so a colloquial name (柱状图/饼图/

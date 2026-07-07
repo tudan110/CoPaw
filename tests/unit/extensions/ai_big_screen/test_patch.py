@@ -1704,3 +1704,98 @@ class TestTitleSelection:
         assert outcome["screen"]["title"] == "新主标题"
         components = {c["id"]: c for c in outcome["screen"]["components"]}
         assert components["comp-alarms"]["title"] == "新告警名"
+
+
+class TestStyleValueHonesty:
+    async def test_scroll_synonym_static_applies_as_off(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        # The user's "换成类似于excel的表格" got planned as scroll:"static"
+        # — a synonym outside the enum was silently dropped and the patch
+        # read as "no visible change" with zero explanation.
+        _block_all_fetches(monkeypatch)
+        outcome = await apply_patch(
+            screen=_screen(),
+            instruction="现在的表格是滚动式的，帮我换成类似于excel的表格",
+            selected_component_ids=["comp-logs"],
+            model=FakeModel(
+                [
+                    _ops(
+                        [
+                            {
+                                "op": "setComponentStyle",
+                                "componentId": "comp-logs",
+                                "value": {"scroll": "static"},
+                            },
+                        ],
+                        summary="将表格设置为静态，取消自动轮播滚动",
+                    ),
+                ],
+            ),
+        )
+        components = {c["id"]: c for c in outcome["screen"]["components"]}
+        style = components["comp-logs"]["visualSpec"]["style"]
+        assert style["scroll"] == "off"
+        assert "未生效" not in outcome["summary"]
+
+    async def test_unusable_style_value_rejected_with_vocabulary(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        _block_all_fetches(monkeypatch)
+        outcome = await apply_patch(
+            screen=_screen(),
+            instruction="表格加个呼吸灯",
+            selected_component_ids=["comp-logs"],
+            model=FakeModel(
+                [
+                    _ops(
+                        [
+                            {
+                                "op": "setComponentStyle",
+                                "componentId": "comp-logs",
+                                "value": {"breathingLight": True},
+                            },
+                        ],
+                        summary="给表格加呼吸灯",
+                    ),
+                ],
+            ),
+        )
+        assert "未生效" in outcome["summary"]
+        assert "scroll" in outcome["summary"]  # 词汇表提示可用旋钮
+
+    async def test_already_in_requested_state_is_named(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        # The user's second "改成静态" attempt no-op'd because scroll was
+        # already off — the generic "no visible change" hid that the state
+        # was correct and only the page needed a refresh.
+        _block_all_fetches(monkeypatch)
+        screen = _screen()
+        screen["components"][1]["visualSpec"] = {
+            "style": {"scroll": "off"},
+        }
+        outcome = await apply_patch(
+            screen=screen,
+            instruction="换成静态表格",
+            selected_component_ids=["comp-logs"],
+            model=FakeModel(
+                [
+                    _ops(
+                        [
+                            {
+                                "op": "setComponentStyle",
+                                "componentId": "comp-logs",
+                                "value": {"scroll": "static"},
+                            },
+                        ],
+                        summary="设置为静态表格",
+                    ),
+                ],
+            ),
+        )
+        assert "已是所求状态" in outcome["summary"]
+        assert "刷新页面" in outcome["summary"]
