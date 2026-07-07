@@ -378,7 +378,11 @@ def _build_patch_messages(
         "变宽/变窄/变高/变矮(只调尺寸)→setComponentLayout，"
         "以该组件 renderedPosition 为基线：只改被要求的维度"
         "(变宽时 w 必须明显大于当前渲染宽度，至少 +2 列)，"
-        "其余 x/y/h 沿用 renderedPosition 的四舍五入值，不要自行挪动位置；"
+        "其余 x/y/h 沿用 renderedPosition 的四舍五入值；"
+        "若新宽度与原 x 冲突(x+w>12)，执行层会保住宽度、自动左移 x；"
+        "宽度/位置要和另一个组件保持一致/对齐→setComponentLayout "
+        "value={matchWidthOf: 目标组件id}，执行层会精确采用目标的 x 和 w"
+        "(纵向位置不变)——对齐类诉求永远优先用它，不要自己做算术；"
         "注意 setComponentLayout 会把组件固定住，其它未固定组件会绕开它"
         "重新排布；用户抱怨组件被挤走/位置乱了/想恢复原来的排布→"
         "clearComponentLayout。"
@@ -634,6 +638,32 @@ _COMPONENT_OP_HANDLERS = {
 _MAX_SCREEN_TITLE_LENGTH = MAX_SCREEN_TITLE_LENGTH
 
 
+def _effective_geometry(
+    component_id: str,
+    components: list[Any],
+    rendered_layout: Mapping[str, Any] | None,
+) -> dict[str, float] | None:
+    """Best-known on-screen rect for a component: the frontend-reported
+    rendered geometry first (ground truth), a pinned position second."""
+    rendered = _normalize_rendered_position(
+        (rendered_layout or {}).get(component_id),
+    )
+    if rendered is not None:
+        return rendered
+    index = _component_index(components, component_id)
+    if index < 0:
+        return None
+    position = components[index].get("layoutPosition") or {}
+    if not position.get("pinned"):
+        return None
+    return {
+        "x": float(position.get("x") or 0),
+        "y": float(position.get("y") or 0),
+        "w": float(position.get("w") or 0),
+        "h": float(position.get("h") or 0),
+    }
+
+
 def _apply_operations(
     *,
     screen: dict[str, Any],
@@ -641,6 +671,7 @@ def _apply_operations(
     selected_component_ids: list[str],
     instruction: str,
     title_selected: bool = False,
+    rendered_layout: Mapping[str, Any] | None = None,
 ) -> tuple[set[str], list[str], list[str]]:
     """Apply whitelisted operations in place.
 
@@ -756,6 +787,42 @@ def _apply_operations(
             needs_refetch.add(plan_component.id)
             applied.append("addComponent")
             continue
+
+        if operation.op == "setComponentLayout" and isinstance(
+            operation.value,
+            Mapping,
+        ):
+            match_target = str(
+                operation.value.get("matchWidthOf") or "",
+            ).strip()
+            if match_target:
+                # Alignment as INTENT: the model names the reference
+                # component; code does the math. LLM arithmetic over
+                # renderedPosition plus "keep x unchanged" once produced
+                # the self-contradiction "全宽12列且位置不变" — which the
+                # grid clamp silently resolved into neither.
+                target_geometry = _effective_geometry(
+                    match_target,
+                    components,
+                    rendered_layout,
+                )
+                if target_geometry is None:
+                    rejected.append(
+                        f"对齐目标 {match_target} 不存在或无可用几何",
+                    )
+                    continue
+                own_id = next(iter(operation.target_ids()), "")
+                own_geometry = _effective_geometry(
+                    own_id,
+                    components,
+                    rendered_layout,
+                ) or {"y": 0.0, "h": 4.0}
+                operation.value = {
+                    "x": round(target_geometry["x"]),
+                    "w": round(target_geometry["w"]),
+                    "y": round(own_geometry["y"]),
+                    "h": round(own_geometry["h"]),
+                }
 
         if operation.op == "setComponentStyle":
             # Pre-validate so an unusable style value surfaces a reason
@@ -984,6 +1051,7 @@ async def apply_patch(
         selected_component_ids=selection,
         instruction=normalized_instruction,
         title_selected=title_selected,
+        rendered_layout=rendered_layout,
     )
     await _refetch_components(screen, needs_refetch)
 

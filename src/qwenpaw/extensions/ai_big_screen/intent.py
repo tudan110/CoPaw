@@ -608,7 +608,13 @@ def normalize_layout_position(raw_position: Any, index: int) -> dict[str, int]:
     position = raw_position if isinstance(raw_position, dict) else {}
     fallback = _FALLBACK_POSITIONS[index % len(_FALLBACK_POSITIONS)]
     x = max(0, min(11, safe_int(position.get("x"), fallback["x"])))
-    w = max(1, min(12 - x, safe_int(position.get("w"), fallback["w"])))
+    # x+w overflowing the 12-col grid is a CONFLICT, not a clamp case.
+    # Width is the semantic half ("全宽12列"/"和XX一样宽"); position is
+    # approximate — so keep the requested width and shift x left to fit.
+    # The old rule (shrink w to 12-x) silently turned "全宽12列 at x=4"
+    # into w=8: neither full-width nor aligned, with no explanation.
+    w = max(1, min(12, safe_int(position.get("w"), fallback["w"])))
+    x = min(x, 12 - w)
     return {
         "x": x,
         "y": max(0, safe_int(position.get("y"), fallback["y"])),
