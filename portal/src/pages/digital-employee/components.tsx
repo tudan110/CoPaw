@@ -16,6 +16,7 @@ import {
   type KnowledgeQueryResponse,
 } from "../../api/knowledgeBase";
 import { lazyNamed } from "../../utils/lazyNamed";
+import { traceStepDisplay } from "../../lib/traceStepLabels";
 import {
   extractVisualBlocks,
   extractRenderableContentSegments,
@@ -1288,28 +1289,19 @@ function TraceEntry({
     );
   }
 
+  // 静态一行：只显示概括动作，不可展开、不含任何原始入参/输出/思考文本。
+  void defaultOpen;
+  void open;
+  const { icon, text } = traceStepDisplay(block);
   return (
-    <details
-      className={`trace-block trace-entry ${block?.kind || "misc"}`}
-      open={open ?? block?.defaultOpen ?? defaultOpen}
-    >
-      <summary className="trace-summary">
+    <div className={`trace-block trace-entry trace-entry-static ${block?.kind || "misc"}`}>
+      <span className="trace-summary trace-summary-static">
         <span className="trace-label">
-          <i className={`fas ${block?.icon || "fa-bars-progress"}`} />
-          {block?.title || (block?.kind === "thinking" ? "Thinking" : "过程记录")}
+          <i className={`fas ${icon}`} aria-hidden="true" />
+          {text}
         </span>
-        {block?.subtitle ? (
-          <span className="trace-subtitle">{block.subtitle}</span>
-        ) : null}
-      </summary>
-      <div className="trace-body">
-        {block?.kind === "tool" ? (
-          <ToolTraceBlock block={block} />
-        ) : (
-          <MessageMarkdown content={block?.content || ""} isStreaming={isStreaming} />
-        )}
-      </div>
-    </details>
+      </span>
+    </div>
   );
 }
 
@@ -1449,75 +1441,6 @@ function isRichResponseContent(content: string) {
     /(^|\n)\s*#{1,6}\s+\S/m.test(normalized) ||
     /(^|\n)\s*\|.+\|/m.test(normalized) ||
     normalized.includes("```")
-  );
-}
-
-function ToolTraceBlock({ block }: { block: any }) {
-  const sections = [
-    { key: "input", label: "Input", content: block.inputContent },
-    { key: "output", label: "Output", content: block.outputContent },
-  ].filter((section) => section.content);
-
-  if (!sections.length) {
-    return <MessageMarkdown content={block.content} />;
-  }
-
-  return (
-    <div className="tool-trace-stack">
-      {sections.map((section) => (
-        <ToolTracePanel
-          key={`${block.id}-${section.key}`}
-          label={section.label}
-          content={section.content}
-          panelClassName={section.key}
-        />
-      ))}
-    </div>
-  );
-}
-
-function ToolTracePanel({
-  label,
-  content,
-  panelClassName,
-}: {
-  label: string;
-  content: string;
-  panelClassName: string;
-}) {
-  const text = getToolTracePayloadText(content);
-
-  return (
-    <section className={`tool-trace-panel ${panelClassName}`}>
-      <div className="tool-trace-panel-header">
-        <span>{label}</span>
-        <CopyActionButton
-          text={text}
-          label={`复制${label}`}
-          buttonClassName="tool-trace-copy-btn"
-          iconClassName="tool-trace-copy-icon"
-        />
-      </div>
-      <div className="tool-trace-panel-body">
-        <ToolTracePayload content={content} />
-      </div>
-    </section>
-  );
-}
-
-function getToolTracePayloadText(content: string) {
-  const normalized = String(content || "").trim();
-  const fencedMatch = normalized.match(/^```([a-zA-Z0-9_-]+)?\n([\s\S]*?)\n```$/);
-  return fencedMatch ? fencedMatch[2] : normalized;
-}
-
-function ToolTracePayload({ content }: { content: string }) {
-  const text = getToolTracePayloadText(content);
-
-  return (
-    <pre className="tool-trace-code">
-      <code>{text}</code>
-    </pre>
   );
 }
 

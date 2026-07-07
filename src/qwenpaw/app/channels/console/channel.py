@@ -632,9 +632,11 @@ class ConsoleChannel(BaseChannel):
             rl_event = _json.dumps(
                 {
                     "type": "rate_limited",
-                    "error": str(e).strip(),
+                    # Friendly, non-technical text only; raw detail stays in log.
+                    "error": "当前访问量较大，请稍后重试。",
                     "alternatives": alternatives,
                 },
+                ensure_ascii=False,
             )
             yield f"data: {rl_event}\n\n"
             self._print_error(str(e).strip())

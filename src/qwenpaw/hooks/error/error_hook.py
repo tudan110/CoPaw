@@ -15,6 +15,25 @@ from ...runtime.phases import Phase
 logger = logging.getLogger(__name__)
 
 
+def _public_error_text(normalized: object, exc: Exception) -> str:
+    """User-facing error text: friendly base + category code, no raw detail.
+
+    ``convert_model_exception`` appends the raw provider reason to ``.message``
+    ("<base>. Reason: <raw>"); we strip that tail so nothing technical (raw
+    provider strings, temp paths) leaks to the client. The structured
+    ``error_code`` token is kept because the frontend maps it to a localized,
+    friendly message.
+    """
+    message = (getattr(normalized, "message", "") or "")
+    message = message.split(". Reason:")[0].strip()
+    if not message:
+        message = exc.__class__.__name__
+    code = getattr(normalized, "error_code", None)
+    if code and code not in message:
+        return f"{message} ({code})"
+    return message
+
+
 class ErrorNormalizeHook(LifecycleHook):
     """Normalize provider-specific exceptions into user-readable messages."""
 
@@ -46,7 +65,10 @@ class ErrorNormalizeHook(LifecycleHook):
             return HookResult()
 
         normalized = convert_model_exception(exc, model_name=model_name)
-        error_text = normalized.message or str(exc) or exc.__class__.__name__
+        # Public, user-facing text: friendly base + non-sensitive category code
+        # only. The raw exception detail (". Reason: ...") and the dump path are
+        # kept out of anything the client can see — they go to logs / dump only.
+        error_text = _public_error_text(normalized, exc)
 
         try:
             from ...app.chats.query_error_dump import write_query_error_dump
@@ -57,7 +79,7 @@ class ErrorNormalizeHook(LifecycleHook):
                 {"agent": ctx.agent},
             )
             if dump_path:
-                error_text += f" [dump: {dump_path}]"
+                # Path stays server-side (log only), never appended to error_text.
                 logger.info("error_normalize: dump written to %s", dump_path)
         except Exception:
             logger.debug(

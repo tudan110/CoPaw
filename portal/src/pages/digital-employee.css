@@ -7752,6 +7752,11 @@
   display: none;
 }
 
+/* 过程步骤为静态概括行：不可展开、无手型光标。 */
+.portal-digital-employee .trace-summary-static {
+  cursor: default;
+}
+
 .portal-digital-employee .trace-label {
   display: inline-flex;
   align-items: center;

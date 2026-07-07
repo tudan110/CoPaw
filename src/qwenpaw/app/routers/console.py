@@ -254,9 +254,18 @@ async def post_console_chat(
             try:
                 async for event_data in stream_it:
                     yield event_data
-            except Exception as e:
+            except Exception:
                 logger.exception("Console chat stream error")
-                yield f"data: {json.dumps({'error': str(e)})}\n\n"
+                # Never surface raw exception text to the client; the full
+                # detail is captured in the server log above.
+                yield (
+                    "data: "
+                    + json.dumps(
+                        {"error": "服务暂时遇到点问题，请稍后重试。"},
+                        ensure_ascii=False,
+                    )
+                    + "\n\n"
+                )
         finally:
             await stream_it.aclose()
 

@@ -239,10 +239,10 @@ async def ai_optimize_skill_stream(request: AIOptimizeSkillRequest):
 
             yield f"data: {json.dumps({'done': True})}\n\n"
 
-        except Exception as e:
-            logger.exception("AI skill optimization failed: %s", e)
+        except Exception:
+            logger.exception("AI skill optimization failed")
             error_msg = json.dumps(
-                {"error": f"Failed to optimize skill: {str(e)}"},
+                {"error": "技能优化失败，请稍后重试。"},
                 ensure_ascii=False,
             )
             yield f"data: {error_msg}\n\n"

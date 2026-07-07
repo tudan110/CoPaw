@@ -1,24 +1,51 @@
 // Turn backend chat/stream errors into safe, user-friendly text.
 //
-// The backend may surface raw model-execution errors such as
-//   "Error occurred during execution of model: GLM-5.1
-//    (Details: /tmp/qwenpaw_query_error_xxx.json) (MODEL_EXECUTION_FAILED)"
-// which leak internal implementation details (temp dump paths, internal
-// product/package names, raw error codes). We must never show those to end
-// users, so we map known error categories to friendly Chinese messages and,
-// as a last resort, strip any remaining internal markers before display.
+// End users must never see raw tracebacks, internal temp-dump paths
+// (e.g. "(Details: /tmp/qwenpaw_query_error_xxx.json)"), internal
+// product/package names, or raw provider error codes. We map known error
+// categories to friendly Chinese messages and, for everything else, fall back
+// to a single generic friendly line rather than echoing the raw error.
 
-// "(Details: /tmp/...json)" hints appended by the backend error dumper.
-const DETAILS_HINT_PATTERN = /\s*[（(]\s*Details:\s*[^)）]*[)）]/gi;
-// Internal product / package identifiers that must never reach users.
-const INTERNAL_MARKER_PATTERN = /qwenpaw|copaw/gi;
+// Generic, always-safe fallback shown when we can't (or shouldn't) say more.
+const GENERIC_FRIENDLY = "服务暂时遇到点问题，请稍后重试。";
 
-function stripInternalMarkers(text: string): string {
-  return text
-    .replace(DETAILS_HINT_PATTERN, "")
-    .replace(INTERNAL_MARKER_PATTERN, "")
-    .replace(/\s{2,}/g, " ")
-    .trim();
+// Stack-trace signatures (Python / JS) that must never reach end users.
+const TRACEBACK_PATTERN =
+  /Traceback \(most recent call last\)|File "[^"]+", line \d+|\n\s*at [\w.$<>]+ \(/i;
+
+/**
+ * Normalize whatever the runtime hands us — a plain string, an
+ * `IAgentScopeRuntimeError` (`{ code, message }`), or an ERROR message item
+ * (`{ code, message, content: [...] }`) — into a single raw string that
+ * {@link toFriendlyChatError} can categorize. The non-sensitive `code` token is
+ * appended so category mapping can still key on it.
+ */
+export function extractRuntimeErrorText(errorLike: unknown): string {
+  if (errorLike == null) return "";
+  if (typeof errorLike === "string") return errorLike;
+  if (typeof errorLike !== "object") return String(errorLike);
+
+  const obj = errorLike as Record<string, unknown>;
+  const parts: string[] = [];
+
+  if (typeof obj.message === "string" && obj.message.trim()) {
+    parts.push(obj.message.trim());
+  }
+  if (Array.isArray(obj.content)) {
+    for (const item of obj.content) {
+      const text = (item as { text?: unknown } | null)?.text;
+      if (typeof text === "string" && text.trim()) {
+        parts.push(text.trim());
+      }
+    }
+  }
+
+  let text = parts.join(" ").trim();
+  const code = typeof obj.code === "string" ? obj.code.trim() : "";
+  if (code && !text.includes(code)) {
+    text = text ? `${text} (${code})` : code;
+  }
+  return text;
 }
 
 export function toFriendlyChatError(error: unknown): string {
@@ -28,7 +55,12 @@ export function toFriendlyChatError(error: unknown): string {
   ).trim();
 
   if (!raw) {
-    return "请稍后重试";
+    return GENERIC_FRIENDLY;
+  }
+
+  // 明确的堆栈/崩溃特征：直接给通用友好提示，绝不外泄原始内容。
+  if (TRACEBACK_PATTERN.test(raw)) {
+    return GENERIC_FRIENDLY;
   }
 
   // 网络 / 流式连接中断
@@ -40,9 +72,10 @@ export function toFriendlyChatError(error: unknown): string {
     return "模型流式连接中断，请重试当前步骤。";
   }
 
-  // 模型执行类错误：隐藏内部实现细节（临时文件路径、错误码、内部名称）
+  // 模型执行类错误：按类别给出友好提示，隐藏内部实现细节
+  // （临时文件路径、错误码、内部名称）。
   const looksLikeModelError =
-    /execution of model|MODEL_EXECUTION_FAILED|MODEL_TIMEOUT|MODEL_QUOTA|UNAUTHORIZED_MODEL|CONTEXT_LENGTH|qwenpaw_query_error|[（(]\s*Details:/i.test(
+    /execution of model|MODEL_EXECUTION|MODEL_TIMEOUT|MODEL_QUOTA|UNAUTHORIZED_MODEL|CONTEXT_LENGTH|qwenpaw_query_error|[（(]\s*Details:/i.test(
       raw,
     );
 
@@ -62,6 +95,11 @@ export function toFriendlyChatError(error: unknown): string {
     return "模型服务暂时不可用，请稍后重试。";
   }
 
-  // 兜底：清理可能泄露的内部标记后展示
-  return stripInternalMarkers(raw) || "请稍后重试";
+  // 兜底：绝不回显原始错误（可能含堆栈/内部路径），统一给友好提示。
+  return GENERIC_FRIENDLY;
+}
+
+/** Convenience: normalize a runtime error object/string, then friendly-map it. */
+export function runtimeErrorToFriendly(errorLike: unknown): string {
+  return toFriendlyChatError(extractRuntimeErrorText(errorLike));
 }

@@ -13,8 +13,8 @@ import { Avatar, Flex } from "antd";
 import DefaultResponseCard from "@agentscope-ai/chat/lib/AgentScopeRuntimeWebUI/core/AgentScopeRuntime/Response/Card";
 import AgentScopeRuntimeResponseBuilder from "@agentscope-ai/chat/lib/AgentScopeRuntimeWebUI/core/AgentScopeRuntime/Response/Builder";
 import Actions from "@agentscope-ai/chat/lib/AgentScopeRuntimeWebUI/core/AgentScopeRuntime/Response/Actions";
-import ErrorCard from "@agentscope-ai/chat/lib/AgentScopeRuntimeWebUI/core/AgentScopeRuntime/Response/Error";
-import Reasoning from "@agentscope-ai/chat/lib/AgentScopeRuntimeWebUI/core/AgentScopeRuntime/Response/Reasoning";
+// Tool is kept ONLY for MCP approval requests (informed-consent detail is
+// wanted there); normal tool steps render as friendly one-liners instead.
 import Tool from "@agentscope-ai/chat/lib/AgentScopeRuntimeWebUI/core/AgentScopeRuntime/Response/Tool";
 import { useChatAnywhereOptions } from "@agentscope-ai/chat/lib/AgentScopeRuntimeWebUI/core/Context/ChatAnywhereOptionsContext";
 import Images from "@agentscope-ai/chat/lib/DefaultCards/Images";
@@ -34,6 +34,8 @@ import {
   parsePortalOrderDetailPayloadFromRuntimeOutput,
   PortalOrderDetailReport,
 } from "./PortalOrderDetailReport";
+import { runtimeErrorToFriendly } from "../lib/chatErrorMessage";
+import { extractToolName, toolActivityLabel } from "../lib/agentActivityLabels";
 
 type ResponseCardProps = ComponentProps<typeof DefaultResponseCard>;
 
@@ -44,15 +46,33 @@ const RAW_TEXT_STYLE: CSSProperties = {
   overflowWrap: "anywhere",
 };
 
-const RAW_BLOCK_STYLE: CSSProperties = {
+// Friendly one-line activity indicator for a tool / reasoning step.
+const ACTIVITY_LINE_STYLE: CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  gap: 8,
+  margin: "6px 0",
+  padding: "6px 10px",
+  borderRadius: 8,
+  color: "#475569",
+  background: "rgba(15, 23, 42, 0.03)",
+  fontSize: 13,
+  lineHeight: 1.6,
+};
+
+// Friendly error line — a single reassuring sentence, never a raw stack.
+const ERROR_LINE_STYLE: CSSProperties = {
+  display: "flex",
+  alignItems: "flex-start",
+  gap: 8,
   margin: "8px 0",
-  padding: "12px 14px",
-  borderRadius: 12,
-  background: "rgba(15, 23, 42, 0.04)",
-  overflowX: "auto",
-  whiteSpace: "pre-wrap",
-  wordBreak: "break-word",
-  overflowWrap: "anywhere",
+  padding: "10px 12px",
+  borderRadius: 10,
+  color: "#b45309",
+  background: "rgba(251, 191, 36, 0.12)",
+  border: "1px solid rgba(245, 158, 11, 0.24)",
+  fontSize: 13,
+  lineHeight: 1.6,
 };
 
 const STREAM_NOTICE_STYLE: CSSProperties = {
@@ -228,22 +248,65 @@ const StreamingMessage = memo(function StreamingMessage({
               />
             );
           case AgentScopeRuntimeContentType.DATA:
-            return (
-              <pre key={index} style={RAW_BLOCK_STYLE}>
-                {JSON.stringify(item.data, null, 2)}
-              </pre>
-            );
+            // Structured payloads are internal detail — never dump raw JSON at
+            // the user. Visualizations render via dedicated blocks elsewhere.
+            return null;
           default:
-            return (
-              <pre key={index} style={RAW_BLOCK_STYLE}>
-                {JSON.stringify(item, null, 2)}
-              </pre>
-            );
+            return null;
         }
       })}
     </>
   );
 });
+
+// One friendly line per tool step — the raw arguments and output stay in the
+// Traces Center, not in the conversation.
+function PortalAgentActivityLine({
+  data,
+}: {
+  data: IAgentScopeRuntimeMessage;
+}) {
+  const running =
+    data.status === AgentScopeRuntimeRunStatus.InProgress ||
+    data.status === AgentScopeRuntimeRunStatus.Created;
+  const label = toolActivityLabel(extractToolName(data), { done: !running });
+  return (
+    <div style={ACTIVITY_LINE_STYLE} role="status" aria-live="polite">
+      <span>{label}</span>
+    </div>
+  );
+}
+
+// Surface a subtle "thinking" line only while reasoning is in progress; once
+// done it is internal noise, so drop it and let the answer speak.
+function PortalReasoningLine({
+  data,
+}: {
+  data: IAgentScopeRuntimeMessage;
+}) {
+  if (data.status !== AgentScopeRuntimeRunStatus.InProgress) {
+    return null;
+  }
+  return (
+    <div style={ACTIVITY_LINE_STYLE} role="status" aria-live="polite">
+      <span>🧠 正在思考…</span>
+    </div>
+  );
+}
+
+// A single reassuring sentence in place of any raw error / traceback.
+function PortalFriendlyError({ errorLike }: { errorLike: unknown }) {
+  const message = runtimeErrorToFriendly(errorLike);
+  if (!message) {
+    return null;
+  }
+  return (
+    <div style={ERROR_LINE_STYLE} role="alert">
+      <span aria-hidden="true">⚠️</span>
+      <span>{message}</span>
+    </div>
+  );
+}
 
 export default function PortalStreamingResponseCard(
   props: ResponseCardProps,
@@ -285,14 +348,10 @@ export default function PortalStreamingResponseCard(
             <PortalOrderDetailReport payload={orderDetailPayload} />
           ) : null}
         </div>
-        {props.data.error ? <ErrorCard data={props.data.error} /> : null}
+        {props.data.error ? <PortalFriendlyError errorLike={props.data.error} /> : null}
         <Actions {...props} />
       </>
     );
-  }
-
-  if (!isGenerating) {
-    return <DefaultResponseCard {...props} />;
   }
 
   if (!messages?.length && AgentScopeRuntimeResponseBuilder.maybeGenerating(props.data)) {
@@ -320,13 +379,13 @@ export default function PortalStreamingResponseCard(
           case AgentScopeRuntimeMessageType.PLUGIN_CALL_OUTPUT:
           case AgentScopeRuntimeMessageType.MCP_CALL:
           case AgentScopeRuntimeMessageType.MCP_CALL_OUTPUT:
-            return <Tool key={item.id} data={item} />;
+            return <PortalAgentActivityLine key={item.id} data={item} />;
           case AgentScopeRuntimeMessageType.MCP_APPROVAL_REQUEST:
             return <Tool key={item.id} data={item} isApproval />;
           case AgentScopeRuntimeMessageType.REASONING:
-            return <Reasoning key={item.id} data={item} />;
+            return <PortalReasoningLine key={item.id} data={item} />;
           case AgentScopeRuntimeMessageType.ERROR:
-            return <ErrorCard key={item.id} data={item} />;
+            return <PortalFriendlyError key={item.id} errorLike={item} />;
           case AgentScopeRuntimeMessageType.HEARTBEAT:
             return null;
           default:
@@ -335,7 +394,7 @@ export default function PortalStreamingResponseCard(
         }
       })}
       <StreamingWaitNotice notice={waitNotice} />
-      {props.data.error ? <ErrorCard data={props.data.error} /> : null}
+      {props.data.error ? <PortalFriendlyError errorLike={props.data.error} /> : null}
       <Actions {...props} />
     </>
   );
