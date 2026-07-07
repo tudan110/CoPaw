@@ -127,6 +127,26 @@ async def test_timeout_counts_as_failure() -> None:
     assert result.degraded is True
 
 
+async def test_timeout_does_not_burn_repair_rounds() -> None:
+    """A timeout goes straight to fallback — retrying an identical too-slow
+    generation would waste 1+max_repair full timeout windows (the periodic
+    -table draft that timed out 3× in a row before this)."""
+    model = FakeModel(["__hang__", "__hang__", "__hang__"])
+    result = await structured_call(
+        model,
+        _messages(),
+        parser=parse_screen_plan,
+        max_repair=2,
+        timeout=0.05,
+        retry_backoff=0,
+        fallback=_fallback,
+    )
+    assert result.degraded is True
+    # Exactly ONE attempt, not 1 + max_repair.
+    assert result.attempts == 1
+    assert len(model.calls) == 1
+
+
 async def test_model_exception_counts_as_failure() -> None:
     model = FakeModel([RuntimeError("boom"), _VALID])
     result = await structured_call(

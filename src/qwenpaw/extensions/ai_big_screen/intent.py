@@ -1087,6 +1087,22 @@ _WEB_QUERY_LEADING_RE = re.compile(
     r"^(?:查询|查看|看一下|看下|显示|展示|搜索|帮我|给我|我想|想|要|再|并|顺便|的)+",
 )
 
+#: Leading authoring/framing verbs on a clause ("同时写一个…", "帮我做个…")
+#: stripped for a clean gap-card title. Order-agnostic prefix chain.
+_CLAUSE_FRAMING_RE = re.compile(
+    r"^(?:同时|另外|还要|还想|顺便|再|并|而且|以及|和|帮我|给我|我想|想|要|"
+    r"请|麻烦)*"
+    r"(?:写|做|生成|制作|创建|搭建|构建|画|列|来|整|弄|给)?"
+    r"(?:一个|一张|一份|一条|个|张|份|下|点)?",
+)
+
+
+def _clean_gap_title(clause: str) -> str:
+    """Trim leading framing verbs so a gap card reads as the thing asked
+    for ("元素周期表") not the whole instruction ("同时写一个元素周期表")."""
+    cleaned = _CLAUSE_FRAMING_RE.sub("", str(clause or "").strip()).strip()
+    return cleaned or str(clause or "").strip()
+
 
 def _text_is_web_live(text: str) -> bool:
     """True if free text is a public-web ask (天气/汇率/新闻…)."""
@@ -1285,6 +1301,7 @@ def _fill_uncovered_clauses(
     components: list[PlanComponent],
     *,
     prompt: str,
+    degraded: bool = False,
 ) -> list[PlanComponent]:
     """Patch any substantive clause left unrepresented by ``components``.
 
@@ -1330,12 +1347,28 @@ def _fill_uncovered_clauses(
             continue
         if "capability-gap" in present:
             continue
+        # Strip framing verbs ("同时写一个…") from the card title; keep the
+        # verbatim clause in queryParams for context.
+        cleaned = _clean_gap_title(clause)
+        if degraded:
+            # Honest about the actual situation: the AI planning pass
+            # failed (timeout/ratelimit), so authorable content could not
+            # be created THIS time — a retry likely succeeds. Without
+            # this, a transient failure reads as a permanent missing
+            # integration.
+            reason = (
+                "本次 AI 规划未完成(超时/限流降级)。若该内容可由 AI 直接"
+                "生成(表格/知识类)，点击重新生成即可；若需接入内部系统"
+                "数据，再按下方方案接入。"
+            )
+        else:
+            reason = "该数据需求未匹配到已接入能力，也非公开互联网可查信息"
         out.append(
             build_capability_gap_component(
                 index=len(out),
-                requested_data=clause,
-                reason="该数据需求未匹配到已接入能力，也非公开互联网可查信息",
-                query_params={},
+                requested_data=cleaned,
+                reason=reason,
+                query_params={"originalClause": clause},
             )
         )
         present.add("capability-gap")
@@ -1378,7 +1411,11 @@ def build_guardrail_plan(
         )
         if component is not None:
             components.append(component)
-    components = _fill_uncovered_clauses(components, prompt=prompt)
+    components = _fill_uncovered_clauses(
+        components,
+        prompt=prompt,
+        degraded=degraded,
+    )
     if not components:
         components = [
             build_capability_gap_component(
@@ -1523,6 +1560,8 @@ def _build_intent_messages(prompt: str, title: str) -> list[dict[str, str]]:
         "{columns:[{key,label}...], rows:[{...}...]}(表格类)或 "
         "{text: 说明文字}(文本类)或 {metrics:{名:值}}(数值类)——"
         "内容必须完整可用，不要留空让后端去取(它不会访问任何外部源)。"
+        "内容行数较多(超过50行)时只保留最关键的3-4列以控制体积，"
+        "但行数必须完整——绝不截断行数或用省略号代替。"
         "这类内容不要路由到 web-live-data 检索。"
         "ai-authored-content 绝不可用于告警/工单/CMDB/资源/日志/监控等"
         "运维数据：运维数据必须绑定真实数据能力，"
@@ -1771,7 +1810,7 @@ async def build_screen_plan(
     *,
     model: ModelCallable | None = None,
     max_repair: int = 2,
-    timeout: float = 120.0,
+    timeout: float = 300.0,
 ) -> ScreenPlan:
     """L1 entry point: NL prompt -> normalized typed ``ScreenPlan``."""
     normalized_prompt = str(prompt or "").strip()

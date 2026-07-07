@@ -802,3 +802,44 @@ class TestAuthoredClauseCoverage:
         assert _shared_bigram("99乘法表", "九九乘法表")
         assert not _shared_bigram("库存周转率", "九九乘法表")
         assert not _shared_bigram("表", "乘法表")  # 单字不构成覆盖
+
+
+class TestDegradedGapHonesty:
+    def test_degraded_gap_says_retry_not_missing_capability(self) -> None:
+        from qwenpaw.extensions.ai_big_screen.intent import (
+            build_guardrail_plan,
+        )
+
+        plan = build_guardrail_plan(
+            prompt="查询待办工单、告警，同时写一个元素周期表",
+            title="",
+            degraded=True,
+        )
+        gaps = [
+            c for c in plan.components if c.capability_id == "capability-gap"
+        ]
+        assert len(gaps) == 1
+        reason = str(gaps[0].query_params.get("reason") or "")
+        assert "重新生成" in reason
+        assert "AI 规划未完成" in reason
+        # 卡片标题剥掉"同时写一个"式框架词
+        assert "写一个" not in gaps[0].title
+        assert "元素周期表" in gaps[0].title
+
+    def test_non_degraded_gap_keeps_integration_reason(self) -> None:
+        from qwenpaw.extensions.ai_big_screen.intent import (
+            build_guardrail_plan,
+        )
+
+        plan = build_guardrail_plan(
+            prompt="查询告警，接入库存管理系统周转率",
+            title="",
+            degraded=False,
+        )
+        gaps = [
+            c for c in plan.components if c.capability_id == "capability-gap"
+        ]
+        assert len(gaps) == 1
+        reason = str(gaps[0].query_params.get("reason") or "")
+        assert "未匹配到已接入能力" in reason
+        assert "重新生成" not in reason
