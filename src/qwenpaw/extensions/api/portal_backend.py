@@ -12,6 +12,7 @@ import threading
 import time
 import traceback
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
@@ -174,6 +175,16 @@ PORTAL_REAL_ALARM_ROUTE_DEFAULT_LIMIT = 20
 PORTAL_REAL_ALARM_ROUTE_FETCH_MULTIPLIER = 3
 PORTAL_REAL_ALARM_ROUTE_TIMEOUT_SECONDS = float(
     os.getenv("QWENPAW_PORTAL_REAL_ALARM_ROUTE_TIMEOUT", "5").strip() or "5",
+)
+# The process-wide default executor (used by ``asyncio.to_thread``) is
+# shared with every blocking channel poller in this app; under load it
+# can stay saturated indefinitely, starving the alarm fetch and pushing
+# it into permanent "degraded" fallback even though the gateway itself
+# answers in well under a second. Give this fetch its own small pool so
+# it never queues behind unrelated channel I/O.
+PORTAL_REAL_ALARM_EXECUTOR = ThreadPoolExecutor(
+    max_workers=2,
+    thread_name_prefix="portal-real-alarm",
 )
 PORTAL_REAL_ALARM_CACHE_TTL_SECONDS = float(
     os.getenv("QWENPAW_PORTAL_REAL_ALARM_CACHE_TTL", "30").strip() or "30",
@@ -2414,7 +2425,8 @@ async def _refresh_portal_real_alarm_payload(limit: int) -> dict[str, Any]:
 
     normalized_limit = _normalize_portal_real_alarm_limit(limit)
     try:
-        payload = await asyncio.to_thread(
+        payload = await asyncio.get_running_loop().run_in_executor(
+            PORTAL_REAL_ALARM_EXECUTOR,
             _query_visible_portal_real_alarms,
             normalized_limit,
         )
