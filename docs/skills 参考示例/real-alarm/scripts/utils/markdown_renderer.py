@@ -1,13 +1,23 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Markdown 渲染模块：把分析结果渲染成适合聊天窗口展示的 Markdown"""
+"""Markdown 渲染模块：把分析结果渲染成适合聊天窗口展示的 Markdown
+
+这是整条链路的最后一步：analyze_by_mode() 产出的是结构化字典（给
+程序用的），这个模块负责把它转成人能直接读的 Markdown 文字+表格+
+图表（给聊天窗口用的）。三种分析模式（summary / 分组统计 / search）
+分别对应下面 render_markdown() 里的三段逻辑，互相独立，不共用具体
+排版代码。
+"""
 
 from typing import Any, Dict, List
 
+# 表格里默认最多展示多少条告警明细，避免几百条告警塞满整个聊天窗口。
 DEFAULT_MARKDOWN_ALARM_LIMIT = 20
 
 
 def _format_percent(value: Any) -> str:
+    """把数字格式化成百分比文本：整数就不带小数（"12%"），否则保留两位
+    小数（"12.34%"）。"""
     try:
         numeric = float(value)
     except (TypeError, ValueError):
@@ -16,6 +26,11 @@ def _format_percent(value: Any) -> str:
 
 
 def _build_markdown_table(rows: List[Dict[str, Any]], columns: List[tuple]) -> str:
+    """按标准 Markdown 表格语法拼字符串：表头行、分隔行（|---|---|)、
+    数据行。columns 是 (字段名, 中文表头) 的元组列表，决定了取哪些
+    字段、按什么顺序、显示什么表头。字段里如果有换行符会被替换成
+    空格，避免破坏表格的一行一条记录格式。
+    """
     if not rows:
         return "暂无数据。"
     header = "| " + " | ".join(label for _, label in columns) + " |"
@@ -28,6 +43,9 @@ def _build_markdown_table(rows: List[Dict[str, Any]], columns: List[tuple]) -> s
 
 
 def _build_truncation_note(total: int, shown: int) -> str:
+    """如果表格做了截断（总数超过展示数），补一句提示文字告诉用户
+    "只看到了一部分"，避免用户误以为总共只有这么几条告警。
+    """
     if total <= shown:
         return ""
     return f"\n\n仅展示前 **{shown}** 条，实际共 **{total}** 条。"
@@ -57,6 +75,10 @@ def _build_summary_conclusions(summary: Dict[str, Any]) -> List[str]:
 
 
 def _build_group_conclusion(mode: str, groups: List[Dict[str, Any]]) -> str:
+    """单维度分组模式（severity/title/device/...）下，从排名第一的分组
+    提炼一句自然语言结论，和 summary 模式的 _build_summary_conclusions
+    是类似的思路，只是这里只有一个维度、只需要说一句话。
+    """
     if not groups:
         return ""
     top = groups[0]
@@ -69,6 +91,10 @@ def _build_group_conclusion(mode: str, groups: List[Dict[str, Any]]) -> str:
 
 
 def _render_group_section(title: str, groups: List[Dict[str, Any]]) -> str:
+    """把一组分组统计渲染成有序列表（"1. xxx：n 条（p%）"），是图表
+    之外的文字版数据展示，即使聊天前端不支持渲染 ECharts 代码块，
+    用户也能直接从这段文字看懂分布情况。
+    """
     if not groups:
         return f"## {title}\n\n暂无数据。"
     lines = [f"## {title}", ""]
@@ -78,6 +104,10 @@ def _render_group_section(title: str, groups: List[Dict[str, Any]]) -> str:
 
 
 def _render_alarm_section(title: str, rows: List[Dict[str, Any]]) -> str:
+    """把一批告警渲染成一个带标题的表格区块，固定只展示前
+    DEFAULT_MARKDOWN_ALARM_LIMIT 条，超出部分用 _build_truncation_note
+    提示总数。
+    """
     columns = [
         ("alarmtitle", "告警标题"),
         ("alarmSeverityName", "告警级别"),
@@ -95,7 +125,15 @@ def _render_alarm_section(title: str, rows: List[Dict[str, Any]]) -> str:
 
 
 def render_markdown(output: Dict[str, Any]) -> str:
-    """把分析结果渲染成适合聊天窗口展示的 Markdown。"""
+    """把分析结果渲染成适合聊天窗口展示的 Markdown。
+
+    按 output["mode"] 分三条完全独立的渲染路径：
+    - summary：先给几句自动结论，再给各维度分组列表+图表，最后附上
+      严重/活跃告警的预览表格
+    - severity/title/device/speciality/region（单维度分组）：给一句
+      结论 + 该维度的分组列表 + 图表
+    - search：不做分组统计，直接把匹配到的告警列表渲染成表格
+    """
     mode = output.get("mode", "summary")
     matched_total = int(output.get("matched_total", 0))
     fetched_total = int(output.get("fetched_total", 0))

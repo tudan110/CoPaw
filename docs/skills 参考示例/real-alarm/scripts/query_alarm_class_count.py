@@ -44,6 +44,7 @@ NAME_FIELD_CANDIDATES = (
 
 
 def _clean_text(value: Any) -> str:
+    """把任意类型的值统一转成去掉首尾空格的字符串，None 转成空字符串。"""
     if value is None:
         return ""
     return str(value).strip()
@@ -57,6 +58,7 @@ def _put_if_present(payload: Dict[str, Any], key: str, value: Any) -> None:
 
 
 def _validate_time(name: str, value: Optional[str]) -> Optional[Dict[str, Any]]:
+    """校验单个时间字段；空值直接放行（该接口不强制要求时间范围）。"""
     text = _clean_text(value)
     if text and not _is_valid_datetime(text):
         return _make_error(400, f"{name} 格式无效，应为 YYYY-MM-DD HH:MM:SS")
@@ -97,7 +99,14 @@ def execute(
     ne_alias: str = "",
     resource_type: str = "",
 ) -> Dict[str, Any]:
-    """执行告警类别统计查询。"""
+    """执行告警类别统计查询。
+
+    这个脚本对应的是一个纯统计接口（不返回告警列表，只返回"某类别下
+    有多少条"这样的计数），所以逻辑比 get_alarms.py 简单很多：校验参数
+    → 拼请求体 → POST 请求 → 兼容几种可能的返回格式。网络失败时同样会
+    退到 curl 重试一次（见 get_alarms.py 里 _curl_get_json 的说明，这里
+    用的是 POST 版本 _curl_post_json，逻辑是一样的）。
+    """
     start_time_error = _validate_time("start_time", start_time)
     if start_time_error:
         return start_time_error
@@ -151,7 +160,9 @@ def execute(
 
 
 def normalize_response(result: Any) -> Dict[str, Any]:
-    """兼容接口直接返回数组的情况。"""
+    """兼容接口直接返回数组（而不是 {"code":..,"data":[...]} 这种标准
+    包裹格式）的情况，统一包装成字典，方便后续代码不用到处判断类型。
+    """
     if isinstance(result, dict):
         return result
     if isinstance(result, list):
@@ -160,6 +171,15 @@ def normalize_response(result: Any) -> Dict[str, Any]:
 
 
 def _iter_candidate_records(result: Dict[str, Any]) -> Iterable[Any]:
+    """从返回结果里"猜"出真正的统计记录列表在哪。
+
+    不同接口/不同版本，统计数据可能包在 data / rows / list 里，甚至
+    还可能嵌套一层（data 里面又是个带 data/rows/list 的字典）。这个
+    函数按 data → rows → list 的顺序依次尝试，找到第一个是列表的字段
+    就直接用；找不到列表但找到字典，就把这个字典本身当唯一一条记录
+    产出。这样写是为了让脚本对接口返回格式的细微差异更宽容，不用为了
+    某个字段名不对就直接报错。
+    """
     for key in ("data", "rows", "list"):
         value = result.get(key)
         if isinstance(value, list):
@@ -176,6 +196,12 @@ def _iter_candidate_records(result: Dict[str, Any]) -> Iterable[Any]:
 
 
 def _first_present(record: Dict[str, Any], candidates: Iterable[str]) -> Any:
+    """按候选字段名列表依次查找，返回第一个"存在且非空"的值。
+
+    用途和上面的"猜格式"是同一个道理：不同接口版本里，"类别名称"这个
+    含义可能叫 name，也可能叫 alarmClass、type 等，这个函数负责按
+    优先级把它们都试一遍。
+    """
     for key in candidates:
         if key in record and record[key] not in (None, ""):
             return record[key]
@@ -183,11 +209,13 @@ def _first_present(record: Dict[str, Any], candidates: Iterable[str]) -> Any:
 
 
 def _format_record_name(record: Dict[str, Any]) -> str:
+    """取出一条统计记录的"类别名称"，取不到就显示"未命名"。"""
     name = _first_present(record, NAME_FIELD_CANDIDATES)
     return _clean_text(name) or "未命名"
 
 
 def _format_record_count(record: Dict[str, Any]) -> str:
+    """取出一条统计记录的"数量"，取不到就显示 0。"""
     count = _first_present(record, COUNT_FIELD_CANDIDATES)
     return _clean_text(count) or "0"
 

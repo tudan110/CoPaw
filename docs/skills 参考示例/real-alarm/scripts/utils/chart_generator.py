@@ -1,12 +1,24 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""ECharts 图表生成模块"""
+"""ECharts 图表生成模块
+
+这个模块不画图，只生成 ECharts 需要的配置（一份 JSON），包在
+```echarts ... ``` 代码块里输出。如果聊天前端认识这种代码块，就会把它
+渲染成一张真正的图表；不认识的话，用户至少还能看到一段可读的 JSON。
+分组统计数据（[{"name": ..., "count": ...}, ...]）到 ECharts 配置的转换
+逻辑集中在这一个文件里，其他模块不需要关心 ECharts 的具体配置格式。
+"""
 
 import json
 from typing import Any, Dict, List
 
 
 def _build_pie_chart_option(title: str, groups: List[Dict[str, Any]], donut: bool = False) -> Dict[str, Any]:
+    """生成饼图（donut=True 时是环形图）的 ECharts option。
+
+    适合"占比"类数据，比如告警级别分布、专业分布——这类数据关心的是
+    "谁占多少比例"，饼图比柱状图更直观。
+    """
     return {
         "title": {"text": title, "left": "center"},
         "tooltip": {"trigger": "item", "formatter": "{b}: {c}条 ({d}%)"},
@@ -21,6 +33,11 @@ def _build_pie_chart_option(title: str, groups: List[Dict[str, Any]], donut: boo
 
 
 def _build_bar_chart_option(title: str, groups: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """生成柱状图的 ECharts option。
+
+    适合"排行/对比"类数据，比如告警标题 Top、设备告警 Top——这类数据
+    关心的是"谁的数量最多"，柱状图的高低对比比饼图更直观。
+    """
     return {
         "title": {"text": title, "left": "center"},
         "tooltip": {"trigger": "axis", "axisPointer": {"type": "shadow"}},
@@ -53,7 +70,12 @@ def _render_chart_section(title: str, groups: List[Dict[str, Any]], chart_type: 
 
 
 def render_chart_only_markdown(output: Dict[str, Any]) -> str:
-    """仅输出图表代码块，适合前端直接渲染（markdown-echarts-only 模式）。"""
+    """仅输出图表代码块，适合前端直接渲染（markdown-echarts-only 模式）。
+
+    根据 analyze_by_mode() 产出的 mode 字段，决定要渲染哪几张图；
+    summary 模式会一口气渲染 5 张图（级别/标题/设备/专业/区域），单
+    维度模式（severity/title/...）只渲染对应的那一张。
+    """
     mode = output.get("mode", "summary")
     summary = output.get("summary", {}) or {}
     sections: List[str] = []

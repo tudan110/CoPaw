@@ -108,6 +108,12 @@ def parse_args() -> argparse.Namespace:
 
 
 def validate_args(args: argparse.Namespace) -> Optional[Dict[str, Any]]:
+    """执行前的参数合法性检查，任何一项不满足就直接返回错误字典。
+
+    这里专门检查了 search 模式：如果用户一个过滤条件都没给（既没关键字
+    也没级别/设备/区域等任何限定），会导致"查询全部告警"这种模糊查询，
+    结果可能几千条，对聊天场景没有意义，所以强制要求至少给一个条件。
+    """
     if args.fetch_page_size < 1:
         return make_error(400, "fetch_page_size 必须大于等于 1")
     if args.top_n < 1:
@@ -130,6 +136,12 @@ def validate_args(args: argparse.Namespace) -> Optional[Dict[str, Any]]:
 
 
 def print_result(result: Dict[str, Any], output_format: str) -> None:
+    """按用户要求的格式打印最终结果，三种格式二选一：
+    - json：给需要结构化数据的场景（比如 Agent 要进一步加工）
+    - markdown：给聊天窗口直接展示的文字+表格
+    - markdown-echarts-only：只要图表代码块，不要文字结论，适合前端
+      单独渲染图表的场景
+    """
     if output_format == "markdown-echarts-only":
         if result.get("code") == 200:
             print(render_chart_only_markdown(result))
@@ -158,7 +170,9 @@ def main() -> None:
         print("请设置技能目录下的 .env、环境变量 INOE_API_TOKEN，或使用 --token 参数", file=sys.stderr)
         sys.exit(1)
 
-    # 拉取告警数据（analyze_alarms 自动全量分页）
+    # 第 1 步：拉取告警数据。get_alarms.py 的 execute() 一次只查一页，
+    # 这里调用的 fetch_all_alarms() 会自动帮你把所有分页都拉完、拼成
+    # 一份完整列表（具体分页逻辑见 utils/alarm_analyzer.py）。
     fetch_result = fetch_all_alarms(
         token=token,
         api_base_url=args.api_base_url,
@@ -176,10 +190,16 @@ def main() -> None:
         print_result(fetch_result, args.output)
         sys.exit(1)
 
-    # 规范化字段（枚举值 → 可读名称）
+    # 第 2 步：规范化字段。接口原始数据里级别/状态/类别都是数字或英文
+    # 代号（比如 alarmseverity="1"），不适合直接展示给用户，这一步给
+    # 每条告警补上人类可读的中文字段（alarmSeverityName 等），原始字段
+    # 保留不动。
     alarms = normalize_alarms(fetch_result.get("rows", []) or [])
 
-    # 本地过滤
+    # 第 3 步：本地过滤。注意这里的过滤和 get_alarms.py 里传给接口的
+    # 过滤条件（如 ne_alias、alarm_status）不是一回事——那些是"让接口
+    # 少返回一些数据"，这里是"接口数据已经全部拿回来后，再在内存里做
+    # 更细粒度的二次筛选"（比如按关键字模糊搜索标题）。
     filtered_alarms = apply_filters(
         alarms,
         keyword=args.keyword,
@@ -192,7 +212,9 @@ def main() -> None:
         ci_id=args.ci_id,
     )
 
-    # 分析
+    # 第 4 步：按 --mode 做统计分析（总览 / 按级别分组 / 按设备分组等），
+    # 具体每种 mode 输出什么结构见 utils/alarm_analyzer.py 的
+    # analyze_by_mode()。
     analysis_result = analyze_by_mode(
         mode=args.mode,
         alarms=filtered_alarms,

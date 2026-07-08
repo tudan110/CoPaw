@@ -27,6 +27,8 @@ from typing import Any, Dict, List, Optional
 
 import requests
 
+# dotenv 是可选依赖：装了就用它自动读取 .env 文件，没装也不影响脚本
+# 运行（只是没法从 .env 里取配置，只能靠系统环境变量或命令行参数）。
 try:
     from dotenv import load_dotenv
     HAS_DOTENV = True
@@ -38,13 +40,16 @@ def _load_skill_env() -> None:
     """
     加载 skill 目录下的 .env 文件
 
-    优先级:
+    优先级（数字越小越优先，override=False 表示"已经有的环境变量不会
+    被 .env 里的值覆盖"，所以下面 1 天然优先于 2）:
     1. 已有环境变量（共享 secrets 注入，优先）
     2. skill 目录下的 .env，再到项目根目录 .env（回退，override=False）
     """
     if not HAS_DOTENV:
         return
 
+    # __file__ 是当前脚本自己的路径，script_dir 就是 scripts/ 目录，
+    # 它的上一级 skill_dir 才是整个 skill 的根目录（SKILL.md 所在处）。
     script_dir = Path(__file__).parent
     skill_dir = script_dir.parent
 
@@ -53,28 +58,41 @@ def _load_skill_env() -> None:
         load_dotenv(skill_env_file, override=False)
         return
 
+    # 找不到 skill 自己的 .env，就再往上翻两级找项目根目录的 .env
+    # 兜底（一般用不上，只是留个后路）。
     project_root = skill_dir.parent.parent
     project_env_file = project_root / ".env"
     if project_env_file.exists():
         load_dotenv(project_env_file, override=False)
 
 
+# 模块被 import 时就立刻尝试加载 .env，这样后面所有 os.getenv(...) 调用
+# 都能拿到值，不需要每个函数自己再去操心"配置从哪来"。
 _load_skill_env()
 
 
 def get_api_base_url() -> str:
+    """读取接口基础地址，如 http://<host>:<port>，不含具体路径。"""
     return os.getenv("INOE_API_BASE_URL", "")
 
 
 def get_token() -> Optional[str]:
+    """读取认证 Token；没配置时返回 None，调用方要自己处理"未登录"这种情况。"""
     return os.getenv("INOE_API_TOKEN")
 
 
 def use_mock_data() -> bool:
+    """是否使用本地 mock 数据代替真实接口请求（没有接口权限时用于调试）。"""
     return os.getenv("USE_MOCK_DATA", "false").lower() in ("true", "1", "yes")
 
 
 def _load_mock_data() -> Dict[str, Any]:
+    """从 skill 目录下的 mock_data.json 读取一份预置的假数据。
+
+    这个函数本身不发任何网络请求，纯粹是读本地文件；即便没有接口
+    Token、没有网络，也能靠它跑通"参数解析 → 过滤 → 渲染"这整条链路，
+    方便在拿到真实接口权限之前先验证 Skill 逻辑是否正确。
+    """
     script_dir = Path(__file__).parent
     skill_dir = script_dir.parent
     mock_file = skill_dir / "mock_data.json"
@@ -92,17 +110,30 @@ def _load_mock_data() -> Dict[str, Any]:
 
 
 def _make_error(code: int, message: str) -> Dict[str, Any]:
-    """构造统一错误响应。"""
+    """构造统一错误响应。
+
+    整个脚本约定：不管是参数校验失败、网络超时还是接口返回业务错误，
+    最终都统一成 {"code": ..., "msg": ..., "total": 0, "rows": []} 这个
+    形状，调用方（analyze_alarms.py 等）只需要判断 code 是不是 200，
+    不需要对每种失败场景单独写处理分支。
+    """
     return {"code": code, "msg": message, "total": 0, "rows": []}
 
 
 def _normalize_base_url(api_base_url: Optional[str]) -> str:
-    """规范化 API 基础地址。"""
+    """规范化 API 基础地址：去掉首尾空格和结尾多余的斜杠。
+
+    避免调用方传了 "http://host:port/" 这种带斜杠结尾的地址后，拼出
+    "http://host:port//resource/..." 这种带双斜杠的错误 URL。
+    """
     base_url = (api_base_url or get_api_base_url()).strip()
     return base_url.rstrip("/")
 
 
-# 资源分类别名映射 → 接口 neAlias 枚举值
+# 资源分类别名映射：把用户口语化的说法（比如英文 database、中文"数据库"
+# 甚至不同大小写/下划线写法）统一映射成接口真正认识的枚举值。这样 Agent
+# 不需要严格按接口文档的措辞去问用户"请输入 数据库/网络设备/中间件/
+# 操作系统/计算资源 中的一个"，用户随口说个 "db" 也能被正确识别。
 RESOURCE_NE_ALIAS_MAP = {
     "database": "数据库",
     "data_base": "数据库",
@@ -133,7 +164,12 @@ RESOURCE_NE_ALIAS_MAP = {
 def _normalize_ne_alias(
     ne_alias: Optional[str] = None, resource_type: Optional[str] = None
 ) -> Optional[str]:
-    """把自然语言资源类型归一到接口的 neAlias 枚举值。"""
+    """把自然语言资源类型归一到接口的 neAlias 枚举值。
+
+    两个参数任选一个传（ne_alias 优先），先转小写、把 "-" 和空格都换成
+    "_"（方便对齐字典的 key 写法），查不到映射就原样返回——这样即使
+    用户直接说了接口认识的中文原词（如"数据库"），也能正常透传。
+    """
     raw_value = (ne_alias or resource_type or "").strip()
     if not raw_value:
         return None
@@ -142,6 +178,7 @@ def _normalize_ne_alias(
 
 
 def _validate_paging(page_num: int, page_size: int) -> Optional[Dict[str, Any]]:
+    """校验分页参数是否合法；返回 None 表示校验通过。"""
     if page_num < 1:
         return _make_error(400, "page_num 必须大于等于 1")
     if page_size < 1:
@@ -152,6 +189,7 @@ def _validate_paging(page_num: int, page_size: int) -> Optional[Dict[str, Any]]:
 def _validate_time_range(
     begin_time: Optional[str], end_time: Optional[str]
 ) -> Optional[Dict[str, Any]]:
+    """校验时间字符串格式；只要传了就必须符合 YYYY-MM-DD HH:MM:SS。"""
     if begin_time and not _is_valid_datetime(begin_time):
         return _make_error(400, "begin_time 格式无效，应为 YYYY-MM-DD HH:MM:SS")
     if end_time and not _is_valid_datetime(end_time):
@@ -160,6 +198,7 @@ def _validate_time_range(
 
 
 def _is_valid_datetime(date_string: str) -> bool:
+    """用 strptime 尝试解析字符串，能解析成功就是合法时间格式。"""
     try:
         datetime.strptime(date_string, "%Y-%m-%d %H:%M:%S")
         return True
@@ -168,12 +207,14 @@ def _is_valid_datetime(date_string: str) -> bool:
 
 
 def _handle_http_error(error: requests.exceptions.HTTPError) -> Dict[str, Any]:
+    """把 requests 抛出的 HTTPError 转换成统一错误格式。"""
     status_code = error.response.status_code
     error_msg = error.response.text if error.response.text else str(error)
     return _build_http_error(status_code, error_msg)
 
 
 def _build_http_error(status_code: int, error_msg: str) -> Dict[str, Any]:
+    """把常见 HTTP 状态码翻译成人话，其余状态码原样带出错误文本。"""
     message_map = {
         401: "认证失败，请检查 token 是否有效",
         403: "权限不足，无法访问该资源",
@@ -185,10 +226,14 @@ def _build_http_error(status_code: int, error_msg: str) -> Dict[str, Any]:
 
 
 def _alarm_status_to_is_clear(alarm_status: Optional[str]) -> str:
-    """旧 alarmstatus → 新 isClear（语义反转）。
+    """把旧接口的 alarmstatus 语义转换成新接口的 isClear 字段。
 
-    "1"=活跃 → isClear "0"；缺省默认查活跃；
-    明确传非活跃状态时查已恢复（"1"）。
+    这是这次接口迁移里最容易踩坑的一处：旧接口用 alarmstatus="1"
+    表示"告警还活跃、没恢复"；新接口换了个字段名 isClear，而且语义
+    是反过来的——"0" 才表示"没清除、活跃中"，"1" 表示"已清除"。
+    Agent/用户侧仍然按老习惯传 --alarm_status（1=活跃），这个函数
+    负责把它翻译成新接口真正认识的 isClear 取值，调用方完全不需要
+    关心这个历史包袱。
     """
     status = str(alarm_status).strip() if alarm_status else "1"
     return "0" if status == "1" else "1"
@@ -211,9 +256,18 @@ def _build_his_alarm_params(
 ) -> Dict[str, Any]:
     """构建 hisAlarmList GET 查询参数。
 
-    级别列表转逗号串；alarmstatus→isClear；资源过滤优先精确网元 IP
-    (neIp)，否则模糊 queryKey。新接口无 neId，纯数字 ci_id 无法按
-    资源 ID 过滤，仅当 ci_id 形似文本时才回退到 queryKey。
+    几个不直观的转换点，都是为了让"用户/Agent 传的参数" 和 "接口真正
+    要的字段" 之间做一层适配：
+    - alarm_severitys（列表）优先于 alarm_severity（单值），最终都拼成
+      逗号分隔的字符串；两个都没给时默认查全部 4 个级别（1~4）。
+    - alarm_status 通过 _alarm_status_to_is_clear() 转成 isClear。
+    - 资源过滤优先用精确的网管 IP（neIp，isLike="0" 表示精确匹配，不是
+      模糊匹配）；没有 IP 时才退回到关键字模糊搜索 queryKey。
+    - 新接口没有"按资源 ID 精确过滤"这个字段（老接口的 neId 已经没了），
+      所以如果 ci_id 是纯数字（像是内部资源 ID），直接丢弃它、不传给
+      接口，避免用户以为"传了 ID 就会精确过滤"但实际根本不生效；只有
+      ci_id 看起来像一段文本（不是纯数字）时，才把它当关键字塞进
+      queryKey 做模糊匹配。
     """
     if alarm_severitys:
         severity = ",".join(str(s).strip() for s in alarm_severitys if s)
@@ -236,6 +290,9 @@ def _build_his_alarm_params(
         params["neIp"] = str(manage_ip).strip()
         params["isLike"] = "0"
 
+    # queryKey 是模糊搜索关键字，三个来源里挑一个：设备名 > 告警标题 >
+    # （当作兜底）非数字的 ci_id。已经用了精确 IP 过滤时就不再叠加
+    # queryKey，避免两个过滤条件互相打架、结果反而更少。
     query_key = (dev_name or alarm_title or "").strip()
     if not manage_ip and not query_key and ci_id:
         ci_text = str(ci_id).strip()
@@ -258,10 +315,22 @@ def _curl_get_json(
     timeout_seconds: int = 30,
     allow_array: bool = False,
 ) -> Dict[str, Any]:
-    """使用系统 curl 作为 requests 的网络兼容性回退（GET）。"""
+    """使用系统 curl 作为 requests 库的网络兼容性回退（GET 请求）。
+
+    背景：某些沙箱/容器环境里 Python 的 requests 库可能因为网络栈限制
+    连不上（抛 ConnectionError），但系统自带的 curl 命令行工具反而能连
+    通。所以在 execute() 里捕获到 ConnectionError 时，会退而求其次调用
+    这个函数，用子进程执行 curl 发同样的请求，尽量保证脚本在各种环境下
+    都能跑起来，而不是直接报错退出。
+    """
+    # 用临时文件接住 curl 返回的响应体，避免直接拼在 stdout 里跟 HTTP
+    # 状态码混在一起不好解析。
     with tempfile.NamedTemporaryFile(delete=False) as body_file:
         body_path = body_file.name
 
+    # -o body_path 把响应体写入临时文件；-w "%{http_code}" 让 curl 在
+    # stdout 只打印 HTTP 状态码，这样下面读 completed.stdout 就能直接
+    # 拿到状态码，不用自己解析 curl 的原始输出格式。
     args = [
         "curl", "-sS", "--get",
         "--connect-timeout", str(int(timeout_seconds)),
@@ -386,7 +455,13 @@ def execute(
         "Content-Type": "application/json;charset=UTF-8",
     }
 
-    # hisAlarmList 强制要 begin/end 时间窗，未传则用默认窗口（小时）。
+    # hisAlarmList 是"强制要求"传时间窗的接口——不传 begin/end 会直接
+    # 报错，不像旧接口那样默认查全量。为了不让用户每次都手动算时间，
+    # 这里做了兜底：只要调用方没传完整的 begin_time/end_time，就自动用
+    # "当前时间往前推 N 小时" 当作查询窗口，N 由环境变量
+    # REAL_ALARM_QUERY_WINDOW_HOURS 控制，默认 24 小时。
+    # 注意：这个窗口如果设置得太小，可能会漏掉更早触发、但还没恢复的
+    # 活跃告警（比如告警是 3 天前发生的，窗口只有 24 小时就查不到）。
     if not begin_time or not end_time:
         try:
             window_h = float(
@@ -415,6 +490,11 @@ def execute(
         ne_alias=_normalize_ne_alias(ne_alias, resource_type),
     )
 
+    # 下面这一串 except 分支按"从具体到笼统"的顺序排列：先处理超时、
+    # 连接失败、HTTP 错误这些明确知道原因的情况，给出针对性的中文提示；
+    # 最后用 Exception 兜底，保证不管出什么意外，脚本都会返回一个统一
+    # 结构的错误字典，而不是直接抛异常把调用方（比如 analyze_alarms.py）
+    # 也带崩。
     try:
         response = requests.get(url, headers=headers, params=params, timeout=30)
         response.raise_for_status()
@@ -427,6 +507,8 @@ def execute(
         return _make_error(408, "请求超时，请检查网络连接或稍后重试")
 
     except requests.exceptions.ConnectionError:
+        # requests 连不上时，退而用系统 curl 再试一次（见 _curl_get_json
+        # 的注释说明为什么需要这个兜底）。
         return _curl_get_json(url=url, headers=headers, params=params, timeout_seconds=30)
 
     except requests.exceptions.HTTPError as e:
