@@ -21,7 +21,7 @@ type AlarmAnalystSummaryRow = {
 };
 
 type AlarmAnalystSpotlight = AlarmAnalystSummaryRow & {
-  variant: "primary" | "secondary" | "action" | "status" | "warning";
+  variant: "primary" | "secondary" | "action" | "status" | "warning" | "emergency";
 };
 
 type AlarmAnalystAutomationCard = {
@@ -49,6 +49,7 @@ const SUMMARY_LABEL_ORDER = [
   "故障性质",
   "根因方向",
   "影响范围",
+  "紧急预案",
   "优先动作",
   "关联资源告警查询状态",
   "关键提醒",
@@ -58,6 +59,8 @@ const SUMMARY_LABEL_ALIASES: Record<string, string> = {
   影响面: "影响范围",
   根因结论: "根因方向",
   优先建议: "优先动作",
+  应急预案: "紧急预案",
+  止血动作: "紧急预案",
   关键问题: "关键提醒",
   关联告警查询: "关联资源告警查询状态",
   关联告警: "关联资源告警查询状态",
@@ -390,7 +393,7 @@ function buildSummaryRowsFromReport(card: AlarmAnalystCardV1): AlarmAnalystSumma
       label,
       value,
       tone:
-        label === "优先动作"
+        label === "优先动作" || label === "紧急预案"
           ? "accent"
           : label === "关联资源告警查询状态"
           ? "success"
@@ -631,6 +634,19 @@ function buildFallbackRows(card: AlarmAnalystCardV1): AlarmAnalystSummaryRow[] {
     rows.push({ label: "影响范围", value: impactSegments.join("；"), tone: "neutral" });
   }
 
+  const emergencyRecommendation = card.recommendations.find(
+    (item) => item.stage === "emergency",
+  );
+  if (emergencyRecommendation) {
+    rows.push({
+      label: "紧急预案",
+      value: stripMarkdownInline(
+        emergencyRecommendation.description || emergencyRecommendation.title || "",
+      ),
+      tone: "accent",
+    });
+  }
+
   const primaryRecommendation = card.recommendations[0];
   if (primaryRecommendation) {
     rows.push({
@@ -694,6 +710,23 @@ function buildDisplayModel(card: AlarmAnalystCardV1, showConfidence: boolean) {
     .map((item) => stripMarkdownInline(item))
     .filter(Boolean);
 
+  const emergencyRecommendation = card.recommendations.find(
+    (item) => item.stage === "emergency",
+  );
+  const emergencyRow: AlarmAnalystSummaryRow | null =
+    rowsByLabel.get("紧急预案") ||
+    (emergencyRecommendation
+      ? {
+          label: "紧急预案",
+          value: stripMarkdownInline(
+            emergencyRecommendation.description ||
+              emergencyRecommendation.title ||
+              "",
+          ),
+          tone: "accent",
+        }
+      : null);
+
   const spotlightSections: AlarmAnalystSpotlight[] = [
     rowsByLabel.get("故障性质")
       ? { ...rowsByLabel.get("故障性质")!, variant: "primary" }
@@ -703,6 +736,9 @@ function buildDisplayModel(card: AlarmAnalystCardV1, showConfidence: boolean) {
       : null,
     rowsByLabel.get("影响范围")
       ? { ...rowsByLabel.get("影响范围")!, variant: "secondary" }
+      : null,
+    emergencyRow
+      ? { ...emergencyRow, label: "🚑 紧急预案（止血优先）", variant: "emergency" }
       : null,
     rowsByLabel.get("优先动作")
       ? { ...rowsByLabel.get("优先动作")!, variant: "action" }

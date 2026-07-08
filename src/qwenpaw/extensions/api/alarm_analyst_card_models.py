@@ -161,6 +161,9 @@ class AlarmAnalystCardRecommendation(BaseModel):
     priority: Literal["p0", "p1", "p2"] = "p1"
     description: str = ""
     risk: str | None = None
+    # "emergency" = 紧急预案（止血）, "repair" = 根因处置（修复）;
+    # None when the report's 处置建议 has no staged subsections.
+    stage: Literal["emergency", "repair"] | None = None
     action_type: Literal["manual", "script", "observe"] | None = Field(
         default=None,
         validation_alias=AliasChoices("action_type", "actionType"),
