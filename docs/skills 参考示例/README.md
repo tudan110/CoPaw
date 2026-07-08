@@ -1,32 +1,48 @@
 # Skill 参考示例
 
-本目录提供一个完整的查询类 Skill 参考实现，供开发者快速上手 Skill 开发。
+本目录提供两个完整的 Skill 参考实现，覆盖两种最常见的 Skill 类型，
+供开发者快速上手 Skill 开发：
+
+- **real-alarm**：查询类 Skill —— 调用外部接口、拉取数据、做统计分析
+- **optical-module-rca**：推理类 Skill —— 不连接任何外部系统，纯本地
+  按固定方法论对用户提供的参数做判断，输出结论和建议
 
 ## 目录结构
 
 ```
 skills 参考示例/
-└── real-alarm/              ← 完整参考示例（实时告警查询）
-    ├── SKILL.md             ← Skill 主文档（Agent 的行为指导）
-    ├── .env.example         ← 配置样例（复制为 .env 后填写）
-    ├── mock_data.json        ← Mock 数据（USE_MOCK_DATA=true 时使用，无接口权限也能联调）
-    ├── scripts/             ← 可执行脚本
-    │   ├── pyproject.toml   ← 依赖声明
-    │   ├── get_alarms.py    ← 原始分页查询
-    │   ├── analyze_alarms.py← 统一汇总分析（推荐入口）
-    │   ├── query_alarm_class_count.py ← 独立统计接口
-    │   └── utils/           ← 内部模块（按职责拆分）
-    │       ├── alarm_analyzer.py  ← 数据拉取与分析逻辑
-    │       ├── alarm_normalizer.py← 字段规范化映射
-    │       ├── chart_generator.py ← ECharts 图表生成
-    │       └── markdown_renderer.py← Markdown 输出渲染
-    └── references/          ← Agent 按需读取的参考文档
-        ├── api-specification.md  ← 接口与参数说明
-        ├── response-format.md    ← 返回数据结构
-        ├── usage-scenarios.md    ← 典型问法与推荐动作
-        ├── data-analysis-guide.md← 分析维度与方法
-        ├── chart-guide.md        ← 图表选择指南
-        └── echarts-examples.md   ← ECharts 示例代码
+├── real-alarm/               ← 查询类参考示例（实时告警查询）
+│   ├── SKILL.md              ← Skill 主文档（Agent 的行为指导）
+│   ├── .env.example          ← 配置样例（复制为 .env 后填写）
+│   ├── mock_data.json        ← Mock 数据（USE_MOCK_DATA=true 时使用，无接口权限也能联调）
+│   ├── scripts/              ← 可执行脚本
+│   │   ├── pyproject.toml    ← 依赖声明
+│   │   ├── get_alarms.py     ← 原始分页查询
+│   │   ├── analyze_alarms.py ← 统一汇总分析（推荐入口）
+│   │   ├── query_alarm_class_count.py ← 独立统计接口
+│   │   └── utils/            ← 内部模块（按职责拆分）
+│   │       ├── alarm_analyzer.py   ← 数据拉取与分析逻辑
+│   │       ├── alarm_normalizer.py ← 字段规范化映射
+│   │       ├── chart_generator.py  ← ECharts 图表生成
+│   │       └── markdown_renderer.py← Markdown 输出渲染
+│   └── references/           ← Agent 按需读取的参考文档
+│       ├── api-specification.md  ← 接口与参数说明
+│       ├── response-format.md    ← 返回数据结构
+│       ├── usage-scenarios.md    ← 典型问法与推荐动作
+│       ├── data-analysis-guide.md← 分析维度与方法
+│       ├── chart-guide.md        ← 图表选择指南
+│       └── echarts-examples.md   ← ECharts 示例代码
+└── optical-module-rca/       ← 推理类参考示例（光模块老化根因分析）
+    ├── SKILL.md              ← Skill 主文档（Agent 的行为指导）
+    ├── scripts/               ← 可执行脚本（纯 stdlib，无第三方依赖）
+    │   ├── diagnose_optical_aging.py ← 四步法诊断主脚本
+    │   └── utils/
+    │       └── thresholds.py ← 参数正常范围表
+    └── references/            ← Agent 按需读取的参考文档
+        ├── methodology.md         ← 四步法完整说明
+        ├── threshold-reference.md ← 参数正常范围与故障现象表
+        ├── remediation-playbook.md← 处置预案（紧急止血/根因修复/预防措施）
+        └── report-template.md     ← 故障报告模板
 ```
 
 ## 关键规范
@@ -68,6 +84,11 @@ YOUR_API_TOKEN=your_token_here
 没有接口权限时，可先设置 `USE_MOCK_DATA=true`，让脚本读取技能目录下的
 `mock_data.json` 返回演示数据，用于先验证参数解析、过滤、渲染逻辑，接口权限
 到位后再切回 `false`。
+
+> 不是所有 Skill 都需要配置。`optical-module-rca` 就完全不连接外部
+> 系统，所有输入都由调用方直接传参，因此没有 `.env`。写 Skill 前先
+> 判断自己的场景是否真的需要外部接口，不需要就不要为了"看起来完整"
+> 硬加一套配置。
 
 ### references/ 的使用原则
 
