@@ -14,6 +14,7 @@ import {
   inoeSettingsApi,
   qimingSettingsApi,
   xingchenSettingsApi,
+  kunlunSettingsApi,
   zgopsSettingsApi,
   operatorSettingsApi,
   orderSettingsApi,
@@ -299,7 +300,7 @@ const SETTINGS_TABS = [
     id: "model-adapters",
     label: "模型适配",
     iconClass: "fa-robot",
-    description: "启明、星辰等大模型 adapter 的网关、凭证与模型",
+    description: "启明、星辰、昆仑网关等大模型 adapter 的网关、凭证与模型",
   },
   {
     id: "operator",
@@ -493,9 +494,10 @@ const ORDER_FIELDS: ProviderFieldDesc[] = [
   },
 ];
 
-// Field descriptors for the two model-provider settings sections. Keys must
+// Field descriptors for the model-provider settings sections. Keys must
 // match the backend FieldSpec keys (qiming_settings_store /
-// xingchen_settings_store). Sensitive fields render masked + 留空则不修改.
+// xingchen_settings_store / kunlun_settings_store). Sensitive fields
+// render masked + 留空则不修改.
 const QIMING_FIELDS: ProviderFieldDesc[] = [
   {
     key: "qiming_base_url",
@@ -558,6 +560,66 @@ const XINGCHEN_FIELDS: ProviderFieldDesc[] = [
     label: "Authorization",
     sensitive: true,
     hint: "鉴权令牌，请求头 Authorization。",
+  },
+];
+
+const KUNLUN_FIELDS: ProviderFieldDesc[] = [
+  {
+    key: "kunlun_base_url",
+    label: "网关地址（base_url）",
+    hint: "昆仑能力开放网关根地址。",
+    placeholder: "https://ogw.klnaas.189.cn:21000",
+  },
+  {
+    key: "kunlun_chat_path",
+    label: "对话接口路径",
+    hint: "拼在 base_url 后的路径（智算大模型会话接口）。",
+  },
+  {
+    key: "kunlun_chat_url",
+    label: "完整对话接口 URL（可选）",
+    hint: "设置后直接使用，覆盖 base_url + 路径。",
+  },
+  {
+    key: "kunlun_auth_url",
+    label: "Token 端点 URL（可选）",
+    hint: "OAuth2 client_credentials 换 token 的地址；留空 = base_url + /kunlun-auth-service/oauth2/token。",
+  },
+  {
+    key: "kunlun_app_code",
+    label: "App Code",
+    hint: "订阅交付物里的 appCode，作 Basic Auth 用户名。",
+  },
+  {
+    key: "kunlun_app_secret",
+    label: "App Secret",
+    sensitive: true,
+    hint: "订阅交付物里的 appSecret，作 Basic Auth 密码。",
+  },
+  {
+    key: "kunlun_models",
+    label: "模型列表",
+    hint: "逗号分隔。订阅示例为 app_001（占位符），待网关方确认真实应用 ID 后替换。",
+  },
+  {
+    key: "kunlun_model_id_header",
+    label: "X-Model-Id（可选）",
+    hint: "应用标识请求头；留空则取请求体里的 model。",
+  },
+  {
+    key: "kunlun_client_id",
+    label: "X-Client-Id（可选）",
+    hint: "平台标识请求头；Authorization 明文时可不传，留空则不发送。",
+  },
+  {
+    key: "kunlun_ai_user_id",
+    label: "X-AI-User-Id",
+    hint: "调用方用户标识请求头。",
+  },
+  {
+    key: "kunlun_verify_ssl",
+    label: "校验网关证书",
+    hint: "网关为企业自签证书、官方 SDK 也不校验，默认 False。",
   },
 ];
 
@@ -1936,6 +1998,12 @@ export function SettingsPanel() {
                     title="星辰大模型（Xingchen）"
                     description="星辰 OpenAI 兼容 adapter 的网关地址、凭证与模型。修改即时生效，无需重启。未在此设置的项会回退到 .env / 部署环境变量。"
                     fields={XINGCHEN_FIELDS}
+                  />
+                  <ProviderSettingsSection
+                    api={kunlunSettingsApi}
+                    title="昆仑网关大模型（云算网智算统一网关）"
+                    description="经昆仑能力开放网关调用别组部署的大模型。adapter 自动用 App Code/Secret 换 OAuth2 token 并注入网关定制请求头；Kunlun-Sign 签名算法待网关方确认，当前不发送。修改即时生效，无需重启。"
+                    fields={KUNLUN_FIELDS}
                   />
                 </>
               ) : null}

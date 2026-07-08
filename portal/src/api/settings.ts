@@ -116,7 +116,7 @@ export const inoeSettingsApi = {
     }),
 };
 
-// --- Model-provider adapters (Qiming / Xingchen) ---
+// --- Model-provider adapters (Qiming / Xingchen / Kunlun) ---
 //
 // Connection + credentials + models for the OpenAI-compatible adapters,
 // migrated off .env into the settings page. Same payload shape as above.
@@ -148,6 +148,7 @@ function makeProviderSettingsApi(base: string): ProviderSettingsApi {
 export const qimingSettingsApi = makeProviderSettingsApi("/qiming-settings");
 export const xingchenSettingsApi =
   makeProviderSettingsApi("/xingchen-settings");
+export const kunlunSettingsApi = makeProviderSettingsApi("/kunlun-settings");
 export const zgopsSettingsApi = makeProviderSettingsApi("/zgops-settings");
 export const n9eSettingsApi = makeProviderSettingsApi("/n9e-settings");
 // INOE OAuth2 single-sign-on credentials. The SSO router mounts under
