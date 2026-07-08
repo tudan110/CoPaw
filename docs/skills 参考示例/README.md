@@ -5,9 +5,11 @@
 ## 目录结构
 
 ```
-skill-reference/
+skills 参考示例/
 └── real-alarm/              ← 完整参考示例（实时告警查询）
     ├── SKILL.md             ← Skill 主文档（Agent 的行为指导）
+    ├── .env.example         ← 配置样例（复制为 .env 后填写）
+    ├── mock_data.json        ← Mock 数据（USE_MOCK_DATA=true 时使用，无接口权限也能联调）
     ├── scripts/             ← 可执行脚本
     │   ├── pyproject.toml   ← 依赖声明
     │   ├── get_alarms.py    ← 原始分页查询
@@ -54,7 +56,7 @@ utils/            ← 内部模块，按职责拆分
 ### 配置约定
 
 ```bash
-# 技能目录下的 .env（回退）
+# 技能目录下的 .env（复制 .env.example 后填写，回退项）
 YOUR_API_BASE_URL=http://<host>:<port>
 YOUR_API_TOKEN=your_token_here
 
@@ -62,6 +64,10 @@ YOUR_API_TOKEN=your_token_here
 ```
 
 加载优先级：共享 secrets 注入 → skill 目录 .env → 项目根目录 .env
+
+没有接口权限时，可先设置 `USE_MOCK_DATA=true`，让脚本读取技能目录下的
+`mock_data.json` 返回演示数据，用于先验证参数解析、过滤、渲染逻辑，接口权限
+到位后再切回 `false`。
 
 ### references/ 的使用原则
 

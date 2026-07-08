@@ -2,6 +2,10 @@
 
 本文档描述告警列表接口的响应数据结构和字段说明。
 
+> **请求与响应字段不对称**：请求 `hisAlarmList` 时传的是 `isClear`（见
+> `api-specification.md`），但接口返回的每条告警对象里，状态字段仍然叫
+> `alarmstatus`（本文档里的字段名）。解析响应时不要去找 `isClear` 字段。
+
 ## 标准响应结构
 
 ```json

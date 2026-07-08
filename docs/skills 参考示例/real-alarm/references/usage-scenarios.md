@@ -211,12 +211,12 @@ uv run scripts/analyze_alarms.py --mode search --ne_alias 数据库 --alarm_stat
 ### 15. 组合条件查询
 
 **用户问法**：
-- "南京的严重告警有哪些？"
+- "区域A的严重告警有哪些？"
 - "IPM专业的活跃告警"
 
 **推荐动作**：
 ```bash
-uv run scripts/analyze_alarms.py --mode search --severity 1 --cities 南京 --include-alarms --output markdown
+uv run scripts/analyze_alarms.py --mode search --severity 1 --region 区域A --include-alarms --output markdown
 ```
 
 ## 输出格式选择

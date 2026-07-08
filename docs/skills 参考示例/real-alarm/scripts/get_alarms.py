@@ -9,6 +9,10 @@
 说明:
     - 配置优先取环境变量/共享 secrets，回退 skill 目录下的 .env
     - 配置项：INOE_API_BASE_URL（API 基础地址）、INOE_API_TOKEN（认证令牌）
+    - 接口为 GET /resource/alarm/statistics/hisAlarmList，强制要求 begin/end
+      时间窗；未传时按 REAL_ALARM_QUERY_WINDOW_HOURS（默认 24 小时）自动回溯
+    - USE_MOCK_DATA=true 时读取 mock_data.json，不发真实请求，方便无接口权限
+      时联调技能行为
 """
 
 import argparse
@@ -17,7 +21,7 @@ import os
 import subprocess
 import sys
 import tempfile
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -180,20 +184,86 @@ def _build_http_error(status_code: int, error_msg: str) -> Dict[str, Any]:
     )
 
 
-def _curl_post_json(
+def _alarm_status_to_is_clear(alarm_status: Optional[str]) -> str:
+    """旧 alarmstatus → 新 isClear（语义反转）。
+
+    "1"=活跃 → isClear "0"；缺省默认查活跃；
+    明确传非活跃状态时查已恢复（"1"）。
+    """
+    status = str(alarm_status).strip() if alarm_status else "1"
+    return "0" if status == "1" else "1"
+
+
+def _build_his_alarm_params(
+    *,
+    page_num: int,
+    page_size: int,
+    begin_time: str,
+    end_time: str,
+    alarm_severity: Optional[str] = None,
+    alarm_severitys: Optional[List[str]] = None,
+    alarm_status: Optional[str] = None,
+    dev_name: Optional[str] = None,
+    manage_ip: Optional[str] = None,
+    alarm_title: Optional[str] = None,
+    ci_id: Optional[str] = None,
+    ne_alias: Optional[str] = None,
+) -> Dict[str, Any]:
+    """构建 hisAlarmList GET 查询参数。
+
+    级别列表转逗号串；alarmstatus→isClear；资源过滤优先精确网元 IP
+    (neIp)，否则模糊 queryKey。新接口无 neId，纯数字 ci_id 无法按
+    资源 ID 过滤，仅当 ci_id 形似文本时才回退到 queryKey。
+    """
+    if alarm_severitys:
+        severity = ",".join(str(s).strip() for s in alarm_severitys if s)
+    elif alarm_severity:
+        severity = str(alarm_severity).strip()
+    else:
+        severity = "1,2,3,4"
+
+    params: Dict[str, Any] = {
+        "alarmSeverity": severity or "1,2,3,4",
+        "isClear": _alarm_status_to_is_clear(alarm_status),
+        "beginTime": begin_time,
+        "endTime": end_time,
+        "pageNum": page_num,
+        "pageSize": page_size,
+        "sortType": 1,
+    }
+
+    if manage_ip:
+        params["neIp"] = str(manage_ip).strip()
+        params["isLike"] = "0"
+
+    query_key = (dev_name or alarm_title or "").strip()
+    if not manage_ip and not query_key and ci_id:
+        ci_text = str(ci_id).strip()
+        if ci_text and not ci_text.isdigit():
+            query_key = ci_text
+    if query_key and "neIp" not in params:
+        params["queryKey"] = query_key
+
+    if ne_alias:
+        params["alarmClassType"] = ne_alias
+
+    return params
+
+
+def _curl_get_json(
     *,
     url: str,
     headers: Dict[str, str],
-    data: Dict[str, Any],
+    params: Dict[str, Any],
     timeout_seconds: int = 30,
     allow_array: bool = False,
 ) -> Dict[str, Any]:
-    """使用系统 curl 作为 requests 的网络兼容性回退。"""
+    """使用系统 curl 作为 requests 的网络兼容性回退（GET）。"""
     with tempfile.NamedTemporaryFile(delete=False) as body_file:
         body_path = body_file.name
 
     args = [
-        "curl", "-sS", "-X", "POST",
+        "curl", "-sS", "--get",
         "--connect-timeout", str(int(timeout_seconds)),
         "--max-time", str(int(timeout_seconds)),
         "-o", body_path,
@@ -201,7 +271,10 @@ def _curl_post_json(
     ]
     for key, value in headers.items():
         args.extend(["-H", f"{key}: {value}"])
-    args.extend(["--data-binary", json.dumps(data, ensure_ascii=False)])
+    for key, value in params.items():
+        if value is None:
+            continue
+        args.extend(["--data-urlencode", f"{key}={value}"])
     args.append(url)
 
     try:
@@ -245,24 +318,6 @@ def _curl_post_json(
             pass
 
 
-def _build_city_list(cities: List[str]) -> List[Dict[str, Any]]:
-    return [
-        {"label": city, "value": city, "remark": None, "raw": {}} for city in cities
-    ]
-
-
-def _normalize_ci_id(ci_id: Optional[str]) -> Optional[Any]:
-    """规范化 CI/网元 ID，映射到接口字段 neId。"""
-    if ci_id is None:
-        return None
-    normalized = str(ci_id).strip()
-    if not normalized:
-        return None
-    if normalized.isdigit():
-        return int(normalized)
-    return normalized
-
-
 def execute(
     page_num: int = 1,
     page_size: int = 10,
@@ -275,11 +330,11 @@ def execute(
     alarm_status: str = None,
     dev_name: str = None,
     manage_ip: str = None,
-    cities: List[str] = None,
     alarm_title: str = None,
     ci_id: str = None,
     ne_alias: str = None,
     resource_type: str = None,
+    cities: List[str] = None,
 ) -> Dict[str, Any]:
     """
     执行实时告警查询
@@ -289,17 +344,19 @@ def execute(
         page_size: 每页数量，默认为 10
         token: JWT 认证令牌
         api_base_url: API 基础地址（可选，默认从环境变量读取）
-        begin_time: 开始时间，格式 YYYY-MM-DD HH:MM:SS
-        end_time: 结束时间，格式 YYYY-MM-DD HH:MM:SS
+        begin_time: 开始时间，格式 YYYY-MM-DD HH:MM:SS（缺省时按查询窗口自动计算）
+        end_time: 结束时间，格式 YYYY-MM-DD HH:MM:SS（缺省时取当前时间）
         alarm_severitys: 告警级别列表，如 ["1", "2"]
-        alarm_status: 告警状态，如 "1" 表示活跃
+        alarm_status: 告警状态，如 "1" 表示活跃（内部会转换为接口的 isClear）
         dev_name: 设备名称
         manage_ip: 管理IP
-        cities: 城市列表
         alarm_title: 告警标题
-        ci_id: CI/网元 ID，对应接口字段 neId
-        ne_alias: 资源分类，对应接口字段 neAlias
+        ci_id: CI/网元 ID（新接口无按 ID 精确过滤字段，纯数字 ID 无法过滤，
+            非数字文本会回退到模糊搜索 queryKey）
+        ne_alias: 资源分类，对应接口字段 alarmClassType
         resource_type: 资源分类别名，如 database/network/server
+        cities: 保留参数，新接口无城市过滤字段，仅为兼容
+            analyze_alarms.py 的调用签名，实际不生效
 
     Returns:
         Dict: 包含查询结果或错误信息的字典
@@ -323,56 +380,43 @@ def execute(
     if not base_url:
         return _make_error(400, "未设置 INOE_API_BASE_URL，请检查 .env 或 --api_base_url 参数")
 
-    url = f"{base_url}/resource/realalarm/list"
+    url = f"{base_url}/resource/alarm/statistics/hisAlarmList"
     headers = {
         "Authorization": f"Bearer {normalized_token}",
         "Content-Type": "application/json;charset=UTF-8",
     }
 
-    normalized_ne_alias = _normalize_ne_alias(ne_alias, resource_type)
+    # hisAlarmList 强制要 begin/end 时间窗，未传则用默认窗口（小时）。
+    if not begin_time or not end_time:
+        try:
+            window_h = float(
+                os.getenv("REAL_ALARM_QUERY_WINDOW_HOURS", "24") or "24"
+            )
+        except ValueError:
+            window_h = 24.0
+        now = datetime.now()
+        begin_time = (now - timedelta(hours=window_h)).strftime(
+            "%Y-%m-%d %H:%M:%S"
+        )
+        end_time = now.strftime("%Y-%m-%d %H:%M:%S")
 
-    data = {
-        "pageNum": page_num,
-        "pageSize": page_size,
-        "alarmuniqueid": None,
-        "alarmclass": None,
-        "devName": dev_name if dev_name else None,
-        "manageIp": manage_ip if manage_ip else None,
-        "neId": _normalize_ci_id(ci_id),
-        "locatenename": None,
-        "onuId": None,
-        "locatenestatus": None,
-        "eventtime": None,
-        "daltime": None,
-        "eventlasttime": None,
-        "canceltime": None,
-        "alarmseverity": "",
-        "alarmseveritys": alarm_severitys if alarm_severitys else [],
-        "vendorserialno": None,
-        "alarmstatus": alarm_status if alarm_status else None,
-        "speciality": None,
-        "addInfo9": None,
-        "clearuser": None,
-        "ackflag": None,
-        "acktime": None,
-        "ackuser": None,
-        "alarmtitle": alarm_title if alarm_title else None,
-        "alarmtext": None,
-        "alarmregion": None,
-        "alarmcounty": None,
-        "cityList": _build_city_list(cities) if cities else [],
-        "countyList": [],
-        "circName": "",
-        "linkName": "",
-        "circId": "",
-        "linkId": "",
-        "params": {"beginEventtime": begin_time, "endEventtime": end_time},
-    }
-    if normalized_ne_alias:
-        data["neAlias"] = normalized_ne_alias
+    params = _build_his_alarm_params(
+        page_num=page_num,
+        page_size=page_size,
+        begin_time=begin_time,
+        end_time=end_time,
+        alarm_severity=alarm_severity,
+        alarm_severitys=alarm_severitys,
+        alarm_status=alarm_status,
+        dev_name=dev_name,
+        manage_ip=manage_ip,
+        alarm_title=alarm_title,
+        ci_id=ci_id,
+        ne_alias=_normalize_ne_alias(ne_alias, resource_type),
+    )
 
     try:
-        response = requests.post(url, headers=headers, json=data, timeout=30)
+        response = requests.get(url, headers=headers, params=params, timeout=30)
         response.raise_for_status()
         result = response.json()
         if not isinstance(result, dict):
@@ -383,7 +427,7 @@ def execute(
         return _make_error(408, "请求超时，请检查网络连接或稍后重试")
 
     except requests.exceptions.ConnectionError:
-        return _curl_post_json(url=url, headers=headers, data=data, timeout_seconds=30)
+        return _curl_get_json(url=url, headers=headers, params=params, timeout_seconds=30)
 
     except requests.exceptions.HTTPError as e:
         return _handle_http_error(e)
@@ -404,7 +448,7 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 示例:
-  # 使用配置文件中的配置查询最近告警
+  # 使用配置文件中的配置查询最近告警（未指定时间范围时，按查询窗口回溯，默认 24 小时）
   uv run get_alarms.py --page_num 1 --page_size 10
 
   # 查询指定时间范围内的告警
@@ -413,10 +457,7 @@ def main():
   # 查询严重级别告警
   uv run get_alarms.py --alarm_severitys 1 2
 
-  # 查询指定城市的告警
-  uv run get_alarms.py --cities 南京 秦淮区
-
-  # 查询指定 CI/网元 ID 的告警
+  # 查询指定 CI/网元 ID（文本类关键字）的告警
   uv run get_alarms.py --ci_id 18
 
   # 查询数据库当前活跃告警
@@ -424,8 +465,10 @@ def main():
 
 配置文件:
   技能目录下的 .env（或共享 secrets/ 注入）：
-  - INOE_API_BASE_URL  API 基础地址（如：http://<host>:<port>）
-  - INOE_API_TOKEN     API Token（JWT）
+  - INOE_API_BASE_URL              API 基础地址（如：http://<host>:<port>）
+  - INOE_API_TOKEN                 API Token（JWT）
+  - USE_MOCK_DATA                  可选，true 时读取 mock_data.json 而不发真实请求
+  - REAL_ALARM_QUERY_WINDOW_HOURS  可选，未指定时间范围时的默认回溯窗口（小时），默认 24
         """,
     )
 
@@ -448,13 +491,12 @@ def main():
     parser.add_argument("--dev_name", type=str, required=False, help="设备名称")
     parser.add_argument("--manage_ip", type=str, required=False, help="管理IP")
     parser.add_argument("--ci_id", "--ne_id", dest="ci_id", type=str, required=False,
-                        help="CI/网元 ID，对应接口字段 neId")
+                        help="CI/网元 ID；新接口无按 ID 精确过滤字段，纯数字会被忽略，"
+                             "文本会回退到模糊搜索 queryKey")
     parser.add_argument("--ne_alias", "--neAlias", dest="ne_alias", type=str, required=False,
-                        help="资源分类，对应接口字段 neAlias，如 数据库/网络设备/中间件/操作系统/计算资源")
+                        help="资源分类，对应接口字段 alarmClassType，如 数据库/网络设备/中间件/操作系统/计算资源")
     parser.add_argument("--resource_type", "--resource", dest="resource_type", type=str, required=False,
                         help="资源分类别名，如 database/network/middleware/os/server")
-    parser.add_argument("--cities", type=str, nargs="+", required=False,
-                        help="城市列表，如：南京 秦淮区")
     parser.add_argument("--alarm_title", type=str, required=False, help="告警标题")
 
     args = parser.parse_args()
@@ -480,7 +522,6 @@ def main():
         ci_id=args.ci_id,
         ne_alias=args.ne_alias,
         resource_type=args.resource_type,
-        cities=args.cities,
         alarm_title=args.alarm_title,
     )
 
