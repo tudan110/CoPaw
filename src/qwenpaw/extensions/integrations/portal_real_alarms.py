@@ -12,6 +12,12 @@ import requests
 
 from qwenpaw.extensions.api import diagnosis_settings_store
 from qwenpaw.extensions.api import inoe_settings_store
+from qwenpaw.extensions.integrations.alarm_contract import (
+    CLASS_TO_NAME,
+    SEVERITY_TO_LEVEL,
+    SEVERITY_TO_NAME,
+    STATUS_TO_NAME,
+)
 
 DEFAULT_INOE_API_BASE_URL = "http://gateway:8080"
 REAL_ALARM_LIST_ENDPOINT = "/resource/alarm/statistics/hisAlarmList"
@@ -23,33 +29,6 @@ DEFAULT_REAL_ALARM_QUERY_WINDOW_HOURS = 24.0
 # wide window so an old-but-still-active alarm is not misread as cleared
 # just because its event time predates a narrow window.
 RECOVERY_VERIFY_WINDOW_HOURS = 24.0 * 90
-
-SEVERITY_TO_LEVEL = {
-    "1": "critical",
-    "2": "urgent",
-    "3": "warning",
-}
-
-# Display-oriented maps, aligned with the real-alarm skill's
-# scripts/utils/alarm_normalizer.py so the big-screen shows the same
-# human-readable values the chat table does.
-SEVERITY_TO_NAME = {
-    "1": "紧急",
-    "2": "严重",
-    "3": "普通",
-    "4": "预警",
-}
-STATUS_TO_NAME = {
-    "0": "自动清除",
-    "1": "活跃",
-    "2": "同步清除",
-    "3": "手工清除",
-}
-CLASS_TO_NAME = {
-    "sys_log": "设备告警",
-    "threshold": "性能告警",
-    "derivative": "衍生告警",
-}
 
 
 def _get_gateway_real_alarm_url() -> str:
