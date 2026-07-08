@@ -34,6 +34,7 @@ ORDER_CREATE_NOTIFY_MENTION_ALL=true
 - 告警编号 (alarmId)
 - 资源 / 设备信息
 - 根因方向
+- 紧急预案（启用止血时必须体现，放在处置建议之前；通过 `--suggestions-json` 中 `stage:"emergency"` 的条目自动派生，未启用时省略）
 - 处置建议
 - 异常指标（如果有）
 
@@ -48,6 +49,8 @@ ORDER_CREATE_NOTIFY_MENTION_ALL=true
 
 ## 推荐通知模板
 
+影响范围大、启用紧急预案时：
+
 ```
 🔍 AI告警分析报告
 
@@ -55,6 +58,8 @@ ORDER_CREATE_NOTIFY_MENTION_ALL=true
 - 资源：db_mysql_001（10.43.150.186）
 - 告警编号：alarm-001
 - 根因方向：InnoDB 行锁竞争阻塞链 -> 死锁 -> 连接异常
+- 🚑 紧急预案（止血，立即执行）：
+  先将受影响业务切换至备用 MySQL 实例恢复访问（需人工确认审批后执行）
 - 处置建议：
   1. 查看死锁记录
   2. 排查长事务和锁等待关系
@@ -66,3 +71,5 @@ ORDER_CREATE_NOTIFY_MENTION_ALL=true
 
 此报告为 AI 自动生成，请尽快跟进处置。
 ```
+
+影响范围可控、未启用紧急预案时省略"🚑 紧急预案"段，其余不变。
