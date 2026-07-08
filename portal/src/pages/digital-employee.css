@@ -5788,6 +5788,22 @@
   background: linear-gradient(135deg, rgba(245, 158, 11, 0.1), rgba(255, 255, 255, 0.96));
 }
 
+.portal-digital-employee .alarm-analyst-spotlight-card.emergency {
+  grid-column: span 2;
+  border-color: rgba(239, 68, 68, 0.32);
+  background:
+    radial-gradient(circle at top right, rgba(239, 68, 68, 0.12), transparent 36%),
+    linear-gradient(135deg, rgba(239, 68, 68, 0.1), rgba(255, 255, 255, 0.94));
+}
+
+.portal-digital-employee .alarm-analyst-spotlight-card.emergency .alarm-analyst-spotlight-label {
+  color: #dc2626;
+}
+
+.portal-digital-employee .alarm-analyst-spotlight-card.emergency .alarm-analyst-spotlight-value {
+  font-weight: 600;
+}
+
 .portal-digital-employee .alarm-analyst-spotlight-label {
   font-size: 12px;
   font-weight: 800;
@@ -6535,6 +6551,10 @@
   }
 
   .portal-digital-employee .alarm-analyst-spotlight-card.primary {
+    grid-column: auto;
+  }
+
+  .portal-digital-employee .alarm-analyst-spotlight-card.emergency {
     grid-column: auto;
   }
 
