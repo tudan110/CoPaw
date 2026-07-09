@@ -1,0 +1,51 @@
+{
+  "_comment": "演示用的模拟采集数据：真实场景里这些数值应该来自监控系统/网管接口的实时采集，这份 demo 为了让参赛队伍不用自己找设备、不用手动报数字，就能看到完整的四步法效果，内置了几个典型案例，按端口名称查找。找不到对应端口时，脚本会退回 _default 这一条。",
+
+  "GE0/0/1": {
+    "_case": "典型光模块老化案例：接收光功率、偏置电流、温度、CRC 全部异常，且拓扑-时序校验通过，是四步法里置信度最高的一类结论",
+    "rx_power": -23.5,
+    "tx_power": -3.2,
+    "bias_current": 68,
+    "temperature": 78,
+    "crc_rate": 100,
+    "downlink_alert_delay_min": 1.5,
+    "peer_rx_power": -8,
+    "affected_users": 100000
+  },
+
+  "GE0/0/2": {
+    "_case": "正常案例：全部参数都在正常范围内，用来演示脚本判断'没有问题'时的输出",
+    "rx_power": -12.0,
+    "tx_power": -2.5,
+    "bias_current": 22,
+    "temperature": 45,
+    "crc_rate": 0,
+    "downlink_alert_delay_min": 1.2,
+    "peer_rx_power": -11.0,
+    "affected_users": 5000
+  },
+
+  "GE0/0/3": {
+    "_case": "疑似光纤问题案例：本端指标异常，但对端接收光功率也异常，用来演示'不能只换本端光模块，要先排查光纤'这条结论分支",
+    "rx_power": -24.0,
+    "tx_power": -3.0,
+    "bias_current": 60,
+    "temperature": 72,
+    "crc_rate": 80,
+    "downlink_alert_delay_min": 1.8,
+    "peer_rx_power": -21.0,
+    "affected_users": 60000
+  },
+
+  "_default": {
+    "_case": "端口名称在 mock 数据里找不到时的兜底案例，和 GE0/0/1 一致，保证脚本任何时候都能跑出一个完整结论",
+    "rx_power": -23.5,
+    "tx_power": -3.2,
+    "bias_current": 68,
+    "temperature": 78,
+    "crc_rate": 100,
+    "downlink_alert_delay_min": 1.5,
+    "peer_rx_power": -8,
+    "affected_users": 100000
+  }
+}
