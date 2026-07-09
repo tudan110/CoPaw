@@ -12,6 +12,7 @@ import threading
 import time
 import traceback
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
@@ -64,6 +65,9 @@ from qwenpaw.extensions.api.qiming_openai_adapter import (
 )
 from qwenpaw.extensions.api.xingchen_openai_adapter import (
     router as xingchen_openai_adapter_router,
+)
+from qwenpaw.extensions.api.kunlun_openai_adapter import (
+    router as kunlun_openai_adapter_router,
 )
 from qwenpaw.extensions.api.proxy_api import (
     router as proxy_router,
@@ -138,6 +142,7 @@ from qwenpaw.extensions.api import diagnosis_settings_store
 from qwenpaw.extensions.api import inoe_settings_store
 from qwenpaw.extensions.api import qiming_settings_store
 from qwenpaw.extensions.api import xingchen_settings_store
+from qwenpaw.extensions.api import kunlun_settings_store
 from qwenpaw.extensions.api import zgops_settings_store
 from qwenpaw.extensions.api import operator_settings_store
 from qwenpaw.extensions.api import order_settings_store
@@ -166,6 +171,7 @@ router.include_router(light_apps_router)
 router.include_router(agent_reports_router)
 router.include_router(qiming_openai_adapter_router)
 router.include_router(xingchen_openai_adapter_router)
+router.include_router(kunlun_openai_adapter_router)
 router.include_router(proxy_router)
 router.include_router(sso_router)
 app = FastAPI(title="Portal Backend")
@@ -174,6 +180,16 @@ PORTAL_REAL_ALARM_ROUTE_DEFAULT_LIMIT = 20
 PORTAL_REAL_ALARM_ROUTE_FETCH_MULTIPLIER = 3
 PORTAL_REAL_ALARM_ROUTE_TIMEOUT_SECONDS = float(
     os.getenv("QWENPAW_PORTAL_REAL_ALARM_ROUTE_TIMEOUT", "5").strip() or "5",
+)
+# The process-wide default executor (used by ``asyncio.to_thread``) is
+# shared with every blocking channel poller in this app; under load it
+# can stay saturated indefinitely, starving the alarm fetch and pushing
+# it into permanent "degraded" fallback even though the gateway itself
+# answers in well under a second. Give this fetch its own small pool so
+# it never queues behind unrelated channel I/O.
+PORTAL_REAL_ALARM_EXECUTOR = ThreadPoolExecutor(
+    max_workers=2,
+    thread_name_prefix="portal-real-alarm",
 )
 PORTAL_REAL_ALARM_CACHE_TTL_SECONDS = float(
     os.getenv("QWENPAW_PORTAL_REAL_ALARM_CACHE_TTL", "30").strip() or "30",
@@ -1740,9 +1756,10 @@ async def reset_inoe_setting(
 
 
 # ---------------------------------------------------------------------------
-# Model-provider settings (Qiming / Xingchen). Same {effective, env,
-# overrides, groups} shape as INOE; the adapters read these in-process, so
-# no os.environ refresh is needed. See qiming/xingchen_settings_store.
+# Model-provider settings (Qiming / Xingchen / Kunlun). Same {effective,
+# env, overrides, groups} shape as INOE; the adapters read these
+# in-process, so no os.environ refresh is needed. See
+# qiming/xingchen/kunlun_settings_store.
 # ---------------------------------------------------------------------------
 
 
@@ -1814,6 +1831,41 @@ async def reset_xingchen_setting(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     return xingchen_settings_store.build_settings_payload()
+
+
+@router.get("/kunlun-settings")
+async def get_kunlun_settings() -> dict[str, Any]:
+    """Return Kunlun adapter settings as ``{effective, env, overrides}``."""
+    return kunlun_settings_store.build_settings_payload()
+
+
+@router.put("/kunlun-settings")
+async def put_kunlun_settings(
+    body: dict[str, Any] = Body(default_factory=dict),
+) -> dict[str, Any]:
+    """Persist a partial update of the Kunlun adapter settings.
+
+    Sensitive fields left empty keep the stored secret; sending
+    ``CLEAR_SENTINEL`` clears them.
+    """
+    try:
+        kunlun_settings_store.apply_settings_update(body)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return kunlun_settings_store.build_settings_payload()
+
+
+@router.post("/kunlun-settings/reset")
+async def reset_kunlun_setting(
+    body: dict[str, Any] = Body(default_factory=dict),
+) -> dict[str, Any]:
+    """Drop one Kunlun field's override. Body: ``{"key": "<field>"}``."""
+    key = str(body.get("key") or "").strip()
+    try:
+        kunlun_settings_store.reset_setting(key)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return kunlun_settings_store.build_settings_payload()
 
 
 # ---------------------------------------------------------------------------
@@ -2414,7 +2466,8 @@ async def _refresh_portal_real_alarm_payload(limit: int) -> dict[str, Any]:
 
     normalized_limit = _normalize_portal_real_alarm_limit(limit)
     try:
-        payload = await asyncio.to_thread(
+        payload = await asyncio.get_running_loop().run_in_executor(
+            PORTAL_REAL_ALARM_EXECUTOR,
             _query_visible_portal_real_alarms,
             normalized_limit,
         )
@@ -4964,7 +5017,8 @@ def register_app_routes(fastapi_app) -> None:
 
         @fastapi_app.middleware("http")
         async def inoe_token_passthrough_middleware(
-            request: Request, call_next
+            request: Request,
+            call_next,
         ):
             # SSO pass-through (see portal/src/auth/ssoSession.ts): when
             # the logged-in user's own INOE token is sent on this header,
@@ -4975,7 +5029,7 @@ def register_app_routes(fastapi_app) -> None:
             # configured token via inoe_settings_store.get_token().
             token = request.headers.get("X-Inoe-Token")
             ctx_token = inoe_settings_store.CURRENT_REQUEST_TOKEN.set(
-                token or None
+                token or None,
             )
             try:
                 return await call_next(request)

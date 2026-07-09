@@ -32,8 +32,16 @@ def fetch_all_alarms(
     ne_alias: Optional[str] = None,
     resource_type: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """分页拉取全部告警，自动处理分页逻辑。"""
-    # 先取总数
+    """分页拉取全部告警，自动处理分页逻辑。
+
+    get_alarms.py 里的 execute() 一次只查一页（接口本身就是分页返回
+    的，一次最多给几十/几百条），如果告警有几千条，Agent 不可能一页一
+    页手动去拼。这个函数就是把"翻页"这件重复劳动封装掉：先用
+    page_size=1 探一下总数有多少，算出总共要翻多少页，再循环把每一页
+    都拉回来拼成一份完整列表，调用方只需要一次调用就能拿到全量数据。
+    """
+    # 第一次请求只要 1 条（page_size=1），目的不是要数据，而是要接口
+    # 返回的 total 字段，用来算总共有多少页需要翻。
     first_page = execute(
         page_num=1,
         page_size=1,
@@ -55,6 +63,8 @@ def fetch_all_alarms(
     if total == 0:
         return {"code": 200, "msg": "查询成功", "total": 0, "rows": [], "pages": 0, "page_size": page_size}
 
+    # math.ceil 向上取整：比如总共 101 条、每页 100 条，算出来是 2 页
+    # （最后一页只有 1 条也要单独算一页，不能直接整除舍掉）。
     total_pages = math.ceil(total / page_size)
     rows: List[Dict[str, Any]] = []
 
@@ -74,6 +84,10 @@ def fetch_all_alarms(
             resource_type=resource_type,
         )
         if page_result.get("code") != 200:
+            # 翻到某一页时失败了（比如网络抖动、接口超时），不能让
+            # 前面已经拉到的数据白白丢掉，所以把已经拿到的部分数据也
+            # 一并带在错误结果里（partial_rows），方便调用方决定是要
+            # 直接放弃，还是"能用多少算多少"地继续处理。
             page_result["partial_rows"] = rows
             page_result["partial_count"] = len(rows)
             page_result["failed_page"] = page_num
@@ -130,7 +144,12 @@ def apply_filters(
 
 
 def matches_ci_id(alarm: Dict[str, Any], ci_id: str) -> bool:
-    """匹配 CI/网元 ID（兼容 neId / ciId / devId 多个字段）。"""
+    """匹配 CI/网元 ID（兼容 neId / ciId / devId 多个字段）。
+
+    不同批次的数据里，"资源 ID"这个含义可能落在不同字段名下（大小写
+    也不统一），所以把常见的几种候选字段都列出来，任意一个匹配上就算
+    命中，不要求调用方提前知道具体是哪个字段。
+    """
     candidates = (
         alarm.get("neId"),
         alarm.get("ciId"),
@@ -142,6 +161,12 @@ def matches_ci_id(alarm: Dict[str, Any], ci_id: str) -> bool:
 
 
 def matches_keyword(alarm: Dict[str, Any], keyword: str, keyword_field: str) -> bool:
+    """判断一条告警是否命中关键字搜索。
+
+    keyword_field="all" 时会在标题/设备名/管理IP/专业/区域这几个常见
+    字段里挨个找（SEARCHABLE_FIELDS），只要有一个字段包含关键字就算
+    命中；也可以指定只搜某一个具体字段。
+    """
     if not keyword:
         return True
     search_fields = SEARCHABLE_FIELDS if keyword_field == "all" else {keyword_field}
@@ -149,7 +174,12 @@ def matches_keyword(alarm: Dict[str, Any], keyword: str, keyword_field: str) -> 
 
 
 def summarize_groups(counter: Counter, total: int, top_n: int = DEFAULT_TOP_N) -> List[Dict[str, Any]]:
-    """把计数器转换成统一分组输出（name / count / ratio）。"""
+    """把计数器转换成统一分组输出（name / count / ratio）。
+
+    counter.most_common(top_n) 会按数量从高到低排序，只取前 top_n 个，
+    避免比如设备有几百种、返回一个巨长的列表。ratio 是这个分组数量
+    占总数的百分比，四舍五入保留两位小数。
+    """
     groups: List[Dict[str, Any]] = []
     for name, count in counter.most_common(top_n):
         ratio = round((count / total) * 100, 2) if total else 0
@@ -158,7 +188,13 @@ def summarize_groups(counter: Counter, total: int, top_n: int = DEFAULT_TOP_N) -
 
 
 def build_overview(alarms: List[Dict[str, Any]], top_n: int = DEFAULT_TOP_N) -> Dict[str, Any]:
-    """生成综合概览（summary 模式使用）。"""
+    """生成综合概览（summary 模式使用）。
+
+    一次性算出好几种维度的统计：按级别/状态/标题/设备/专业/区域分组
+    的 Top N，加上"严重告警"和"活跃告警"各自的数量、占比和预览列表。
+    这样 Agent 一次调用就能拿到全部维度，不需要为了看不同维度反复调用
+    脚本。
+    """
     total = len(alarms)
     severity_counter = Counter(alarm["alarmSeverityName"] for alarm in alarms)
     status_counter = Counter(alarm["alarmStatusName"] for alarm in alarms)
@@ -189,7 +225,12 @@ def build_overview(alarms: List[Dict[str, Any]], top_n: int = DEFAULT_TOP_N) -> 
 
 
 def _build_alarm_rows(alarms: Iterable[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """提取常用输出字段，屏蔽不必要的原始字段。"""
+    """从原始告警字典里只挑出适合展示给用户的字段，组成表格行。
+
+    接口原始返回的字段远不止这些（还有很多内部字段、调试字段），直接
+    全部展示会让聊天窗口的表格又长又难读，所以这里做了一次"精简"，
+    只保留标题、级别、设备、IP、发生时间等对用户有意义的信息。
+    """
     rows: List[Dict[str, Any]] = []
     for alarm in alarms:
         rows.append({
@@ -213,7 +254,15 @@ def analyze_by_mode(
     top_n: int = DEFAULT_TOP_N,
     include_alarms: bool = False,
 ) -> Dict[str, Any]:
-    """根据模式分析告警，返回结构化结果供 Markdown 渲染器使用。"""
+    """根据 --mode 参数分析告警，返回结构化结果供 Markdown 渲染器使用。
+
+    这是整个分析脚本的调度中心：summary 走综合概览；severity/title/
+    device/speciality/region 走"按某个字段分组统计"的统一逻辑；search
+    是纯列表匹配，不做分组。不同 mode 返回的字典结构不完全一样（比如
+    summary 模式的 summary 字段是个大字典，其他分组模式的 summary 字段
+    只有 total_alarms + groups），调用方（markdown_renderer.py）需要
+    按 mode 分别处理。
+    """
     total = len(alarms)
 
     if mode == "summary":

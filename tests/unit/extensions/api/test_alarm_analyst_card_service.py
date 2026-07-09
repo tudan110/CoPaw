@@ -412,3 +412,75 @@ def test_extract_topology_payload_still_supports_graph_series() -> None:
 
     assert nodes == [{"id": "a", "name": "A"}, {"id": "b", "name": "B"}]
     assert edges == [{"source": "a", "target": "b"}]
+
+
+def test_build_alarm_analyst_card_extracts_staged_recommendations() -> None:
+    card = build_alarm_analyst_card(
+        chat_id="chat-1",
+        message_id="assistant-1",
+        employee_id="fault",
+        report_markdown=(
+            "🔴 端口 LinkDown — 完整故障分析报告\n"
+            "## 根因分析结论\n"
+            "- 根因：核心链路光模块故障（CI ID 3094）。\n"
+            "## 影响范围\n"
+            "- 受影响资源：3094\n"
+            "## 处置建议\n"
+            "### 🚑 紧急预案（止血，立即执行）\n"
+            "1. 将受影响用户切换至备用链路恢复访问（需人工确认审批后执行）\n"
+            "### 🔧 根因处置（修复，可择机安排）\n"
+            "1. 更换故障光模块，安排业务低峰窗口\n"
+            "2. 观察告警是否收敛\n"
+        ),
+        process_blocks=[],
+    )
+
+    stages = [item.stage for item in card.recommendations]
+    assert stages == ["emergency", "repair", "repair"]
+    assert card.recommendations[0].priority == "p0"
+    assert "备用链路" in card.recommendations[0].description
+
+
+def test_extract_recommendations_without_subsections_keeps_stage_none() -> None:
+    card = build_alarm_analyst_card(
+        chat_id="chat-1",
+        message_id="assistant-1",
+        employee_id="fault",
+        report_markdown=(
+            "🔴 单用户光猫故障 — 完整故障分析报告\n"
+            "## 根因分析结论\n"
+            "- 根因：用户光猫光模块老化（CI ID 12）。\n"
+            "## 影响范围\n"
+            "- 仅该用户\n"
+            "## 处置建议\n"
+            "- 上门更换光猫，常规工单排期\n"
+        ),
+        process_blocks=[],
+    )
+
+    assert card.recommendations
+    assert all(item.stage is None for item in card.recommendations)
+
+
+def test_extract_display_fields_includes_emergency_plan_row() -> None:
+    from qwenpaw.extensions.api.alarm_analyst_card_service import (
+        extract_display_fields,
+    )
+
+    display = extract_display_fields(
+        {
+            "rawReportMarkdown": (
+                "## 告警分析报告：端口 LinkDown\n"
+                "## 📊 总结\n"
+                "- 置信度：86%\n"
+                "- 故障性质：核心链路光模块故障\n"
+                "- 影响范围：A 片区 3 栋楼\n"
+                "- 紧急预案：先将受影响用户切换至备用链路恢复访问\n"
+                "- 优先动作：切换备用链路止血后更换光模块\n"
+            ),
+            "summary": {},
+            "rootCause": {},
+        }
+    )
+
+    assert display["emergencyPlan"] == "先将受影响用户切换至备用链路恢复访问"

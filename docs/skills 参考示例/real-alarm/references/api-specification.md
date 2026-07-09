@@ -62,17 +62,16 @@ uv run scripts/query_alarm_class_count.py [options]
 | `page_size` | int | 否 | 每页数量，默认 `10` | `10`, `100` |
 | `token` | str | 否 | JWT 令牌；默认从环境变量 `INOE_API_TOKEN` 读取 | `eyJ...` |
 | `api_base_url` | str | 否 | API 基础地址；默认从环境变量 `INOE_API_BASE_URL` 读取 | `http://<host>:<port>` |
-| `begin_time` | str | 否 | 开始时间，格式 `YYYY-MM-DD HH:MM:SS` | `2026-03-15 10:00:00` |
-| `end_time` | str | 否 | 结束时间，格式 `YYYY-MM-DD HH:MM:SS` | `2026-03-16 10:00:00` |
-| `alarm_severitys` | list | 否 | 告警级别列表 | `1 2` |
-| `alarm_status` | str | 否 | 告警状态，`1` 表示活跃 | `1` |
-| `dev_name` | str | 否 | 设备名称 | `device-core-01` |
-| `manage_ip` | str | 否 | 管理IP | `<device-ip>` |
-| `ci_id` / `ne_id` | str | 否 | CI/网元 ID，对应请求体字段 `neId` | `18` |
-| `ne_alias` / `neAlias` | str | 否 | 资源分类，对应请求体字段 `neAlias` | `数据库`, `网络设备`, `中间件`, `操作系统`, `计算资源` |
-| `resource_type` / `resource` | str | 否 | 资源分类别名，会映射为 `neAlias` | `database`, `network`, `middleware`, `os`, `server` |
-| `cities` | list | 否 | 城市列表 | `南京 秦淮区` |
-| `alarm_title` | str | 否 | 告警标题 | `端口DOWN` |
+| `begin_time` | str | 否 | 开始时间，格式 `YYYY-MM-DD HH:MM:SS`；缺省时按 `REAL_ALARM_QUERY_WINDOW_HOURS` 自动回溯 | `2026-03-15 10:00:00` |
+| `end_time` | str | 否 | 结束时间，格式 `YYYY-MM-DD HH:MM:SS`；缺省时取当前时间 | `2026-03-16 10:00:00` |
+| `alarm_severitys` | list | 否 | 告警级别列表，对应接口字段 `alarmSeverity`（逗号拼接） | `1 2` |
+| `alarm_status` | str | 否 | 告警状态，`1` 表示活跃；脚本内部转换为接口的 `isClear`（语义反转，见下文） | `1` |
+| `dev_name` | str | 否 | 设备名称，映射到接口的模糊搜索 `queryKey` | `device-core-01` |
+| `manage_ip` | str | 否 | 管理IP，映射到接口的精确字段 `neIp` | `<device-ip>` |
+| `ci_id` / `ne_id` | str | 否 | CI/网元 ID；新接口无按 ID 精确过滤字段，纯数字会被忽略，文本会回退到模糊搜索 `queryKey` | `18` |
+| `ne_alias` / `neAlias` | str | 否 | 资源分类，对应接口字段 `alarmClassType` | `数据库`, `网络设备`, `中间件`, `操作系统`, `计算资源` |
+| `resource_type` / `resource` | str | 否 | 资源分类别名，会映射为 `alarmClassType` | `database`, `network`, `middleware`, `os`, `server` |
+| `alarm_title` | str | 否 | 告警标题，映射到接口的模糊搜索 `queryKey` | `端口DOWN` |
 
 ### query_alarm_class_count.py 参数
 
@@ -107,7 +106,7 @@ uv run scripts/query_alarm_class_count.py [options]
 | `end_time` | str | 否 | 结束时间 | `2026-03-16 10:00:00` |
 | `alarm_severitys` | list | 否 | 告警级别列表 | `1 2` |
 | `alarm_status` | str | 否 | 告警状态 | `1` |
-| `cities` | list | 否 | 城市列表 | `南京 秦淮区` |
+| `cities` | list | 否 | 保留参数，新接口无城市过滤字段，传了也不生效 | `南京` |
 | `fetch_page_size` | int | 否 | 抓取全量告警时的分页大小，默认 `100` | `100` |
 | `top_n` | int | 否 | 分组结果或预览告警数量，默认 `10` | `10`, `20` |
 | `include-alarms` | flag | 否 | 输出完整告警预览列表 | - |
@@ -120,6 +119,8 @@ uv run scripts/query_alarm_class_count.py [options]
 ```bash
 INOE_API_BASE_URL=http://<host>:<port>
 INOE_API_TOKEN=your_jwt_token_here
+USE_MOCK_DATA=false
+REAL_ALARM_QUERY_WINDOW_HOURS=24
 ```
 
 读取优先级：
@@ -128,12 +129,16 @@ INOE_API_TOKEN=your_jwt_token_here
 2. 技能目录 `.env`（回退）
 3. 项目根目录 `.env`（最后回退）
 
+`USE_MOCK_DATA=true` 时读取 `mock_data.json`、不发真实请求，适合还没拿到接口权限时先验证技能的参数解析、过滤、渲染逻辑。
+
 ## 接口信息
 
-- 实时告警列表：`POST {INOE_API_BASE_URL}/resource/realalarm/list`
+- 实时告警列表：`GET {INOE_API_BASE_URL}/resource/alarm/statistics/hisAlarmList`
 - 告警类别统计：`POST {INOE_API_BASE_URL}/resource/alarmQuery/queryAlarmClassCount`
 - 鉴权方式：`Authorization: Bearer <token>`
-- 请求体：JSON 格式，`neAlias` 只在用户指定资源分类时传
+- 实时告警列表请求参数：Query String，`alarmClassType` 只在用户指定资源分类时传
+- `hisAlarmList` **强制要求** `beginTime`/`endTime` 时间窗；调用方未传时，脚本按 `REAL_ALARM_QUERY_WINDOW_HOURS`（默认 24 小时）自动回溯生成
+- `isClear` 字段与旧接口的 `alarmstatus` **语义相反**：`alarmstatus=1`（活跃）→ `isClear=0`；脚本内部已做转换（`_alarm_status_to_is_clear`），Agent 只需要继续传 `--alarm_status`，不需要关心 `isClear`
 
 ## 告警级别
 
@@ -188,6 +193,8 @@ uv run scripts/get_alarms.py --begin_time "2026-03-15 10:00:00" --end_time "2026
 ```bash
 uv run scripts/analyze_alarms.py --mode search --ci_id 18 --include-alarms --output markdown
 ```
+
+注意：新接口没有按资源 ID 精确过滤的字段，纯数字 `ci_id` 只能靠 `search` 模式在本地结果里再筛一遍；如果 `ci_id` 是设备名一类的文本，会回退到接口的模糊搜索 `queryKey`。
 
 ### 场景 5：按资源分类查询当前告警
 

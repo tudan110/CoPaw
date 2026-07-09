@@ -99,15 +99,15 @@ uv run scripts/analyze_alarms.py --mode search --alarm_status 1 --output markdow
 # 分析指定时间范围
 uv run scripts/analyze_alarms.py --mode summary --begin_time "2026-03-15 00:00:00" --end_time "2026-03-16 23:59:59" --output markdown
 
-# 分析指定城市
-uv run scripts/analyze_alarms.py --mode summary --cities 南京 --output markdown
+# 分析指定区域
+uv run scripts/analyze_alarms.py --mode summary --region 区域A --output markdown
 ```
 
 ## 组合分析示例
 
 ```bash
-# 南京的严重告警
-uv run scripts/analyze_alarms.py --mode search --severity 1 --cities 南京 --include-alarms --output markdown
+# 区域A的严重告警
+uv run scripts/analyze_alarms.py --mode search --severity 1 --region 区域A --include-alarms --output markdown
 
 # IPM专业的活跃告警
 uv run scripts/analyze_alarms.py --mode search --speciality IPM --alarm_status 1 --include-alarms --output markdown

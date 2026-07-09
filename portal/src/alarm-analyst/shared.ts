@@ -55,6 +55,8 @@ export type AlarmAnalystCardV1 = {
     description: string;
     risk?: string;
     actionType?: "manual" | "script" | "observe";
+    // "emergency" = 紧急预案（止血）, "repair" = 根因处置（修复）
+    stage?: "emergency" | "repair" | null;
   }>;
   evidence: Array<{
     kind: AlarmAnalystCardEvidenceKind;

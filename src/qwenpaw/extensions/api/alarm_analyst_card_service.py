@@ -612,13 +612,25 @@ def _dedupe_entities(
 
 def _extract_recommendations(text: str) -> list[AlarmAnalystCardRecommendation]:
     recommendations: list[AlarmAnalystCardRecommendation] = []
-    items = BULLET_LINE_RE.findall(str(text or ""))
+    stage: str | None = None
+    index = 0
 
-    for index, item in enumerate(items):
-        content = _sanitize_inline_text(item)
+    for line in str(text or "").splitlines():
+        heading_match = re.match(r"^\s*#{2,6}\s*(.+?)\s*$", line)
+        if heading_match:
+            stage = _detect_recommendation_stage(heading_match.group(1), stage)
+            continue
+        bullet_match = re.match(r"^\s*(?:[-*+]\s+|\d+\.\s+)(.+?)\s*$", line)
+        if not bullet_match:
+            continue
+        content = _sanitize_inline_text(bullet_match.group(1))
         if not content:
             continue
-        priority = _detect_priority(content, fallback=index)
+        priority = (
+            "p0"
+            if stage == "emergency"
+            else _detect_priority(content, fallback=index)
+        )
         title = _extract_brief_title(content, fallback=f"建议 {index + 1}")
         recommendations.append(
             AlarmAnalystCardRecommendation(
@@ -627,10 +639,23 @@ def _extract_recommendations(text: str) -> list[AlarmAnalystCardRecommendation]:
                 description=content,
                 risk=_extract_risk(content),
                 action_type=_detect_action_type(content),
+                stage=stage,
             )
         )
+        index += 1
 
     return recommendations
+
+
+def _detect_recommendation_stage(
+    heading_text: str, current: str | None
+) -> str | None:
+    normalized = str(heading_text or "")
+    if "紧急预案" in normalized or "应急预案" in normalized or "止血" in normalized:
+        return "emergency"
+    if "根因处置" in normalized or "根治" in normalized or "修复" in normalized:
+        return "repair"
+    return current
 
 
 def _detect_priority(text: str, fallback: int = 0) -> str:
@@ -911,6 +936,8 @@ _SUMMARY_LABEL_ALIASES: dict[str, str] = {
     "影响面": "影响范围",
     "根因结论": "根因方向",
     "优先建议": "优先动作",
+    "应急预案": "紧急预案",
+    "止血动作": "紧急预案",
     "关键问题": "关键提醒",
     "关联告警查询": "关联资源告警查询状态",
     "关联告警": "关联资源告警查询状态",
@@ -923,6 +950,7 @@ _SUMMARY_DISPLAY_LABELS = [
     "故障性质",
     "根因方向",
     "影响范围",
+    "紧急预案",
     "优先动作",
     "关联资源告警查询状态",
     "关键提醒",
@@ -1009,6 +1037,7 @@ def extract_display_fields(card_dict: dict[str, Any]) -> dict[str, Any]:
         "faultNature": fault_nature,
         "rootCauseDirection": root_cause_direction,
         "impactScope": rows_by_label.get("影响范围", ""),
+        "emergencyPlan": rows_by_label.get("紧急预案", ""),
         "priorityAction": rows_by_label.get("优先动作", ""),
         "relatedAlarmQueryStatus": rows_by_label.get("关联资源告警查询状态", ""),
         "keyReminder": rows_by_label.get("关键提醒", ""),

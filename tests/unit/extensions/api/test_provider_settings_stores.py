@@ -214,3 +214,47 @@ def test_order_store_basics(
     # unknown key rejected
     with pytest.raises(ValueError):
         ordr.apply_settings_update({"nope": "x"}, db_path=db)
+
+
+_KUNLUN_ENVS = (
+    "QWENPAW_KUNLUN_BASE_URL",
+    "COPAW_KUNLUN_BASE_URL",
+    "QWENPAW_KUNLUN_APP_CODE",
+    "QWENPAW_KUNLUN_APP_SECRET",
+    "COPAW_KUNLUN_APP_SECRET",
+    "QWENPAW_KUNLUN_MODELS",
+    "QWENPAW_KUNLUN_VERIFY_SSL",
+)
+
+
+def test_kunlun_store_basics(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from qwenpaw.extensions.api import kunlun_settings_store as k
+
+    db = _db(tmp_path)
+    _clear(monkeypatch, _KUNLUN_ENVS)
+    # Defaults encode the subscription's gateway root + example model.
+    assert k.resolve_text("QWENPAW_KUNLUN_BASE_URL", db_path=db) == (
+        "https://ogw.klnaas.189.cn:21000"
+    )
+    assert k.resolve_text("QWENPAW_KUNLUN_MODELS", db_path=db) == "app_001"
+    # Bool field resolves through the same text channel the adapter uses.
+    assert k.resolve_text("QWENPAW_KUNLUN_VERIFY_SSL", db_path=db) == ("False")
+    # override + masked app secret
+    k.apply_settings_update(
+        {
+            "kunlun_base_url": "https://gw.test:21000",
+            "kunlun_app_secret": "SECRETvalu",
+        },
+        db_path=db,
+    )
+    assert k.resolve_text("QWENPAW_KUNLUN_BASE_URL", db_path=db) == (
+        "https://gw.test:21000"
+    )
+    payload = k.build_settings_payload(db_path=db)
+    assert payload["effective"]["kunlun_app_secret"]["masked"] == ("****valu")
+    # unknown key rejected
+    with pytest.raises(ValueError):
+        k.apply_settings_update({"nope": "x"}, db_path=db)
