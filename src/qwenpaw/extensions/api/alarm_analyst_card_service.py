@@ -612,13 +612,15 @@ def _dedupe_entities(
 
 def _extract_recommendations(text: str) -> list[AlarmAnalystCardRecommendation]:
     recommendations: list[AlarmAnalystCardRecommendation] = []
-    stage: str | None = None
+    heading_stage: str | None = None
     index = 0
 
     for line in str(text or "").splitlines():
         heading_match = re.match(r"^\s*#{2,6}\s*(.+?)\s*$", line)
         if heading_match:
-            stage = _detect_recommendation_stage(heading_match.group(1), stage)
+            heading_stage = _detect_recommendation_stage(
+                heading_match.group(1), heading_stage
+            )
             continue
         bullet_match = re.match(r"^\s*(?:[-*+]\s+|\d+\.\s+)(.+?)\s*$", line)
         if not bullet_match:
@@ -626,6 +628,7 @@ def _extract_recommendations(text: str) -> list[AlarmAnalystCardRecommendation]:
         content = _sanitize_inline_text(bullet_match.group(1))
         if not content:
             continue
+        stage = _detect_bullet_stage(content, heading_stage)
         priority = (
             "p0"
             if stage == "emergency"
@@ -647,14 +650,29 @@ def _extract_recommendations(text: str) -> list[AlarmAnalystCardRecommendation]:
     return recommendations
 
 
+def _detect_bullet_stage(
+    content: str, heading_stage: str | None
+) -> str | None:
+    normalized = str(content or "")
+    if normalized.startswith("🚑"):
+        return "emergency"
+    return heading_stage
+
+
 def _detect_recommendation_stage(
     heading_text: str, current: str | None
 ) -> str | None:
     normalized = str(heading_text or "")
+    if "紧急止血" in normalized or ("紧急" in normalized and "止血" in normalized):
+        return "emergency"
     if "紧急预案" in normalized or "应急预案" in normalized or "止血" in normalized:
         return "emergency"
+    if "根因修复" in normalized or ("根因" in normalized and ("修复" in normalized or "处置" in normalized)):
+        return "repair"
     if "根因处置" in normalized or "根治" in normalized or "修复" in normalized:
         return "repair"
+    if "预防措施" in normalized or "中长期" in normalized:
+        return "prevention"
     return current
 
 

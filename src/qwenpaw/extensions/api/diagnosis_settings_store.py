@@ -510,6 +510,14 @@ FIELD_SPECS: dict[str, FieldSpec] = {
             "metric_fetch",
             min_value=1,
         ),
+        # --- F. 告警处置建议详细展示模式 ---
+        FieldSpec(
+            "alarm_analyst_disposal_detail_mode",
+            "ALARM_ANALYST_DISPOSAL_DETAIL_MODE",
+            False,
+            "bool",
+            "alarm_analyst",
+        ),
     )
 }
 
