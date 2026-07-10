@@ -21,7 +21,7 @@ type AlarmAnalystSummaryRow = {
 };
 
 type AlarmAnalystSpotlight = AlarmAnalystSummaryRow & {
-  variant: "primary" | "secondary" | "action" | "status" | "warning" | "emergency";
+  variant: "primary" | "secondary" | "action" | "status" | "warning";
 };
 
 type AlarmAnalystAutomationCard = {
@@ -634,19 +634,6 @@ function buildFallbackRows(card: AlarmAnalystCardV1): AlarmAnalystSummaryRow[] {
     rows.push({ label: "影响范围", value: impactSegments.join("；"), tone: "neutral" });
   }
 
-  const emergencyRecommendation = card.recommendations.find(
-    (item) => item.stage === "emergency",
-  );
-  if (emergencyRecommendation) {
-    rows.push({
-      label: "紧急预案",
-      value: stripMarkdownInline(
-        emergencyRecommendation.description || emergencyRecommendation.title || "",
-      ),
-      tone: "accent",
-    });
-  }
-
   const primaryRecommendation = card.recommendations[0];
   if (primaryRecommendation) {
     rows.push({
@@ -710,23 +697,6 @@ function buildDisplayModel(card: AlarmAnalystCardV1, showConfidence: boolean) {
     .map((item) => stripMarkdownInline(item))
     .filter(Boolean);
 
-  const emergencyRecommendation = card.recommendations.find(
-    (item) => item.stage === "emergency",
-  );
-  const emergencyRow: AlarmAnalystSummaryRow | null =
-    rowsByLabel.get("紧急预案") ||
-    (emergencyRecommendation
-      ? {
-          label: "紧急预案",
-          value: stripMarkdownInline(
-            emergencyRecommendation.description ||
-              emergencyRecommendation.title ||
-              "",
-          ),
-          tone: "accent",
-        }
-      : null);
-
   const spotlightSections: AlarmAnalystSpotlight[] = [
     rowsByLabel.get("故障性质")
       ? { ...rowsByLabel.get("故障性质")!, variant: "primary" }
@@ -736,9 +706,6 @@ function buildDisplayModel(card: AlarmAnalystCardV1, showConfidence: boolean) {
       : null,
     rowsByLabel.get("影响范围")
       ? { ...rowsByLabel.get("影响范围")!, variant: "secondary" }
-      : null,
-    emergencyRow
-      ? { ...emergencyRow, label: "🚑 紧急预案（止血优先）", variant: "emergency" }
       : null,
     rowsByLabel.get("优先动作")
       ? { ...rowsByLabel.get("优先动作")!, variant: "action" }
@@ -813,6 +780,35 @@ function buildDisplayModel(card: AlarmAnalystCardV1, showConfidence: boolean) {
       : null,
   ].filter((item): item is AlarmAnalystDecisionCard => Boolean(item));
 
+  const hasDetailTiers = card.recommendations.some(
+    (r) => r.stage === "prevention",
+  );
+  const tierRows: { tier: "emergency" | "repair" | "prevention"; label: string; items: string[] }[] = [];
+  if (hasDetailTiers) {
+    const groups = {
+      emergency: [] as string[],
+      repair: [] as string[],
+      prevention: [] as string[],
+    };
+    for (const rec of card.recommendations) {
+      const stage = rec.stage || "";
+      if (stage in groups) {
+        groups[stage as keyof typeof groups].push(
+          stripMarkdownInline(rec.description || rec.title || ""),
+        );
+      }
+    }
+    if (groups.emergency.length) {
+      tierRows.push({ tier: "emergency", label: "紧急止血（立即执行）", items: groups.emergency });
+    }
+    if (groups.repair.length) {
+      tierRows.push({ tier: "repair", label: "根因修复（计划内操作 / 短期）", items: groups.repair });
+    }
+    if (groups.prevention.length) {
+      tierRows.push({ tier: "prevention", label: "预防措施（中长期）", items: groups.prevention });
+    }
+  }
+
   // Ranked Top-N candidate root causes; per-candidate confidence obeys the
   // same visibility toggle as the main confidence badge.
   const rootCauseCandidates = (card.rootCause.candidates || [])
@@ -839,6 +835,8 @@ function buildDisplayModel(card: AlarmAnalystCardV1, showConfidence: boolean) {
     statusChecklist,
     decisionCards,
     rootCauseCandidates,
+    hasDetailTiers,
+    tierRows,
   };
 }
 
@@ -974,6 +972,29 @@ export const AlarmAnalystCardPanel = memo(function AlarmAnalystCardPanel({
                 </li>
               ))}
             </ol>
+          </div>
+        ) : null}
+
+        {display.hasDetailTiers && display.tierRows.length ? (
+          <div className="alarm-analyst-tier-grid">
+            {display.tierRows.map((row) => (
+              <div
+                key={row.tier}
+                className={`alarm-analyst-tier-row tier-${row.tier}`}
+              >
+                <div className="alarm-analyst-tier-badge">
+                  {row.tier === "emergency" ? "🚨" : row.tier === "repair" ? "🔧" : "🛡️"}
+                </div>
+                <div className="alarm-analyst-tier-body">
+                  <h5 className="alarm-analyst-tier-label">{row.label}</h5>
+                  <ol className="alarm-analyst-tier-list">
+                    {row.items.map((item, idx) => (
+                      <li key={idx}>{item}</li>
+                    ))}
+                  </ol>
+                </div>
+              </div>
+            ))}
           </div>
         ) : null}
 
