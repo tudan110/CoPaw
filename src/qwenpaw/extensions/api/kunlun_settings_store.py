@@ -33,10 +33,10 @@ _NAMESPACE = "kunlun"
 DEFAULT_BASE_URL = "https://ogw.klnaas.189.cn:21000"
 DEFAULT_CHAT_PATH = "/api/chinatelecom/cnos/swdd/cpn/aiapp/v1/chat/completions"
 DEFAULT_AUTH_PATH = "/kunlun-auth-service/oauth2/token"
-# Placeholder from the subscription example; replace once the gateway team
-# confirms the real 应用 ID for subscription 1043177.
-DEFAULT_MODELS = "app_001"
-DEFAULT_AI_USER_ID = "qwenpaw"
+# Real chat model id confirmed by the gateway team on 2026-07-07 and
+# verified end-to-end (HTTP 200 through the full APISIX → EOP chain).
+DEFAULT_MODELS = "ad3f9eb1-a798-4509-ada5-3874dc3a3ae7"
+DEFAULT_AI_USER_ID = "zhiguan"
 
 __all__ = [
     "CLEAR_SENTINEL",
@@ -96,6 +96,14 @@ KUNLUN_FIELD_SPECS: dict[str, FieldSpec] = {
             sensitive=True,
         ),
         FieldSpec(
+            "kunlun_sk_key",
+            "QWENPAW_KUNLUN_SK_KEY",
+            "",
+            "str",
+            "kunlun",
+            sensitive=True,
+        ),
+        FieldSpec(
             "kunlun_models",
             "QWENPAW_KUNLUN_MODELS",
             DEFAULT_MODELS,
@@ -112,7 +120,7 @@ KUNLUN_FIELD_SPECS: dict[str, FieldSpec] = {
         FieldSpec(
             "kunlun_client_id",
             "QWENPAW_KUNLUN_CLIENT_ID",
-            "",
+            "zgops",
             "str",
             "kunlun",
         ),

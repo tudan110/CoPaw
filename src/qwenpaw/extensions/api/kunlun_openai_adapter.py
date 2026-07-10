@@ -11,14 +11,18 @@ adapter only has to solve auth + gateway headers:
   ``appCode:appSecret`` (flow recovered from the official SDK and the
   decrypted ``deliverables.enc``). Tokens are cached and refreshed ahead
   of expiry; a 401 from the upstream forces one refresh + retry.
-* **定制请求头** — ``X-Client-Request-Id`` (uuid per request),
-  ``Kunlun-Timestamp`` / ``Kunlun-Nonc``, plus configurable
-  ``X-Model-Id`` / ``X-Client-Id`` / ``X-AI-User-Id``.
-* **Kunlun-Sign** — the subscription sheet lists this header but no SDK
-  version implements it and the algorithm is still unconfirmed with the
-  gateway team (see tmp/昆仑能力开放平台-网关/云算网网关对接-待确认事项.txt).
-  :func:`_kunlun_sign_headers` is the single extension point to fill in
-  once the algorithm arrives; until then no signature is sent.
+* **X-Authorization** — the backend model's own ``sk-proj-*`` credential,
+  sent as ``X-Authorization: Bearer <sk-key>`` alongside the gateway
+  OAuth2 JWT in ``Authorization``. The APISIX gateway rewrites it into
+  the upstream's expected ``Authorization: Bearer sk-...`` when
+  forwarding. Confirmed working end-to-end (2026-07-07, HTTP 200 through
+  the full chain). The key is a secret, resolved from
+  ``QWENPAW_KUNLUN_SK_KEY`` (settings-page DB > env), never hard-coded.
+* **定制请求头** — ``X-Client-Request-Id`` (uuid per request, trace id),
+  plus configurable ``X-Model-Id`` / ``X-Client-Id`` / ``X-AI-User-Id``.
+  The gateway team confirmed on 2026-07-07 that ``Kunlun-Sign`` /
+  ``Kunlun-Nonc`` / ``Kunlun-Timestamp`` are not required, so no
+  signature headers are sent.
 
 Config resolves through :mod:`kunlun_settings_store`
 (settings-page DB > ``QWENPAW_KUNLUN_*`` env > default).
@@ -300,41 +304,41 @@ async def _get_token(*, force_refresh: bool = False) -> str:
 # ---------------------------------------------------------------------------
 
 
-def _kunlun_sign_headers(
-    method: str,
-    url: str,
-    body: dict[str, Any],
-    headers: dict[str, str],
-) -> dict[str, str]:
-    """Placeholder for the still-unconfirmed Kunlun-Sign scheme.
+def _format_bearer(raw: str) -> str:
+    """Wrap a raw sk-key as ``Bearer <key>``, tolerating a pasted prefix.
 
-    The subscription sheet lists ``Kunlun-Sign`` (with ``Kunlun-Nonc`` /
-    ``Kunlun-Timestamp``) but no SDK release implements it and the signing
-    key + digest algorithm are unconfirmed (tracked in
-    tmp/昆仑能力开放平台-网关/云算网网关对接-待确认事项.txt). Implement here
-    once the gateway team supplies the algorithm; the nonce/timestamp
-    already present in ``headers`` are the inputs it will most likely
-    sign over.
+    Users may paste either the bare key (``sk-proj-...``) or the whole
+    ``Bearer sk-proj-...`` value into the settings page; store the bare
+    key by convention but never emit a double ``Bearer Bearer`` prefix.
     """
-    return {}
+    raw = raw.strip()
+    if raw.lower().startswith("bearer "):
+        raw = raw[len("bearer ") :].strip()
+    return f"Bearer {raw}"
 
 
 def _build_upstream_headers(
     request: Request,
     payload: dict[str, Any],
     token: str,
-    upstream_url: str,
 ) -> dict[str, str]:
     headers: dict[str, str] = {
         "Content-Type": "application/json",
+        # Gateway consumer auth (APISIX layer): the OAuth2 JWT.
         "Authorization": f"Bearer {token}",
-        # 36 位 uuid 请求流水号, per the subscription sheet.
+        # 36 位 uuid 请求流水号 / trace id, per the subscription sheet.
         "X-Client-Request-Id": str(uuid.uuid4()),
-        # Second/millisecond precision is unconfirmed; milliseconds match
-        # the Java-side convention. Harmless while Kunlun-Sign is off.
-        "Kunlun-Timestamp": str(int(time.time() * 1000)),
-        "Kunlun-Nonc": str(uuid.uuid4()),
     }
+
+    # Backend model credential: the APISIX gateway rewrites
+    # X-Authorization into the upstream's Authorization: Bearer sk-...
+    # (mechanism verified 2026-07-07). Secret, resolved from settings.
+    sk_key = _read_env(
+        "QWENPAW_KUNLUN_SK_KEY",
+        "COPAW_KUNLUN_SK_KEY",
+    )
+    if sk_key:
+        headers["X-Authorization"] = _format_bearer(sk_key)
 
     model_id = (
         _read_env(
@@ -363,9 +367,6 @@ def _build_upstream_headers(
     if ai_user_id:
         headers["X-AI-User-Id"] = ai_user_id
 
-    headers.update(
-        _kunlun_sign_headers("POST", upstream_url, payload, headers),
-    )
     return headers
 
 
@@ -436,7 +437,6 @@ async def _proxy_non_streaming_completion(
             request,
             payload,
             token,
-            upstream_url,
         )
         try:
             async with httpx.AsyncClient(
@@ -498,7 +498,6 @@ async def _open_streaming_completion(
             request,
             payload,
             token,
-            upstream_url,
         )
         client = httpx.AsyncClient(
             timeout=timeout_seconds,
