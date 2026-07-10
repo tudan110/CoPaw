@@ -148,6 +148,7 @@ def refresh_inoe_environ(*, db_path: Optional[Path] = None) -> None:
 _ALARM_ANALYST_KEYS = (
     "alarm_analyst_metric_timeout_seconds",
     "alarm_analyst_metric_page_size",
+    "alarm_analyst_disposal_detail_mode",
     "inspection_metric_timeout_seconds",
     "inspection_metric_page_size",
 )

@@ -5,7 +5,8 @@
 
 - **real-alarm**：查询类 Skill —— 调用外部接口、拉取数据、做统计分析
 - **optical-module-rca**：推理类 Skill —— 不连接任何外部系统，纯本地
-  按固定方法论对用户提供的参数做判断，输出结论和建议
+  按固定方法论对参数做判断、输出结论和建议；参数由内置演示数据按
+  端口名称自动提供，用户只需说明端口，不需要报具体数值
 
 ## 目录结构
 
@@ -36,6 +37,7 @@ skills 参考示例/
     ├── SKILL.md              ← Skill 主文档（Agent 的行为指导）
     ├── scripts/               ← 可执行脚本（纯 stdlib，无第三方依赖）
     │   ├── diagnose_optical_aging.py ← 四步法诊断主脚本
+    │   ├── mock_data.json     ← 内置演示数据（按端口名称查找，用户无需报数值）
     │   └── utils/
     │       └── thresholds.py ← 参数正常范围表
     └── references/            ← Agent 按需读取的参考文档
@@ -72,23 +74,20 @@ utils/            ← 内部模块，按职责拆分
 ### 配置约定
 
 ```bash
-# 技能目录下的 .env（复制 .env.example 后填写，回退项）
+# 技能目录下的 .env（复制 .env.example 后填写）
 YOUR_API_BASE_URL=http://<host>:<port>
 YOUR_API_TOKEN=your_token_here
-
-# 共享 secrets/（优先，由平台注入）
 ```
-
-加载优先级：共享 secrets 注入 → skill 目录 .env → 项目根目录 .env
 
 没有接口权限时，可先设置 `USE_MOCK_DATA=true`，让脚本读取技能目录下的
 `mock_data.json` 返回演示数据，用于先验证参数解析、过滤、渲染逻辑，接口权限
 到位后再切回 `false`。
 
 > 不是所有 Skill 都需要配置。`optical-module-rca` 就完全不连接外部
-> 系统，所有输入都由调用方直接传参，因此没有 `.env`。写 Skill 前先
-> 判断自己的场景是否真的需要外部接口，不需要就不要为了"看起来完整"
-> 硬加一套配置。
+> 系统，参数由脚本内置的 `mock_data.json` 按端口名称自动提供（用户
+> 只需说出端口名称，不需要报具体数值），因此没有 `.env`。写 Skill
+> 前先判断自己的场景是否真的需要外部接口，不需要就不要为了"看起来
+> 完整"硬加一套配置。
 
 ### references/ 的使用原则
 

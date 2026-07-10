@@ -20,29 +20,34 @@
 
 【这个脚本不做什么】
 - 不连接任何真实设备、不发任何网络请求、不需要任何账号密码
-- 所有输入的参数（光功率、电流、温度……）都由调用方（人工或 Agent）
-  提供，脚本本身不知道也不关心这些数字是怎么采集来的
 
-正因为不连接任何真实系统，这个脚本可以被任何人直接复制去改造成自己
-的诊断场景 —— 只要把 utils/thresholds.py 里的正常范围表换成你自己
-业务的标准，再把下面的判断逻辑按你的场景调整一下就行。
+【关于参数从哪来】
+真实生产环境里，这 5 项参数应该来自监控系统/网管接口的实时采集。但
+这是一份演示 demo，目的是让参赛队伍不用真的接一套监控系统、也不用
+让使用者手动报一堆数字，就能看到"四步法"完整跑一遍的效果，所以脚本
+自带了一份 mock_data.json（几个典型案例，按端口名称查找），只要给出
+--port，脚本就会自动从这份 mock 数据里取参数并给出结论，不需要用户
+在对话里逐项输入光功率、电流这些数值。
+
+如果你想把这份 demo 改造成接真实数据源的场景，思路是：把下面
+"参数来源"这一段替换成调用你自己的监控接口，其余判断逻辑（第二步/
+第三步/第四步）都不用动——这也是这个脚本特意把"取数"和"判断"分开
+写的原因。
+
+（脚本仍然保留了 --rx-power 等参数，用于开发调试时手动指定某一项
+数值覆盖 mock 数据，但正常使用场景下不需要用户提供这些参数。）
 
 【使用方式】
-    python3 scripts/diagnose_optical_aging.py \
-        --port GE0/0/1 \
-        --rx-power -23.5 \
-        --tx-power -3.2 \
-        --bias-current 68 \
-        --temperature 78 \
-        --crc-rate 100 \
-        --downlink-alert-delay-min 1.5 \
-        --peer-rx-power -8 \
-        --affected-users 100000 \
-        --output markdown
+    # 最常见用法：只给端口名称，参数从 mock_data.json 自动取
+    python3 scripts/diagnose_optical_aging.py --port GE0/0/1 --output markdown
+
+    # 调试用法：显式覆盖某一项参数，其余仍取自 mock 数据
+    python3 scripts/diagnose_optical_aging.py --port GE0/0/1 --temperature 90 --output markdown
 """
 
 import argparse
 import json
+import os
 import sys
 
 # 因为 thresholds.py 放在同目录下的 utils/ 文件夹里，用 python3 直接
@@ -60,6 +65,55 @@ from utils.thresholds import (
     TOPOLOGY_PROPAGATION_DELAY_TOLERANCE_MIN,
     is_out_of_range,
 )
+
+# mock_data.json 和本脚本放在同一个目录（scripts/），用 __file__ 拼出
+# 绝对路径，这样不管从哪个工作目录调用这个脚本，都能找到这份文件。
+MOCK_DATA_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "mock_data.json")
+
+# 这几个数值字段名，是 mock_data.json 里的 key，也是命令行参数（转成
+# 下划线形式）对应的字段名，两边统一用同一套名字，方便下面用一个循环
+# 就能把"命令行显式传的值"和"mock 数据里的值"合并起来。
+MOCK_METRIC_FIELDS = (
+    "rx_power",
+    "tx_power",
+    "bias_current",
+    "temperature",
+    "crc_rate",
+    "downlink_alert_delay_min",
+    "peer_rx_power",
+    "affected_users",
+)
+
+
+def load_mock_metrics(port):
+    """
+    按端口名称从 mock_data.json 里查一组模拟采集数据。
+
+    这是这份 demo 能"不用真实设备也能跑通四步法"的关键：正常情况下
+    这些数值应该来自监控系统的实时采集，但演示场景不需要真的接一套
+    监控系统，所以内置了几个典型案例（老化案例/正常案例/疑似光纤
+    问题案例），查不到对应端口名称时，退回 "_default" 这一条兜底，
+    保证脚本任何时候都能跑出完整结论，而不是报错退出。
+    """
+    with open(MOCK_DATA_PATH, "r", encoding="utf-8") as f:
+        mock_data = json.load(f)
+    entry = mock_data.get(port) or mock_data["_default"]
+    # "_case" 只是给人看的说明文字，不是真实参数，取值时要去掉它。
+    return {key: entry[key] for key in MOCK_METRIC_FIELDS}
+
+
+def resolve_metrics(args):
+    """
+    把"命令行显式传入的值"和"mock 数据里的值"合并成最终参与判断的
+    那组参数：命令行传了就用命令行的（方便开发调试时手动覆盖某一项
+    数值），命令行没传（argparse 里默认值是 None）就用 mock 数据里的。
+    """
+    mock_metrics = load_mock_metrics(args.port)
+    resolved = {}
+    for field in MOCK_METRIC_FIELDS:
+        cli_value = getattr(args, field)
+        resolved[field] = cli_value if cli_value is not None else mock_metrics[field]
+    return resolved
 
 
 # ======================================================================
@@ -413,62 +467,64 @@ def render_markdown(result):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="根据光模块参数，按四步法给出光模块老化根因诊断（示例脚本，不连接真实设备）",
+        description="根据光模块参数，按四步法给出光模块老化根因诊断（示例脚本，参数默认取自 mock_data.json，不连接真实设备）",
         epilog=(
             "示例：\n"
-            "  python3 scripts/diagnose_optical_aging.py "
-            "--port GE0/0/1 --rx-power -23.5 --tx-power -3.2 "
-            "--bias-current 68 --temperature 78 --crc-rate 100 "
-            "--downlink-alert-delay-min 1.5 --peer-rx-power -8 "
-            "--affected-users 100000 --output markdown"
+            "  # 最常见用法：只给端口名称，参数从 mock_data.json 自动取\n"
+            "  python3 scripts/diagnose_optical_aging.py --port GE0/0/1 --output markdown\n"
+            "  # 调试用法：显式覆盖某一项参数，其余仍取自 mock 数据\n"
+            "  python3 scripts/diagnose_optical_aging.py --port GE0/0/1 --temperature 90 --output markdown"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
 
-    # ---- 必填参数：光模块自身的核心参数，对应文档"指标验证"表格 ----
-    parser.add_argument("--port", required=True, help="出问题的端口名称，例如 GE0/0/1")
-    parser.add_argument("--rx-power", type=float, required=True, help="接收光功率，单位 dBm")
-    parser.add_argument("--tx-power", type=float, required=True, help="发送光功率，单位 dBm")
-    parser.add_argument("--bias-current", type=float, required=True, help="偏置电流，单位 mA")
-    parser.add_argument("--temperature", type=float, required=True, help="光模块温度，单位 °C")
-    parser.add_argument("--crc-rate", type=float, required=True, help="CRC 错误计数增长速率，单位 个/秒")
+    parser.add_argument("--port", required=True, help="出问题的端口名称，例如 GE0/0/1（用于从 mock_data.json 查找对应参数）")
 
-    # ---- 可选参数：用于第二步"拓扑-时序双约束因果链推理" ----
+    # 下面这几项都不再是必填参数：默认从 mock_data.json 按 --port 自动
+    # 取值，只有在开发调试、需要临时覆盖某一项数值时才需要显式传入。
+    parser.add_argument("--rx-power", type=float, default=None, help="接收光功率，单位 dBm（不传则取自 mock 数据）")
+    parser.add_argument("--tx-power", type=float, default=None, help="发送光功率，单位 dBm（不传则取自 mock 数据）")
+    parser.add_argument("--bias-current", type=float, default=None, help="偏置电流，单位 mA（不传则取自 mock 数据）")
+    parser.add_argument("--temperature", type=float, default=None, help="光模块温度，单位 °C（不传则取自 mock 数据）")
+    parser.add_argument("--crc-rate", type=float, default=None, help="CRC 错误计数增长速率，单位 个/秒（不传则取自 mock 数据）")
     parser.add_argument(
         "--downlink-alert-delay-min",
         type=float,
         default=None,
-        help="下游设备告警比该端口告警晚多少分钟（可选，不传则跳过时序校验）",
+        help="下游设备告警比该端口告警晚多少分钟（不传则取自 mock 数据）",
     )
     parser.add_argument(
         "--peer-rx-power",
         type=float,
         default=None,
-        help="对端设备的接收光功率，单位 dBm（可选，用于排除光纤问题）",
+        help="对端设备的接收光功率，单位 dBm（不传则取自 mock 数据）",
     )
-
-    # ---- 展示用的附加信息 ----
-    parser.add_argument("--affected-users", type=int, default=None, help="受影响用户数（可选，仅用于报告展示）")
+    parser.add_argument("--affected-users", type=int, default=None, help="受影响用户数（不传则取自 mock 数据）")
     parser.add_argument("--output", choices=["json", "markdown"], default="markdown", help="输出格式，默认 markdown")
 
     args = parser.parse_args()
 
+    # 把命令行显式传入的值和 mock_data.json 里的值合并成最终参数
+    metrics = resolve_metrics(args)
+
     # 第三步：逐项做指标验证
     metric_checks = [
-        check_rx_power(args.rx_power),
-        check_tx_power(args.tx_power),
-        check_bias_current(args.bias_current),
-        check_temperature(args.temperature),
-        check_crc_rate(args.crc_rate),
+        check_rx_power(metrics["rx_power"]),
+        check_tx_power(metrics["tx_power"]),
+        check_bias_current(metrics["bias_current"]),
+        check_temperature(metrics["temperature"]),
+        check_crc_rate(metrics["crc_rate"]),
     ]
 
     # 第二步：拓扑-时序双约束因果链推理
-    topology_result = check_topology_timing(args.downlink_alert_delay_min, args.peer_rx_power)
+    topology_result = check_topology_timing(
+        metrics["downlink_alert_delay_min"], metrics["peer_rx_power"]
+    )
 
     # 第四步：根因判定
     root_cause = determine_root_cause(args.port, metric_checks, topology_result)
 
-    result = build_result(args.port, metric_checks, topology_result, root_cause, args.affected_users)
+    result = build_result(args.port, metric_checks, topology_result, root_cause, metrics["affected_users"])
 
     if args.output == "json":
         print(json.dumps(result, ensure_ascii=False, indent=2))

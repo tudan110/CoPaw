@@ -195,6 +195,42 @@ def _join_suggestions(value: Any) -> str:
     return _safe_str(value)
 
 
+def _build_grouped_suggestion_lines(suggestions_str: str) -> list[str]:
+    """Build suggestion lines with optional 3-tier group headers.
+
+    When detail mode is on, the suggestions list contains group-header
+    sentinels (e.g. ``🚨 紧急止血（立即执行）``) interleaved with the actual
+    item texts.  This function detects those sentinels and emits them as
+    bold group titles, then emits the subsequent items as numbered lines
+    (resetting the counter per group).  When no group headers are present
+    (flat mode), it just numbers all items.
+    """
+    GROUP_PREFIXES = ("🚨", "🔧", "🛡️")
+    raw_items = [item.strip() for item in suggestions_str.split("；") if item.strip()]
+    if not raw_items:
+        return ["暂无处置建议"]
+    has_groups = any(
+        item.startswith(prefix) for item in raw_items for prefix in GROUP_PREFIXES
+    )
+    if not has_groups:
+        return [
+            f"{idx}. {item}"
+            for idx, item in enumerate(raw_items, start=1)
+        ]
+    lines: list[str] = []
+    counter = 0
+    for item in raw_items:
+        if item.startswith(GROUP_PREFIXES):
+            if counter > 0:
+                lines.append("")
+            lines.append(f"**{item}**")
+            counter = 0
+        else:
+            counter += 1
+            lines.append(f"{counter}. {item}")
+    return lines
+
+
 def _build_notification_summary(*, visible_content: str, analysis_summary: str, root_cause: str) -> str:
     parts: list[str] = []
     for text in [visible_content, analysis_summary, root_cause]:
@@ -215,7 +251,6 @@ def _build_notification_context(
     analysis_summary = _safe_str(analysis.get("summary"))
     root_cause = _safe_str(analysis.get("rootCause")) or "-"
     suggestions = _join_suggestions(analysis.get("suggestions")) or "-"
-    emergency_plan = _safe_str(analysis.get("emergencyPlan"))
 
     return {
         "title": title,
@@ -230,7 +265,6 @@ def _build_notification_context(
         "level": _normalize_severity(alarm.get("level", "")),
         "root_cause": root_cause,
         "suggestions": suggestions,
-        "emergency_plan": emergency_plan,
         "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
     }
 
@@ -251,18 +285,15 @@ def _build_notification_markdown_lines(context: dict[str, str], abnormal_metrics
     if abnormal_metrics:
         lines.append("")
         lines.append("- **异常指标**：")
-        for m in abnormal_metrics:
+        for idx, m in enumerate(abnormal_metrics, start=1):
             unit = f" {m['unit']}" if m.get("unit") else ""
             reason = f"（{m['reason']}）" if m.get("reason") else ""
-            lines.append(f"  - {m['name']}：{m['value']}{unit}{reason}")
+            lines.append(f"  {idx}. {m['name']}：{m['value']}{unit}{reason}")
         lines.append("")
+    suggestion_text = "\n".join(_build_grouped_suggestion_lines(context["suggestions"]))
     lines.append(f"- **根因方向**：{context['root_cause']}")
-    if context.get("emergency_plan"):
-        lines.append(
-            f"- **🚑 紧急预案（止血，立即执行）**：{context['emergency_plan']}"
-        )
     lines.extend([
-        f"- **处置建议**：{context['suggestions']}",
+        f"- **处置建议**：\n{suggestion_text}",
         f"- **分析时间**：{context['created_at']}",
         "",
         "> 此报告为 AI 自动生成，请尽快跟进处置。",
@@ -284,15 +315,14 @@ def _build_notification_plain_text_lines(context: dict[str, str], abnormal_metri
     ]
     if abnormal_metrics:
         lines.append("异常指标：")
-        for m in abnormal_metrics:
+        for idx, m in enumerate(abnormal_metrics, start=1):
             unit = f" {m['unit']}" if m.get("unit") else ""
             reason = f"（{m['reason']}）" if m.get("reason") else ""
-            lines.append(f"  - {m['name']}：{m['value']}{unit}{reason}")
+            lines.append(f"  {idx}. {m['name']}：{m['value']}{unit}{reason}")
     lines.append(f"根因方向：{context['root_cause']}")
-    if context.get("emergency_plan"):
-        lines.append(f"紧急预案（止血，立即执行）：{context['emergency_plan']}")
+    lines.append("处置建议：")
+    lines.extend(_build_grouped_suggestion_lines(context["suggestions"]))
     lines.extend([
-        f"处置建议：{context['suggestions']}",
         f"分析时间：{context['created_at']}",
         "此报告为 AI 自动生成，请尽快跟进处置。",
     ])
@@ -321,11 +351,7 @@ def _build_dingtalk_notify_payload(context: dict[str, str], abnormal_metrics: li
 
 
 def _build_feishu_notify_payload(context: dict[str, str], abnormal_metrics: list[dict[str, str]] | None = None) -> dict[str, Any]:
-    suggestion_lines = [
-        f"- {item.strip()}"
-        for item in context["suggestions"].split("；")
-        if item.strip()
-    ] or ["- 暂无处置建议"]
+    suggestion_lines = _build_grouped_suggestion_lines(context["suggestions"])
     elements: list[dict[str, Any]] = []
     if _get_notify_mention_all():
         elements.append(
@@ -384,10 +410,10 @@ def _build_feishu_notify_payload(context: dict[str, str], abnormal_metrics: list
     )
     if abnormal_metrics:
         metric_lines = []
-        for m in abnormal_metrics:
+        for idx, m in enumerate(abnormal_metrics, start=1):
             unit = f" {m['unit']}" if m.get("unit") else ""
             reason = f"（{m['reason']}）" if m.get("reason") else ""
-            metric_lines.append(f"- {m['name']}：{m['value']}{unit}{reason}")
+            metric_lines.append(f"{idx}. {m['name']}：{m['value']}{unit}{reason}")
         elements.extend([
             {"tag": "hr"},
             {
@@ -408,20 +434,6 @@ def _build_feishu_notify_payload(context: dict[str, str], abnormal_metrics: list
             },
         },
     ])
-    if context.get("emergency_plan"):
-        elements.extend([
-            {"tag": "hr"},
-            {
-                "tag": "div",
-                "text": {
-                    "tag": "lark_md",
-                    "content": (
-                        "**🚑 紧急预案（止血，立即执行）**\n"
-                        f"{context['emergency_plan']}"
-                    ),
-                },
-            },
-        ])
     elements.extend([
         {"tag": "hr"},
         {
@@ -704,9 +716,9 @@ def _normalize_suggestion_items(
     --suggestions-json accepts either a flat string array (legacy) or an
     array of ``{"text": "...", "stage": "emergency"|"repair"}`` objects.
     Items tagged ``stage="emergency"`` are the single source of truth for
-    the 紧急预案 section, so callers no longer need to separately duplicate
-    that text into ``--emergency-plan`` — one omitted flag can no longer
-    make the card and the notification disagree.
+    which suggestion(s) get sorted first and prefixed with 🚑 in the
+    unified 处置建议 list, so callers no longer need to separately
+    duplicate that text into ``--emergency-plan``.
     """
     items: list[dict[str, str]] = [
         {"text": _safe_str(item), "stage": ""}
@@ -731,7 +743,7 @@ def _normalize_suggestion_items(
                 if not text:
                     continue
                 stage = _safe_str(entry.get("stage")).lower()
-                if stage not in {"emergency", "repair"}:
+                if stage not in {"emergency", "repair", "prevention"}:
                     stage = ""
                 items.append({"text": text, "stage": stage})
 
@@ -797,17 +809,40 @@ def _require_alarm_id(alarm_id: str) -> str:
 
 def build_report_payload(args: argparse.Namespace) -> dict[str, Any]:
     suggestion_items = _normalize_suggestion_items(args.suggestion, args.suggestions_json)
-    emergency_from_items = "；".join(
+    detail_mode = os.getenv("ALARM_ANALYST_DISPOSAL_DETAIL_MODE", "false").strip().lower() == "true"
+
+    legacy_emergency_plan = _safe_str(getattr(args, "emergency_plan", ""))
+    emergency_texts = [
         item["text"] for item in suggestion_items if item["stage"] == "emergency"
-    )
-    suggestions = [
-        item["text"] for item in suggestion_items if item["stage"] != "emergency"
-    ] or [item["text"] for item in suggestion_items]
-    # --emergency-plan (legacy, still honored if explicitly passed) wins
-    # over items derived from --suggestions-json's stage tags.
-    emergency_plan = (
-        _safe_str(getattr(args, "emergency_plan", "")) or emergency_from_items
-    )
+    ]
+    if legacy_emergency_plan and legacy_emergency_plan not in emergency_texts:
+        emergency_texts.insert(0, legacy_emergency_plan)
+    repair_texts = [
+        item["text"] for item in suggestion_items if item["stage"] == "repair"
+    ]
+    prevention_texts = [
+        item["text"] for item in suggestion_items if item["stage"] == "prevention"
+    ]
+    other_texts = [
+        item["text"] for item in suggestion_items
+        if item["stage"] not in {"emergency", "repair", "prevention"}
+    ]
+
+    if detail_mode:
+        suggestions: list[str] = []
+        if emergency_texts:
+            suggestions.append("🚨 紧急止血（立即执行）")
+            for text in emergency_texts:
+                suggestions.append(f"🚑 {text}")
+        if repair_texts or other_texts:
+            suggestions.append("🔧 根因修复（计划内操作 / 短期）")
+            for text in repair_texts + other_texts:
+                suggestions.append(text)
+        if prevention_texts:
+            suggestions.append("🛡️ 预防措施（中长期）")
+            suggestions.extend(prevention_texts)
+    else:
+        suggestions = [f"🚑 {text}" for text in emergency_texts] + repair_texts + other_texts + prevention_texts
     alarm_id = _require_alarm_id(args.alarm_id)
     alarm_title = _normalize_ai_alarm_title(_safe_str(args.alarm_title))
     analysis_summary = _safe_str(args.analysis_summary) or "AI 已完成根因分析"
@@ -832,7 +867,6 @@ def build_report_payload(args: argparse.Namespace) -> dict[str, Any]:
         "analysis": {
             "summary": analysis_summary,
             "rootCause": _safe_str(args.root_cause),
-            "emergencyPlan": emergency_plan,
             "suggestions": suggestions,
             "abnormalMetrics": abnormal_metrics,
         },
@@ -862,11 +896,6 @@ def format_markdown_result(payload: dict[str, Any], result: dict[str, Any]) -> s
         f"- 告警标题：{alarm.get('title') or '-'}",
         f"- 分析摘要：{analysis.get('summary') or '-'}",
         f"- 根因方向：{analysis.get('rootCause') or '-'}",
-        *(
-            [f"- 🚑 紧急预案：{analysis.get('emergencyPlan')}"]
-            if analysis.get("emergencyPlan")
-            else []
-        ),
         f"- 处置建议：{'；'.join(str(item) for item in suggestions) if suggestions else '-'}",
         f"- 通知状态：**{_format_notification_status(notification)}**",
         f"- 通知渠道：{_format_notification_channels(notification, fallback='无')}",
@@ -893,7 +922,7 @@ def _build_parser() -> argparse.ArgumentParser:
         default="",
         help=(
             "紧急预案（止血动作）的手工兜底写法，仅在未使用 --suggestions-json 的 "
-            "stage 标记时才需要传；两者都不传则通知中不出现该段"
+            "stage 标记时才需要传；会以 🚑 前缀追加到处置建议列表最前，不再单独成段"
         ),
     )
     parser.add_argument(
@@ -910,8 +939,8 @@ def _build_parser() -> argparse.ArgumentParser:
             '["排查长事务","检查阻塞链"]，全部归入处置建议）；或带 stage '
             '的对象数组（例如 [{"text":"执行 memory purge 止血",'
             '"stage":"emergency"},{"text":"扩容宿主机内存","stage":"repair"}]，'
-            "stage=emergency 的条目会自动汇总为紧急预案，无需再单独传 "
-            "--emergency-plan，卡片与飞书推送必然保持一致"
+            "stage=emergency 的条目会自动排到处置建议列表最前并加 🚑 前缀，"
+            "与 repair/无 stage 条目合并为同一个列表，不再单独成段"
         ),
     )
     parser.add_argument(

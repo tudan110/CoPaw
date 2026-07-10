@@ -3,9 +3,9 @@
 
 Covers: model listing, the OAuth2 client_credentials token flow (fetch,
 cache, 401-triggered refresh), gateway header injection
-(Authorization / X-Client-Request-Id / Kunlun-Timestamp / Kunlun-Nonc /
-X-Model-Id / X-AI-User-Id / X-Client-Id), stream_options injection for
-streaming requests, and unconfigured-adapter errors.
+(Authorization / X-Authorization / X-Client-Request-Id / X-Model-Id /
+X-AI-User-Id / X-Client-Id), stream_options injection for streaming
+requests, and unconfigured-adapter errors.
 """
 from __future__ import annotations
 
@@ -32,6 +32,8 @@ _ENVS = (
     "QWENPAW_KUNLUN_AUTH_URL",
     "QWENPAW_KUNLUN_APP_CODE",
     "QWENPAW_KUNLUN_APP_SECRET",
+    "QWENPAW_KUNLUN_SK_KEY",
+    "COPAW_KUNLUN_SK_KEY",
     "QWENPAW_KUNLUN_MODELS",
     "QWENPAW_KUNLUN_MODEL_ID_HEADER",
     "QWENPAW_KUNLUN_CLIENT_ID",
@@ -213,15 +215,17 @@ async def test_chat_completions_fetches_token_and_injects_headers(
     # 36 位 uuid 请求流水号.
     assert len(headers["X-Client-Request-Id"]) == 36
     uuid.UUID(headers["X-Client-Request-Id"])
-    assert headers["Kunlun-Timestamp"].isdigit()
-    uuid.UUID(headers["Kunlun-Nonc"])
     # X-Model-Id falls back to the request body's model.
     assert headers["X-Model-Id"] == "app_001"
-    assert headers["X-AI-User-Id"] == "qwenpaw"
-    # No signature until the algorithm is confirmed; no client id unless
-    # configured.
-    assert "Kunlun-Sign" not in headers
+    assert headers["X-AI-User-Id"] == "zhiguan"
+    # No sk configured here → no backend credential header; no client id
+    # unless configured (resolve_text is stubbed to "" in this fixture);
+    # signature-family headers are gone (gateway confirmed not needed).
+    assert "X-Authorization" not in headers
     assert "X-Client-Id" not in headers
+    assert "Kunlun-Timestamp" not in headers
+    assert "Kunlun-Nonc" not in headers
+    assert "Kunlun-Sign" not in headers
     # Non-streaming requests are passed through unchanged.
     assert "stream_options" not in request["json"]
 
@@ -247,6 +251,49 @@ async def test_configured_gateway_ids_win_over_body_model(monkeypatch):
     assert headers["X-Model-Id"] == "app-real"
     assert headers["X-Client-Id"] == "platform-9"
     assert headers["X-AI-User-Id"] == "ops-user"
+
+
+async def test_x_authorization_injected_when_sk_configured(monkeypatch):
+    _configure_env(monkeypatch)
+    monkeypatch.setenv("QWENPAW_KUNLUN_SK_KEY", "sk-proj-abc123")
+    _patch_token(monkeypatch)
+    recorder: dict = {}
+    fake = _FakePostClient(recorder, [_FakeResponse()])
+    monkeypatch.setattr(adapter.httpx, "AsyncClient", fake)
+
+    resp = await _request(
+        "POST",
+        "/api/portal/kunlun-adapter/v1/chat/completions",
+        json={"model": "app_001", "messages": []},
+    )
+
+    assert resp.status_code == 200
+    headers = recorder["requests"][0]["headers"]
+    # Backend sk credential rides in X-Authorization; the gateway JWT
+    # stays in Authorization.
+    assert headers["X-Authorization"] == "Bearer sk-proj-abc123"
+    assert headers["Authorization"] == "Bearer tok-1-1"
+
+
+async def test_x_authorization_tolerates_pasted_bearer_prefix(monkeypatch):
+    _configure_env(monkeypatch)
+    # A user who pastes the whole "Bearer sk-..." value must not produce a
+    # doubled "Bearer Bearer" prefix on the wire.
+    monkeypatch.setenv("QWENPAW_KUNLUN_SK_KEY", "Bearer sk-proj-abc123")
+    _patch_token(monkeypatch)
+    recorder: dict = {}
+    fake = _FakePostClient(recorder, [_FakeResponse()])
+    monkeypatch.setattr(adapter.httpx, "AsyncClient", fake)
+
+    resp = await _request(
+        "POST",
+        "/api/portal/kunlun-adapter/v1/chat/completions",
+        json={"model": "app_001", "messages": []},
+    )
+
+    assert resp.status_code == 200
+    headers = recorder["requests"][0]["headers"]
+    assert headers["X-Authorization"] == "Bearer sk-proj-abc123"
 
 
 async def test_token_cached_across_requests(monkeypatch):

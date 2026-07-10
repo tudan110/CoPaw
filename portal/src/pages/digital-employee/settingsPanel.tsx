@@ -211,7 +211,7 @@ const DIAGNOSIS_GROUP_META: {
     id: "alarm_analyst",
     title: "指标拉取（告警分析 / 巡检）",
     description:
-      "告警分析与巡检 skill 从平台拉取指标定义的请求超时与分页大小。",
+      "告警分析与巡检 skill 从平台拉取指标定义的请求超时与分页大小。处置建议详细展示模式可切换三级结构化输出。",
   },
 ];
 
@@ -597,9 +597,15 @@ const KUNLUN_FIELDS: ProviderFieldDesc[] = [
     hint: "订阅交付物里的 appSecret，作 Basic Auth 密码。",
   },
   {
+    key: "kunlun_sk_key",
+    label: "后端大模型凭据（sk-proj）",
+    sensitive: true,
+    hint: "后端大模型自己的 sk-proj-* 密钥，经 X-Authorization 头下发，网关转成后端 Authorization。填裸 key 即可（含 Bearer 前缀会自动纠正）；留空则不修改。",
+  },
+  {
     key: "kunlun_models",
     label: "模型列表",
-    hint: "逗号分隔。订阅示例为 app_001（占位符），待网关方确认真实应用 ID 后替换。",
+    hint: "逗号分隔。默认 ad3f9eb1-a798-4509-ada5-3874dc3a3ae7（chat 真实 model id，已实测可用）。",
   },
   {
     key: "kunlun_model_id_header",
@@ -609,7 +615,7 @@ const KUNLUN_FIELDS: ProviderFieldDesc[] = [
   {
     key: "kunlun_client_id",
     label: "X-Client-Id（可选）",
-    hint: "平台标识请求头；Authorization 明文时可不传，留空则不发送。",
+    hint: "平台标识请求头，网关方给定值 zgops（默认）。实测 curl 未带亦可通；留空则回退默认。",
   },
   {
     key: "kunlun_ai_user_id",
@@ -950,6 +956,35 @@ export function SettingsPanel() {
       setDiagnosisNotice({
         type: "success",
         text: enabled ? "已开启告警恢复验证" : "已暂停告警恢复验证",
+      });
+    } catch (error) {
+      setDiagnosisNotice({
+        type: "error",
+        text: error instanceof Error ? error.message : "切换失败",
+      });
+    } finally {
+      setDiagnosisTogglePending(false);
+    }
+  };
+
+  const disposalDetailMode = Boolean(
+    diagnosisPayload?.effective.alarm_analyst_disposal_detail_mode,
+  );
+
+  const handleDisposalDetailModeToggle = async (enabled: boolean) => {
+    if (diagnosisTogglePending || enabled === disposalDetailMode) {
+      return;
+    }
+    setDiagnosisTogglePending(true);
+    setDiagnosisNotice(null);
+    try {
+      const payload = await diagnosisSettingsApi.update({
+        alarm_analyst_disposal_detail_mode: enabled,
+      });
+      applyDiagnosisPayload(payload);
+      setDiagnosisNotice({
+        type: "success",
+        text: enabled ? "已开启处置建议详细展示" : "已关闭处置建议详细展示",
       });
     } catch (error) {
       setDiagnosisNotice({
@@ -1672,6 +1707,45 @@ export function SettingsPanel() {
                           </div>
                         ) : null}
 
+                        {group.id === "alarm_analyst" ? (
+                          <div className="settings-choice-grid">
+                            <button
+                              type="button"
+                              className={
+                                disposalDetailMode
+                                  ? "portal-managed-config-toggle active"
+                                  : "portal-managed-config-toggle"
+                              }
+                              disabled={
+                                diagnosisLoading || diagnosisTogglePending
+                              }
+                              onClick={() =>
+                                handleDisposalDetailModeToggle(true)
+                              }
+                            >
+                              <i className="fas fa-list-tree" />
+                              开启详细展示
+                            </button>
+                            <button
+                              type="button"
+                              className={
+                                !disposalDetailMode
+                                  ? "portal-managed-config-toggle active"
+                                  : "portal-managed-config-toggle"
+                              }
+                              disabled={
+                                diagnosisLoading || diagnosisTogglePending
+                              }
+                              onClick={() =>
+                                handleDisposalDetailModeToggle(false)
+                              }
+                            >
+                              <i className="fas fa-list" />
+                              关闭详细展示
+                            </button>
+                          </div>
+                        ) : null}
+
                         <div className="settings-form-grid">
                           {numberFields.map((field) => {
                             const isOverridden = Boolean(
@@ -2002,7 +2076,7 @@ export function SettingsPanel() {
                   <ProviderSettingsSection
                     api={kunlunSettingsApi}
                     title="昆仑网关大模型（云算网智算统一网关）"
-                    description="经昆仑能力开放网关调用别组部署的大模型。adapter 自动用 App Code/Secret 换 OAuth2 token 并注入网关定制请求头；Kunlun-Sign 签名算法待网关方确认，当前不发送。修改即时生效，无需重启。"
+                    description="经昆仑能力开放网关调用别组部署的大模型。adapter 用 App Code/Secret 换网关 OAuth2 token（Authorization），并以 X-Authorization 头下发后端大模型自己的 sk 凭据（网关转成后端 Authorization）。修改即时生效，无需重启。"
                     fields={KUNLUN_FIELDS}
                   />
                 </>
