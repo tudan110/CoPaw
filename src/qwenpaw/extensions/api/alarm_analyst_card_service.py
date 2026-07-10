@@ -1049,6 +1049,19 @@ def extract_display_fields(card_dict: dict[str, Any]) -> dict[str, Any]:
         elif raw_conf in ("low", "低"):
             confidence = "50%"
 
+    disposal_texts = [
+        cleaned
+        for item in (card_dict.get("recommendations") or [])
+        if (
+            cleaned := _sanitize_inline_text(
+                item.get("description") or item.get("title") or ""
+            )
+        )
+    ]
+    disposal_suggestions = [
+        f"{index}. {text}" for index, text in enumerate(disposal_texts, start=1)
+    ]
+
     result: dict[str, Any] = {
         "title": title,
         "anchorObject": resource_name,
@@ -1063,6 +1076,7 @@ def extract_display_fields(card_dict: dict[str, Any]) -> dict[str, Any]:
         "rootCauseType": fault_nature,
         "rootCauseObject": resource_name,
         "faultReason": root_cause_direction,
+        "disposalSuggestions": disposal_suggestions,
     }
 
     # Remove empty values

@@ -484,3 +484,44 @@ def test_extract_display_fields_includes_emergency_plan_row() -> None:
     )
 
     assert display["emergencyPlan"] == "先将受影响用户切换至备用链路恢复访问"
+
+
+def test_extract_display_fields_includes_numbered_disposal_suggestions() -> None:
+    from qwenpaw.extensions.api.alarm_analyst_card_service import (
+        extract_display_fields,
+    )
+
+    display = extract_display_fields(
+        {
+            "rawReportMarkdown": "## 告警分析报告：端口 LinkDown\n",
+            "summary": {},
+            "rootCause": {},
+            "recommendations": [
+                {"title": "建议 1", "description": "🚑 切换至备用链路"},
+                {"title": "建议 2", "description": "更换故障光模块"},
+                {"title": "建议 3", "description": ""},
+            ],
+        }
+    )
+
+    assert display["disposalSuggestions"] == [
+        "1. 🚑 切换至备用链路",
+        "2. 更换故障光模块",
+        "3. 建议 3",
+    ]
+
+
+def test_extract_display_fields_omits_empty_disposal_suggestions() -> None:
+    from qwenpaw.extensions.api.alarm_analyst_card_service import (
+        extract_display_fields,
+    )
+
+    display = extract_display_fields(
+        {
+            "rawReportMarkdown": "## 告警分析报告：端口 LinkDown\n",
+            "summary": {},
+            "rootCause": {},
+        }
+    )
+
+    assert "disposalSuggestions" not in display
