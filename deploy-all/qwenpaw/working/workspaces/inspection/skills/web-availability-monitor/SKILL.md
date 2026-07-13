@@ -8,7 +8,7 @@ description: 查询和编排 Web 可用性监测任务。适用于查看监测�
 
 # Web Availability Monitor
 
-这是 inspection 本地的 **Web 可用性监测** 技能，对接 `http://82.156.83.38:31010` 对应的网页监测系统。
+这是 inspection 本地的 **Web 可用性监测** 技能，对接 `http://web-check-app:3101` 对应的网页监测系统。
 
 它不是普通“站点 ping 一下”的探活脚本，而是一个 **可编排的页面监测技能**：支持任务、步骤流、定时调度、手工执行、步骤截图和失败复盘。
 
@@ -24,7 +24,7 @@ description: 查询和编排 Web 可用性监测任务。适用于查看监测�
 配置优先从本技能目录 `.env` 读取，也支持同名环境变量：
 
 ```bash
-WEB_MONITOR_BASE_URL=http://82.156.83.38:31010
+WEB_MONITOR_BASE_URL=http://web-check-app:3101
 WEB_MONITOR_AUTHORIZATION=
 WEB_MONITOR_COOKIE=
 WEB_MONITOR_TIMEOUT_SECONDS=20

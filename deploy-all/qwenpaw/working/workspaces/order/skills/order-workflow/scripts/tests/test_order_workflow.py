@@ -312,13 +312,13 @@ class OrderWorkflowTests(unittest.TestCase):
         with mock.patch.dict(
             "os.environ",
             {
-                "INOE_API_BASE_URL": "http://82.156.83.38:30080",
+                "INOE_API_BASE_URL": "http://gateway:8080",
                 "INOE_API_TOKEN": "inoe-token",
             },
             clear=True,
         ):
             config = OrderWorkflowConfig.from_env()
-        self.assertEqual(config.base_url, "http://82.156.83.38:30080")
+        self.assertEqual(config.base_url, "http://gateway:8080")
         self.assertEqual(config.authorization, "inoe-token")
 
     def test_normalize_create_payload_maps_template_fields(self) -> None:

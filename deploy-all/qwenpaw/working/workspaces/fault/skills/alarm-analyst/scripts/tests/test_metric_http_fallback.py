@@ -45,7 +45,7 @@ class MetricHttpFallbackTests(unittest.TestCase):
             with patch.object(METRIC_MODULE.subprocess, "run", side_effect=_fake_run):
                 result = METRIC_MODULE.fetch_metric_definitions(
                     metric_type="mysql",
-                    api_base_url="http://82.156.83.38:30080",
+                    api_base_url="http://gateway:8080",
                     token="token",
                 )
 
@@ -87,7 +87,7 @@ class MetricHttpFallbackTests(unittest.TestCase):
                 result = METRIC_MODULE.fetch_metric_data(
                     res_id="3094",
                     metric_code="mysql_global_status_innodb_row_lock_time",
-                    api_base_url="http://82.156.83.38:30080",
+                    api_base_url="http://gateway:8080",
                     token="token",
                 )
 
