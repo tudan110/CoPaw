@@ -605,7 +605,7 @@ const KUNLUN_FIELDS: ProviderFieldDesc[] = [
   {
     key: "kunlun_models",
     label: "模型列表",
-    hint: "逗号分隔。默认 ad3f9eb1-a798-4509-ada5-3874dc3a3ae7（chat 真实 model id，已实测可用）。",
+    hint: "逗号分隔。默认 14ebe9de-f4aa-4eeb-830f-45b7821a2ddf（chat 真实 model id，已实测可用）。",
   },
   {
     key: "kunlun_model_id_header",

@@ -33,9 +33,10 @@ _NAMESPACE = "kunlun"
 DEFAULT_BASE_URL = "https://ogw.klnaas.189.cn:21000"
 DEFAULT_CHAT_PATH = "/api/chinatelecom/cnos/swdd/cpn/aiapp/v1/chat/completions"
 DEFAULT_AUTH_PATH = "/kunlun-auth-service/oauth2/token"
-# Real chat model id confirmed by the gateway team on 2026-07-07 and
-# verified end-to-end (HTTP 200 through the full APISIX → EOP chain).
-DEFAULT_MODELS = "ad3f9eb1-a798-4509-ada5-3874dc3a3ae7"
+# Real chat model id, verified end-to-end (HTTP 200 through the full
+# APISIX → EOP chain). Replaces ad3f9eb1-a798-4509-ada5-3874dc3a3ae7
+# (2026-07-07 id), which the model team is retiring.
+DEFAULT_MODELS = "14ebe9de-f4aa-4eeb-830f-45b7821a2ddf"
 DEFAULT_AI_USER_ID = "zhiguan"
 
 __all__ = [

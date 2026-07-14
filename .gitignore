@@ -167,6 +167,7 @@ deploy-all/qwenpaw/working/secrets/*.env
 # 通知渠道配置（含 webhook 密钥）：忽略真实文件，保留 *.example 模板
 deploy-all/qwenpaw/working/extensions/notifications/settings.json
 !deploy-all/qwenpaw/working/extensions/notifications/settings.json.example
+deploy-all/DEPLOY_GUIDE.md
 
 # 敏感知识库目录
 /knowledge/

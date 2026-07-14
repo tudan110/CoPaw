@@ -244,7 +244,7 @@ def test_kunlun_store_basics(
         "https://ogw.klnaas.189.cn:21000"
     )
     assert k.resolve_text("QWENPAW_KUNLUN_MODELS", db_path=db) == (
-        "ad3f9eb1-a798-4509-ada5-3874dc3a3ae7"
+        "14ebe9de-f4aa-4eeb-830f-45b7821a2ddf"
     )
     # Gateway-supplied header defaults (2026-07-07).
     assert k.resolve_text("QWENPAW_KUNLUN_CLIENT_ID", db_path=db) == "zgops"
