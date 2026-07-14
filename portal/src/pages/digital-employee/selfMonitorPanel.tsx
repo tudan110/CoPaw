@@ -20,6 +20,7 @@ import {
 } from "../../api/selfMonitor";
 import { EChart } from "../../components/big-screen/charts/EChart";
 import { TracesCenterPanel } from "./tracesCenterPanel";
+import { workspaceDisplayName } from "./workspaceDisplay";
 import "../self-monitor.css";
 
 const REFRESH_INTERVAL_MS = 15000;
@@ -842,7 +843,7 @@ export function SelfMonitorPanel() {
               ["tokens", "Token 用量分析"],
               ["model-perf", "模型性能分析"],
               ["tools", "工具调用分析"],
-              ["users", "用户分析"],
+              ["users", "工作空间分析"],
             ] as const
           ).map(([id, label]) => (
             <button
@@ -1368,22 +1369,22 @@ export function SelfMonitorPanel() {
             <div className="sm-panel">
               <div className="sm-ph">
                 <i style={{ background: "var(--sm-orange)" }} />
-                <h3>按 Agent 分布</h3>
-                <span className="sm-en">by agent</span>
+                <h3>按数字员工分布</h3>
+                <span className="sm-en">by workspace</span>
               </div>
               {toolsData?.byAgent.length ? (
                 <div className="sm-table-wrap">
                   <table className="sm-table">
                     <thead>
                       <tr>
-                        <th>Agent</th>
+                        <th>数字员工</th>
                         <th>工具调用</th>
                       </tr>
                     </thead>
                     <tbody>
                       {toolsData.byAgent.map((row) => (
                         <tr key={row.agent}>
-                          <td className="sm-td-model">{row.agent}</td>
+                          <td className="sm-td-model">{workspaceDisplayName(row.agent)}</td>
                           <td>{fmtBig(row.calls)}</td>
                         </tr>
                       ))}
@@ -1401,19 +1402,18 @@ export function SelfMonitorPanel() {
       {activeTab === "scenario" && scenarioTab === "users" ? (
         <div className="sm-view">
           <div className="sm-note-banner">
-            单机部署没有终端用户账号维度——以下以 <b>渠道 / Workspace</b> 口径
-            替代阿里云的"用户分析",语义如实标注。
+            当前统计按 <b>数字员工工作空间 / 渠道</b> 聚合，不包含终端用户账号维度。
           </div>
           <section className="sm-kpis">
             <div className="sm-panel sm-kpi good">
               <div className="sm-tag">
-                <span>活跃 Workspace</span>
+                <span>活跃工作空间</span>
                 <i className="sm-lyr">{sessions?.days ?? 7}d</i>
               </div>
               <div className="sm-val">
                 <b>{sessions?.workspaces ? sessions.workspaces.length : "—"}</b>
               </div>
-              <div className="sm-note">窗口内有会话活动的智能体空间</div>
+              <div className="sm-note">窗口内有会话活动的数字员工工作空间</div>
             </div>
             <div className="sm-panel sm-kpi good">
               <div className="sm-tag">
@@ -1428,7 +1428,7 @@ export function SelfMonitorPanel() {
             <div className="sm-panel sm-kpi good">
               <div className="sm-tag">
                 <span>均会话数</span>
-                <i className="sm-lyr">/workspace</i>
+                <i className="sm-lyr">/工作空间</i>
               </div>
               <div className="sm-val">
                 <b>
@@ -1440,7 +1440,7 @@ export function SelfMonitorPanel() {
                     : "—"}
                 </b>
               </div>
-              <div className="sm-note">活跃会话 ÷ 活跃 workspace</div>
+              <div className="sm-note">活跃会话 ÷ 活跃工作空间</div>
             </div>
             <div className="sm-panel sm-kpi good">
               <div className="sm-tag">
@@ -1465,7 +1465,7 @@ export function SelfMonitorPanel() {
             <div className="sm-panel">
               <div className="sm-ph">
                 <i />
-                <h3>Workspace Token 消耗 Top</h3>
+                <h3>数字员工 Token 消耗 Top</h3>
                 <span className="sm-en">prompt + completion</span>
               </div>
               {sessions?.workspaces?.length ? (
@@ -1473,7 +1473,7 @@ export function SelfMonitorPanel() {
                   <table className="sm-table">
                     <thead>
                       <tr>
-                        <th>Workspace</th>
+                        <th>数字员工</th>
                         <th>输入token</th>
                         <th>输出token</th>
                         <th>合计</th>
@@ -1490,7 +1490,7 @@ export function SelfMonitorPanel() {
                         )
                         .map((row) => (
                           <tr key={row.workspace}>
-                            <td className="sm-td-model">{row.workspace}</td>
+                            <td className="sm-td-model">{workspaceDisplayName(row.workspace)}</td>
                             <td>{fmtBig(row.promptTokens)}</td>
                             <td>{fmtBig(row.completionTokens)}</td>
                             <td>
@@ -1503,7 +1503,7 @@ export function SelfMonitorPanel() {
                   </table>
                 </div>
               ) : (
-                <div className="sm-empty">窗口内暂无 workspace 活动</div>
+                <div className="sm-empty">窗口内暂无数字员工活动</div>
               )}
             </div>
             <div className="sm-panel">
@@ -1559,7 +1559,7 @@ export function SelfMonitorPanel() {
               <div className="sm-val">
                 <b>{fmtBig(sessions?.totals?.activeSessions)}</b>
               </div>
-              <div className="sm-note">全 workspace 汇总</div>
+              <div className="sm-note">全数字员工工作空间汇总</div>
             </div>
             <div className="sm-panel sm-kpi good">
               <div className="sm-tag">
@@ -1654,8 +1654,8 @@ export function SelfMonitorPanel() {
           <section className="sm-panel">
             <div className="sm-ph">
               <i style={{ background: "var(--sm-violet)" }} />
-              <h3>Agent 调用统计</h3>
-              <span className="sm-en">by workspace</span>
+              <h3>数字员工调用统计</h3>
+              <span className="sm-en">by digital employee</span>
               <button className="sm-refresh sm-right" onClick={() => navigate("/traces")}>
                 单会话明细 → 链路追踪
               </button>
@@ -1665,7 +1665,7 @@ export function SelfMonitorPanel() {
                 <table className="sm-table">
                   <thead>
                     <tr>
-                      <th>Workspace / Agent</th>
+                      <th>数字员工</th>
                       <th>活跃会话</th>
                       <th>消息数</th>
                       <th>LLM 调用</th>
@@ -1677,7 +1677,7 @@ export function SelfMonitorPanel() {
                   <tbody>
                     {sessions.workspaces.map((row) => (
                       <tr key={row.workspace}>
-                        <td className="sm-td-model">{row.workspace}</td>
+                        <td className="sm-td-model">{workspaceDisplayName(row.workspace)}</td>
                         <td>{fmtBig(row.activeSessions)}</td>
                         <td>{fmtBig(row.messages)}</td>
                         <td>{fmtBig(row.llmCalls)}</td>
@@ -1693,7 +1693,7 @@ export function SelfMonitorPanel() {
               <div className="sm-empty">
                 <b>最近 {sessions?.days ?? 7} 天暂无 Agent 活动</b>
                 <br />
-                会话/消息由 agent_stats 从各 workspace 的 session 归档聚合。
+                会话/消息由 agent_stats 从各数字员工工作空间的会话归档聚合。
               </div>
             )}
           </section>
