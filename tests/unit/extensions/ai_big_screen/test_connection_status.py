@@ -18,6 +18,7 @@ def _clear_conn_env(monkeypatch: pytest.MonkeyPatch) -> None:
         "ZGOPS_PASSWORD",
         "ORDER_API_BASE_URL",
         "ORDER_AUTHORIZATION",
+        "KUBERNETES_SERVICE_HOST",
     ):
         monkeypatch.delenv(var, raising=False)
 
@@ -42,6 +43,19 @@ class TestInoe:
         status = cs.connection_status("inoe")
         assert status["configured"] is False
         assert "token" in status["reason"]
+
+    def test_kubernetes_gateway_with_token_is_configured(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.setenv("KUBERNETES_SERVICE_HOST", "10.43.0.1")
+        monkeypatch.setenv("INOE_API_BASE_URL", "http://gateway:8080")
+        monkeypatch.setenv("INOE_API_TOKEN", "tok")
+
+        status = cs.connection_status("inoe")
+
+        assert status["configured"] is True
+        assert status["reason"] == ""
 
     def test_configured_with_real_host_and_token(
         self,
@@ -73,6 +87,21 @@ class TestOthers:
         monkeypatch.setenv("ZGOPS_BASE_URL", "http://10.1.2.3:5000")
         monkeypatch.setenv("ZGOPS_USERNAME", "admin")
         assert cs.connection_status("zgops")["configured"] is True
+
+    def test_kubernetes_service_name_with_credentials_is_configured(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.setenv("KUBERNETES_SERVICE_HOST", "10.43.0.1")
+        monkeypatch.setenv(
+            "ZGOPS_BASE_URL", "http://cnos-iomp-inoe-ui-cmdb:80"
+        )
+        monkeypatch.setenv("ZGOPS_USERNAME", "admin")
+
+        status = cs.connection_status("zgops")
+
+        assert status["configured"] is True
+        assert status["reason"] == ""
 
     def test_empty_and_web_always_configured(self) -> None:
         assert cs.connection_status("")["configured"] is True
@@ -214,3 +243,16 @@ class TestOrder:
         monkeypatch.setenv("ORDER_AUTHORIZATION", "Bearer x")
         status = cs.connection_status("order")
         assert status["configured"] is False
+
+    def test_kubernetes_ferry_service_with_authorization_is_configured(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.setenv("KUBERNETES_SERVICE_HOST", "10.43.0.1")
+        monkeypatch.setenv("ORDER_API_BASE_URL", "http://gateway:8080/ferry")
+        monkeypatch.setenv("ORDER_AUTHORIZATION", "Bearer x")
+
+        status = cs.connection_status("order")
+
+        assert status["configured"] is True
+        assert status["reason"] == ""

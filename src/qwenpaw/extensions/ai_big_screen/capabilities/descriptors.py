@@ -571,6 +571,55 @@ def fetch_cmdb_resources(query_params: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
+def fetch_system_inspection(
+    query_params: Mapping[str, Any],
+) -> dict[str, Any]:
+    """System-wide inspection view backed by the live resource-health API.
+
+    Per-CI metric inspection requires both a CMDB CI ID and a CI type.  A
+    generic dashboard request such as "系统巡检数据" has neither, so it must
+    use the real aggregate health endpoint rather than invoking that script
+    with empty arguments.
+    """
+    from qwenpaw.extensions.integrations import portal_monitoring_overview
+
+    envelope = portal_monitoring_overview.query_asset_overview()
+    source_status = _envelope_source_status(envelope)
+    data = envelope.get("data") if isinstance(envelope, dict) else None
+    message = (
+        str(envelope.get("msg") or "系统巡检接口不可用")
+        if isinstance(envelope, dict)
+        else "系统巡检接口不可用"
+    )
+    rows = _shape_asset_overview_rows(data)
+    columns = columns_for_capability_fields(
+        "system-inspection",
+        query_params.get("fields"),
+    )
+    total = (
+        _first_numeric_value(data.get("totalResources"))
+        if isinstance(data, dict)
+        else None
+    )
+    if total is None:
+        total = sum(safe_int(row.get("total"), 0) for row in rows)
+    health_rate = data.get("healthRate") if isinstance(data, dict) else None
+    return {
+        "source": "portal-system-inspection-api",
+        "sourceStatus": source_status,
+        "value": total,
+        "total": total,
+        "unit": "项",
+        "healthRate": health_rate,
+        "trend": "系统资源实时巡检概览"
+        if source_status == "live"
+        else message,
+        "message": "" if source_status == "live" else message,
+        "columns": columns,
+        "rows": rows,
+    }
+
+
 def _map_application_ci(ci: Mapping[str, Any]) -> dict[str, Any]:
     """Veops project CI → big-screen row (same fields the chat answer shows)."""
     op_duty = ci.get("op_duty")
@@ -1021,6 +1070,34 @@ CAPABILITY_METADATA: list[dict[str, Any]] = [
         "examplePrompts": ["CMDB资源统计", "资产资源概览"],
     },
     {
+        "id": "system-inspection",
+        "name": "系统资源巡检",
+        "domain": "inspection",
+        "description": (
+            "调用实时资源健康巡检接口，返回各资源类型的巡检总数、正常数、"
+            "告警数和整体健康率。适用于未指定单个 CI 的系统巡检/健康概览；"
+            "单个资源的指标明细仍需提供 CI ID 与资源类型。"
+        ),
+        "inputSchema": {
+            "fields": DEFAULT_CAPABILITY_FIELDS["system-inspection"],
+        },
+        "outputSchema": {
+            "value": "number",
+            "healthRate": "number",
+            "rows": "array",
+        },
+        "availableFields": CAPABILITY_FIELD_DEFINITIONS["system-inspection"],
+        "supportedVisuals": [
+            "table", "metric-card", "metric-kpi", "flip-number", "donut",
+            "bar-chart", "gauge", "liquid-ball", "composed",
+        ],
+        "permissionScope": "inspection:read",
+        "cachePolicy": {"ttlSeconds": 120},
+        "refreshPolicy": {"intervalSeconds": 120},
+        "dataSource": "portal-system-inspection-api",
+        "examplePrompts": ["系统巡检数据", "系统健康巡检", "资源巡检概览"],
+    },
+    {
         "id": "cmdb-applications",
         "name": "CMDB 应用信息",
         "domain": "resource",
@@ -1455,6 +1532,7 @@ FETCHERS: dict[str, Fetcher] = {
     "system-logs": fetch_system_logs,
     "real-alarms": fetch_real_alarms,
     "cmdb-resources": fetch_cmdb_resources,
+    "system-inspection": fetch_system_inspection,
     "cmdb-applications": fetch_cmdb_applications,
     "workorders": fetch_workorders,
     "alarm-top5": fetch_alarm_top5,

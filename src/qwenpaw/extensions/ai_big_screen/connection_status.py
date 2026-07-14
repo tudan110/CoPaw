@@ -19,11 +19,16 @@ from __future__ import annotations
 import os
 from typing import Any
 
-# In-cluster service-name defaults that mean "not really configured for
-# this host" — present out of the box but unreachable outside k8s.
-_PLACEHOLDER_HOST_MARKERS = (
+# These hosts are valid only from a Kubernetes pod.  Treating them as a
+# placeholder everywhere made a correctly configured k3s deployment show
+# every INOE/Ferry/CMDB-backed capability as "待配置".
+_CLUSTER_SERVICE_HOST_MARKERS = (
     "gateway:",
     "cnos-iomp-",
+)
+
+# Loopback is never a usable shared datasource address for this application.
+_ALWAYS_PLACEHOLDER_HOST_MARKERS = (
     "localhost",
     "127.0.0.1",
 )
@@ -43,7 +48,16 @@ def _env(name: str) -> str:
 
 
 def _looks_placeholder(base_url: str) -> bool:
-    return any(marker in base_url for marker in _PLACEHOLDER_HOST_MARKERS)
+    if any(marker in base_url for marker in _ALWAYS_PLACEHOLDER_HOST_MARKERS):
+        return True
+    # Kubernetes injects this service environment variable into Pods.  The
+    # in-cluster DNS names above are then routable and should count as a real
+    # configured connection when their required credentials are present.
+    in_kubernetes = bool(_env("KUBERNETES_SERVICE_HOST"))
+    return (
+        not in_kubernetes
+        and any(marker in base_url for marker in _CLUSTER_SERVICE_HOST_MARKERS)
+    )
 
 
 def _self_status() -> tuple[bool, str]:

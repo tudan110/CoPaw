@@ -213,8 +213,23 @@ async def refresh_screen_data(screen: dict[str, Any]) -> dict[str, Any]:
         capability_id = str(
             component.get("capabilityId") or component.get("pluginId") or "",
         )
+        query_params = component.get("queryParams") or {}
+        # Older generated screens used the per-CI inspection skill even for
+        # a generic "巡检数据" request.  That script requires a CI ID and
+        # failed when the planner supplied ``res-id: null``.  Migrate only
+        # those unscoped legacy cards to the real system-wide inspection
+        # overview; explicit per-CI cards retain their metric detail source.
+        if (
+            capability_id == "skill:inspection:inspection-analyst"
+            and not str(query_params.get("res-id") or "").strip()
+        ):
+            capability_id = "system-inspection"
+            component["capabilityId"] = capability_id
+            component["pluginId"] = capability_id
+            component["queryParams"] = {}
+            query_params = {}
         result = await execute_capability(
-            component.get("queryParams") or {},
+            query_params,
             capability_id=capability_id,
             cache=cache,
             fresh=True,  # refresh semantics: bypass the TTL read

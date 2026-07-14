@@ -444,6 +444,7 @@ class TestRegistry:
             "system-logs",
             "real-alarms",
             "cmdb-resources",
+            "system-inspection",
             "cmdb-applications",
             "workorders",
             "alarm-top5",
@@ -952,3 +953,47 @@ class TestAuthoredContentChannel:
         out = fetch_authored_content({"content": {"text": "九九八十一"}})
         assert out["sourceStatus"] == "live"
         assert out["metrics"]["text"] == "九九八十一"
+
+
+class TestSystemInspectionOverview:
+    """Generic "巡检数据" must use a real system-wide source, not a
+    per-CI inspection script that requires the user to supply a CI ID."""
+
+    async def test_live_system_inspection_maps_resource_health(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from qwenpaw.extensions.integrations import portal_monitoring_overview
+
+        monkeypatch.setattr(
+            portal_monitoring_overview,
+            "query_asset_overview",
+            lambda: {
+                "code": 200,
+                "data": {
+                    "healthRate": 75.0,
+                    "totalResources": 4,
+                    "resourceTypeStats": {
+                        "虚拟机": {
+                            "resourceTypeName": "虚拟机",
+                            "totalCount": 4,
+                            "normalCount": 3,
+                            "alarmCount": 1,
+                        },
+                    },
+                },
+            },
+        )
+
+        result = await execute_capability(
+            {}, capability_id="system-inspection", fresh=True
+        )
+
+        assert result.source_status == "live"
+        assert result.total == 4
+        assert result.rows == [
+            {"type": "虚拟机", "total": 4, "normal": 3, "alarm": 1},
+        ]
+        data = result.to_legacy_data()
+        assert data["healthRate"] == 75.0
+        assert data["source"] == "portal-system-inspection-api"

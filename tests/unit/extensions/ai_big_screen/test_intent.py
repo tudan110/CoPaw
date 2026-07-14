@@ -50,6 +50,11 @@ class TestPromptHeuristics:
         ids = extract_semantic_capability_ids("查询日志和告警，再看下工单")
         assert ids == ["system-logs", "real-alarms", "workorders"]
 
+    def test_system_inspection_routes_to_system_wide_capability(self) -> None:
+        assert extract_semantic_capability_ids("查看系统巡检数据") == [
+            "system-inspection"
+        ]
+
     def test_cmdb_application_ask_routes_to_application_list(self) -> None:
         # T-031: "cmdb" here is a namespace qualifier — the record list
         # capability must win, not the resource-type statistics.

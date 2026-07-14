@@ -346,3 +346,44 @@ class TestRefreshScreenData:
         component = refreshed["components"][0]
         assert component["data"]["sourceStatus"] == "failed"
         assert component["title"] == "待接入：CMDB 应用信息"
+
+    async def test_refresh_migrates_unscoped_legacy_inspection_component(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from qwenpaw.extensions.ai_big_screen.pipeline import (
+            refresh_screen_data,
+        )
+        from qwenpaw.extensions.integrations import portal_monitoring_overview
+
+        monkeypatch.setattr(
+            portal_monitoring_overview,
+            "query_asset_overview",
+            lambda: {
+                "code": 200,
+                "data": {
+                    "healthRate": 100,
+                    "totalResources": 1,
+                    "resourceTypeStats": {
+                        "虚拟机": {
+                            "resourceTypeName": "虚拟机",
+                            "totalCount": 1,
+                            "normalCount": 1,
+                            "alarmCount": 0,
+                        },
+                    },
+                },
+            },
+        )
+        screen = self._screen()
+        component = screen["components"][0]
+        component["capabilityId"] = "skill:inspection:inspection-analyst"
+        component["pluginId"] = "skill:inspection:inspection-analyst"
+        component["queryParams"] = {"metric-type": "health_rate", "res-id": None}
+
+        refreshed = await refresh_screen_data(screen)
+        migrated = refreshed["components"][0]
+
+        assert migrated["capabilityId"] == "system-inspection"
+        assert migrated["pluginId"] == "system-inspection"
+        assert migrated["data"]["sourceStatus"] == "live"

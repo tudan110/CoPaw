@@ -81,6 +81,16 @@ CAPABILITY_FIELD_DEFINITIONS: dict[str, list[dict[str, Any]]] = {
         {"key": "normal", "label": "正常", "aliases": ["正常数", "健康"]},
         {"key": "alarm", "label": "告警", "aliases": ["告警数", "异常"]},
     ],
+    "system-inspection": [
+        {
+            "key": "type",
+            "label": "资源类型",
+            "aliases": ["名称", "类型", "巡检对象", "资源"],
+        },
+        {"key": "total", "label": "巡检总数", "aliases": ["总数", "数量"]},
+        {"key": "normal", "label": "正常", "aliases": ["健康", "正常数"]},
+        {"key": "alarm", "label": "告警", "aliases": ["异常", "告警数"]},
+    ],
     "cmdb-applications": [
         {
             "key": "name",
@@ -169,6 +179,7 @@ DEFAULT_CAPABILITY_FIELDS: dict[str, list[str]] = {
         "statusName",
     ],
     "cmdb-resources": ["type", "total", "normal", "alarm"],
+    "system-inspection": ["type", "total", "normal", "alarm"],
     "cmdb-applications": [
         "name",
         "ciId",

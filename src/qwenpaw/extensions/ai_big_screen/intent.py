@@ -345,6 +345,7 @@ _SEMANTIC_CAPABILITY_CHECKS = [
     ("system-logs", ("日志", "log", "logs")),
     ("real-alarms", ("告警", "报警", "alarm", "alarms")),
     ("workorders", ("工单", "workorder", "ticket", "tickets")),
+    ("system-inspection", ("巡检", "健康检查", "health check")),
     (
         "cmdb-applications",
         (
@@ -821,6 +822,8 @@ def _infer_component_capability_id(
         term in lowered for term in ("cmdb", "resource", "asset")
     ):
         scores["cmdb-resources"] = 6
+    if any(term in text for term in ("巡检", "健康检查")) or "health check" in lowered:
+        scores["system-inspection"] = 9
     # Application-list asks outrank the statistics capability: a title
     # like "CMDB 应用信息表" matches both, and the record list is what
     # the user means (the "cmdb" token is just the namespace).
