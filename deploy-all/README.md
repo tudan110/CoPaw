@@ -55,7 +55,10 @@ deploy-all/
 helm dependency update ./deploy-all/helm/cnos-inoe-agent
 
 # 安装
-helm install cnos-inoe-agent ./deploy-all/helm/cnos-inoe-agent
+helm install cnos-inoe-agent ./cnos-inoe-agent-1.0.0.tgz -n cnos-iomp \
+  --set-string digital-workforce-portal.env.PORTAL_APP_TITLE="智观 AI" \
+  --set-string digital-workforce-portal.env.PORTAL_SSO_ENABLED="true" \
+  --set-string digital-workforce-portal.env.PORTAL_SSO_INOE_PORT="30081"
 
 # 升级
 helm upgrade cnos-inoe-agent ./deploy-all/helm/cnos-inoe-agent
@@ -153,6 +156,18 @@ helm install cnos-inoe-agent ./cnos-inoe-agent-1.0.0.tgz -n cnos-iomp \
 Portal 会自动推导 INOE 登录地址为 `http://<当前访问的 host>:30081/login`。只有
 INOE 前端不在标准 `30081` 端口，或者跟 portal 不同主机时，才需要额外覆盖
 `PORTAL_SSO_INOE_PORT` / `PORTAL_SSO_LOGIN_URL`（见下方环境变量表）。
+
+如果只是 INOE 前端端口不是默认 `30081`，可以在部署时显式指定端口：
+
+```bash
+helm install cnos-inoe-agent ./cnos-inoe-agent-1.0.0.tgz -n cnos-iomp \
+  --set-string digital-workforce-portal.env.PORTAL_APP_TITLE="智观 AI" \
+  --set-string digital-workforce-portal.env.PORTAL_SSO_ENABLED="true" \
+  --set-string digital-workforce-portal.env.PORTAL_SSO_INOE_PORT="30081"
+```
+
+如果同时还需要跳到非同主机或非标准登录页，再额外设置
+`PORTAL_SSO_LOGIN_URL="http://<ip>:<port>/login"`。
 
 ### 常用环境变量设置
 
