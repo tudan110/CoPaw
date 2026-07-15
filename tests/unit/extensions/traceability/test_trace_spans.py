@@ -261,3 +261,36 @@ async def test_tool_call_emit_uses_instance_ctx_and_object_shape(store):
     assert tools[0]["tool_call_id"] == "call_1"
     assert tools[0]["args"] == '{"command": "echo hi"}'
     assert tools[0]["agent_id"] == "gateway"
+
+
+@pytest.mark.asyncio
+async def test_finalized_reasoning_block_is_recorded_for_trace_replay(store):
+    """A provider-exposed thinking block must be replayable as reasoning."""
+    import qwenpaw.app.agent_context as agent_context
+    from qwenpaw.extensions.traceability.install import _collect_finalized_content
+
+    class TextContent:
+        delta = False
+        msg_id = "reasoning-message"
+        text = "先检查告警上下文，再调用诊断技能。"
+
+    class Envelope:
+        _reasoning_blocks = {
+            "thinking-1": {"msg_id": "reasoning-message"},
+        }
+
+    class Executor:
+        _envelope = Envelope()
+
+    agent_context.set_current_session_id("reasoning-replay")
+    agent_context.set_current_agent_id("fault")
+    agent_context.set_current_user_id("operator")
+    agent_context.set_current_channel("portal")
+    reply_parts: list[str] = []
+
+    await _collect_finalized_content(Executor(), TextContent(), reply_parts)
+
+    detail = store.read_session("reasoning-replay")
+    assert reply_parts == []
+    assert [event["type"] for event in detail["events"]] == ["agent_reasoning"]
+    assert detail["events"][0]["text"] == TextContent.text

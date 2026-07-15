@@ -370,11 +370,11 @@
   transform: translateY(-1px);
 }
 
-.trace-event.user_message { border-left-color: #6366f1; }
-.trace-event.agent_reply { border-left-color: #10b981; }
-.trace-event.tool_call { border-left-color: #f59e0b; }
+.trace-event.user_message { border-left-color: #d9679b; }
+.trace-event.agent_reply { border-left-color: #e8923c; }
+.trace-event.tool_call { border-left-color: #0891b2; }
 .trace-event.skill_trigger { border-left-color: #8b5cf6; }
-.trace-event.agent_reasoning { border-left-color: #06b6d4; }
+.trace-event.agent_reasoning { border-left-color: #8b5cf6; }
 .trace-event.error,
 .trace-event.err {
   border-left-color: #dc2626;

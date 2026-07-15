@@ -309,7 +309,7 @@ def _install_reply_trace() -> None:
         texts: list[str] = []
         async for obj in _orig_run(self, msgs):
             try:
-                _maybe_collect_reply_text(self, obj, texts)
+                await _collect_finalized_content(self, obj, texts)
             except Exception:  # pylint: disable=broad-except
                 pass
             yield obj
@@ -323,17 +323,17 @@ def _install_reply_trace() -> None:
     logger.debug("traceability: AgentExecutor.run wrapped")
 
 
-def _maybe_collect_reply_text(
+async def _collect_finalized_content(
     executor: Any,
     obj: Any,
     texts: list[str],
 ) -> None:
-    """Accumulate finalized assistant text blocks, excluding reasoning.
+    """Persist finalized reasoning blocks and accumulate final replies.
 
     The envelope emits each text block twice (streaming deltas + one final
-    non-delta chunk carrying the full block text). We keep only the final
-    non-delta chunks, and drop reasoning blocks by matching ``msg_id``
-    against the envelope's tracked reasoning message ids.
+    non-delta chunk carrying the full block text). We only process final
+    chunks: model-native thinking blocks are recorded for replay, while
+    ordinary assistant text is retained for the turn's final reply event.
     """
     if type(obj).__name__ != "TextContent":
         return
@@ -347,11 +347,41 @@ def _maybe_collect_reply_text(
         reasoning_ids = {
             b.get("msg_id") for b in blocks.values() if isinstance(b, dict)
         }
-    if msg_id in reasoning_ids:
-        return
     text = getattr(obj, "text", "") or ""
+    if msg_id in reasoning_ids:
+        await _emit_agent_reasoning(executor, text)
+        return
     if text:
         texts.append(text)
+
+
+async def _emit_agent_reasoning(executor: Any, reasoning: str) -> None:
+    """Record provider-exposed reasoning as a replayable trace event."""
+    if not reasoning:
+        return
+    from qwenpaw.app.agent_context import (
+        get_current_agent_id,
+        get_current_channel,
+        get_current_session_id,
+        get_current_user_id,
+    )
+
+    session_id = str(get_current_session_id() or "")
+    if not session_id:
+        envelope = getattr(executor, "_envelope", None)
+        response = getattr(envelope, "_response", None)
+        session_id = str(getattr(response, "session_id", "") or "")
+    if not session_id:
+        return
+
+    await _emit(
+        session_id,
+        "agent_reasoning",
+        {"text": reasoning, "role": "assistant"},
+        agent_id=str(get_current_agent_id() or "") or None,
+        user_id=str(get_current_user_id() or "") or None,
+        channel=str(get_current_channel() or "") or None,
+    )
 
 
 async def _emit_agent_reply(executor: Any, reply: str) -> None:

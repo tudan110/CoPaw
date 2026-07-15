@@ -136,7 +136,11 @@ function EventCard({
   const title = useMemo(() => {
     if (isTool) return event.tool_name || "tool_call";
     if (event.type === "skill_trigger") return event.display_name || event.name || "skill";
-    if (event.type === "user_message" || event.type === "agent_reply") {
+    if (
+      event.type === "user_message" ||
+      event.type === "agent_reply" ||
+      event.type === "agent_reasoning"
+    ) {
       return truncate(String(event.text || ""), 120) || eventLabel(event.type);
     }
     if (isError) return event.exception_type || "Error";
@@ -144,7 +148,11 @@ function EventCard({
   }, [event, isTool, isError]);
 
   const previewBody = useMemo(() => {
-    if (event.type === "user_message" || event.type === "agent_reply") {
+    if (
+      event.type === "user_message" ||
+      event.type === "agent_reply" ||
+      event.type === "agent_reasoning"
+    ) {
       return event.text || "";
     }
     if (isError || event.type === "cancelled") {
