@@ -21,25 +21,37 @@ import {
 // needed when portal/INOE aren't same-host or the login path differs).
 const DEFAULT_INOE_FRONTEND_PORT = "30081";
 
-function getInoeFrontendPort(): string {
-  const configured =
-    import.meta.env.VITE_SSO_INOE_PORT ||
-    (typeof window !== "undefined"
-      ? window.__PORTAL_RUNTIME_CONFIG__?.ssoInoePort
-      : "");
-  return String(configured ?? "").trim() || DEFAULT_INOE_FRONTEND_PORT;
+function normalizeOptionalString(value: string | undefined | null): string {
+  return String(value ?? "").trim();
 }
 
-// Full login-URL override (VITE_SSO_LOGIN_URL / runtime ssoLoginUrl), if any.
+function getRuntimeFirstString(
+  runtimeValue: string | undefined | null,
+  envValue: string | undefined | null,
+): string {
+  return normalizeOptionalString(runtimeValue) || normalizeOptionalString(envValue);
+}
+
+function getInoeFrontendPort(): string {
+  const configured = getRuntimeFirstString(
+    typeof window !== "undefined"
+      ? window.__PORTAL_RUNTIME_CONFIG__?.ssoInoePort
+      : "",
+    import.meta.env.VITE_SSO_INOE_PORT,
+  );
+  return configured || DEFAULT_INOE_FRONTEND_PORT;
+}
+
+// Full login-URL override (runtime ssoLoginUrl / VITE_SSO_LOGIN_URL), if any.
 // Read once here so both getSsoLoginUrl() and getInoeFrontendOrigin() agree
 // on whether an override is set.
 function getInoeLoginUrlOverride(): string {
-  const explicit =
-    import.meta.env.VITE_SSO_LOGIN_URL ||
-    (typeof window !== "undefined"
+  return getRuntimeFirstString(
+    typeof window !== "undefined"
       ? window.__PORTAL_RUNTIME_CONFIG__?.ssoLoginUrl
-      : "");
-  return String(explicit ?? "").trim();
+      : "",
+    import.meta.env.VITE_SSO_LOGIN_URL,
+  );
 }
 
 /**
@@ -76,13 +88,14 @@ function parseBool(value: string | undefined | null): boolean {
 }
 
 export function isSsoEnabled(): boolean {
-  if (parseBool(import.meta.env.VITE_SSO_ENABLED)) {
-    return true;
+  const runtimeEnabled =
+    typeof window !== "undefined"
+      ? window.__PORTAL_RUNTIME_CONFIG__?.ssoEnabled
+      : undefined;
+  if (runtimeEnabled !== undefined) {
+    return runtimeEnabled === true;
   }
-  if (typeof window !== "undefined") {
-    return window.__PORTAL_RUNTIME_CONFIG__?.ssoEnabled === true;
-  }
-  return false;
+  return parseBool(import.meta.env.VITE_SSO_ENABLED);
 }
 
 export function getSsoLoginUrl(): string {
