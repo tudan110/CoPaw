@@ -57,6 +57,9 @@ _PUBLIC_PATHS: frozenset[str] = frozenset(
         "/api/settings/language",
         "/api/settings/upload-limit",
         "/api/frontend_plugin",
+        # Temporary unauthenticated integration endpoint. Its read-only
+        # response is deliberately limited to the situation-summary contract.
+        "/api/portal/ai/system-summary",
     },
 )
 
