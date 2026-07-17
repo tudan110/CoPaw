@@ -58,6 +58,39 @@ _INOE_LOGIN_COOKIE = "Cnos-Inoe-Admin-Token"
 _INOE_EXPIRES_IN_COOKIE = "Cnos-Inoe-Admin-Expires-In"
 
 
+def _strip_bearer(token: str) -> str:
+    token = str(token or "").strip()
+    if token.lower().startswith("bearer "):
+        return token[len("bearer ") :].strip()
+    return token
+
+
+async def _validate_inoe_token(
+    userinfo_url: str, token: str
+) -> dict[str, Any]:
+    """Validate one INOE login token against userinfo, surfacing auth errors."""
+    try:
+        user_body = await _get_json(userinfo_url, token, endpoint="userinfo")
+    except HTTPException:
+        raise
+    except httpx.TimeoutException:
+        raise HTTPException(status_code=504, detail="SSO 网关请求超时")
+    except httpx.HTTPError as exc:
+        logger.warning("SSO 网关连接失败: %s", exc)
+        raise HTTPException(status_code=502, detail="SSO 网关连接失败")
+
+    # RuoYi getInfo replies HTTP 200 even on an invalid token, signalling the
+    # real status in the body ``code`` (e.g. 401 令牌不能为空). Treat any
+    # non-200 body code as an auth failure.
+    body_code = user_body.get("code")
+    if body_code is not None and str(body_code) != "200":
+        raise HTTPException(
+            status_code=401,
+            detail=str(user_body.get("msg") or "INOE 登录态校验失败"),
+        )
+    return user_body
+
+
 def _canonical(params: dict[str, str]) -> str:
     """Join non-empty params as ``key=value&key=value`` sorted by key asc.
 
@@ -227,12 +260,11 @@ async def token_login(
     a success both proves the token is genuine and yields the user. Returns
     the same shape as :func:`exchange` so the frontend treats both uniformly.
     """
-    token = str(body.get("token") or "").strip()
-    if not token:
-        token = (request.cookies.get(_INOE_LOGIN_COOKIE) or "").strip()
-    if token.lower().startswith("bearer "):
-        token = token[len("bearer ") :].strip()
-    if not token:
+    body_token = _strip_bearer(body.get("token") or "")
+    cookie_token = _strip_bearer(
+        request.cookies.get(_INOE_LOGIN_COOKIE) or ""
+    )
+    if not (body_token or cookie_token):
         raise HTTPException(status_code=401, detail="缺少 INOE 登录凭证")
 
     userinfo_url = sso_settings_store.get_userinfo_url()
@@ -241,24 +273,26 @@ async def token_login(
             status_code=400, detail="SSO 未配置(平台 INOE 网关地址缺失)"
         )
 
-    try:
-        user_body = await _get_json(userinfo_url, token, endpoint="userinfo")
-    except HTTPException:
-        raise
-    except httpx.TimeoutException:
-        raise HTTPException(status_code=504, detail="SSO 网关请求超时")
-    except httpx.HTTPError as exc:
-        logger.warning("SSO 网关连接失败: %s", exc)
-        raise HTTPException(status_code=502, detail="SSO 网关连接失败")
+    candidates = [body_token]
+    if cookie_token and cookie_token != body_token:
+        candidates.append(cookie_token)
+    candidates = [token for token in candidates if token]
 
-    # RuoYi getInfo replies HTTP 200 even on an invalid token, signalling the
-    # real status in the body ``code`` (e.g. 401 令牌不能为空). Treat any
-    # non-200 body code as an auth failure.
-    body_code = user_body.get("code")
-    if body_code is not None and str(body_code) != "200":
-        raise HTTPException(
-            status_code=401,
-            detail=str(user_body.get("msg") or "INOE 登录态校验失败"),
+    user_body = None
+    token = ""
+    last_401: HTTPException | None = None
+    for token in candidates:
+        try:
+            user_body = await _validate_inoe_token(userinfo_url, token)
+            break
+        except HTTPException as exc:
+            if exc.status_code == 401:
+                last_401 = exc
+                continue
+            raise
+    if user_body is None:
+        raise last_401 or HTTPException(
+            status_code=401, detail="INOE 登录态校验失败"
         )
 
     user = _extract_user(user_body)

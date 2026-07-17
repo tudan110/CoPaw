@@ -12,6 +12,8 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
 
 from qwenpaw.extensions.api import settings_store
 from qwenpaw.extensions.api import sso_settings_store as store
@@ -19,6 +21,7 @@ from qwenpaw.extensions.api.sso_backend import (
     _canonical,
     _extract_user,
     _sign,
+    router,
 )
 
 _SECRET = "CGQlJs*Z@&X@a"
@@ -259,3 +262,85 @@ def test_extract_user_flat_oauth2_userinfo() -> None:
         "email": "lisi@example.com",
     }
     assert _extract_user(body) == body
+
+
+@pytest.fixture()
+def sso_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> TestClient:
+    db = _db(tmp_path)
+    monkeypatch.setattr(store, "DEFAULT_DB_PATH", db)
+    monkeypatch.setattr(settings_store, "DEFAULT_DB_PATH", db)
+    app = FastAPI()
+    app.include_router(router)
+    return TestClient(app)
+
+
+def test_token_login_retries_cookie_when_body_token_is_stale(
+    sso_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("INOE_API_BASE_URL", "http://gw:30080")
+
+    async def fake_get_json(url: str, token: str, *, endpoint: str):
+        assert url == "http://gw:30080/admin/user/getInfo"
+        assert endpoint == "userinfo"
+        if token == "stale-token":
+            return {"code": 401, "msg": "登录状态已过期"}
+        if token == "fresh-token":
+            return {
+                "code": 200,
+                "user": {
+                    "userId": 1,
+                    "userName": "zhiguan",
+                },
+            }
+        pytest.fail(f"unexpected token: {token}")
+
+    monkeypatch.setattr(
+        "qwenpaw.extensions.api.sso_backend._get_json", fake_get_json
+    )
+
+    response = sso_client.post(
+        "/sso/token-login",
+        json={"token": "stale-token"},
+        cookies={
+            "Cnos-Inoe-Admin-Token": "fresh-token",
+            "Cnos-Inoe-Admin-Expires-In": "720",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "access_token": "fresh-token",
+        "token_type": "Bearer",
+        "expires_in_seconds": 43200,
+        "user": {
+            "userId": 1,
+            "username": "zhiguan",
+        },
+    }
+
+
+def test_token_login_keeps_cookie_fallback_disabled_when_same_token(
+    sso_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("INOE_API_BASE_URL", "http://gw:30080")
+    seen: list[str] = []
+
+    async def fake_get_json(url: str, token: str, *, endpoint: str):
+        seen.append(token)
+        return {"code": 401, "msg": "登录状态已过期"}
+
+    monkeypatch.setattr(
+        "qwenpaw.extensions.api.sso_backend._get_json", fake_get_json
+    )
+
+    response = sso_client.post(
+        "/sso/token-login",
+        json={"token": "same-token"},
+        cookies={
+            "Cnos-Inoe-Admin-Token": "same-token",
+        },
+    )
+
+    assert response.status_code == 401
+    assert response.json() == {"detail": "登录状态已过期"}
+    assert seen == ["same-token"]
