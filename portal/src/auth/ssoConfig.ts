@@ -11,6 +11,7 @@ import {
   clearSession,
   getSession,
   isAuthenticated,
+  isSessionStorageKey,
   setSession,
 } from "./ssoSession";
 
@@ -32,12 +33,16 @@ function getRuntimeFirstString(
   return normalizeOptionalString(runtimeValue) || normalizeOptionalString(envValue);
 }
 
+function getEnvString(key: "VITE_SSO_INOE_PORT" | "VITE_SSO_LOGIN_URL" | "VITE_SSO_ENABLED"): string {
+  return normalizeOptionalString(import.meta.env?.[key]);
+}
+
 function getInoeFrontendPort(): string {
   const configured = getRuntimeFirstString(
     typeof window !== "undefined"
       ? window.__PORTAL_RUNTIME_CONFIG__?.ssoInoePort
       : "",
-    import.meta.env.VITE_SSO_INOE_PORT,
+    getEnvString("VITE_SSO_INOE_PORT"),
   );
   return configured || DEFAULT_INOE_FRONTEND_PORT;
 }
@@ -50,7 +55,7 @@ function getInoeLoginUrlOverride(): string {
     typeof window !== "undefined"
       ? window.__PORTAL_RUNTIME_CONFIG__?.ssoLoginUrl
       : "",
-    import.meta.env.VITE_SSO_LOGIN_URL,
+    getEnvString("VITE_SSO_LOGIN_URL"),
   );
 }
 
@@ -95,7 +100,7 @@ export function isSsoEnabled(): boolean {
   if (runtimeEnabled !== undefined) {
     return runtimeEnabled === true;
   }
-  return parseBool(import.meta.env.VITE_SSO_ENABLED);
+  return parseBool(getEnvString("VITE_SSO_ENABLED"));
 }
 
 export function getSsoLoginUrl(): string {
@@ -146,6 +151,34 @@ function isAllowlisted(pathname: string): boolean {
 // Set once we've started a re-login bounce, so concurrent 401s don't fire
 // multiple redirects. The flag is moot after navigation (page unloads).
 let reloginTriggered = false;
+let revalidateInFlight: Promise<boolean> | null = null;
+let lastRevalidateAt = 0;
+const REVALIDATE_COOLDOWN_MS = 3_000;
+const REVALIDATE_INTERVAL_MS = 60_000;
+
+function canCheckSession(): boolean {
+  if (typeof window === "undefined") {
+    return false;
+  }
+  if (!isSsoEnabled() || !isAuthenticated()) {
+    return false;
+  }
+  if (isAllowlisted(window.location.pathname)) {
+    return false;
+  }
+  return true;
+}
+
+function clearSessionWithoutRedirect(): void {
+  clearSession();
+}
+
+function shouldSkipRevalidate(force: boolean): boolean {
+  if (force) {
+    return false;
+  }
+  return Date.now() - lastRevalidateAt < REVALIDATE_COOLDOWN_MS;
+}
 
 /**
  * The INOE login token died (expired / user logged out). Drop the stale
@@ -158,10 +191,11 @@ export function triggerSsoRelogin(): void {
     return;
   }
   if (isAllowlisted(window.location.pathname)) {
+    clearSessionWithoutRedirect();
     return;
   }
   reloginTriggered = true;
-  clearSession();
+  clearSessionWithoutRedirect();
   window.location.href = getSsoLoginRedirectUrl();
 }
 
@@ -191,6 +225,95 @@ async function revalidateSession(): Promise<boolean> {
     }
     return true;
   }
+}
+
+export function checkSsoSession(force = false): Promise<boolean> {
+  if (!canCheckSession()) {
+    return Promise.resolve(true);
+  }
+  if (revalidateInFlight) {
+    return revalidateInFlight;
+  }
+  if (shouldSkipRevalidate(force)) {
+    return Promise.resolve(true);
+  }
+  lastRevalidateAt = Date.now();
+  revalidateInFlight = revalidateSession().finally(() => {
+    revalidateInFlight = null;
+  });
+  return revalidateInFlight;
+}
+
+function scheduleVisibleSessionCheck(): void {
+  void checkSsoSession();
+}
+
+export function setupSsoSessionMonitor(): () => void {
+  if (typeof window === "undefined") {
+    return () => {};
+  }
+
+  let intervalId: number | null = null;
+
+  const refreshInterval = () => {
+    if (intervalId !== null) {
+      window.clearInterval(intervalId);
+      intervalId = null;
+    }
+    if (!canCheckSession() || document.hidden) {
+      return;
+    }
+    intervalId = window.setInterval(() => {
+      void checkSsoSession();
+    }, REVALIDATE_INTERVAL_MS);
+  };
+
+  const handleVisibilityChange = () => {
+    if (!document.hidden) {
+      scheduleVisibleSessionCheck();
+    }
+    refreshInterval();
+  };
+
+  const handleFocus = () => {
+    scheduleVisibleSessionCheck();
+    refreshInterval();
+  };
+
+  const handlePageShow = () => {
+    scheduleVisibleSessionCheck();
+    refreshInterval();
+  };
+
+  const handleStorage = (event: StorageEvent) => {
+    if (event.storageArea !== window.localStorage) {
+      return;
+    }
+    if (!isSessionStorageKey(event.key)) {
+      return;
+    }
+    if (!isAuthenticated()) {
+      triggerSsoRelogin();
+      return;
+    }
+    refreshInterval();
+  };
+
+  document.addEventListener("visibilitychange", handleVisibilityChange);
+  window.addEventListener("focus", handleFocus);
+  window.addEventListener("pageshow", handlePageShow);
+  window.addEventListener("storage", handleStorage);
+  refreshInterval();
+
+  return () => {
+    document.removeEventListener("visibilitychange", handleVisibilityChange);
+    window.removeEventListener("focus", handleFocus);
+    window.removeEventListener("pageshow", handlePageShow);
+    window.removeEventListener("storage", handleStorage);
+    if (intervalId !== null) {
+      window.clearInterval(intervalId);
+    }
+  };
 }
 
 /**

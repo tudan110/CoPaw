@@ -1,5 +1,6 @@
-import { Suspense } from "react";
+import { Suspense, useEffect } from "react";
 import { Navigate, Route, Routes, useLocation } from "react-router-dom";
+import { checkSsoSession, setupSsoSessionMonitor } from "./auth/ssoConfig";
 import ChunkErrorBoundary from "./components/ChunkErrorBoundary";
 import DigitalEmployeePage from "./pages/DigitalEmployeePage";
 import { lazyWithRetry } from "./utils/lazyWithRetry";
@@ -29,6 +30,18 @@ function renderDeferredPage(node: React.ReactNode) {
   return <Suspense fallback={routeFallback}>{node}</Suspense>;
 }
 
+function SsoSessionMonitor() {
+  const location = useLocation();
+
+  useEffect(() => setupSsoSessionMonitor(), []);
+
+  useEffect(() => {
+    void checkSsoSession(true);
+  }, [location.pathname, location.search]);
+
+  return null;
+}
+
 export default function App() {
   const location = useLocation();
   const isKnowledgeBaseEmbed =
@@ -46,6 +59,7 @@ export default function App() {
 
   return (
     <ChunkErrorBoundary>
+      <SsoSessionMonitor />
       <Routes>
         <Route path="/" element={renderDeferredPage(<DigitalEmployeePage />)} />
       <Route

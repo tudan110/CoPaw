@@ -25,6 +25,12 @@ const TOKEN_KEY = "qwenpaw.sso.token";
 const USER_KEY = "qwenpaw.sso.user";
 const EXPIRE_KEY = "qwenpaw.sso.expireAt";
 
+const SESSION_STORAGE_KEYS = new Set([TOKEN_KEY, USER_KEY, EXPIRE_KEY]);
+
+export function isSessionStorageKey(key: string | null): boolean {
+  return key !== null && SESSION_STORAGE_KEYS.has(key);
+}
+
 function safeGet(key: string): string | null {
   try {
     return window.localStorage.getItem(key);
