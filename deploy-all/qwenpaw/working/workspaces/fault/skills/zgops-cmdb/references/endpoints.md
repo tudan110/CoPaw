@@ -2,9 +2,9 @@
 
 ## 基础信息
 
-- 基础地址：来自 `.env` 中的 `ZGOPS_BASE_URL`
-- CMDB 入口：`/cmdb/`
-- 登录页跳转：`/user/login?redirect=%2Fcmdb%2F`
+- 基础地址：设置页「平台」中的 `INOE_API_BASE_URL`
+- CMDB API 入口：`/cmdb/api/v0.1/`
+- 鉴权：`Authorization: Bearer <INOE_API_TOKEN>`
 
 ## 已确认的页面路由
 

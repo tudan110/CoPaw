@@ -38,11 +38,11 @@ RESOURCE_TYPE_MAP = {
 }
 
 DEFAULT_STAT_PATHS = {
-    "count": "/cmdb/v0.1/ci/count",
-    "group": "/cmdb/v0.1/ci/count/group",
-    "child": "/cmdb/v0.1/ci/count/child",
-    "child-group": "/cmdb/v0.1/ci/count/child/group",
-    "group-attr": "/cmdb/v0.1/ci/count/group/attr",
+    "count": "/cmdb/api/v0.1/ci/count",
+    "group": "/cmdb/api/v0.1/ci/count/group",
+    "child": "/cmdb/api/v0.1/ci/count/child",
+    "child-group": "/cmdb/api/v0.1/ci/count/child/group",
+    "group-attr": "/cmdb/api/v0.1/ci/count/group/attr",
 }
 
 STAT_PATH_ENV = {
@@ -128,11 +128,11 @@ def stat_path(stat: str) -> str:
 
 
 def ci_types_path() -> str:
-    return (os.getenv("INOE_CMDB_TYPES_PATH") or "/cmdb/v0.1/ci_types").strip()
+    return (os.getenv("INOE_CMDB_TYPES_PATH") or "/cmdb/api/v0.1/ci_types").strip()
 
 
 def ci_type_groups_path() -> str:
-    return (os.getenv("INOE_CMDB_TYPE_GROUPS_PATH") or "/cmdb/v0.1/ci_types/groups").strip()
+    return (os.getenv("INOE_CMDB_TYPE_GROUPS_PATH") or "/cmdb/api/v0.1/ci_types/groups").strip()
 
 
 def parse_json_response(text: str) -> dict[str, Any]:

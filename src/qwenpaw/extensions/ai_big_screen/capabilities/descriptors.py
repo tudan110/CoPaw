@@ -656,9 +656,7 @@ def _map_application_ci(ci: Mapping[str, Any]) -> dict[str, Any]:
 def fetch_cmdb_applications(query_params: Mapping[str, Any]) -> dict[str, Any]:
     from qwenpaw.extensions.integrations import working_secrets
 
-    # ZGOPS_* credentials come from the settings page «CMDB / 资源导入»
-    # (env-file candidates + os.environ overrides) — same config
-    # authority as the resource-import flow.
+    # CMDB shares the platform INOE gateway/token with resource import.
     working_secrets.ensure_working_secrets_loaded()
     from qwenpaw.extensions.integrations.zgops_cmdb import application_query
 

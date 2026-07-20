@@ -5,7 +5,7 @@ description: 用于查询当前配置所指向的 CMDB 环境。当用户询问�
 
 # ZGOPS CMDB 查询技能
 
-仅面向当前配置所指向的 CMDB 环境。凭证（ZGOPS 地址/账号/密码与 INOE 网关地址/令牌）由设置页「CMDB / 资源导入」「平台」统一管理，运行时物化为环境变量（`ZGOPS_*` / `INOE_*`），脚本只从环境变量读取（设置页改动对下一次技能调用即时生效）。不再回退任何 `.env` / `secrets/zgops-cmdb.env` 文件，也不读取其他 skill 的 `.env`。
+仅面向当前配置所指向的 CMDB 环境。CMDB 请求统一复用设置页「平台」中的 INOE 网关地址和访问令牌，运行时物化为 `INOE_API_BASE_URL` / `INOE_API_TOKEN`；脚本通过 `Authorization: Bearer <token>` 访问 `${INOE_API_BASE_URL}/cmdb/api/v0.1/...`。不再读取或使用 CMDB 地址、账号、密码、`.env` 或 `secrets/zgops-cmdb.env`。
 
 不要在对外描述里写死某个固定地址、某套“测试环境”或特定站点；环境信息应完全来自上述配置（设置页 / 物化的环境变量）。
 
@@ -16,8 +16,8 @@ description: 用于查询当前配置所指向的 CMDB 环境。当用户询问�
 - 除非用户明确询问页面布局、截图或仅能在页面上看到的配置，否则**不要**打开浏览器。
 - 除非需要接口名或已整理的场景关系，否则**不要**读取 `references/endpoints.md`。
 - 涉及统计分布、目标数量对比类图表时，优先使用 `scripts/zgops-cmdb.sh analyze ...`。
-- 涉及资源数量、资源状态、制造商/厂商分布、`/cmdb/v0.1/ci/count...` 这类 INOE 网关 CMDB 统计接口时，使用 `scripts/zgops-cmdb.sh inoe-stat ...`，不要改用 `resource-insight-query`。
-- 执行 `inoe-stat` 时，资源 `type` 默认从当前环境的 `/cmdb/v0.1/ci_types/groups` 动态解析；内置 `database=5 / middleware=6 ...` 只作为元数据接口不可用时的兜底。
+- 涉及资源数量、资源状态、制造商/厂商分布、`/cmdb/api/v0.1/ci/count...` 这类网关 CMDB 统计接口时，使用 `scripts/zgops-cmdb.sh inoe-stat ...`，不要改用 `resource-insight-query`。
+- 执行 `inoe-stat` 时，资源 `type` 默认从当前环境的 `/cmdb/api/v0.1/ci_types/groups` 动态解析；内置 `database=5 / middleware=6 ...` 只作为元数据接口不可用时的兜底。
 - 涉及具体应用的关系拓扑，先运行 `scripts/zgops-cmdb.sh find-project <应用名>` 解析目标应用；唯一命中后直接使用 `scripts/zgops-cmdb.sh app-topology <应用名>` 输出标准 ECharts `series` 结构，不要手写拓扑 option。
 - 如果用户只是说“简易拓扑 / 系统拓扑 / 全局拓扑 / 监控拓扑 / 总览拓扑”，且没有明确给出某个应用名或项目名，不要使用本 skill 追问应用；这类请求应交给 `monitoring-overview-query` 的 `topology`。
 - 如果用户没有明确指定应用名，且当前系统里存在多个应用，**不要默认任选一个**。必须先列出候选应用名并请用户明确指定。
@@ -31,10 +31,9 @@ description: 用于查询当前配置所指向的 CMDB 环境。当用户询问�
 
 | 网关 | 环境变量 | 职责 |
 |------|----------|------|
-| zgops 网关 | `ZGOPS_BASE_URL` | CI 类型查询、CI 实例搜索、关系拓扑（`list-models`、`fetch`） |
-| INOE 网关 | `INOE_API_BASE_URL` | 统计类接口（`inoe-stat`） |
+| INOE CMDB 网关 | `INOE_API_BASE_URL` + `INOE_API_TOKEN` | CI 类型查询、实例搜索、关系拓扑与统计（所有命令） |
 
-**重要：** 查 CI 类型和实例统一用 `list-models` + `fetch`，不要手动拼 INOE 网关路径（INOE 网关的 `/cmdb/v0.1/ci_types` 不可用）。
+**重要：** 查 CI 类型和实例统一用 `list-models` + `fetch`，脚本会自动拼接 `/cmdb/api/v0.1` 路由并附加 Bearer 令牌。
 
 ## 快速路径
 

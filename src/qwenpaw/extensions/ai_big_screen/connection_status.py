@@ -37,7 +37,7 @@ _ALWAYS_PLACEHOLDER_HOST_MARKERS = (
 _CONNECTION_META: dict[str, tuple[str, str]] = {
     "inoe": ("INOE 网关", "inoe"),
     "n9e": ("夜莺日志", "n9e"),
-    "zgops": ("ZGOPS CMDB", "cmdb"),
+    "zgops": ("CMDB（INOE 网关）", "inoe"),
     "order": ("工单 / ferry", "order"),
     "self": ("智观AI 自监控", ""),
 }
@@ -96,12 +96,12 @@ def _n9e_status() -> tuple[bool, str]:
 
 
 def _zgops_status() -> tuple[bool, str]:
-    base = _env("ZGOPS_BASE_URL")
-    has_cred = bool(_env("ZGOPS_USERNAME") or _env("ZGOPS_PASSWORD"))
+    base = _env("INOE_API_BASE_URL")
+    token = _env("INOE_API_TOKEN")
     if not base or _looks_placeholder(base):
-        return False, "CMDB 地址未配置或仍是集群内默认地址"
-    if not has_cred:
-        return False, "缺少 CMDB 账号/密码"
+        return False, "INOE 网关地址未配置或仍是集群内默认地址"
+    if not token:
+        return False, "缺少 INOE 访问令牌"
     return True, ""
 
 

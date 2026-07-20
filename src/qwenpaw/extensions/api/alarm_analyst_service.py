@@ -391,9 +391,8 @@ def _load_zgops_modules():
 def _load_zgops_client(find_project_module: Any):
     env = find_project_module._resolve_zgops_env()  # noqa: SLF001
     client = find_project_module.CmdbHttpClient(
-        base_url=env.get("ZGOPS_BASE_URL", ""),
-        username=env.get("ZGOPS_USERNAME", ""),
-        password=env.get("ZGOPS_PASSWORD", ""),
+        base_url=env.get("INOE_API_BASE_URL", ""),
+        token=env.get("INOE_API_TOKEN", ""),
     )
     client.try_login()
     return client

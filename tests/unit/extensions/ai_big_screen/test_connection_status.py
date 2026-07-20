@@ -13,9 +13,6 @@ def _clear_conn_env(monkeypatch: pytest.MonkeyPatch) -> None:
         "INOE_API_TOKEN",
         "N9E_API_BASE_URL",
         "N9E_USER_TOKEN",
-        "ZGOPS_BASE_URL",
-        "ZGOPS_USERNAME",
-        "ZGOPS_PASSWORD",
         "ORDER_API_BASE_URL",
         "ORDER_AUTHORIZATION",
         "KUBERNETES_SERVICE_HOST",
@@ -79,24 +76,22 @@ class TestOthers:
         monkeypatch.setenv("N9E_USER_TOKEN", "t")
         assert cs.connection_status("n9e")["configured"] is True
 
-    def test_zgops_needs_base_and_cred(
+    def test_zgops_reuses_inoe_gateway_and_token(
         self,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         assert cs.connection_status("zgops")["configured"] is False
-        monkeypatch.setenv("ZGOPS_BASE_URL", "http://10.1.2.3:5000")
-        monkeypatch.setenv("ZGOPS_USERNAME", "admin")
+        monkeypatch.setenv("INOE_API_BASE_URL", "http://10.1.2.3:5000")
+        monkeypatch.setenv("INOE_API_TOKEN", "gateway-token")
         assert cs.connection_status("zgops")["configured"] is True
 
-    def test_kubernetes_service_name_with_credentials_is_configured(
+    def test_kubernetes_gateway_with_token_is_configured_for_cmdb(
         self,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         monkeypatch.setenv("KUBERNETES_SERVICE_HOST", "10.43.0.1")
-        monkeypatch.setenv(
-            "ZGOPS_BASE_URL", "http://cnos-iomp-inoe-ui-cmdb:80"
-        )
-        monkeypatch.setenv("ZGOPS_USERNAME", "admin")
+        monkeypatch.setenv("INOE_API_BASE_URL", "http://gateway:8080")
+        monkeypatch.setenv("INOE_API_TOKEN", "gateway-token")
 
         status = cs.connection_status("zgops")
 

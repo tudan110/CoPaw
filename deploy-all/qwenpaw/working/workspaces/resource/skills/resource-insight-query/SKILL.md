@@ -10,7 +10,7 @@ description: 查询 INOE 资源状态与性能数据。适用于用户询问设�
 ## 边界
 
 - 实时告警列表、告警级别统计、当前告警详情：使用 `real-alarm`。
-- CMDB 模型、CI 列表、CI 关系、`/cmdb/v0.1/ci/count...`：使用 `zgops-cmdb`。
+- CMDB 模型、CI 列表、CI 关系、`/cmdb/api/v0.1/ci/count...`：使用 `zgops-cmdb`。
 - 资源状态总览、性能 Top、数据库指标清单：使用本技能。
 
 ## 配置
@@ -77,4 +77,3 @@ python3 scripts/resource_insight.py top-metric --resource_type database --output
 - `POST /resource/pm/TopMetricDataNew`
 - `POST /resource/resource/performance/topResMetricData`
 - `POST /resource/database/performance/metric/page?pageNum=<pageNum>&pageSize=<pageSize>`
-

@@ -24,7 +24,6 @@ from typing import Any, Callable
 
 import httpx
 import pandas as pd
-from dotenv import dotenv_values
 
 LOGGER = logging.getLogger(__name__)
 
@@ -1254,14 +1253,6 @@ def _validate_preview_analysis_for_preview(preview: dict[str, Any]) -> None:
     raise RuntimeError(f"本次智能解析存在关键失败，已终止后续步骤：{detail}")
 
 
-def _repo_root() -> Path:
-    return Path(__file__).resolve().parents[5]
-
-
-def _default_env_file() -> Path:
-    return Path.cwd() / ".env"
-
-
 def _normalize_token(value: str) -> str:
     text = str(value or "").strip().lower()
     text = text.replace("（", "(").replace("）", ")")
@@ -1447,68 +1438,9 @@ def _semantic_field_candidates(header: str) -> list[dict[str, str]]:
     )
 
 
-def _candidate_env_files() -> list[Path]:
-    """Return ordered candidate paths for the CMDB env file.
-
-    Resolution order (first non-empty file wins):
-      1. ``$ZGOPS_ENV_FILE`` if set.
-      2. ``$QWENPAW_WORKING_DIR/secrets/zgops-cmdb.env`` (or COPAW
-         fallback) — stable shared location all CMDB skills can read.
-      3. ``~/.qwenpaw/secrets/zgops-cmdb.env`` — default working dir.
-      4. ``<repo>/deploy-all/qwenpaw/working/secrets/zgops-cmdb.env`` —
-         dev fallback when running directly out of a checkout.
-      5. ``<cwd>/.env`` — legacy per-skill fallback.
-    """
-
-    candidates: list[Path] = []
-
-    explicit = os.environ.get("ZGOPS_ENV_FILE")
-    if explicit:
-        candidates.append(Path(explicit).expanduser())
-
-    working_dir = os.environ.get("QWENPAW_WORKING_DIR") or os.environ.get(
-        "COPAW_WORKING_DIR",
-    )
-    if working_dir:
-        candidates.append(
-            Path(working_dir).expanduser() / "secrets" / "zgops-cmdb.env",
-        )
-
-    candidates.append(
-        Path("~/.qwenpaw").expanduser() / "secrets" / "zgops-cmdb.env",
-    )
-
-    try:
-        repo_secrets = (
-            _repo_root()
-            / "deploy-all"
-            / "qwenpaw"
-            / "working"
-            / "secrets"
-            / "zgops-cmdb.env"
-        )
-        candidates.append(repo_secrets)
-    except Exception:
-        pass
-
-    candidates.append(_default_env_file())
-
-    seen: set[str] = set()
-    unique: list[Path] = []
-    for path in candidates:
-        key = str(path)
-        if key in seen:
-            continue
-        seen.add(key)
-        unique.append(path)
-    return unique
-
-
 _CMDB_ENV_OVERRIDE_KEYS = (
-    "ZGOPS_BASE_URL",
-    "ZGOPS_USERNAME",
-    "ZGOPS_PASSWORD",
-    "ZGOPS_SESSION_NAME",
+    "INOE_API_BASE_URL",
+    "INOE_API_TOKEN",
 )
 
 
@@ -1521,31 +1453,12 @@ def _env_overrides() -> dict[str, str]:
 
 
 def _parse_env() -> dict[str, str]:
-    candidates = _candidate_env_files()
-    for path in candidates:
-        try:
-            if not path.is_file():
-                continue
-        except OSError:
-            continue
-        values = {
-            key: str(value)
-            for key, value in dotenv_values(path).items()
-            if value is not None
-        }
-        if values:
-            return {**values, **_env_overrides()}
-
     overrides = _env_overrides()
-    if overrides.get("ZGOPS_BASE_URL"):
+    if all(overrides.get(key) for key in _CMDB_ENV_OVERRIDE_KEYS):
         return overrides
-
-    listing = "\n".join(f"  - {p}" for p in candidates)
     raise RuntimeError(
-        "未找到可用的 CMDB 环境文件，已按以下顺序尝试：\n"
-        f"{listing}\n"
-        "请优先配置共享路径 secrets/zgops-cmdb.env；"
-        "本技能 .env 仅作为旧版回退或通过 ZGOPS_ENV_FILE 显式覆盖。",
+        "未配置 INOE 网关地址或访问令牌；"
+        "请在设置页「平台」配置 INOE_API_BASE_URL 和 INOE_API_TOKEN。",
     )
 
 
@@ -1599,17 +1512,19 @@ class ZgopsCmdbClient:
     def __init__(
         self,
         base_url: str,
-        username: str,
-        password: str,
+        token: str,
         timeout: float = 30.0,
     ):
-        self.base_url = base_url.rstrip("/")
-        self.username = username
-        self.password = password
+        self.base_url = f"{base_url.rstrip('/')}/cmdb"
+        self.token = token.strip()
         self.timeout = timeout
         self.client = httpx.Client(
             timeout=timeout,
-            headers={"Accept-Language": "zh"},
+            headers={
+                "Accept": "application/json, text/plain, */*",
+                "Accept-Language": "zh",
+                "Authorization": f"Bearer {self.token}",
+            },
             trust_env=False,
         )
         self.relation_type_map: dict[str, int] = {}
@@ -1618,23 +1533,13 @@ class ZgopsCmdbClient:
     def from_skill_env(cls) -> "ZgopsCmdbClient":
         env = _parse_env()
         return cls(
-            base_url=env["ZGOPS_BASE_URL"],
-            username=env["ZGOPS_USERNAME"],
-            password=env["ZGOPS_PASSWORD"],
+            base_url=env["INOE_API_BASE_URL"],
+            token=env["INOE_API_TOKEN"],
         )
 
     def login(self) -> None:
-        response = self.client.post(
-            f"{self.base_url}/api/v1/acl/login",
-            json={"username": self.username, "password": self.password},
-        )
-        payload = _safe_json(response)
-        if response.status_code >= 400:
-            raise RuntimeError(f"CMDB 登录失败: {payload}")
-        token = payload.get("token") if isinstance(payload, dict) else None
-        if not token:
-            raise RuntimeError("CMDB 登录响应缺少 token")
-        self.client.headers["Access-Token"] = str(token)
+        if not self.token:
+            raise RuntimeError("未配置 INOE_API_TOKEN（请在设置页「平台」配置）")
 
     def close(self) -> None:
         self.client.close()
@@ -11129,7 +11034,7 @@ def _resource_import_metadata_env_signature() -> str:
     except Exception:
         return ""
     return (
-        f"{env.get('ZGOPS_BASE_URL') or ''}|{env.get('ZGOPS_USERNAME') or ''}"
+        f"{env.get('INOE_API_BASE_URL') or ''}|{env.get('INOE_API_TOKEN') or ''}"
     )
 
 

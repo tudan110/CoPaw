@@ -4,11 +4,10 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SKILL_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
-# ZGOPS 凭证由设置页「CMDB / 资源导入」统一管理，运行时物化为环境变量
-# （子进程继承 os.environ）。脚本只读环境变量，不再回退任何 .env / secrets
-# 文件。缺失时给出指向设置页的明确报错。
-: "${ZGOPS_BASE_URL:?未配置 ZGOPS_BASE_URL（请在设置页「CMDB / 资源导入」配置）}"
+# CMDB 统一复用设置页「平台」的 INOE 网关与访问令牌。所有 CMDB 请求由
+# 网关根地址 + /cmdb/api/v0.1/... 组成，并使用 Authorization: Bearer。
+: "${INOE_API_BASE_URL:?未配置 INOE_API_BASE_URL（请在设置页「平台」配置）}"
+: "${INOE_API_TOKEN:?未配置 INOE_API_TOKEN（请在设置页「平台」配置）}"
 
-ZGOPS_CMDB_URL="${ZGOPS_BASE_URL%/}/cmdb/"
-ZGOPS_API_BASE_URL="${ZGOPS_BASE_URL%/}/api"
+INOE_CMDB_API_BASE_URL="${INOE_API_BASE_URL%/}/cmdb"
 ZGOPS_PYTHON_BIN="${ZGOPS_PYTHON_BIN:-python3}"

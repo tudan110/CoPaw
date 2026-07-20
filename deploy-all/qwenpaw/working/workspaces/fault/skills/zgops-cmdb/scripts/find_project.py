@@ -16,19 +16,11 @@ from typing import Any
 
 
 def _resolve_zgops_env() -> dict[str, str]:
-    """Resolve ZGOPS_* config from ``os.environ``.
-
-    Credentials come from the settings page «CMDB / 资源导入», materialised
-    into ``os.environ`` (which this subprocess inherits). There is no
-    ``.env`` / ``secrets`` file fallback — all config lives in the settings
-    page.
-    """
+    """Resolve the shared INOE gateway connection from ``os.environ``."""
     values: dict[str, str] = {}
     for key in (
-        "ZGOPS_BASE_URL",
-        "ZGOPS_USERNAME",
-        "ZGOPS_PASSWORD",
-        "ZGOPS_SESSION_NAME",
+        "INOE_API_BASE_URL",
+        "INOE_API_TOKEN",
     ):
         env_val = os.environ.get(key)
         if env_val:
@@ -57,13 +49,18 @@ class CmdbHttpStatusError(RuntimeError):
 
 
 class CmdbHttpClient:
-    def __init__(self, base_url: str, username: str, password: str) -> None:
-        self.base_url = base_url.rstrip("/")
-        self.username = username
-        self.password = password
+    def __init__(self, base_url: str, token: str) -> None:
+        self.base_url = f"{base_url.rstrip('/')}/cmdb"
+        self.token = token.strip()
         self.jar = CookieJar()
         self.opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(self.jar))
-        self._authenticated = False
+        self._authenticated = bool(self.token)
+        if self.token:
+            self.opener.addheaders = [
+                ("Authorization", f"Bearer {self.token}"),
+                ("Accept", "application/json, text/plain, */*"),
+                ("Accept-Language", "zh"),
+            ]
 
     def _request_json_once(
         self,
@@ -74,7 +71,10 @@ class CmdbHttpClient:
         headers: dict[str, str] | None = None,
     ) -> Any:
         body = None
-        req_headers = {"Accept-Language": "zh"}
+        req_headers = {
+            "Accept": "application/json, text/plain, */*",
+            "Accept-Language": "zh",
+        }
         if headers:
             req_headers.update(headers)
         if payload is not None:
@@ -190,22 +190,11 @@ class CmdbHttpClient:
                 pass
 
     def login(self) -> None:
-        payload = self._request_json_once(
-            "/api/v1/acl/login",
-            method="POST",
-            payload={"username": self.username, "password": self.password},
-        )
-        token = _clean_text(payload.get("token"))
-        if not token:
-            raise RuntimeError(f"登录响应缺少 token: {payload}")
-        self.opener.addheaders = [("Access-Token", token), ("Accept-Language", "zh")]
+        if not self.token:
+            raise RuntimeError("未配置 INOE_API_TOKEN（请在设置页「平台」配置）")
         self._authenticated = True
 
     def try_login(self) -> bool:
-        username = _clean_text(self.username)
-        password = _clean_text(self.password)
-        if not username or not password:
-            return False
         try:
             self.login()
             return True
@@ -335,9 +324,8 @@ def main() -> int:
 
     env = _resolve_zgops_env()
     client = CmdbHttpClient(
-        base_url=env.get("ZGOPS_BASE_URL", ""),
-        username=env.get("ZGOPS_USERNAME", ""),
-        password=env.get("ZGOPS_PASSWORD", ""),
+        base_url=env.get("INOE_API_BASE_URL", ""),
+        token=env.get("INOE_API_TOKEN", ""),
     )
     client.try_login()
     projects = client.list_projects()

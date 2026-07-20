@@ -15,7 +15,6 @@ import {
   qimingSettingsApi,
   xingchenSettingsApi,
   kunlunSettingsApi,
-  zgopsSettingsApi,
   operatorSettingsApi,
   orderSettingsApi,
   n9eSettingsApi,
@@ -282,7 +281,7 @@ const SETTINGS_TABS = [
     id: "cmdb",
     label: "CMDB / 资源导入",
     iconClass: "fa-database",
-    description: "zgops CMDB 连接与资源导入 LLM 池",
+    description: "资源导入 LLM 池；CMDB 网关连接复用平台设置",
   },
   {
     id: "order",
@@ -371,27 +370,6 @@ const N9E_FIELDS: ProviderFieldDesc[] = [
     key: "n9e_log_timestamp_field",
     label: "时间字段",
     hint: "日志时间戳字段（默认 @timestamp）。",
-  },
-];
-
-const ZGOPS_FIELDS: ProviderFieldDesc[] = [
-  {
-    key: "zgops_base_url",
-    label: "ZGOPS 地址（base_url）",
-    hint: "zgops CMDB 的 base URL。",
-    placeholder: "http://host:31089",
-  },
-  { key: "zgops_username", label: "用户名", hint: "登录账号。" },
-  {
-    key: "zgops_password",
-    label: "密码",
-    sensitive: true,
-    hint: "登录密码，留空则不修改。",
-  },
-  {
-    key: "zgops_session_name",
-    label: "Session 名",
-    hint: "会话标识（可选）。",
   },
 ];
 
@@ -2084,12 +2062,13 @@ export function SettingsPanel() {
 
               {activeTab === "cmdb" ? (
                 <>
-                  <ProviderSettingsSection
-                    api={zgopsSettingsApi}
-                    title="ZGOPS CMDB 连接"
-                    description="zgops CMDB 的地址与账号。修改即时生效，供 zgops-cmdb 等技能与资源导入使用。未在此设置的项会回退到部署环境变量。"
-                    fields={ZGOPS_FIELDS}
-                  />
+                  <div className="portal-model-shell">
+                    <h3>CMDB 网关连接</h3>
+                    <p>
+                      CMDB 查询与导入统一复用「平台」中的 INOE 网关地址和访问令牌，
+                      通过 <code>/cmdb/api/v0.1/...</code> 访问；不再配置 CMDB 用户名或密码。
+                    </p>
+                  </div>
                   <ResourceImportLlmSection />
                 </>
               ) : null}

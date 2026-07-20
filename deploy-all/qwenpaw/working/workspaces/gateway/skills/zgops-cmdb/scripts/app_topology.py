@@ -490,9 +490,8 @@ def main() -> int:
 
     env = _resolve_zgops_env()
     client = CmdbHttpClient(
-        base_url=env.get("ZGOPS_BASE_URL", ""),
-        username=env.get("ZGOPS_USERNAME", ""),
-        password=env.get("ZGOPS_PASSWORD", ""),
+        base_url=env.get("INOE_API_BASE_URL", ""),
+        token=env.get("INOE_API_TOKEN", ""),
     )
     client.try_login()
 

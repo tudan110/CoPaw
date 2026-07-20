@@ -146,7 +146,6 @@ from qwenpaw.extensions.api import inoe_settings_store
 from qwenpaw.extensions.api import qiming_settings_store
 from qwenpaw.extensions.api import xingchen_settings_store
 from qwenpaw.extensions.api import kunlun_settings_store
-from qwenpaw.extensions.api import zgops_settings_store
 from qwenpaw.extensions.api import operator_settings_store
 from qwenpaw.extensions.api import order_settings_store
 from qwenpaw.extensions.api import resource_import_llm_settings_api
@@ -1873,19 +1872,9 @@ async def reset_kunlun_setting(
 
 
 # ---------------------------------------------------------------------------
-# zgops CMDB connection + resource-import LLM pool. Materialised into
-# os.environ (skill subprocesses + resource_import bridge inherit it).
+# Resource-import LLM pool. CMDB connectivity itself uses the shared INOE
+# platform connection and needs no independent credential settings.
 # ---------------------------------------------------------------------------
-
-
-def _refresh_zgops_environ() -> None:
-    try:
-        from qwenpaw.extensions.integrations import working_secrets
-
-        working_secrets.refresh_zgops_environ()
-    except Exception:  # noqa: BLE001 - settings already persisted
-        pass
-
 
 def _refresh_resource_import_llm_environ() -> None:
     try:
@@ -1912,39 +1901,6 @@ def _refresh_order_environ() -> None:
         working_secrets.refresh_order_environ()
     except Exception:  # noqa: BLE001 - settings already persisted
         pass
-
-
-@router.get("/zgops-settings")
-async def get_zgops_settings() -> dict[str, Any]:
-    """Return zgops CMDB settings as ``{effective, env, overrides}``."""
-    return zgops_settings_store.build_settings_payload()
-
-
-@router.put("/zgops-settings")
-async def put_zgops_settings(
-    body: dict[str, Any] = Body(default_factory=dict),
-) -> dict[str, Any]:
-    """Persist a partial update of the zgops CMDB settings."""
-    try:
-        zgops_settings_store.apply_settings_update(body)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
-    _refresh_zgops_environ()
-    return zgops_settings_store.build_settings_payload()
-
-
-@router.post("/zgops-settings/reset")
-async def reset_zgops_setting(
-    body: dict[str, Any] = Body(default_factory=dict),
-) -> dict[str, Any]:
-    """Drop one zgops field's override. Body: ``{"key": "<field>"}``."""
-    key = str(body.get("key") or "").strip()
-    try:
-        zgops_settings_store.reset_setting(key)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
-    _refresh_zgops_environ()
-    return zgops_settings_store.build_settings_payload()
 
 
 # ---------------------------------------------------------------------------

@@ -45,7 +45,7 @@ class ZgopsHttpFallbackTests(unittest.TestCase):
         self.assertEqual(response.json()["result"]["id"], 3094)
 
     def test_cmdb_http_client_falls_back_to_curl_when_opener_fails(self):
-        client = FIND_PROJECT.CmdbHttpClient("http://cmdb.example.com", "", "")
+        client = FIND_PROJECT.CmdbHttpClient("http://gateway.example.com", "gateway-token")
 
         def _fake_run(args, capture_output, text, encoding, timeout, check):
             body_path = args[args.index("-o") + 1]
@@ -58,35 +58,25 @@ class ZgopsHttpFallbackTests(unittest.TestCase):
 
         self.assertEqual(payload["result"][0]["_id"], 3094)
 
-    def test_fetch_with_auth_fallback_logs_in_only_after_anonymous_401(self):
+    def test_fetch_with_bearer_returns_gateway_response(self):
         session = requests.Session()
         anonymous_response = ZGOPS_HTTP.FallbackResponse(401, json.dumps({"msg": "unauthorized"}))
-        authenticated_response = ZGOPS_HTTP.FallbackResponse(200, json.dumps({"result": {"id": 3094}}))
-
         with patch.object(
             ZGOPS_HTTP,
             "request_with_fallback",
-            side_effect=[anonymous_response, authenticated_response],
+            return_value=anonymous_response,
         ) as request_mock:
-            with patch.object(
-                ZGOPS_HTTP,
-                "try_login",
-                return_value={"username": "tester"},
-            ) as login_mock:
-                response = ZGOPS_HTTP.fetch_with_auth_fallback(
-                    session,
-                    base_url="http://cmdb.example.com",
-                    path="/api/v0.1/ci/3094",
-                    username="tester",
-                    password="secret",
-                )
+            response = ZGOPS_HTTP.fetch_with_auth_fallback(
+                session,
+                base_url="http://gateway.example.com/cmdb",
+                path="/api/v0.1/ci/3094",
+            )
 
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(request_mock.call_count, 2)
-        login_mock.assert_called_once()
+        self.assertEqual(response.status_code, 401)
+        self.assertEqual(request_mock.call_count, 1)
 
-    def test_cmdb_http_client_logs_in_only_after_anonymous_http_401(self):
-        client = FIND_PROJECT.CmdbHttpClient("http://cmdb.example.com", "tester", "secret")
+    def test_cmdb_http_client_does_not_attempt_password_login_after_http_401(self):
+        client = FIND_PROJECT.CmdbHttpClient("http://gateway.example.com", "gateway-token")
 
         with patch.object(
             client,
@@ -99,15 +89,12 @@ class ZgopsHttpFallbackTests(unittest.TestCase):
                     hdrs=None,
                     fp=None,
                 ),
-                {"result": [{"_id": 3094}]},
             ],
         ) as request_mock:
-            with patch.object(client, "try_login", return_value=True) as login_mock:
-                payload = client._request_json("/api/v0.1/ci/3094")
+            with self.assertRaises(FIND_PROJECT.urllib.error.HTTPError):
+                client._request_json("/api/v0.1/ci/3094")
 
-        self.assertEqual(payload["result"][0]["_id"], 3094)
-        self.assertEqual(request_mock.call_count, 2)
-        login_mock.assert_called_once()
+        self.assertEqual(request_mock.call_count, 1)
 
 
 if __name__ == "__main__":

@@ -31,7 +31,12 @@ def build_url(base_url: str, path: str) -> str:
 
 def create_session() -> requests.Session:
     session = requests.Session()
-    session.headers.update({"Accept-Language": "zh"})
+    session.headers.update(
+        {
+            "Accept": "application/json, text/plain, */*",
+            "Accept-Language": "zh",
+        }
+    )
     return session
 
 
@@ -149,31 +154,11 @@ def request_with_fallback(
         )
 
 
-def login(session: requests.Session, base_url: str, username: str, password: str) -> dict[str, Any]:
-    url = build_url(base_url, "/api/v1/acl/login")
-    response = request_with_fallback(
-        session,
-        "POST",
-        url,
-        json_payload={"username": username, "password": password},
-        timeout=20,
-    )
-    response.raise_for_status()
-    payload = response.json()
-    token = payload.get("token")
-    if not token:
-        raise RuntimeError("登录响应缺少 token")
-    session.headers["Access-Token"] = token
-    return payload
-
-
-def try_login(session: requests.Session, base_url: str, username: str, password: str) -> dict[str, Any] | None:
-    if not str(username or "").strip() or not str(password or "").strip():
-        return None
-    try:
-        return login(session, base_url, username, password)
-    except Exception:
-        return None
+def configure_bearer(session: requests.Session, token: str) -> None:
+    normalized = str(token or "").strip()
+    if not normalized:
+        raise RuntimeError("未配置 INOE_API_TOKEN（请在设置页「平台」配置）")
+    session.headers["Authorization"] = f"Bearer {normalized}"
 
 
 def parse_body(response: requests.Response) -> Any:
@@ -205,8 +190,6 @@ def fetch_with_auth_fallback(
     *,
     base_url: str,
     path: str,
-    username: str,
-    password: str,
     timeout: int | float = 30,
 ) -> requests.Response | FallbackResponse:
     url = build_url(base_url, path)
@@ -216,20 +199,7 @@ def fetch_with_auth_fallback(
         url,
         timeout=timeout,
     )
-    # Retry on 401/403 or when response is HTML (session expired, redirected to login page)
-    if response.status_code not in {401, 403} and not _is_html_response(response):
-        return response
-
-    auth_payload = try_login(session, base_url, username, password)
-    if not auth_payload:
-        return response
-
-    return request_with_fallback(
-        session,
-        "GET",
-        url,
-        timeout=timeout,
-    )
+    return response
 
 
 def main() -> int:
@@ -243,35 +213,29 @@ def main() -> int:
 
     args = parser.parse_args()
 
-    base_url = os.environ["ZGOPS_BASE_URL"]
-    username = os.environ.get("ZGOPS_USERNAME", "")
-    password = os.environ.get("ZGOPS_PASSWORD", "")
-    cmdb_url = os.environ.get("ZGOPS_CMDB_URL", base_url.rstrip("/") + "/cmdb/")
+    gateway_base_url = os.environ["INOE_API_BASE_URL"]
+    base_url = os.environ.get("INOE_CMDB_API_BASE_URL", gateway_base_url.rstrip("/") + "/cmdb")
+    token = os.environ.get("INOE_API_TOKEN", "")
 
     session = create_session()
 
     try:
-        auth_payload = try_login(session, base_url, username, password)
+        configure_bearer(session, token)
 
         if args.command == "login":
-            if auth_payload:
-                info_response = request_with_fallback(
-                    session,
-                    "GET",
-                    build_url(base_url, "/api/v1/acl/users/info"),
-                    timeout=20,
-                )
-                info_response.raise_for_status()
-                info = parse_body(info_response)
-            else:
-                info = {}
+            info_response = request_with_fallback(
+                session,
+                "GET",
+                build_url(base_url, "/api/v0.1/preference/ci_types?instance=true"),
+                timeout=20,
+            )
+            info_response.raise_for_status()
             print(
                 json.dumps(
-                    {
-                        "状态": "已登录" if auth_payload else "匿名访问",
-                        "用户名": (auth_payload or {}).get("username", ""),
-                        "CMDB": cmdb_url,
-                        "用户信息": info.get("result", info),
+                {
+                        "状态": "Bearer 认证可用",
+                        "CMDB": base_url,
+                        "响应": parse_body(info_response),
                     },
                     ensure_ascii=False,
                     indent=2,
@@ -283,8 +247,6 @@ def main() -> int:
             session,
             base_url=base_url,
             path=args.path,
-            username=username,
-            password=password,
             timeout=30,
         )
         print(json.dumps(envelope(response), ensure_ascii=False, indent=2))

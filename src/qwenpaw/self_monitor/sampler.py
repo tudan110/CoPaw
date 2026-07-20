@@ -281,7 +281,7 @@ class SelfMonitorService:
             # keep in sync with extensions.ai_big_screen.connection_status
             "inoe": "INOE_API_BASE_URL",
             "n9e": "N9E_API_BASE_URL",
-            "zgops": "ZGOPS_BASE_URL",
+            "zgops": "INOE_API_BASE_URL",
             "order": "ORDER_API_BASE_URL",
         }
         registry = get_registry()
@@ -298,6 +298,11 @@ class SelfMonitorService:
                     # dedicated base — mirror connection_status semantics
                     # so "configured" order never sits at 探测中 forever.
                     base = str(os.environ.get("INOE_API_BASE_URL") or "").strip()
+                if source == "zgops" and base:
+                    base = (
+                        base.rstrip("/")
+                        + "/cmdb/api/v0.1/preference/ci_types?instance=true"
+                    )
                 latest_conf = registry.gauge("qwenpaw_datasource_configured").current(
                     {"source": source}
                 )

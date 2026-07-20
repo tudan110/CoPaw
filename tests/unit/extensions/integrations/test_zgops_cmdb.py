@@ -10,9 +10,8 @@ import pytest
 from qwenpaw.extensions.integrations.zgops_cmdb import application_query
 
 _CONFIG = {
-    "ZGOPS_BASE_URL": "http://cmdb.example:31089",
-    "ZGOPS_USERNAME": "user",
-    "ZGOPS_PASSWORD": "pass",
+    "INOE_API_BASE_URL": "http://gateway.example:8080",
+    "INOE_API_TOKEN": "inoe-token",
 }
 
 
@@ -20,25 +19,6 @@ class TestResolveConfig:
     def test_environ_wins(self, monkeypatch: pytest.MonkeyPatch) -> None:
         for key, value in _CONFIG.items():
             monkeypatch.setenv(key, value)
-        assert application_query._resolve_config() == _CONFIG
-
-    def test_env_file_fallback(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        tmp_path: Any,
-    ) -> None:
-        for key in _CONFIG:
-            monkeypatch.delenv(key, raising=False)
-        monkeypatch.setenv("QWENPAW_WORKING_DIR", str(tmp_path))
-        secrets = tmp_path / "secrets"
-        secrets.mkdir()
-        (secrets / "zgops-cmdb.env").write_text(
-            "# comment\n"
-            "ZGOPS_BASE_URL=http://cmdb.example:31089\n"
-            'ZGOPS_USERNAME="user"\n'
-            "ZGOPS_PASSWORD='pass'\n",
-            encoding="utf-8",
-        )
         assert application_query._resolve_config() == _CONFIG
 
 
@@ -52,12 +32,11 @@ class TestQueryApplicationCis:
         self,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        monkeypatch.delenv("ZGOPS_BASE_URL")
-        monkeypatch.setenv("QWENPAW_WORKING_DIR", "/nonexistent-t031")
+        monkeypatch.delenv("INOE_API_TOKEN")
         payload = application_query.query_application_cis()
         assert payload["source"] == "error"
         assert payload["items"] == []
-        assert "CMDB / 资源导入" in payload["message"]
+        assert "平台" in payload["message"]
 
     def test_live_search_returns_items(
         self,
@@ -67,16 +46,15 @@ class TestQueryApplicationCis:
 
         def _fake_request(url: str, **kwargs: Any) -> Any:
             calls.append((url, str(kwargs.get("token") or "")))
-            if url.endswith("/api/v1/acl/login"):
-                return {"token": "tok-1"}
-            assert kwargs.get("token") == "tok-1"
+            assert kwargs.get("token") == "inoe-token"
+            assert "/cmdb/api/v0.1/ci/s" in url
             assert "q=_type:project" in url
             assert "count=50" in url
             return {"numfound": 1, "result": [{"_id": 7954}]}
 
         monkeypatch.setattr(application_query, "_request_json", _fake_request)
         payload = application_query.query_application_cis(limit=50)
-        assert len(calls) == 2
+        assert len(calls) == 1
         assert payload["source"] == "live"
         assert payload["total"] == 1
         assert payload["items"] == [{"_id": 7954}]
@@ -86,8 +64,6 @@ class TestQueryApplicationCis:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         def _fake_request(url: str, **_kwargs: Any) -> Any:
-            if url.endswith("/api/v1/acl/login"):
-                return {"token": "tok"}
             return {"numfound": 0, "result": []}
 
         monkeypatch.setattr(application_query, "_request_json", _fake_request)
@@ -111,14 +87,10 @@ class TestQueryApplicationCis:
         self,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        monkeypatch.setattr(
-            application_query,
-            "_request_json",
-            lambda url, **_kwargs: {},
-        )
+        monkeypatch.delenv("INOE_API_TOKEN")
         payload = application_query.query_application_cis()
         assert payload["source"] == "error"
-        assert "RuntimeError" in payload["message"]
+        assert "平台" in payload["message"]
 
     def test_limit_is_clamped(
         self,
@@ -127,8 +99,6 @@ class TestQueryApplicationCis:
         seen: dict[str, str] = {}
 
         def _fake_request(url: str, **_kwargs: Any) -> Any:
-            if url.endswith("/api/v1/acl/login"):
-                return {"token": "tok"}
             seen["url"] = url
             return {"numfound": 0, "result": []}
 

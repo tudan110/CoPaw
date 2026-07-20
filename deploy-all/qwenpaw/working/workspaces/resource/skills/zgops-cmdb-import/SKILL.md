@@ -5,12 +5,10 @@ description: 用于处理CMDB 测试环境中的资源清单智能导入、资�
 
 # CMDB 资源导入技能
 
-凭证默认从共享路径 `working/secrets/zgops-cmdb.env` 读取，
-该位置由所有 zgops-cmdb 系列 skill 共用，与本 skill 目录名解耦。
-若需要为本 skill 单独覆盖，请显式设置 `$ZGOPS_ENV_FILE` 指向对应文件；当前目录 `.env` 仅作为旧版回退。
-
-解析顺序：
-`$ZGOPS_ENV_FILE` → `$QWENPAW_WORKING_DIR/secrets/zgops-cmdb.env` → `~/.qwenpaw/secrets/zgops-cmdb.env` → `<repo>/deploy-all/qwenpaw/working/secrets/zgops-cmdb.env` → `<skill_dir>/.env`
+CMDB 查询和导入统一使用设置页「平台」物化的 `INOE_API_BASE_URL` 与
+`INOE_API_TOKEN`。所有接口经 `${INOE_API_BASE_URL}/cmdb/api/v0.1/...`
+调用，并携带 `Authorization: Bearer <INOE_API_TOKEN>`；不再读取或支持
+CMDB 的单独地址、用户名、密码、`.env` 或 `secrets/zgops-cmdb.env`。
 
 ## 默认行为
 

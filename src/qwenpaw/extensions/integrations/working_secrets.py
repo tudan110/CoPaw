@@ -35,8 +35,6 @@ from typing import Optional
 
 from qwenpaw.constant import WORKING_DIR
 
-# zgops-cmdb.env removed: ZGOPS_* is now materialized from the settings
-# store (see materialize_zgops_to_environ) like INOE — no static file.
 SHARED_SECRET_FILES = ("n9e.env",)
 
 # settings-store field key -> resolver attribute on inoe_settings_store.
@@ -192,41 +190,6 @@ def materialize_alarm_analyst_to_environ(
 def refresh_alarm_analyst_environ(*, db_path: Optional[Path] = None) -> None:
     """Re-materialise alarm-analyst metric settings after a save/reset."""
     materialize_alarm_analyst_to_environ(force=True, db_path=db_path)
-
-
-def materialize_zgops_to_environ(
-    *,
-    force: bool = False,
-    db_path: Optional[Path] = None,
-) -> None:
-    """Push the zgops CMDB connection into ``os.environ``.
-
-    The zgops-cmdb skills read ``ZGOPS_*`` via ``os.getenv`` (python) or an
-    inherited env (shell ``_env.sh``, once the static secrets file is gone).
-    Same precedence as :func:`materialize_inoe_to_environ`.
-    """
-    try:
-        from qwenpaw.extensions.api import zgops_settings_store as zg
-    except Exception:  # noqa: BLE001 - never break secret loading
-        return
-
-    kwargs = {} if db_path is None else {"db_path": db_path}
-    for key, spec in zg.ZGOPS_FIELD_SPECS.items():
-        try:
-            value = zg.resolve_text(spec.env_var, **kwargs).strip()
-        except Exception:  # noqa: BLE001 - one bad field must not block rest
-            continue
-        if not value:
-            continue
-        if force or zg.has_override(key, **kwargs):
-            os.environ[spec.env_var] = value
-        else:
-            os.environ.setdefault(spec.env_var, value)
-
-
-def refresh_zgops_environ(*, db_path: Optional[Path] = None) -> None:
-    """Re-materialise zgops settings after a save/reset."""
-    materialize_zgops_to_environ(force=True, db_path=db_path)
 
 
 def materialize_operator_to_environ(
@@ -427,7 +390,6 @@ def ensure_working_secrets_loaded() -> None:
         _load_env_file(secrets_dir / name)
     materialize_inoe_to_environ(force=False)
     materialize_alarm_analyst_to_environ(force=False)
-    materialize_zgops_to_environ(force=False)
     materialize_operator_to_environ(force=False)
     materialize_order_to_environ(force=False)
     materialize_resource_import_llm_to_environ(force=False)

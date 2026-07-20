@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Big-screen application list query against Veops CMDB (T-031).
+"""Big-screen application list query through the INOE CMDB gateway.
 
 The chat path reaches Veops through the ``zgops-cmdb`` skill scripts;
 those hardcode 30s timeouts plus a curl subprocess fallback — exactly
@@ -9,12 +9,10 @@ the latency profile the big screen must avoid (see ``fetch_workorders``)
 imports pandas at module level, a heavy dependency only present in the
 deploy image, and the big screen must also run from a plain dev venv.
 
-So this is a deliberately self-contained stdlib client with the same
-API/auth semantics: ``POST /api/v1/acl/login`` for an ``Access-Token``,
-then ``GET /api/v0.1/ci/s?q=_type:<ci_type>``. Credentials resolve from
-``os.environ`` (the settings page «CMDB / 资源导入» materialises
-``ZGOPS_*`` there via ``working_secrets``) with the shared
-``secrets/zgops-cmdb.env`` file as fallback.
+This is a deliberately self-contained stdlib client. All calls use the
+platform settings page's ``INOE_API_BASE_URL`` and
+``INOE_API_TOKEN``: ``Authorization: Bearer <token>`` and the gateway
+route ``/cmdb/api/v0.1/...``. No CMDB username/password login is used.
 """
 
 from __future__ import annotations
@@ -23,48 +21,19 @@ import json
 import os
 import urllib.parse
 import urllib.request
-from pathlib import Path
 from typing import Any
 
-ZGOPS_SOURCE = "zgops-veops-cmdb-api"
+ZGOPS_SOURCE = "inoe-cmdb-gateway"
 
 APPLICATION_CI_TYPE = "project"
 
 _DEFAULT_TIMEOUT_SECONDS = 6.0
 
-_CONFIG_KEYS = ("ZGOPS_BASE_URL", "ZGOPS_USERNAME", "ZGOPS_PASSWORD")
-
-
-def _read_env_file(path: Path) -> dict[str, str]:
-    values: dict[str, str] = {}
-    try:
-        text = path.read_text(encoding="utf-8")
-    except OSError:
-        return values
-    for line in text.splitlines():
-        stripped = line.strip()
-        if not stripped or stripped.startswith("#") or "=" not in stripped:
-            continue
-        key, _, value = stripped.partition("=")
-        values[key.strip()] = value.strip().strip("'\"")
-    return values
+_CONFIG_KEYS = ("INOE_API_BASE_URL", "INOE_API_TOKEN")
 
 
 def _resolve_config() -> dict[str, str]:
-    config = {key: str(os.environ.get(key) or "").strip() for key in _CONFIG_KEYS}
-    if all(config.values()):
-        return config
-    working_dir = (
-        os.environ.get("QWENPAW_WORKING_DIR")
-        or os.environ.get("COPAW_WORKING_DIR")
-        or "~/.qwenpaw"
-    )
-    env_file = Path(working_dir).expanduser() / "secrets" / "zgops-cmdb.env"
-    fallback = _read_env_file(env_file)
-    for key in _CONFIG_KEYS:
-        if not config[key]:
-            config[key] = str(fallback.get(key) or "").strip()
-    return config
+    return {key: str(os.environ.get(key) or "").strip() for key in _CONFIG_KEYS}
 
 
 def _request_json(
@@ -76,9 +45,12 @@ def _request_json(
     timeout_seconds: float = _DEFAULT_TIMEOUT_SECONDS,
 ) -> Any:
     body = None
-    headers = {"Accept-Language": "zh"}
+    headers = {
+        "Accept": "application/json, text/plain, */*",
+        "Accept-Language": "zh",
+    }
     if token:
-        headers["Access-Token"] = token
+        headers["Authorization"] = f"Bearer {token}"
     if payload is not None:
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
         headers["Content-Type"] = "application/json"
@@ -90,22 +62,6 @@ def _request_json(
     )
     with urllib.request.urlopen(request, timeout=timeout_seconds) as response:
         return json.load(response)
-
-
-def _login(base_url: str, config: dict[str, str], timeout_seconds: float) -> str:
-    payload = _request_json(
-        f"{base_url}/api/v1/acl/login",
-        method="POST",
-        payload={
-            "username": config["ZGOPS_USERNAME"],
-            "password": config["ZGOPS_PASSWORD"],
-        },
-        timeout_seconds=timeout_seconds,
-    )
-    token = str((payload or {}).get("token") or "").strip()
-    if not token:
-        raise RuntimeError("Veops 登录响应缺少 token")
-    return token
 
 
 def query_application_cis(
@@ -128,15 +84,14 @@ def query_application_cis(
             "source": "error",
             "items": [],
             "total": 0,
-            "message": "CMDB 连接未配置（设置页«CMDB / 资源导入»）",
+            "message": "CMDB 网关未配置（设置页«平台»）",
         }
-    base_url = config["ZGOPS_BASE_URL"].rstrip("/")
+    base_url = config["INOE_API_BASE_URL"].rstrip("/")
     try:
-        token = _login(base_url, config, timeout_seconds)
         query = urllib.parse.quote(f"_type:{ci_type}", safe=":_")
         payload = _request_json(
-            f"{base_url}/api/v0.1/ci/s?q={query}&count={limit}&page=1",
-            token=token,
+            f"{base_url}/cmdb/api/v0.1/ci/s?q={query}&count={limit}&page=1",
+            token=config["INOE_API_TOKEN"],
             timeout_seconds=timeout_seconds,
         )
     except Exception as error:  # noqa: BLE001 - honest envelope boundary

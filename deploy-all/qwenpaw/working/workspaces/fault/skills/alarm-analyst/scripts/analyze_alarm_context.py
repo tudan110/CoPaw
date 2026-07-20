@@ -141,31 +141,19 @@ def _build_alarm_query_windows(
 
 def _load_cmdb_client():
     find_project = _load_module("zgops_find_project", _zgops_find_project_path())
-    env = {
-        key: os.environ.get(key, "")
-        for key in ("ZGOPS_BASE_URL", "ZGOPS_USERNAME", "ZGOPS_PASSWORD")
-    }
-    base_url = _safe_str(env.get("ZGOPS_BASE_URL"))
-    if not base_url:
+    base_url = _safe_str(os.environ.get("INOE_API_BASE_URL"))
+    token = _safe_str(os.environ.get("INOE_API_TOKEN"))
+    if not base_url or not token:
         raise ValueError(
-            "未配置 ZGOPS_BASE_URL（请在设置页「CMDB / 资源导入」配置）"
+            "未配置 INOE 网关地址或访问令牌（请在设置页「平台」配置）"
         )
 
-    username = _safe_str(env.get("ZGOPS_USERNAME"))
-    password = _safe_str(env.get("ZGOPS_PASSWORD"))
     client = find_project.CmdbHttpClient(
         base_url=base_url,
-        username=username,
-        password=password,
+        token=token,
     )
-    login_mode = "anonymous"
-    if username and password:
-        try:
-            client.login()
-            login_mode = "authenticated"
-        except Exception:
-            login_mode = "anonymous"
-    return client, find_project, login_mode
+    client.login()
+    return client, find_project, "bearer"
 
 
 def _fetch_topology_relations(root_res_id: str) -> list[dict[str, Any]]:

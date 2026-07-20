@@ -9,8 +9,8 @@ CMDB 汇总与图表脚本
     python3 scripts/analyze_cmdb.py --mode app-relations --output markdown-echarts-only
 
 说明：
-    - 从设置页「CMDB / 资源导入」物化的 ZGOPS_* 环境变量读取（无 .env 回退）
-    - 通过后台 HTTP 会话登录并读取接口，不打开浏览器
+    - 从设置页「平台」物化的 INOE_* 环境变量读取（无 .env 回退）
+    - 使用 Bearer Token 经 INOE CMDB 网关读取接口，不打开浏览器
     - 分布类输出支持 ECharts 代码块，适合页面直接渲染
 """
 
@@ -29,7 +29,7 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
-from zgops_http import build_url, create_session, request_with_fallback, try_login  # noqa: E402
+from zgops_http import build_url, configure_bearer, create_session, request_with_fallback  # noqa: E402
 
 ALLOWED_MODES = {"summary", "model-groups", "relation-types", "app-relations"}
 ALLOWED_OUTPUTS = {"json", "markdown", "markdown-echarts-only"}
@@ -399,15 +399,10 @@ def render_markdown(result: Dict[str, Any]) -> str:
 
 def analyze(mode: str, skill_root: Path, env: Dict[str, str]) -> Dict[str, Any]:
     session = create_session()
-    try_login(
-        session,
-        env["ZGOPS_BASE_URL"],
-        env.get("ZGOPS_USERNAME", ""),
-        env.get("ZGOPS_PASSWORD", ""),
-    )
-    models = load_models(session, env["ZGOPS_BASE_URL"])
-    relations = load_all_relations(session, env["ZGOPS_BASE_URL"])
-    relation_types = load_relation_types(session, env["ZGOPS_BASE_URL"])
+    configure_bearer(session, env["INOE_API_TOKEN"])
+    models = load_models(session, env["INOE_CMDB_API_BASE_URL"])
+    relations = load_all_relations(session, env["INOE_CMDB_API_BASE_URL"])
+    relation_types = load_relation_types(session, env["INOE_CMDB_API_BASE_URL"])
 
     if mode == "summary":
         return {"code": 200, "mode": mode, "summary": build_summary(models, relations, relation_types)}
@@ -452,25 +447,24 @@ def main() -> int:
     env = {
         key: os.environ.get(key, "")
         for key in (
-            "ZGOPS_BASE_URL",
-            "ZGOPS_USERNAME",
-            "ZGOPS_PASSWORD",
-            "ZGOPS_SESSION_NAME",
+            "INOE_API_BASE_URL",
+            "INOE_API_TOKEN",
         )
     }
-    if not env.get("ZGOPS_BASE_URL"):
+    if not env.get("INOE_API_BASE_URL") or not env.get("INOE_API_TOKEN"):
         print(
             "\n".join(
                 [
                     "# 分析失败",
                     "",
-                    "- 错误信息：未配置 ZGOPS_BASE_URL"
-                    "（请在设置页「CMDB / 资源导入」配置）",
+                    "- 错误信息：未配置 INOE 网关地址或访问令牌"
+                    "（请在设置页「平台」配置）",
                 ]
             )
         )
         return 1
     try:
+        env["INOE_CMDB_API_BASE_URL"] = env["INOE_API_BASE_URL"].rstrip("/") + "/cmdb"
         result = analyze(args.mode, skill_root, env)
     except Exception as exc:  # noqa: BLE001
         result = build_error(str(exc))

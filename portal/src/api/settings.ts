@@ -149,7 +149,6 @@ export const qimingSettingsApi = makeProviderSettingsApi("/qiming-settings");
 export const xingchenSettingsApi =
   makeProviderSettingsApi("/xingchen-settings");
 export const kunlunSettingsApi = makeProviderSettingsApi("/kunlun-settings");
-export const zgopsSettingsApi = makeProviderSettingsApi("/zgops-settings");
 export const n9eSettingsApi = makeProviderSettingsApi("/n9e-settings");
 // INOE OAuth2 single-sign-on credentials. The SSO router mounts under
 // /sso within the portal API, so its settings live at /sso/sso-settings.

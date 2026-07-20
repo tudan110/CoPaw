@@ -262,13 +262,10 @@ class TestCapabilityConfigEndpoint:
         self,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        # INOE configured, n9e/zgops not → mixed health
+        # INOE configured, n9e not → mixed health
         for var in (
             "N9E_API_BASE_URL",
             "N9E_USER_TOKEN",
-            "ZGOPS_BASE_URL",
-            "ZGOPS_USERNAME",
-            "ZGOPS_PASSWORD",
         ):
             monkeypatch.delenv(var, raising=False)
         monkeypatch.setenv("INOE_API_BASE_URL", "http://82.156.83.38:30080")
