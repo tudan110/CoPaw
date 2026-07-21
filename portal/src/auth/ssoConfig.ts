@@ -6,7 +6,7 @@
 // session" entry may not exist yet, so we must not bounce users to INOE
 // before the loop is wired — flipping the flag on is a deliberate step.
 
-import { tokenLogin } from "../api/sso";
+import { clearSsoLoginCookie, tokenLogin } from "../api/sso";
 import {
   clearSession,
   getSession,
@@ -173,6 +173,16 @@ function clearSessionWithoutRedirect(): void {
   clearSession();
 }
 
+async function clearStaleSsoState(): Promise<void> {
+  clearSessionWithoutRedirect();
+  try {
+    await clearSsoLoginCookie();
+  } catch {
+    // Best-effort cleanup — a failed cookie clear should not block the
+    // fallback re-login flow.
+  }
+}
+
 function shouldSkipRevalidate(force: boolean): boolean {
   if (force) {
     return false;
@@ -195,8 +205,9 @@ export function triggerSsoRelogin(): void {
     return;
   }
   reloginTriggered = true;
-  clearSessionWithoutRedirect();
-  window.location.href = getSsoLoginRedirectUrl();
+  void clearStaleSsoState().finally(() => {
+    window.location.href = getSsoLoginRedirectUrl();
+  });
 }
 
 /**
@@ -220,8 +231,22 @@ async function revalidateSession(): Promise<boolean> {
     return true;
   } catch (error) {
     if ((error as { status?: number })?.status === 401) {
-      triggerSsoRelogin();
-      return false;
+      await clearStaleSsoState();
+      try {
+        const result = await tokenLogin();
+        setSession({
+          token: result.access_token,
+          user: result.user,
+          expiresInSeconds: result.expires_in_seconds,
+        });
+        return true;
+      } catch (retryError) {
+        if ((retryError as { status?: number })?.status === 401) {
+          triggerSsoRelogin();
+          return false;
+        }
+      }
+      return true;
     }
     return true;
   }
@@ -354,8 +379,9 @@ export async function ensureSsoLogin(): Promise<boolean> {
     return true;
   } catch (error) {
     if ((error as { status?: number })?.status === 401) {
-      // No valid INOE session — send the user to log in, asking INOE to
-      // bounce back to where they were.
+      // No valid INOE session — clear stale local/cookie state first, then
+      // send the user to log in and bounce back to where they were.
+      await clearStaleSsoState();
       window.location.href = getSsoLoginRedirectUrl();
       return false;
     }

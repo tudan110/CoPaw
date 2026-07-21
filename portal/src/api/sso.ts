@@ -29,6 +29,14 @@ export async function tokenLogin(
   });
 }
 
+export async function clearSsoLoginCookie(): Promise<{ cleared: boolean }> {
+  return requestPortalApi<{ cleared: boolean }>("/sso/clear-login-cookie", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({}),
+  });
+}
+
 /** Trade the one-time authorization code for portal login material. */
 export async function exchangeSsoCode(
   code: string,
