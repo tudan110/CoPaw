@@ -22,10 +22,11 @@ import hashlib
 import hmac
 import logging
 import uuid
+from http.cookies import SimpleCookie
 from typing import Any
 
 import httpx
-from fastapi import APIRouter, Body, HTTPException, Request
+from fastapi import APIRouter, Body, HTTPException, Request, Response
 
 from qwenpaw.extensions.api import sso_settings_store
 
@@ -58,11 +59,35 @@ _INOE_LOGIN_COOKIE = "Cnos-Inoe-Admin-Token"
 _INOE_EXPIRES_IN_COOKIE = "Cnos-Inoe-Admin-Expires-In"
 
 
+def _clear_inoe_login_cookies(response: Response) -> None:
+    response.delete_cookie(_INOE_LOGIN_COOKIE, path="/")
+    response.delete_cookie(_INOE_EXPIRES_IN_COOKIE, path="/")
+
+
 def _strip_bearer(token: str) -> str:
     token = str(token or "").strip()
     if token.lower().startswith("bearer "):
         return token[len("bearer ") :].strip()
     return token
+
+
+def _cookie_token_from_header(raw_cookie: str | None, name: str) -> str:
+    if not raw_cookie:
+        return ""
+    cookie = SimpleCookie()
+    try:
+        cookie.load(raw_cookie)
+    except Exception:  # noqa: BLE001 - malformed cookie header falls back empty
+        return ""
+    morsel = cookie.get(name)
+    return _strip_bearer(morsel.value if morsel else "")
+
+
+def _get_request_cookie(request: Request, name: str) -> str:
+    token = _strip_bearer(request.cookies.get(name) or "")
+    if token:
+        return token
+    return _cookie_token_from_header(request.headers.get("cookie"), name)
 
 
 async def _validate_inoe_token(
@@ -261,9 +286,7 @@ async def token_login(
     the same shape as :func:`exchange` so the frontend treats both uniformly.
     """
     body_token = _strip_bearer(body.get("token") or "")
-    cookie_token = _strip_bearer(
-        request.cookies.get(_INOE_LOGIN_COOKIE) or ""
-    )
+    cookie_token = _get_request_cookie(request, _INOE_LOGIN_COOKIE)
     if not (body_token or cookie_token):
         raise HTTPException(status_code=401, detail="缺少 INOE 登录凭证")
 
@@ -302,7 +325,7 @@ async def token_login(
         )
     try:
         expires_in_minutes = float(
-            request.cookies.get(_INOE_EXPIRES_IN_COOKIE) or 0
+            _get_request_cookie(request, _INOE_EXPIRES_IN_COOKIE) or 0
         )
     except (TypeError, ValueError):
         expires_in_minutes = 0.0
@@ -312,6 +335,13 @@ async def token_login(
         "expires_in_seconds": int(expires_in_minutes * _EXPIRES_IN_UNIT_SECONDS),
         "user": user,
     }
+
+
+@router.post("/clear-login-cookie")
+async def clear_login_cookie(response: Response) -> dict[str, Any]:
+    """Clear stale INOE login cookies so portal can force a clean re-login."""
+    _clear_inoe_login_cookies(response)
+    return {"cleared": True}
 
 
 @router.post("/exchange")

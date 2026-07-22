@@ -19,7 +19,9 @@ from qwenpaw.extensions.api import settings_store
 from qwenpaw.extensions.api import sso_settings_store as store
 from qwenpaw.extensions.api.sso_backend import (
     _canonical,
+    _cookie_token_from_header,
     _extract_user,
+    _get_request_cookie,
     _sign,
     router,
 )
@@ -262,6 +264,49 @@ def test_extract_user_flat_oauth2_userinfo() -> None:
         "email": "lisi@example.com",
     }
     assert _extract_user(body) == body
+
+
+def test_cookie_token_from_header_extracts_target_cookie() -> None:
+    raw_cookie = (
+        "username=zhiguan; "
+        "Cnos-Inoe-Admin-Expires-In=720; "
+        "Cnos-Inoe-Admin-Token=fresh-token; sidebarStatus=1"
+    )
+    assert _cookie_token_from_header(raw_cookie, "Cnos-Inoe-Admin-Token") == (
+        "fresh-token"
+    )
+    assert _cookie_token_from_header(raw_cookie, "missing") == ""
+
+
+def test_get_request_cookie_falls_back_to_raw_cookie_header() -> None:
+    app = FastAPI()
+
+    @app.get("/cookie")
+    async def cookie_echo(request):
+        return {
+            "token": _get_request_cookie(request, "Cnos-Inoe-Admin-Token"),
+            "expires": _get_request_cookie(
+                request, "Cnos-Inoe-Admin-Expires-In"
+            ),
+        }
+
+    client = TestClient(app)
+    response = client.get(
+        "/cookie",
+        headers={
+            "Cookie": (
+                "username=zhiguan; "
+                "Cnos-Inoe-Admin-Expires-In=720; "
+                "Cnos-Inoe-Admin-Token=fresh-token; sidebarStatus=1"
+            )
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "token": "fresh-token",
+        "expires": "720",
+    }
 
 
 @pytest.fixture()
