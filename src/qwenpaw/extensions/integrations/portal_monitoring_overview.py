@@ -30,6 +30,13 @@ WORKORDER_STATS_ENDPOINT = "/api/v1/work-order/getWorkOrder"
 # gateway only offers per-day buckets, so the overview shows the last N days.
 SEVERITY_TREND_ENDPOINT = "/resource/alarm/statistics/statSeverityTrend"
 SEVERITY_TREND_DAYS = 7
+# Exact endpoints used by the monitoring dashboard's alarm widgets.  Keep
+# these separate from the generic real-alarm integration: their day window
+# and aggregation are the dashboard's public data contract.
+DASHBOARD_SEVERITY_ENDPOINT = "/resource/alarm/statistics/statSeverity"
+DASHBOARD_ALARM_LIST_ENDPOINT = "/resource/alarm/statistics/hisAlarmList"
+DASHBOARD_ALARM_LIST_LIMIT = 1000
+ACTIVE_ALARM_LOOKBACK_HOURS = 24
 # CMDB CI summary — the INOE homepage's "资产总数" reads total_ci_count from
 # here (excludes group 26). Requires a token with CMDB (维易) access; the
 # overview falls back to asset-overview totalResources when it is unavailable.
@@ -115,6 +122,78 @@ def query_severity_trend(days: int = SEVERITY_TREND_DAYS) -> dict[str, Any]:
     # Encode with %20 (not '+'); the gateway expects literal-space dates.
     query = urlencode({"beginTime": begin, "endTime": end}, quote_via=quote)
     return _get_envelope(f"{SEVERITY_TREND_ENDPOINT}?{query}")
+
+
+def _dashboard_day_window(now: datetime | None = None) -> tuple[str, str]:
+    current = (now or datetime.now(timezone.utc)).astimezone(_alarm_timezone())
+    day_start = current.replace(hour=0, minute=0, second=0, microsecond=0)
+    day_end = current.replace(hour=23, minute=59, second=59, microsecond=0)
+    return (
+        day_start.strftime("%Y-%m-%d %H:%M:%S"),
+        day_end.strftime("%Y-%m-%d %H:%M:%S"),
+    )
+
+
+def query_dashboard_alarm_severity(
+    *,
+    now: datetime | None = None,
+) -> dict[str, Any]:
+    """Read the same severity aggregation as the monitoring dashboard."""
+    begin_time, end_time = _dashboard_day_window(now)
+    return _get_envelope(
+        DASHBOARD_SEVERITY_ENDPOINT,
+        {
+            "type": 1,
+            "beginTime": begin_time,
+            "endTime": end_time,
+            "alarmClassType": 0,
+        },
+    )
+
+
+def query_dashboard_alarm_history(
+    *,
+    now: datetime | None = None,
+    limit: int = DASHBOARD_ALARM_LIST_LIMIT,
+) -> dict[str, Any]:
+    """Read the dashboard's complete same-day alarm history for TOP analysis."""
+    begin_time, end_time = _dashboard_day_window(now)
+    page_size = max(1, min(int(limit or DASHBOARD_ALARM_LIST_LIMIT), 1000))
+    return _get_envelope(
+        DASHBOARD_ALARM_LIST_ENDPOINT,
+        {
+            "beginTime": begin_time,
+            "endTime": end_time,
+            "sortType": 1,
+            "pageNum": 1,
+            "pageSize": page_size,
+        },
+    )
+
+
+def query_dashboard_active_alarm_history(
+    *,
+    now: datetime | None = None,
+    limit: int = DASHBOARD_ALARM_LIST_LIMIT,
+) -> dict[str, Any]:
+    """Read the rolling 24-hour, uncleared alarm list for health status."""
+    current = (now or datetime.now(timezone.utc)).astimezone(_alarm_timezone())
+    begin_time = (current - timedelta(hours=ACTIVE_ALARM_LOOKBACK_HOURS)).strftime(
+        "%Y-%m-%d %H:%M:%S",
+    )
+    end_time = current.strftime("%Y-%m-%d %H:%M:%S")
+    page_size = max(1, min(int(limit or DASHBOARD_ALARM_LIST_LIMIT), 1000))
+    return _get_envelope(
+        DASHBOARD_ALARM_LIST_ENDPOINT,
+        {
+            "beginTime": begin_time,
+            "endTime": end_time,
+            "sortType": 1,
+            "isClear": 0,
+            "pageNum": 1,
+            "pageSize": page_size,
+        },
+    )
 
 
 def query_cmdb_summary() -> dict[str, Any]:
