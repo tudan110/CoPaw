@@ -217,12 +217,18 @@ async def test_system_summary_exposes_safe_html_and_active_alarm_health(
     result = await service.build_system_summary(model=model)
 
     assert result["healthStatus"] == "abnormal"
-    assert '<span class="ai-urgent">紧急1</span>' in result["summaryHtml"]
-    assert '<span class="ai-severe">严重2</span>' in result["summaryHtml"]
+    assert '<span style="color: #c00018; font-weight: 700;">紧急1</span>' in result["summaryHtml"]
+    assert '<span style="color: #f57c00; font-weight: 700;">严重2</span>' in result["summaryHtml"]
     assert (
-        '<span class="ai-alarm-title ai-urgent">系统内存使用率过高</span>'
+        '<span style="font-weight: 700;">系统内存使用率过高</span>'
         in result["summaryHtml"]
     )
+    assert "</span>（vm-01，10.2.0.15）。建议优先处理" in result["summaryHtml"]
+    assert (
+        '建议优先处理<span style="color: #d4001a; font-weight: 700;">vm-01</span>'
+        in result["summaryHtml"]
+    )
+    assert "class=\"ai-" not in result["summaryHtml"]
     assert "&lt;script&gt;alert(1)&lt;/script&gt;" in result["summaryHtml"]
 
 

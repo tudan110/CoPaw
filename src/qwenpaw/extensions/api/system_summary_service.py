@@ -52,6 +52,14 @@ _SEVERITY_LABELS = {
     "normal": "普通",
     "warning": "预警",
 }
+_SUMMARY_INLINE_STYLES = {
+    "ai-urgent": ("color: #c00018;", "font-weight: 700;"),
+    "ai-severe": ("color: #f57c00;", "font-weight: 700;"),
+    "ai-normal": ("color: #d4a72c;",),
+    "ai-warning": ("color: #5b8ff9;",),
+    "ai-alarm-title": ("font-weight: 700;",),
+    "ai-recommendation": ("color: #d4001a;", "font-weight: 700;"),
+}
 
 
 def _now_iso() -> str:
@@ -449,10 +457,14 @@ def _build_summary_html(
     if top_issues and top_label:
         add_term(f"TOP{len(top_issues)}{top_label}告警", tone)
     for issue in top_issues:
-        add_term(issue.get("issue"), "ai-alarm-title", tone)
+        add_term(issue.get("issue"), "ai-alarm-title")
+    recommendation_terms: set[str] = set()
     for recommendation in recommendations:
-        add_term(recommendation.get("target"), tone)
-        add_term(recommendation.get("manageIp"), tone)
+        for value in (recommendation.get("target"), recommendation.get("manageIp")):
+            text = str(value or "").strip()
+            if text:
+                recommendation_terms.add(text)
+                add_term(text)
 
     safe_terms = sorted(terms, key=len, reverse=True)
     if not safe_terms:
@@ -460,22 +472,38 @@ def _build_summary_html(
     matcher = re.compile("|".join(re.escape(term) for term in safe_terms))
     parts: list[str] = []
     cursor = 0
+    recommendation_start = summary.rfind("建议优先处理")
     for match in matcher.finditer(summary):
         parts.append(html.escape(summary[cursor:match.start()]))
-        classes = terms[match.group()]
-        class_names = " ".join(
-            class_name
-            for class_name in (
-                "ai-alarm-title",
-                "ai-urgent",
-                "ai-severe",
-                "ai-normal",
-                "ai-warning",
-            )
-            if class_name in classes
-        )
+        classes = set(terms[match.group()])
+        if (
+            recommendation_start >= 0
+            and match.start() >= recommendation_start
+            and match.group() in recommendation_terms
+        ):
+            classes.add("ai-recommendation")
+        if not classes:
+            parts.append(html.escape(match.group()))
+            cursor = match.end()
+            continue
+        declarations: list[str] = []
+        for style_key in (
+            "ai-urgent",
+            "ai-severe",
+            "ai-normal",
+            "ai-warning",
+            "ai-alarm-title",
+            "ai-recommendation",
+        ):
+            if style_key not in classes:
+                continue
+            for declaration in _SUMMARY_INLINE_STYLES[style_key]:
+                if declaration not in declarations:
+                    declarations.append(declaration)
+        inline_style = " ".join(declarations)
         parts.append(
-            f'<span class="{class_names}">{html.escape(match.group())}</span>',
+            f'<span style="{html.escape(inline_style, quote=True)}">'
+            f"{html.escape(match.group())}</span>",
         )
         cursor = match.end()
     parts.append(html.escape(summary[cursor:]))
