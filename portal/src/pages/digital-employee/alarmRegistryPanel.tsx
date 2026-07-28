@@ -11,13 +11,14 @@ import "./alarmRegistryPanel.css";
 
 type AlarmRegistryPanelProps = {
   pageTheme: "light" | "dark";
-  onOpenChat?: (chatId: string) => void;
+  onOpenChat?: (chatId: string, sessionId?: string) => void;
 };
 
 type StatusFilter = "all" | "active" | "resolved" | "ignored";
 
 const STATUS_LABELS: Record<string, string> = {
   new: "新建",
+  pending_retry: "待补偿处理",
   taken_over: "已接管",
   analyzing: "分析中",
   analyzed: "已分析",
@@ -25,7 +26,7 @@ const STATUS_LABELS: Record<string, string> = {
   manual_recovered: "人工已恢复",
   manual_unrecovered: "人工未恢复",
   manual_unknown: "人工未知",
-  resolved: "已处理",
+  resolved: "已归档",
   ignored: "已忽略",
   recovery_failed: "清除未恢复",
   recovery_unknown: "恢复待确认",
@@ -362,7 +363,7 @@ export function AlarmRegistryPanel({ pageTheme, onOpenChat }: AlarmRegistryPanel
                     <button
                       className="alarm-registry-action-btn tone-blue"
                       title="查看关联对话"
-                      onClick={() => onOpenChat(record.chatId)}
+                      onClick={() => onOpenChat(record.chatId, record.sessionId)}
                     >
                       <i className="fas fa-comments" />
                     </button>

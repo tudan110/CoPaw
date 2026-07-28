@@ -36,6 +36,7 @@ from qwenpaw.extensions.api.alarm_analyst_card_models import (
     AlarmAnalystCardCreateRequest,
     AlarmAnalystCardCreateResponse,
     AlarmAnalystCardListResponse,
+    AlarmAnalystCardWorkorderStatus,
 )
 from qwenpaw.extensions.api.alarm_analyst_card_service import (
     build_alarm_analyst_card,
@@ -80,6 +81,8 @@ from qwenpaw.extensions.api.sso_backend import (
 )
 from qwenpaw.config.utils import load_config
 from qwenpaw.extensions.api.fault_manual_workorder_models import (
+    AlarmAnalystWorkorderCreateRequest,
+    AlarmAnalystWorkorderCreateResponse,
     ManualWorkorderCloseNotificationRequest,
     ManualWorkorderDispatchRequest,
 )
@@ -139,6 +142,9 @@ from qwenpaw.extensions.integrations.portal_monitoring_overview import (
     query_workorder_stats as query_monitoring_workorder_stats,
     query_severity_trend as query_monitoring_severity_trend,
     query_cmdb_summary as query_monitoring_cmdb_summary,
+)
+from qwenpaw.extensions.integrations.order_workflow import (
+    create_disposal_workorder as create_order_disposal_workorder,
 )
 from qwenpaw.extensions.integrations import knowledge_base
 from qwenpaw.extensions.api import diagnosis_settings_store
@@ -601,6 +607,7 @@ async def _drain_portal_real_alarm_stream(
         await stream_it.aclose()
     _update_portal_real_alarm_registry_safe(
         chat_id=chat_id,
+        session_id=session_id,
         status="analyzed",
         source="auto-stream-done",
     )
@@ -896,6 +903,36 @@ async def _ensure_portal_real_alarm_sessions(
     return result
 
 
+
+def _finalize_missing_pending_retry_records(
+    *,
+    live_alarm_ids: set[str],
+) -> int:
+    normalized_live_alarm_ids = {
+        str(alarm_id or "").strip() for alarm_id in live_alarm_ids if str(alarm_id or "").strip()
+    }
+    records = load_alarm_records()
+    finalized_count = 0
+    for alarm_id, record in records.items():
+        if not isinstance(record, dict):
+            continue
+        if str(record.get("status") or "").strip() != "pending_retry":
+            continue
+        normalized_alarm_id = str(alarm_id or "").strip()
+        if not normalized_alarm_id or normalized_alarm_id in normalized_live_alarm_ids:
+            continue
+        _update_portal_real_alarm_registry_safe(
+            alarm_id=normalized_alarm_id,
+            status="resolved",
+            source="auto-finalize-missing-pending-retry",
+            last_error=(
+                "服务重启前分析中断；当前实时告警源已无此告警，系统已自动归档。"
+            ),
+        )
+        finalized_count += 1
+    return finalized_count
+
+
 async def _build_portal_real_alarm_trigger_payload(
     limit: int,
     trigger_body: dict[str, Any] | None,
@@ -1018,6 +1055,17 @@ async def _run_portal_real_alarm_auto_takeover_once() -> dict[str, Any]:
         alarms_payload,
         takeover_source="auto-poll",
     )
+    finalized_missing = _finalize_missing_pending_retry_records(
+        live_alarm_ids={
+            str(
+                (item or {}).get("alarmId")
+                or (item or {}).get("id")
+                or "",
+            ).strip()
+            for item in (alarms_payload.get("items") or [])
+            if isinstance(item, dict)
+        },
+    )
     return {
         "ok": True,
         "alarmSource": alarms_payload.get("source") or "unknown",
@@ -1025,6 +1073,7 @@ async def _run_portal_real_alarm_auto_takeover_once() -> dict[str, Any]:
             alarms_payload.get("total")
             or len(alarms_payload.get("items") or []),
         ),
+        "finalizedMissing": finalized_missing,
         **summary,
     }
 
@@ -2582,8 +2631,16 @@ def _persist_analysis_result_to_registry(
     *,
     session_id: str,
     card: dict[str, Any],
+    chat_id: str = "",
 ) -> None:
-    """Persist the card display fields as analysis_result JSON in the alarm registry."""
+    """Persist the card display fields and mark the registry row analyzed.
+
+    This helper is shared by both auto-stream persistence and the frontend
+    backfill path triggered from the bell entry. The bell path may never pass
+    through ``_drain_portal_real_alarm_stream()``, so merely storing
+    ``analysis_result`` is not enough: the ledger row must also advance from
+    ``analyzing`` to ``analyzed`` once a stable card has been produced.
+    """
     try:
         alarm_id = session_id.removeprefix(
             PORTAL_REAL_ALARM_SESSION_PREFIX,
@@ -2594,6 +2651,10 @@ def _persist_analysis_result_to_registry(
         result_json = json.dumps(display_fields, ensure_ascii=False)
         _update_portal_real_alarm_registry_safe(
             alarm_id=alarm_id,
+            session_id=session_id,
+            chat_id=chat_id,
+            status="analyzed",
+            source="alarm-analyst-card-persisted",
             analysis_result=result_json,
         )
     except Exception as exc:
@@ -2668,45 +2729,21 @@ def _try_persist_analysis_result_from_stream(
     try:
         if not session_id.startswith(PORTAL_REAL_ALARM_SESSION_PREFIX):
             return
-        # Pick the last completed assistant message that looks like an alarm
-        # analyst report, and keep its real message id (the same id the
-        # frontend matches cards by) so the eager card de-dupes with any
-        # later frontend backfill.
-        chosen_id = ""
-        report_markdown = ""
-        for message_id, text in _collect_sse_report_messages(chunks):
-            if is_alarm_analyst_card_candidate(
-                employee_id="fault",
-                report_markdown=text,
-                process_blocks=[],
-            ):
-                chosen_id = message_id
-                report_markdown = text
-        if not report_markdown:
+        completed_messages = _collect_sse_report_messages(chunks)
+        if not completed_messages:
             return
-        # Synthetic id only when the stream carried none (frontend then
-        # falls back to rawReportMarkdown-hash matching).
-        message_id = chosen_id or f"auto-stream-{chat_id}"
-        card = build_alarm_analyst_card(
-            chat_id=chat_id,
-            message_id=message_id,
-            employee_id="fault",
-            report_markdown=report_markdown,
-            process_blocks=[],
-        )
-        card_payload = card.model_dump(by_alias=True)
-        _persist_analysis_result_to_registry(
-            session_id=session_id,
-            card=card_payload,
-        )
-        # Eagerly upsert into the card DB the frontend GET reads, keyed by
-        # the real message id (idempotent on (chat_id, message_id)).
-        _save_card_to_db(
-            chat_id=chat_id,
-            message_id=message_id,
-            card=card_payload,
-            session_id=session_id,
-        )
+        for chosen_id, report_markdown in reversed(completed_messages):
+            message_id = chosen_id or f"auto-stream-{chat_id}"
+            matched, _card, _used_existing = _persist_alarm_analyst_card_from_report(
+                session_id=session_id,
+                chat_id=chat_id,
+                message_id=message_id,
+                employee_id="fault",
+                report_markdown=report_markdown,
+                process_blocks=[],
+            )
+            if matched:
+                return
     except Exception as exc:
         print(
             f"[WARN] _try_persist_analysis_result_from_stream failed: "
@@ -3020,9 +3057,323 @@ def _shape_alarm_analyst_card_payload(payload: Any) -> dict | None:
         return None
 
 
+def _extract_alarm_id_from_session_id(session_id: str) -> str:
+    normalized = str(session_id or "").strip()
+    if not normalized.startswith(PORTAL_REAL_ALARM_SESSION_PREFIX):
+        return ""
+    return normalized.removeprefix(PORTAL_REAL_ALARM_SESSION_PREFIX).strip()
+
+
+def _enrich_alarm_analyst_card_with_alarm_context(
+    *,
+    session_id: str,
+    card: AlarmAnalystCard,
+) -> AlarmAnalystCard:
+    proposal = card.workorder_proposal
+    if proposal is None:
+        return card
+
+    alarm_id = _extract_alarm_id_from_session_id(session_id) or proposal.alarm_id
+    alarm_record = get_alarm_record(alarm_id) if alarm_id else None
+    if alarm_id and (not proposal.alarm_id or proposal.alarm_id.startswith("portal-")):
+        proposal.alarm_id = alarm_id
+    if alarm_record:
+        record_title = str(alarm_record.get("title") or "").strip()
+        proposal.resource_id = proposal.resource_id or str(alarm_record.get("resId") or "").strip()
+        proposal.device_name = proposal.device_name or str(alarm_record.get("deviceName") or "").strip()
+        proposal.manage_ip = proposal.manage_ip or str(alarm_record.get("manageIp") or "").strip()
+        proposal.event_time = proposal.event_time or str(alarm_record.get("eventTime") or "").strip()
+        proposal.severity = proposal.severity or str(alarm_record.get("level") or "").strip()
+        if record_title and (not proposal.title or "|" in proposal.title):
+            proposal.title = record_title
+    return card
+
+
+def _is_alarm_bound_fault_session(*, session_id: str, employee_id: str) -> bool:
+    return (
+        str(employee_id or "").strip() == "fault"
+        and str(session_id or "").strip().startswith(
+            PORTAL_REAL_ALARM_SESSION_PREFIX,
+        )
+    )
+
+
+def _looks_like_alarm_analyst_report_for_alarm_session(
+    report_markdown: str,
+) -> bool:
+    normalized = str(report_markdown or "").strip()
+    if len(normalized) < 80:
+        return False
+    marker_count = sum(
+        1
+        for marker in (
+            "告警分析报告",
+            "告警分析 —",
+            "告警分析：",
+            "完整故障分析报告",
+            "告警基础信息",
+            "告警基本信息",
+            "根因判断",
+            "根因分析结论",
+            "根因结论",
+            "根因分析",
+            "### 🔍 结论",
+            "影响范围",
+            "影响评估",
+            "关联资源与告警",
+            "处置建议",
+            "处置建议（紧急程度升级）",
+            "异常指标",
+            "恢复验证",
+            "📊 总结",
+            "📌 总结",
+            "## 总结",
+        )
+        if marker in normalized
+    )
+    return marker_count >= 3
+
+
+def _load_existing_alarm_analyst_card(
+    *,
+    chat_id: str,
+    message_id: str,
+    session_id: str = "",
+) -> AlarmAnalystCard | None:
+    chat_records = _load_cards_for_chat_from_db(chat_id)
+    if not isinstance(chat_records, dict):
+        return None
+    shaped = _shape_alarm_analyst_card_payload(chat_records.get(message_id))
+    if not shaped:
+        return None
+    try:
+        card = AlarmAnalystCard.model_validate(shaped)
+    except ValidationError:
+        return None
+    return _enrich_alarm_analyst_card_with_alarm_context(
+        session_id=session_id,
+        card=card,
+    )
+
+
+def _load_existing_alarm_analyst_card_by_report(
+    *,
+    chat_id: str,
+    report_markdown: str,
+    session_id: str = "",
+) -> AlarmAnalystCard | None:
+    candidate_text = _extract_alarm_analyst_card_candidate_text(report_markdown)
+    if not candidate_text:
+        return None
+
+    chat_records = _load_cards_for_chat_from_db(chat_id)
+    if not isinstance(chat_records, dict):
+        return None
+
+    for payload in chat_records.values():
+        shaped = _shape_alarm_analyst_card_payload(payload)
+        if not shaped:
+            continue
+        stored_candidate_text = _extract_alarm_analyst_card_candidate_text(
+            shaped.get("rawReportMarkdown") or "",
+        )
+        if not stored_candidate_text or stored_candidate_text != candidate_text:
+            continue
+        try:
+            card = AlarmAnalystCard.model_validate(shaped)
+        except ValidationError:
+            continue
+        return _enrich_alarm_analyst_card_with_alarm_context(
+            session_id=session_id,
+            card=card,
+        )
+    return None
+
+
+def _persist_alarm_analyst_card_from_report(
+    *,
+    session_id: str,
+    chat_id: str,
+    message_id: str,
+    employee_id: str,
+    report_markdown: str,
+    process_blocks: list[Any],
+) -> tuple[bool, AlarmAnalystCard | None, bool]:
+    existing_card = _load_existing_alarm_analyst_card(
+        chat_id=chat_id,
+        message_id=message_id,
+        session_id=session_id,
+    )
+    if existing_card is not None:
+        return True, existing_card, True
+
+    existing_card = _load_existing_alarm_analyst_card_by_report(
+        chat_id=chat_id,
+        report_markdown=report_markdown,
+        session_id=session_id,
+    )
+    if existing_card is not None:
+        return True, existing_card, True
+
+    matched = is_alarm_analyst_card_candidate(
+        employee_id=employee_id,
+        report_markdown=report_markdown,
+        process_blocks=process_blocks,
+    )
+    alarm_bound_fallback_matched = (
+        _is_alarm_bound_fault_session(
+            session_id=session_id,
+            employee_id=employee_id,
+        )
+        and _looks_like_alarm_analyst_report_for_alarm_session(report_markdown)
+    )
+    if not matched and not alarm_bound_fallback_matched:
+        return False, None, False
+
+    card_report_markdown = report_markdown
+    if alarm_bound_fallback_matched and not matched:
+        alarm_id = _extract_alarm_id_from_session_id(session_id)
+        alarm_record = get_alarm_record(alarm_id) if alarm_id else None
+        fallback_title = (
+            str((alarm_record or {}).get("title") or "").strip()
+            or alarm_id
+            or "告警分析"
+        )
+        card_report_markdown = (
+            "## 告警分析报告：" + fallback_title + "\n\n" + report_markdown
+        ).strip()
+
+    card = build_alarm_analyst_card(
+        chat_id=chat_id,
+        message_id=message_id,
+        employee_id=employee_id,
+        report_markdown=card_report_markdown,
+        process_blocks=process_blocks,
+    )
+    card = _enrich_alarm_analyst_card_with_alarm_context(
+        session_id=session_id,
+        card=card,
+    )
+    card_payload = card.model_dump(by_alias=True)
+    _save_card_to_db(
+        chat_id=chat_id,
+        message_id=message_id,
+        card=card_payload,
+        session_id=session_id,
+    )
+    if _is_alarm_bound_fault_session(
+        session_id=session_id,
+        employee_id=employee_id,
+    ):
+        _persist_analysis_result_to_registry(
+            session_id=session_id,
+            card=card_payload,
+            chat_id=chat_id,
+        )
+    return True, card, False
+
+
+def _find_alarm_analyst_card_by_proposal(
+    *,
+    chat_id: str,
+    proposal_id: str,
+    message_id: str = "",
+) -> tuple[AlarmAnalystCard | None, str]:
+    chat_records = _load_cards_for_chat_from_db(chat_id)
+    for stored_message_id, payload in chat_records.items():
+        shaped = _shape_alarm_analyst_card_payload(payload)
+        if not shaped:
+            continue
+        try:
+            card = AlarmAnalystCard.model_validate(shaped)
+        except ValidationError:
+            continue
+        proposal = card.workorder_proposal
+        if proposal is None or str(proposal.proposal_id or "").strip() != proposal_id:
+            continue
+        if message_id and str(card.source.message_id or "").strip() != str(message_id or "").strip():
+            continue
+        return card, stored_message_id
+    return None, ""
+
+
+def _build_alarm_analyst_create_payload(
+    *,
+    chat_id: str,
+    card: AlarmAnalystCard,
+    alarm_record: dict[str, Any] | None,
+) -> dict[str, Any]:
+    proposal = card.workorder_proposal
+    if proposal is None:
+        raise RuntimeError("alarm analyst card does not include workorder proposal")
+
+    normalized_alarm_record = alarm_record if isinstance(alarm_record, dict) else {}
+    suggestion_items = [
+        str(item).strip() for item in (proposal.suggestions or []) if str(item).strip()
+    ]
+    if not suggestion_items:
+        suggestion_items = [
+            str(item.description or item.title or "").strip()
+            for item in (card.recommendations or [])
+            if str(item.description or item.title or "").strip()
+        ]
+
+    alarm_id = str(
+        proposal.alarm_id
+        or normalized_alarm_record.get("alarmId")
+        or normalized_alarm_record.get("id")
+        or ""
+    ).strip()
+    original_alarm_title = str(normalized_alarm_record.get("title") or "").strip()
+    alarm_title = original_alarm_title or proposal.title or card.summary.title
+    additional_text = str(
+        normalized_alarm_record.get("additionalText")
+        or normalized_alarm_record.get("alarmText")
+        or normalized_alarm_record.get("alarmtext")
+        or normalized_alarm_record.get("rawMessage")
+        or normalized_alarm_record.get("visibleContent")
+        or ""
+    ).strip()
+    alarm_location = str(
+        normalized_alarm_record.get("alarmLocation")
+        or normalized_alarm_record.get("location")
+        or ""
+    ).strip()
+
+    return {
+        "chatId": chat_id,
+        "resId": proposal.resource_id or str(normalized_alarm_record.get("resId") or "").strip(),
+        "alarm": {
+            "alarmId": alarm_id,
+            "alarmSeq": alarm_id,
+            "alarmTitle": alarm_title,
+            "title": alarm_title,
+            "neName": proposal.device_name or str(normalized_alarm_record.get("deviceName") or "").strip(),
+            "neIp": proposal.manage_ip or str(normalized_alarm_record.get("manageIp") or "").strip(),
+            "eventTime": proposal.event_time or str(normalized_alarm_record.get("eventTime") or "").strip(),
+            "alarmSeverity": proposal.severity or card.summary.severity or str(normalized_alarm_record.get("level") or "").strip(),
+            "isClear": str(normalized_alarm_record.get("status") or "").strip(),
+            "additionalText": additional_text,
+            "alarmLocation": alarm_location,
+        },
+        "analysis": {
+            "summary": proposal.summary or card.summary.conclusion,
+            "rootCause": proposal.root_cause_summary or card.root_cause.reason,
+            "suggestions": suggestion_items,
+        },
+        "ticket": {
+            "title": proposal.title or card.summary.title,
+            "source": "portal-alarm-analyst",
+            "externalSystem": "alarm-analyst-confirm-dialog",
+        },
+    }
+
+
 def _list_alarm_analyst_cards_for_chat(
     records: dict[str, dict[str, dict]],
     chat_id: str,
+    *,
+    session_id: str = "",
 ) -> list[dict]:
     chat_records = records.get(chat_id) if isinstance(records, dict) else {}
     if not isinstance(chat_records, dict):
@@ -3030,8 +3381,15 @@ def _list_alarm_analyst_cards_for_chat(
     cards: list[dict] = []
     for payload in chat_records.values():
         shaped = _shape_alarm_analyst_card_payload(payload)
-        if shaped:
-            cards.append(shaped)
+        if not shaped:
+            continue
+        card = AlarmAnalystCard.model_validate(shaped)
+        cards.append(
+            _enrich_alarm_analyst_card_with_alarm_context(
+                session_id=session_id,
+                card=card,
+            ).model_dump(by_alias=True)
+        )
     return cards
 
 
@@ -3972,6 +4330,31 @@ async def portal_alarm_analyst_diagnose(
         raise HTTPException(status_code=500, detail=error_detail) from exc
 
 
+async def _mirror_alarm_analyst_card_to_session_state(
+    request: Request,
+    *,
+    session_id: str,
+    chat_id: str,
+    message_id: str,
+    card: AlarmAnalystCard,
+) -> None:
+    if not hasattr(request.app.state, "multi_agent_manager"):
+        return
+    records = await _load_portal_alarm_analyst_cards(
+        request,
+        session_id=session_id,
+    )
+    chat_records = dict(records.get(chat_id) or {})
+    chat_records[message_id] = card.model_dump(by_alias=True)
+    records = dict(records)
+    records[chat_id] = chat_records
+    await _save_portal_alarm_analyst_cards(
+        request,
+        session_id=session_id,
+        records=records,
+    )
+
+
 @router.post("/alarm-analyst/cards")
 async def create_portal_alarm_analyst_card(
     request: Request,
@@ -3979,44 +4362,25 @@ async def create_portal_alarm_analyst_card(
 ):
     try:
         parsed = AlarmAnalystCardCreateRequest.model_validate(payload)
-        matched = is_alarm_analyst_card_candidate(
-            employee_id=parsed.employee_id,
-            report_markdown=parsed.report_markdown,
-            process_blocks=parsed.process_blocks,
-        )
-        if not matched:
-            return AlarmAnalystCardCreateResponse(matched=False).model_dump(
-                by_alias=True,
-            )
-
-        card = build_alarm_analyst_card(
+        matched, card, _used_existing = _persist_alarm_analyst_card_from_report(
+            session_id=parsed.session_id,
             chat_id=parsed.chat_id,
             message_id=parsed.message_id,
             employee_id=parsed.employee_id,
             report_markdown=parsed.report_markdown,
-            process_blocks=parsed.process_blocks,
+            process_blocks=list(parsed.process_blocks),
         )
-        if hasattr(request.app.state, "multi_agent_manager"):
-            records = await _load_portal_alarm_analyst_cards(
-                request,
-                session_id=parsed.session_id,
+        if not matched or card is None:
+            return AlarmAnalystCardCreateResponse(matched=False).model_dump(
+                by_alias=True,
             )
-            chat_records = dict(records.get(parsed.chat_id) or {})
-            chat_records[parsed.message_id] = card.model_dump(by_alias=True)
-            records = dict(records)
-            records[parsed.chat_id] = chat_records
-            await _save_portal_alarm_analyst_cards(
-                request,
-                session_id=parsed.session_id,
-                records=records,
-            )
-
-        # Persist card data to alarm registry for external API access
-        if parsed.session_id.startswith(PORTAL_REAL_ALARM_SESSION_PREFIX):
-            _persist_analysis_result_to_registry(
-                session_id=parsed.session_id,
-                card=card.model_dump(by_alias=True),
-            )
+        await _mirror_alarm_analyst_card_to_session_state(
+            request,
+            session_id=parsed.session_id,
+            chat_id=parsed.chat_id,
+            message_id=parsed.message_id,
+            card=card,
+        )
         return AlarmAnalystCardCreateResponse(
             matched=True,
             card=card,
@@ -4036,6 +4400,109 @@ async def create_portal_alarm_analyst_card(
         raise HTTPException(status_code=500, detail=error_detail) from exc
 
 
+def _extract_alarm_analyst_card_candidate_text(
+    report_markdown: str,
+) -> str:
+    normalized = str(report_markdown or "").strip()
+    if not normalized:
+        return ""
+    marker_positions = [
+        normalized.find(marker)
+        for marker in (
+            "# PORTAL ALARM ANALYST CARD MODE",
+            "## 告警分析报告",
+            "## 📊 总结",
+            "## 总结",
+            "### 🔔 告警基本信息",
+            "### 🔍 根因分析",
+            "### 📈 关联资源与告警",
+            "### 🚑 处置建议",
+        )
+        if normalized.find(marker) >= 0
+    ]
+    if marker_positions:
+        start = min(marker_positions)
+        normalized = normalized[start:].strip()
+    if not normalized:
+        return ""
+    return normalized
+
+
+async def _try_persist_alarm_analyst_card_from_agent_context(
+    *,
+    request: Request,
+    session_id: str,
+    chat_id: str,
+    employee_id: str,
+) -> AlarmAnalystCard | None:
+    if not _is_alarm_bound_fault_session(
+        session_id=session_id,
+        employee_id=employee_id,
+    ):
+        return None
+
+    workspace = None
+    try:
+        workspace = await _get_portal_employee_workspace(request, employee_id)
+    except HTTPException:
+        workspace = None
+    except Exception:
+        workspace = None
+    if workspace is None:
+        return None
+
+    try:
+        chat_spec = await workspace.chat_manager.get_chat(chat_id)
+    except Exception:
+        chat_spec = None
+    if chat_spec is None:
+        return None
+
+    state = await workspace.session.get_session_state_dict(
+        chat_spec.session_id,
+        chat_spec.user_id,
+        chat_spec.channel,
+    )
+    context_messages = ((state.get("agent") or {}).get("state") or {}).get(
+        "context",
+        [],
+    )
+    if not isinstance(context_messages, list):
+        return None
+
+    for raw_message in reversed(context_messages):
+        if not isinstance(raw_message, dict):
+            continue
+        if str(raw_message.get("role") or "").strip() != "assistant":
+            continue
+        message_id = str(raw_message.get("id") or "").strip()
+        text_parts = []
+        for block in raw_message.get("content") or []:
+            if not isinstance(block, dict):
+                continue
+            if str(block.get("type") or "").strip() != "text":
+                continue
+            text = str(block.get("text") or "").strip()
+            if text:
+                text_parts.append(text)
+        report_markdown = _extract_alarm_analyst_card_candidate_text(
+            "\n".join(text_parts),
+        )
+        if not report_markdown:
+            continue
+        matched, card, _used_existing = _persist_alarm_analyst_card_from_report(
+            session_id=session_id,
+            chat_id=chat_id,
+            message_id=message_id or f"agent-context-{chat_id}",
+            employee_id=employee_id,
+            report_markdown=report_markdown,
+            process_blocks=[],
+        )
+        if matched:
+            return card
+    return None
+
+
 @router.get("/alarm-analyst/cards/{chat_id}")
 async def list_portal_alarm_analyst_cards(
     request: Request,
@@ -4043,31 +4510,61 @@ async def list_portal_alarm_analyst_cards(
     session_id: str = Query(..., alias="sessionId"),
 ):
     try:
-        if not hasattr(request.app.state, "multi_agent_manager"):
-            return AlarmAnalystCardListResponse(cards=[]).model_dump(
-                by_alias=True,
-            )
-
-        # Fast path: load from SQLite directly by chat_id
+        # Fast path: load from SQLite directly by chat_id. This must keep
+        # working even when the runtime manager is not initialized yet,
+        # because card persistence is DB-first and history refresh should
+        # still be able to render previously saved cards.
         db_chat_records = _load_cards_for_chat_from_db(chat_id)
         if db_chat_records:
             cards = []
             for payload in db_chat_records.values():
                 shaped = _shape_alarm_analyst_card_payload(payload)
-                if shaped:
-                    cards.append(shaped)
+                if not shaped:
+                    continue
+                card = AlarmAnalystCard.model_validate(shaped)
+                cards.append(
+                    _enrich_alarm_analyst_card_with_alarm_context(
+                        session_id=session_id,
+                        card=card,
+                    )
+                )
             return AlarmAnalystCardListResponse(
-                cards=[
-                    AlarmAnalystCard.model_validate(card) for card in cards
-                ],
+                cards=cards,
             ).model_dump(by_alias=True)
+
+        backfilled_card = await _try_persist_alarm_analyst_card_from_agent_context(
+            request=request,
+            session_id=session_id,
+            chat_id=chat_id,
+            employee_id="fault",
+        )
+        if backfilled_card is not None:
+            await _mirror_alarm_analyst_card_to_session_state(
+                request,
+                session_id=session_id,
+                chat_id=chat_id,
+                message_id=backfilled_card.source.message_id,
+                card=backfilled_card,
+            )
+            return AlarmAnalystCardListResponse(
+                cards=[backfilled_card],
+            ).model_dump(by_alias=True)
+
+        if not hasattr(request.app.state, "multi_agent_manager"):
+            return AlarmAnalystCardListResponse(cards=[]).model_dump(
+                by_alias=True,
+            )
 
         # Fallback: load from session state (triggers migration)
         records = await _load_portal_alarm_analyst_cards(
             request,
             session_id=session_id,
         )
-        cards = _list_alarm_analyst_cards_for_chat(records, chat_id)
+        cards = _list_alarm_analyst_cards_for_chat(
+            records,
+            chat_id,
+            session_id=session_id,
+        )
         return AlarmAnalystCardListResponse(
             cards=[AlarmAnalystCard.model_validate(card) for card in cards],
         ).model_dump(by_alias=True)
@@ -4079,6 +4576,111 @@ async def list_portal_alarm_analyst_cards(
         error_detail = f"{type(exc).__name__}: {str(exc)}"
         print(
             f"[ERROR] list_portal_alarm_analyst_cards failed: {error_detail}",
+        )
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=error_detail) from exc
+
+
+@router.post("/alarm-analyst/workorders")
+async def create_alarm_analyst_workorder(
+    payload: dict = Body(default_factory=dict),
+):
+    try:
+        parsed = AlarmAnalystWorkorderCreateRequest.model_validate(payload)
+        card, _stored_message_id = _find_alarm_analyst_card_by_proposal(
+            chat_id=parsed.chat_id,
+            proposal_id=parsed.proposal_id,
+            message_id=parsed.message_id,
+        )
+        if card is None or card.workorder_proposal is None:
+            raise HTTPException(status_code=404, detail="workorder proposal not found")
+
+        proposal = card.workorder_proposal
+        if str(proposal.alarm_id or "").strip() != parsed.alarm_id.strip():
+            raise HTTPException(status_code=409, detail="alarmId does not match proposal")
+        if not proposal.enabled:
+            raise HTTPException(status_code=409, detail="workorder proposal is disabled")
+
+        existing_status = card.workorder_status or None
+        if existing_status and existing_status.state == "created" and existing_status.workorder_id:
+            return AlarmAnalystWorkorderCreateResponse(
+                status="already_exists",
+                proposal_id=proposal.proposal_id,
+                workorder_status=existing_status.model_dump(by_alias=True),
+                workorder_id=existing_status.workorder_id,
+                process_id=existing_status.process_id,
+                message="工单已存在",
+            ).model_dump(by_alias=True)
+
+        alarm_record = get_alarm_record(parsed.alarm_id)
+        request_payload = _build_alarm_analyst_create_payload(
+            chat_id=parsed.chat_id,
+            card=card,
+            alarm_record=alarm_record,
+        )
+        response_payload = await asyncio.to_thread(
+            create_order_disposal_workorder,
+            request_payload,
+        )
+        response_data = response_payload.get("data") or {}
+        workorder_id = str(response_data.get("workOrderId") or "").strip()
+        process_id = str(response_data.get("processId") or "").strip()
+        created_at = datetime.now(timezone.utc).isoformat()
+        next_status = {
+            "state": "created",
+            "workorderId": workorder_id,
+            "processId": process_id,
+            "createdAt": created_at,
+            "errorMessage": "",
+            "lastUpdatedAt": created_at,
+        }
+        if card.workorder_status:
+            card.workorder_status = card.workorder_status.model_copy(update={
+                "state": "created",
+                "workorder_id": workorder_id,
+                "process_id": process_id,
+                "created_at": created_at,
+                "error_message": "",
+                "last_updated_at": created_at,
+            })
+        else:
+            card.workorder_status = AlarmAnalystCardWorkorderStatus.model_validate(
+                next_status,
+            )
+
+        card_payload = card.model_dump(by_alias=True)
+        _save_card_to_db(
+            chat_id=parsed.chat_id,
+            message_id=card.source.message_id,
+            card=card_payload,
+        )
+        _update_portal_real_alarm_registry_safe(
+            alarm_id=parsed.alarm_id,
+            status="manual_pending",
+            chat_id=parsed.chat_id,
+            res_id=str(request_payload.get("resId") or "").strip(),
+            source="alarm-analyst-create-workorder",
+            analysis_result=json.dumps(
+                extract_card_display_fields(card_payload),
+                ensure_ascii=False,
+            ),
+        )
+        return AlarmAnalystWorkorderCreateResponse(
+            status="created",
+            proposal_id=proposal.proposal_id,
+            workorder_status=next_status,
+            workorder_id=workorder_id,
+            process_id=process_id,
+            message="工单创建成功",
+        ).model_dump(by_alias=True)
+    except ValidationError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except HTTPException:
+        raise
+    except Exception as exc:
+        error_detail = f"{type(exc).__name__}: {str(exc)}"
+        print(
+            f"[ERROR] create_alarm_analyst_workorder failed: {error_detail}",
         )
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=error_detail) from exc
@@ -5140,12 +5742,15 @@ async def register_alarm_registry_record(
         "eventLastTime": str(payload.get("eventLastTime", "")).strip(),
         "actCount": str(payload.get("actCount", "")).strip(),
         "visibleContent": str(payload.get("visibleContent", "")).strip(),
+        "additionalText": str(payload.get("additionalText", "")).strip(),
+        "alarmLocation": str(payload.get("alarmLocation", "")).strip(),
     }
     try:
         record = update_alarm_record(
             alarm=alarm_data,
             alarm_id=alarm_id,
             status=str(payload.get("status", "analyzing")).strip(),
+            session_id=str(payload.get("sessionId", "")).strip(),
             source=str(payload.get("source", "manual-bell")).strip(),
         )
         return {"ok": True, "record": record}

@@ -74,6 +74,61 @@ class ManualWorkorderDispatchRequest(BaseModel):
         return self.alarm.alarm_id
 
 
+class AlarmAnalystWorkorderCreateRequest(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    proposal_id: str = Field(
+        ...,
+        min_length=1,
+        validation_alias=AliasChoices("proposal_id", "proposalId"),
+        serialization_alias="proposalId",
+    )
+    message_id: str = Field(
+        default="",
+        validation_alias=AliasChoices("message_id", "messageId"),
+        serialization_alias="messageId",
+    )
+    chat_id: str = Field(
+        ...,
+        min_length=1,
+        validation_alias=AliasChoices("chat_id", "chatId"),
+        serialization_alias="chatId",
+    )
+    alarm_id: str = Field(
+        ...,
+        min_length=1,
+        validation_alias=AliasChoices("alarm_id", "alarmId"),
+        serialization_alias="alarmId",
+    )
+
+
+class AlarmAnalystWorkorderCreateResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    status: str
+    proposal_id: str = Field(
+        default="",
+        validation_alias=AliasChoices("proposal_id", "proposalId"),
+        serialization_alias="proposalId",
+    )
+    workorder_status: dict[str, Any] = Field(
+        default_factory=dict,
+        validation_alias=AliasChoices("workorder_status", "workorderStatus"),
+        serialization_alias="workorderStatus",
+    )
+    workorder_id: str = Field(
+        default="",
+        validation_alias=AliasChoices("workorder_id", "workorderId"),
+        serialization_alias="workorderId",
+    )
+    process_id: str = Field(
+        default="",
+        validation_alias=AliasChoices("process_id", "processId"),
+        serialization_alias="processId",
+    )
+    message: str = ""
+
+
 class WorkorderHandlePayload(BaseModel):
     model_config = ConfigDict(extra="allow")
 

@@ -10,6 +10,8 @@ export interface AlarmRegistryRecord {
   eventLastTime: string;
   actCount: string;
   visibleContent: string;
+  additionalText: string;
+  alarmLocation: string;
   status: string;
   sessionId: string;
   chatId: string;
@@ -70,6 +72,7 @@ export async function updateAlarmRegistryStatus(
 
 export async function registerAlarmRecord(alarm: {
   alarmId: string;
+  sessionId?: string;
   resId?: string;
   title?: string;
   deviceName?: string;
@@ -78,6 +81,8 @@ export async function registerAlarmRecord(alarm: {
   eventLastTime?: string;
   actCount?: number;
   visibleContent?: string;
+  additionalText?: string;
+  alarmLocation?: string;
   status?: string;
   source?: string;
 }): Promise<{ ok: boolean; record: AlarmRegistryRecord }> {

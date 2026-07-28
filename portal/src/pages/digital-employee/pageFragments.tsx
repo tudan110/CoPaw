@@ -1691,6 +1691,9 @@ export function DisposalConfirmModal({
     return null;
   }
 
+  const isAlarmWorkorderProposal = Boolean(action?.proposalId);
+  const countdownText = action?.expiresInSeconds ? `（${action.expiresInSeconds}s 内未确认将自动取消）` : "";
+
   return (
     <div className="history-modal show" onClick={onCancel}>
       <div
@@ -1699,7 +1702,7 @@ export function DisposalConfirmModal({
       >
         <div className="history-header">
           <h3>
-            <i className="fas fa-triangle-exclamation" /> 确认执行慢SQL处置
+            <i className="fas fa-triangle-exclamation" /> {isAlarmWorkorderProposal ? "确认创建故障工单" : "确认执行慢SQL处置"}
           </h3>
           <button className="history-close" onClick={onCancel}>
             <i className="fas fa-times" />
@@ -1707,41 +1710,80 @@ export function DisposalConfirmModal({
         </div>
         <div className="history-body disposal-confirm-body">
           <div className="disposal-confirm-alert">
-            即将对根因工单
-            <strong>{` ${action.operation.rootCauseWorkorderNo} `}</strong>
-            执行慢SQL终止动作。该动作会中断当前异常会话，适合用于演示环境串联处置流程。
+            {isAlarmWorkorderProposal ? (
+              <>
+                当前告警分析已完成，可基于分析结论创建故障工单。{countdownText}
+              </>
+            ) : (
+              <>
+                即将对根因工单
+                <strong>{` ${action.operation.rootCauseWorkorderNo} `}</strong>
+                执行慢SQL终止动作。该动作会中断当前异常会话，适合用于演示环境串联处置流程。
+              </>
+            )}
           </div>
           <div className="disposal-confirm-grid">
-            <div>
-              <span>来源工单</span>
-              <strong>{action.operation.sourceWorkorderNo}</strong>
-            </div>
-            <div>
-              <span>根因工单</span>
-              <strong>{action.operation.rootCauseWorkorderNo}</strong>
-            </div>
-            <div>
-              <span>SQL_ID</span>
-              <strong>{action.operation.sqlId}</strong>
-            </div>
-            <div>
-              <span>会话ID</span>
-              <strong>{action.operation.sessionId}</strong>
-            </div>
-            <div>
-              <span>设备</span>
-              <strong>{action.operation.deviceName}</strong>
-            </div>
-            <div>
-              <span>实例/IP</span>
-              <strong>{`${action.operation.locateName} / ${action.operation.manageIp}`}</strong>
-            </div>
-            <div>
-              <span>处置对象</span>
-              <strong>
-                {action.operation.targetSummary || "数据库核心业务慢 SQL 会话"}
-              </strong>
-            </div>
+            {isAlarmWorkorderProposal ? (
+              <>
+                <div>
+                  <span>告警标题</span>
+                  <strong>{action.title || "告警分析结果"}</strong>
+                </div>
+                <div>
+                  <span>告警编号</span>
+                  <strong>{action.alarmId || "未提供"}</strong>
+                </div>
+                <div>
+                  <span>设备</span>
+                  <strong>{action.deviceName || "未提供"}</strong>
+                </div>
+                <div>
+                  <span>IP</span>
+                  <strong>{action.manageIp || "未提供"}</strong>
+                </div>
+                <div>
+                  <span>告警时间</span>
+                  <strong>{action.eventTime || "未提供"}</strong>
+                </div>
+                <div>
+                  <span>根因摘要</span>
+                  <strong>{action.rootCauseSummary || action.summary || "未提供"}</strong>
+                </div>
+              </>
+            ) : (
+              <>
+                <div>
+                  <span>来源工单</span>
+                  <strong>{action.operation.sourceWorkorderNo}</strong>
+                </div>
+                <div>
+                  <span>根因工单</span>
+                  <strong>{action.operation.rootCauseWorkorderNo}</strong>
+                </div>
+                <div>
+                  <span>SQL_ID</span>
+                  <strong>{action.operation.sqlId}</strong>
+                </div>
+                <div>
+                  <span>会话ID</span>
+                  <strong>{action.operation.sessionId}</strong>
+                </div>
+                <div>
+                  <span>设备</span>
+                  <strong>{action.operation.deviceName}</strong>
+                </div>
+                <div>
+                  <span>实例/IP</span>
+                  <strong>{`${action.operation.locateName} / ${action.operation.manageIp}`}</strong>
+                </div>
+                <div>
+                  <span>处置对象</span>
+                  <strong>
+                    {action.operation.targetSummary || "数据库核心业务慢 SQL 会话"}
+                  </strong>
+                </div>
+              </>
+            )}
           </div>
           <div className="disposal-confirm-actions">
             <button
@@ -1761,7 +1803,7 @@ export function DisposalConfirmModal({
                   submitting ? "fa-spinner fa-spin" : "fa-bolt"
                 }`}
               />{" "}
-              {submitting ? "执行中..." : "确认执行"}
+              {submitting ? (isAlarmWorkorderProposal ? "创建中..." : "执行中...") : (isAlarmWorkorderProposal ? "确认创建" : "确认执行")}
             </button>
           </div>
         </div>

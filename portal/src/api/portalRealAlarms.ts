@@ -15,6 +15,8 @@ export interface PortalRealAlarmItem {
   employeeId: string;
   dispatchContent: string;
   visibleContent: string;
+  additionalText?: string;
+  alarmLocation?: string;
 }
 
 export interface PortalRealAlarmListResponse {

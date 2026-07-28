@@ -78,6 +78,36 @@
 - 子节标题必须精确写为 `🚨 紧急止血（立即执行）` / `🔧 根因修复（计划内操作 / 短期）` / `🛡️ 预防措施（中长期）`（后端据此识别 stage=emergency / repair / prevention）
 - 每级都是编号列表，影响范围可控时紧急止血子节可省略
 
+## 工单提议与状态（供 Portal 卡片增强使用）
+
+当分析结果允许继续闭环到故障工单时，Portal 后端可在结构化 `alarmAnalystCard` 上附加以下字段供前端增强展示；这些字段不要求出现在报告正文 markdown 中：
+
+- `workorderProposal`
+  - `proposalId`
+  - `idempotencyKey`
+  - `enabled`
+  - `title`
+  - `summary`
+  - `alarmId`
+  - `deviceName`
+  - `manageIp`
+  - `eventTime`
+  - `rootCauseSummary`
+  - `suggestions`
+  - `expiresInSeconds`
+- `workorderStatus`
+  - `state`：`idle | creating | created | failed | expired | dismissed`
+  - `workorderId`
+  - `processId`
+  - `createdAt`
+  - `errorMessage`
+  - `lastUpdatedAt`
+
+约束：
+- 只有 `workorderProposal.enabled=true` 时，前端才允许弹出“创建故障工单”确认框
+- `expiresInSeconds` 到时后前端自动关闭，不做任何动作
+- 建单必须以后端幂等校验为准；即使前端重复触发，也只能创建一次
+
 ## 根因判断章节规则
 
 `## 根因判断` 先给出主根因结论。当分析存在多个可能根因时（参见 rca-cross-layer.md 步骤5），

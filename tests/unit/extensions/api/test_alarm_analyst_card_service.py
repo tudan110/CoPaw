@@ -281,46 +281,153 @@ def test_alarm_analyst_card_protocol_keeps_all_report_sections_across_separators
     assert card.recommendations[0].priority == "p0"
 
 
-def test_build_alarm_analyst_card_extracts_root_cause_candidates() -> None:
+def test_build_alarm_analyst_card_extracts_monitor_object_and_host_labels() -> None:
     card = build_alarm_analyst_card(
-        chat_id="chat-7",
-        message_id="assistant-7",
+        chat_id="chat-anchor-1",
+        message_id="assistant-anchor-1",
         employee_id="fault",
         report_markdown=(
-            "🔴 数据库锁异常 — 完整故障分析报告\n"
+            "## 告警分析报告：数据库锁异常\n"
+            "## 告警基础信息\n"
+            "| 字段 | 值 |\n"
+            "|---|---|\n"
+            "| 监控对象 | db_mysql_prod_01 |\n"
+            "| 主机 | 10.43.150.186 |\n"
             "## 根因判断\n"
-            "- 根因：InnoDB 行锁竞争阻塞链。\n"
-            "\n"
-            "### 候选根因\n"
-            "| 排名 | 候选根因 | 关联资源 | 置信度 | 关键证据 |\n"
-            "|---|---|---|---|---|\n"
-            "| 1 | InnoDB 行锁竞争阻塞链 | db_mysql_001（3094） | 86% "
-            "| 锁等待告警 12 条；时序先于应用异常 |\n"
-            "| 2 | 慢 SQL 导致连接池耗尽 | db_mysql_001（3094） | 45% "
-            "| 慢查询数上升；无变更命中 |\n"
-            "\n"
-            "## 影响范围\n"
-            "- 受影响应用：CMDB\n"
+            "- MySQL 锁等待放大，导致写入链路受阻。\n"
             "## 处置建议\n"
             "- P0：终止异常慢 SQL 会话。\n"
         ),
         process_blocks=[],
     )
 
-    candidates = card.root_cause.candidates
-    assert len(candidates) == 2
-    assert candidates[0].rank == 1
-    assert candidates[0].reason == "InnoDB 行锁竞争阻塞链"
-    assert candidates[0].resource_name == "db_mysql_001（3094）"
-    assert candidates[0].confidence == "86%"
-    assert candidates[0].evidence == "锁等待告警 12 条；时序先于应用异常"
-    assert candidates[1].rank == 2
-    assert candidates[1].confidence == "45%"
+    assert card.root_cause.resource_name == "db_mysql_prod_01"
+    assert card.workorder_proposal is not None
+    assert card.workorder_proposal.device_name == "db_mysql_prod_01"
+    assert card.workorder_proposal.manage_ip == "10.43.150.186"
 
-    serialized = card.model_dump(by_alias=True)
-    assert serialized["rootCause"]["candidates"][0]["resourceName"] == (
-        "db_mysql_001（3094）"
+
+
+def test_extract_display_fields_falls_back_to_monitor_object_and_host_labels() -> None:
+    card = build_alarm_analyst_card(
+        chat_id="chat-anchor-2",
+        message_id="assistant-anchor-2",
+        employee_id="fault",
+        report_markdown=(
+            "## 告警分析报告：数据库锁异常\n"
+            "## 告警基础信息\n"
+            "- 监控对象：db_mysql_prod_01\n"
+            "- 主机：10.43.150.186\n"
+            "## 根因判断\n"
+            "- MySQL 锁等待放大，导致写入链路受阻。\n"
+            "## 处置建议\n"
+            "- P0：终止异常慢 SQL 会话。\n"
+        ),
+        process_blocks=[],
     )
+
+    from qwenpaw.extensions.api.alarm_analyst_card_service import extract_display_fields
+
+    display = extract_display_fields(card.model_dump(by_alias=True))
+
+    assert display["anchorObject"] == "db_mysql_prod_01"
+    assert display["rootCauseObject"] == "db_mysql_prod_01"
+
+
+
+def test_build_alarm_analyst_card_generates_workorder_proposal_from_report_context() -> None:
+    card = build_alarm_analyst_card(
+        chat_id="chat-wo-1",
+        message_id="assistant-wo-1",
+        employee_id="fault",
+        report_markdown=(
+            "## 告警分析报告：数据库锁异常\n"
+            "## 告警基础信息\n"
+            "| 字段 | 值 |\n"
+            "|---|---|\n"
+            "| 设备名称 | db_mysql_001 |\n"
+            "| 设备IP | 10.1.1.8 |\n"
+            "| 告警时间 | 2026-07-22 10:00:00 |\n"
+            "## 根因判断\n"
+            "- MySQL 锁等待放大，导致写入链路阻塞。\n"
+            "## 处置建议\n"
+            "- P0：先切换到备用实例恢复访问。\n"
+        ),
+        process_blocks=[],
+    )
+
+    assert card.workorder_proposal is not None
+    assert card.workorder_proposal.device_name == "db_mysql_001"
+    assert card.workorder_proposal.manage_ip == "10.1.1.8"
+    assert card.workorder_proposal.event_time == "2026-07-22 10:00:00"
+    assert card.workorder_proposal.suggestions == ["P0：先切换到备用实例恢复访问。"]
+    assert card.workorder_status is not None
+    assert card.workorder_status.state == "idle"
+
+
+
+def test_build_alarm_analyst_card_generates_workorder_proposal_from_table_recommendations() -> None:
+    card = build_alarm_analyst_card(
+        chat_id="chat-wo-table-1",
+        message_id="assistant-wo-table-1",
+        employee_id="fault",
+        report_markdown=(
+            "## 告警分析报告：进程监控内存超阈值\n"
+            "## 告警基础信息\n"
+            "| 字段 | 值 |\n"
+            "|---|---|\n"
+            "| 监控对象 | docker-zg-01 |\n"
+            "| 主机 IP | 82.156.83.38 |\n"
+            "| 告警时间 | 2026-07-28 10:00:00 |\n"
+            "## 根因判断\n"
+            "- k3s 进程内存持续增长，触发内存阈值告警。\n"
+            "## 处置建议\n"
+            "| 优先级 | 动作 | 说明 |\n"
+            "|--------|------|------|\n"
+            "| 🚑 **紧急** | 检查 k3s 进程当前内存占用趋势 | 在 82.156.83.38 上执行 top/htop 观察 k3s 进程 RES 内存，确认是否持续增长 |\n"
+            "| 🔧 修复 | 检查集群 Pod 数量变化 | 排查是否有业务批量部署或调度异常导致 k3s 负载增加 |\n"
+        ),
+        process_blocks=[],
+    )
+
+    assert [item.priority for item in card.recommendations] == ["p0", "p1"]
+    assert [item.stage for item in card.recommendations] == ["emergency", "repair"]
+    assert card.recommendations[0].title == "检查 k3s 进程当前内存占用趋势"
+    assert (
+        card.recommendations[0].description
+        == "检查 k3s 进程当前内存占用趋势：在 82.156.83.38 上执行 top/htop 观察 k3s 进程 RES 内存，确认是否持续增长"
+    )
+    assert card.workorder_proposal is not None
+    assert card.workorder_proposal.device_name == "docker-zg-01"
+    assert card.workorder_proposal.manage_ip == "82.156.83.38"
+    assert card.workorder_proposal.suggestions == [
+        "检查 k3s 进程当前内存占用趋势：在 82.156.83.38 上执行 top/htop 观察 k3s 进程 RES 内存，确认是否持续增长",
+        "检查集群 Pod 数量变化：排查是否有业务批量部署或调度异常导致 k3s 负载增加",
+    ]
+
+
+
+def test_build_alarm_analyst_card_skips_table_header_as_title() -> None:
+    card = build_alarm_analyst_card(
+        chat_id="chat-wo-2",
+        message_id="assistant-wo-2",
+        employee_id="fault",
+        report_markdown=(
+            "| 项目 | 值 |\n"
+            "|---|---|\n"
+            "| 设备名称 | 172.28.75.4 |\n"
+            "| 告警时间 | 2026-07-21 16:42:32 |\n"
+            "## 根因判断\n"
+            "- 正常逻辑：系统平均负载超过阈值（如 >80）才应告警。\n"
+            "## 处置建议\n"
+            "- P1：检查采集阈值与规则配置。\n"
+        ),
+        process_blocks=[],
+    )
+
+    assert card.workorder_proposal is not None
+    assert card.workorder_proposal.title != "项目 | 值"
+    assert card.summary.title != "项目 | 值"
 
 
 def test_build_alarm_analyst_card_without_candidates_subsection() -> None:

@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   buildAlarmAnalystCardRequest,
   getAlarmAnalystReportMarkdown,
+  looksLikeAlarmAnalystReportForAlarmSession,
   mergeAlarmAnalystCards,
   shouldAttemptAlarmAnalystCardByContent,
   shouldEnableAlarmAnalystCards,
@@ -30,6 +31,31 @@ test("builds alarm analyst card request from grouped response blocks", () => {
   assert.equal(payload?.messageId, "assistant-1");
   assert.equal(payload?.reportMarkdown, "## 根因分析结论\n- MySQL 锁等待放大");
   assert.equal(payload?.processBlocks[0].toolName, "read_file");
+});
+
+test("alarm session report matcher ignores short intermediate text and accepts final report", () => {
+  assert.equal(
+    looksLikeAlarmAnalystReportForAlarmSession("正在分析，请稍候，我先收集告警和拓扑信息。"),
+    false,
+  );
+  assert.equal(
+    looksLikeAlarmAnalystReportForAlarmSession(
+      [
+        "## 告警分析报告：数据库锁异常",
+        "## 告警基础信息",
+        "- 告警时间：2026-07-28 10:00:00",
+        "## 根因判断",
+        "- MySQL 锁等待放大，导致写入链路受阻。",
+        "## 影响范围",
+        "- 受影响应用：CMDB",
+        "## 处置建议",
+        "- P0：终止异常慢 SQL 会话。",
+        "## 📊 总结",
+        "- 置信度：86%",
+      ].join("\n"),
+    ),
+    true,
+  );
 });
 
 test("merges stored cards back into grouped messages by source message id", () => {
@@ -253,21 +279,54 @@ test("only enables alarm analyst cards for fault workorder sessions", () => {
   );
 });
 
-test("attempts alarm analyst cards by report content even outside tagged sessions", () => {
-  assert.equal(
-    shouldAttemptAlarmAnalystCardByContent(
-      "## 告警分析报告：数据库锁异常\n## 影响范围\n- CMDB\n## 处置建议\n- 终止异常慢 SQL 会话",
-    ),
-    true,
-  );
-  assert.equal(
-    shouldAttemptAlarmAnalystCardByContent(
-      "# PORTAL ALARM ANALYST CARD MODE\n\n---\n## 根因判断\n- 锁等待放大",
-    ),
-    true,
-  );
-  assert.equal(
-    shouldAttemptAlarmAnalystCardByContent("普通回复，不包含结构化告警分析报告"),
-    false,
-  );
+test("merges workorder proposal and status onto alarm analyst card", () => {
+  const messages = [
+    {
+      id: "agent-wo-1",
+      enhancementSourceMessageId: "assistant-wo-1",
+      processBlocks: [{ kind: "response", content: "报告正文-建单" }],
+    },
+  ];
+  const cards = [
+    {
+      type: "alarm-analyst-card",
+      version: "v1",
+      source: {
+        chatId: "chat-1",
+        messageId: "assistant-wo-1",
+        skillName: "alarm-analyst",
+        contentHash: "hash-wo-1",
+      },
+      summary: {
+        title: "数据库锁异常",
+        conclusion: "MySQL 锁等待放大",
+      },
+      rootCause: { reason: "MySQL 锁等待放大" },
+      impact: { affectedApplications: [], affectedResources: [] },
+      topology: { nodes: [], edges: [] },
+      recommendations: [],
+      evidence: [],
+      workorderProposal: {
+        proposalId: "proposal-1",
+        idempotencyKey: "proposal-1",
+        enabled: true,
+        title: "数据库锁异常",
+        summary: "建议创建故障工单",
+        alarmId: "alarm-1",
+        suggestions: ["先止血后修复"],
+        expiresInSeconds: 10,
+      },
+      workorderStatus: {
+        state: "created",
+        workorderId: "wo-1",
+        processId: "proc-1",
+      },
+      rawReportMarkdown: "报告正文-建单",
+    },
+  ] as any;
+
+  const merged = mergeAlarmAnalystCards(messages, cards);
+
+  assert.equal(merged[0].alarmAnalystCard.workorderProposal.proposalId, "proposal-1");
+  assert.equal(merged[0].alarmAnalystCard.workorderStatus.workorderId, "wo-1");
 });

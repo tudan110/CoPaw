@@ -16,6 +16,32 @@ export type AlarmAnalystCardRootCauseCandidate = {
   evidence?: string;
 };
 
+export type AlarmAnalystWorkorderProposal = {
+  proposalId: string;
+  idempotencyKey: string;
+  enabled: boolean;
+  title: string;
+  summary: string;
+  alarmId: string;
+  resourceId?: string;
+  deviceName?: string;
+  manageIp?: string;
+  eventTime?: string;
+  severity?: string;
+  rootCauseSummary?: string;
+  suggestions: string[];
+  expiresInSeconds: number;
+};
+
+export type AlarmAnalystWorkorderStatus = {
+  state: "idle" | "creating" | "created" | "failed" | "expired" | "dismissed";
+  workorderId?: string;
+  processId?: string;
+  createdAt?: string;
+  errorMessage?: string;
+  lastUpdatedAt?: string;
+};
+
 export type AlarmAnalystCardV1 = {
   type: "alarm-analyst-card";
   version: "v1";
@@ -64,6 +90,8 @@ export type AlarmAnalystCardV1 = {
     title: string;
     summary: string;
   }>;
+  workorderProposal?: AlarmAnalystWorkorderProposal | null;
+  workorderStatus?: AlarmAnalystWorkorderStatus | null;
   rawReportMarkdown: string;
 };
 
@@ -193,6 +221,39 @@ export function shouldAttemptAlarmAnalystCardByContent(value: unknown) {
       && normalizedText.includes("处置建议")
     )
   );
+}
+
+export function looksLikeAlarmAnalystReportForAlarmSession(value: unknown) {
+  const normalizedText = String(value || "").trim();
+  if (normalizedText.length < 80) {
+    return false;
+  }
+
+  const markerCount = [
+    "告警分析报告",
+    "告警分析 —",
+    "告警分析：",
+    "完整故障分析报告",
+    "告警基础信息",
+    "告警基本信息",
+    "根因判断",
+    "根因分析结论",
+    "根因结论",
+    "根因分析",
+    "### 🔍 结论",
+    "影响范围",
+    "影响评估",
+    "关联资源与告警",
+    "处置建议",
+    "处置建议（紧急程度升级）",
+    "异常指标",
+    "恢复验证",
+    "📊 总结",
+    "📌 总结",
+    "## 总结",
+  ].filter((marker) => normalizedText.includes(marker)).length;
+
+  return markerCount >= 3;
 }
 
 export function buildAlarmAnalystCardRequest({

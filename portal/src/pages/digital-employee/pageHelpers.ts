@@ -892,6 +892,17 @@ export type PendingPortalDispatch = {
   visibleContent: string;
   forceNewChat?: boolean;
   alarmId?: string;
+  sessionId?: string;
+  chatMeta?: Record<string, unknown>;
+  resId?: string;
+  title?: string;
+  deviceName?: string;
+  manageIp?: string;
+  eventTime?: string;
+  eventLastTime?: string;
+  actCount?: number;
+  additionalText?: string;
+  alarmLocation?: string;
 };
 
 export type PortalLocationState = {
@@ -916,6 +927,7 @@ export type PortalLocationState = {
   openSession?: {
     employeeId: string;
     sessionId: string;
+    chatId?: string;
   };
   workbenchInitialPrompt?: {
     token: string;
@@ -939,6 +951,11 @@ export type PortalOpsAlert = {
   routeEntry?: string | null;
   dispatchContent?: string;
   visibleContent?: string;
+  title?: string;
+  deviceName?: string;
+  manageIp?: string;
+  additionalText?: string;
+  alarmLocation?: string;
 };
 
 export type PortalAlertToastState = {

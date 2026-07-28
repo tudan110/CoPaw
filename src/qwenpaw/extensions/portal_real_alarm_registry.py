@@ -63,6 +63,8 @@ CREATE TABLE IF NOT EXISTS alarm_records (
     event_last_time TEXT NOT NULL DEFAULT '',
     act_count TEXT NOT NULL DEFAULT '',
     visible_content TEXT NOT NULL DEFAULT '',
+    additional_text TEXT NOT NULL DEFAULT '',
+    alarm_location TEXT NOT NULL DEFAULT '',
     status TEXT NOT NULL DEFAULT 'new',
     session_id TEXT NOT NULL DEFAULT '',
     chat_id TEXT NOT NULL DEFAULT '',
@@ -97,6 +99,8 @@ _KEY_TO_COL: dict[str, str] = {
     "eventLastTime": "event_last_time",
     "actCount": "act_count",
     "visibleContent": "visible_content",
+    "additionalText": "additional_text",
+    "alarmLocation": "alarm_location",
     "status": "status",
     "sessionId": "session_id",
     "chatId": "chat_id",
@@ -190,6 +194,14 @@ def _open_db(db_path: Path) -> sqlite3.Connection:
     if "act_count" not in existing_cols:
         conn.execute(
             "ALTER TABLE alarm_records ADD COLUMN act_count TEXT NOT NULL DEFAULT ''"
+        )
+    if "additional_text" not in existing_cols:
+        conn.execute(
+            "ALTER TABLE alarm_records ADD COLUMN additional_text TEXT NOT NULL DEFAULT ''"
+        )
+    if "alarm_location" not in existing_cols:
+        conn.execute(
+            "ALTER TABLE alarm_records ADD COLUMN alarm_location TEXT NOT NULL DEFAULT ''"
         )
     conn.commit()
     return conn
@@ -333,6 +345,21 @@ def _merge_alarm_metadata(
         alarm.get("visibleContent"),
         alarm.get("visible_content"),
         existing.get("visibleContent"),
+    )
+    merged["additionalText"] = _coalesce_text(
+        alarm.get("additionalText"),
+        alarm.get("additional_text"),
+        alarm.get("alarmText"),
+        alarm.get("alarmtext"),
+        alarm.get("rawMessage"),
+        merged.get("visibleContent"),
+        existing.get("additionalText"),
+    )
+    merged["alarmLocation"] = _coalesce_text(
+        alarm.get("alarmLocation"),
+        alarm.get("alarm_location"),
+        alarm.get("location"),
+        existing.get("alarmLocation"),
     )
     return merged
 

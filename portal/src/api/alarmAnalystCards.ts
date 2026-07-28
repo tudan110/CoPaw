@@ -74,3 +74,29 @@ export async function listAlarmAnalystCards(
     { agentId },
   );
 }
+
+export async function createAlarmAnalystWorkorder(
+  payload: Record<string, unknown>,
+  { agentId }: { agentId?: string } = {},
+) {
+  return requestAlarmAnalystCardApi<{
+    status?: string;
+    proposalId?: string;
+    workorderStatus?: Record<string, unknown> | null;
+    workorderId?: string;
+    processId?: string;
+    message?: string;
+  }>(
+    "/alarm-analyst/workorders",
+    {
+      agentId,
+      init: {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      },
+    },
+  );
+}

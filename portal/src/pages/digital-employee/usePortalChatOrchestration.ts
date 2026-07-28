@@ -19,6 +19,7 @@ import {
   getEmployeeById,
 } from "../../data/portalData";
 import type { DigitalEmployee } from "../../types/portal";
+import { registerAlarmRecord } from "../../api/alarmRegistry";
 import {
   createConversationSession,
   saveConversationStore,
@@ -140,7 +141,12 @@ export function usePortalChatOrchestration({
   navigateToEmployeePage: NavigateToEmployeePage;
   handleRemoteSendMessage: (
     content: string,
-    options?: { visibleContent?: string; forceNewChat?: boolean },
+    options?: {
+      visibleContent?: string;
+      forceNewChat?: boolean;
+      sessionId?: string;
+      chatMeta?: any;
+    },
   ) => Promise<boolean> | boolean;
   resetRemoteState: (options?: { initialMessages?: any[]; clearHistoryError?: boolean }) => void;
   onConversationDispatchStart?: () => void;
@@ -369,10 +375,14 @@ export function usePortalChatOrchestration({
       visibleContent = content,
       targetEmployee = currentEmployee,
       forceNewChat = false,
+      sessionId = "",
+      chatMeta = null,
     }: {
       visibleContent?: string;
       targetEmployee?: any;
       forceNewChat?: boolean;
+      sessionId?: string;
+      chatMeta?: any;
     } = {},
   ) => {
     if (!content || !targetEmployee) {
@@ -388,6 +398,8 @@ export function usePortalChatOrchestration({
       return handleRemoteSendMessage(content, {
         visibleContent,
         forceNewChat,
+        sessionId,
+        chatMeta,
       });
     }
 
@@ -481,6 +493,24 @@ export function usePortalChatOrchestration({
     const pendingAlarmId = pendingDispatch.alarmId || "";
     pendingAlarmRegistryIdRef.current = pendingAlarmId;
 
+    if (pendingAlarmId) {
+      registerAlarmRecord({
+        alarmId: pendingAlarmId,
+        resId: pendingDispatch.resId,
+        title: pendingDispatch.title,
+        deviceName: pendingDispatch.deviceName,
+        manageIp: pendingDispatch.manageIp,
+        eventTime: pendingDispatch.eventTime,
+        eventLastTime: pendingDispatch.eventLastTime,
+        actCount: pendingDispatch.actCount,
+        visibleContent: pendingDispatch.visibleContent,
+        additionalText: pendingDispatch.additionalText,
+        alarmLocation: pendingDispatch.alarmLocation,
+        status: "analyzing",
+        source: "manual-dispatch-chat",
+      }).catch(() => {});
+    }
+
     if (pendingDispatch.forceNewChat) {
       if (isRemoteEmployee) {
         resetRemoteState({
@@ -501,6 +531,8 @@ export function usePortalChatOrchestration({
       void dispatchActiveMessage(pendingDispatch.content, {
         visibleContent: pendingDispatch.visibleContent,
         forceNewChat: pendingDispatch.forceNewChat,
+        sessionId: pendingDispatch.sessionId,
+        chatMeta: pendingDispatch.chatMeta,
       });
     }, 0);
   }, [

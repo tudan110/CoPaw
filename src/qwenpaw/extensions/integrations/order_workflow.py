@@ -2,14 +2,34 @@
 from __future__ import annotations
 
 import importlib.util
+import os
 import sys
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit, urlunsplit
 
 from qwenpaw import constant
 
 ORDER_SOURCE = "portal-order-workflow-api"
+
+
+def _normalize_order_base_url(base_url: str) -> str:
+    normalized = str(base_url or "").strip().rstrip("/")
+    if not normalized:
+        return normalized
+    parsed = urlsplit(normalized)
+    path = parsed.path.rstrip("/")
+    if path.endswith("/ferry") or path.endswith("/api/v1/work-order"):
+        return normalized
+    if path.endswith("/flowable"):
+        path = f"{path.removesuffix('/flowable')}/ferry"
+    elif not path:
+        path = "/ferry"
+    else:
+        return normalized
+    rebuilt = parsed._replace(path=path)
+    return urlunsplit(rebuilt).rstrip("/")
 
 
 def _resolve_workspace_skill_root(workspace: str, skill: str) -> Path:
@@ -72,16 +92,22 @@ def _build_order_client_config(
     timeout_seconds: int | None,
     disable_curl_fallback: bool,
 ) -> Any:
-    """按需覆盖 client 配置；无覆盖时返回 None（照旧 from_env()）。
+    """按需覆盖 client 配置；无覆盖时返回规范化后的配置副本。
 
-    仅当调用方显式要求缩短超时或关掉 curl 兜底时，才基于
-    ``OrderWorkflowConfig.from_env()`` 复制一份并改对应字段。默认
-    （两个覆盖都不传）返回 None，``OrderWorkflowClient`` 内部仍走
-    ``from_env()``，聊天技能路径行为零变化。
+    Portal 后端直接复用 order-workflow runtime client，但用户本机
+    ``~/.qwenpaw`` 里的旧版技能脚本可能还没同步到仓库最新逻辑。
+    这里在 wrapper 层兜底把 base_url 规范化成 ferry 真正入口，避免
+    继续回退到裸 INOE 根地址后命中 404。
     """
-    if timeout_seconds is None and not disable_curl_fallback:
-        return None
     config = module.OrderWorkflowConfig.from_env()
+    normalized_base_url = _normalize_order_base_url(
+        getattr(config, "base_url", ""),
+    )
+    if normalized_base_url:
+        config.base_url = normalized_base_url
+        os.environ["ORDER_API_BASE_URL"] = normalized_base_url
+    if timeout_seconds is None and not disable_curl_fallback:
+        return config
     if timeout_seconds is not None:
         config.timeout_seconds = int(timeout_seconds)
     if disable_curl_fallback:
@@ -137,6 +163,31 @@ def query_order_workorders(
         "items": rows,
         "stats": _normalize_stats(stats_payload),
     }
+
+
+def create_disposal_workorder(
+    payload: dict[str, Any],
+    *,
+    timeout_seconds: int | None = None,
+    disable_curl_fallback: bool = False,
+) -> dict[str, Any]:
+    """Create a disposal workorder through the order-workflow runtime client."""
+    from qwenpaw.extensions.integrations.working_secrets import (
+        ensure_working_secrets_loaded,
+    )
+
+    ensure_working_secrets_loaded()
+    module = _load_order_client_module()
+    client = module.OrderWorkflowClient(
+        _build_order_client_config(
+            module,
+            timeout_seconds=timeout_seconds,
+            disable_curl_fallback=disable_curl_fallback,
+        )
+    )
+    if not isinstance(payload, dict):
+        raise RuntimeError("workorder payload must be a JSON object")
+    return client.create_disposal_workorder(payload)
 
 
 def _priority_label(value: Any) -> str:

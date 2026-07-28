@@ -197,7 +197,12 @@ export function usePortalSessionHistory({
     const availableSessions = isRemoteEmployee
       ? scopedRemoteSessions
       : ensureSessionRecords(conversationStore[currentEmployee.id]);
-    const targetSession = availableSessions.find((session) => session.id === openSession.sessionId);
+    const targetSession = availableSessions.find(
+      (session) =>
+        session.id === openSession.chatId
+        || session.id === openSession.sessionId
+        || session.sessionId === openSession.sessionId,
+    );
 
     if (targetSession) {
       handledDashboardSessionOpenRef.current = "";

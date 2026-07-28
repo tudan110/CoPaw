@@ -356,6 +356,7 @@ def test_alarm_analyst_cards_route_persists_and_lists_cards(
 ) -> None:
     client = TestClient(portal_backend.app)
     card_store: dict[str, dict[str, dict[str, dict]]] = {"fault-session-1": {}}
+    db_store: dict[str, dict[str, dict]] = {}
 
     monkeypatch.setattr(portal_backend.app.state, "multi_agent_manager", object(), raising=False)
 
@@ -380,6 +381,20 @@ def test_alarm_analyst_cards_route_persists_and_lists_cards(
         portal_backend,
         "_save_portal_alarm_analyst_cards",
         fake_save_cards,
+    )
+    monkeypatch.setattr(
+        portal_backend,
+        "_load_cards_for_chat_from_db",
+        lambda chat_id: dict(db_store.get(chat_id, {})),
+    )
+
+    def fake_save_card_to_db(*, chat_id: str, message_id: str, card: dict, session_id: str = "") -> None:
+        db_store.setdefault(chat_id, {})[message_id] = dict(card)
+
+    monkeypatch.setattr(
+        portal_backend,
+        "_save_card_to_db",
+        fake_save_card_to_db,
     )
 
     create_response = client.post(
@@ -415,6 +430,7 @@ def test_alarm_analyst_cards_route_persists_and_lists_cards(
 
     assert create_response.status_code == 200
     assert create_response.json()["matched"] is True
+    assert db_store["chat-1"]["assistant-1"]["summary"]["title"] == "数据库锁异常"
     assert "chat-1" in card_store["fault-session-1"]
     assert "assistant-1" in card_store["fault-session-1"]["chat-1"]
 
@@ -434,6 +450,7 @@ def test_alarm_analyst_cards_route_returns_unmatched_without_persisting(
 ) -> None:
     client = TestClient(portal_backend.app)
     card_store: dict[str, dict[str, dict[str, dict]]] = {"fault-session-1": {}}
+    db_store: dict[str, dict[str, dict]] = {}
 
     monkeypatch.setattr(portal_backend.app.state, "multi_agent_manager", object(), raising=False)
 
@@ -459,6 +476,16 @@ def test_alarm_analyst_cards_route_returns_unmatched_without_persisting(
         "_save_portal_alarm_analyst_cards",
         fake_save_cards,
     )
+    monkeypatch.setattr(
+        portal_backend,
+        "_load_cards_for_chat_from_db",
+        lambda chat_id: dict(db_store.get(chat_id, {})),
+    )
+    monkeypatch.setattr(
+        portal_backend,
+        "_save_card_to_db",
+        lambda **_kwargs: db_store.setdefault("called", {}),
+    )
 
     response = client.post(
         "/api/portal/alarm-analyst/cards",
@@ -475,6 +502,668 @@ def test_alarm_analyst_cards_route_returns_unmatched_without_persisting(
     assert response.status_code == 200
     assert response.json() == {"matched": False, "card": None}
     assert card_store["fault-session-1"] == {}
+    assert db_store == {}
+
+
+def test_list_alarm_analyst_cards_reads_db_without_runtime_manager(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = TestClient(portal_backend.app)
+    if hasattr(portal_backend.app.state, "multi_agent_manager"):
+        delattr(portal_backend.app.state, "multi_agent_manager")
+
+    monkeypatch.setattr(
+        portal_backend,
+        "_load_cards_for_chat_from_db",
+        lambda _chat_id: {
+            "assistant-1": {
+                "type": "alarm-analyst-card",
+                "version": "v1",
+                "source": {
+                    "chatId": "chat-1",
+                    "messageId": "assistant-1",
+                    "skillName": "alarm-analyst",
+                    "contentHash": "hash-1",
+                },
+                "summary": {
+                    "title": "数据库锁异常",
+                    "conclusion": "MySQL 锁等待放大",
+                },
+                "rootCause": {"reason": "MySQL 锁等待放大"},
+                "impact": {"affectedApplications": [], "affectedResources": []},
+                "topology": {"nodes": [], "edges": []},
+                "recommendations": [],
+                "evidence": [],
+                "workorderProposal": {
+                    "proposalId": "proposal-1",
+                    "idempotencyKey": "proposal-1",
+                    "enabled": True,
+                    "title": "数据库锁异常",
+                    "summary": "建议创建故障工单",
+                    "alarmId": "COM_2079409043571912704",
+                    "suggestions": ["先止血后修复"],
+                    "expiresInSeconds": 10,
+                },
+                "workorderStatus": {"state": "idle"},
+                "rawReportMarkdown": "报告正文",
+            }
+        },
+    )
+
+    response = client.get(
+        "/api/portal/alarm-analyst/cards/chat-1",
+        params={"sessionId": "portal-fault-alarm-COM_2079409043571912704"},
+    )
+
+    assert response.status_code == 200
+    assert len(response.json()["cards"]) == 1
+    assert response.json()["cards"][0]["source"]["messageId"] == "assistant-1"
+
+
+
+def test_list_alarm_analyst_cards_returns_backfilled_card_without_runtime_manager(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = TestClient(portal_backend.app)
+    if hasattr(portal_backend.app.state, "multi_agent_manager"):
+        delattr(portal_backend.app.state, "multi_agent_manager")
+
+    backfilled_card = portal_backend.AlarmAnalystCard.model_validate(
+        {
+            "type": "alarm-analyst-card",
+            "version": "v1",
+            "source": {
+                "chatId": "chat-1",
+                "messageId": "assistant-backfilled",
+                "skillName": "alarm-analyst",
+                "contentHash": "hash-backfilled",
+            },
+            "summary": {
+                "title": "系统平均负载过高",
+                "conclusion": "误告警，阈值规则逻辑配置错误",
+            },
+            "rootCause": {"reason": "误告警，阈值规则逻辑配置错误"},
+            "impact": {"affectedApplications": [], "affectedResources": []},
+            "topology": {"nodes": [], "edges": []},
+            "recommendations": [],
+            "evidence": [],
+            "workorderProposal": {
+                "proposalId": "proposal-backfilled",
+                "idempotencyKey": "proposal-backfilled",
+                "enabled": True,
+                "title": "系统平均负载过高",
+                "summary": "建议创建故障工单",
+                "alarmId": "COM_2079409043571912704",
+                "suggestions": ["检查阈值规则"],
+                "expiresInSeconds": 10,
+            },
+            "workorderStatus": {"state": "idle"},
+            "rawReportMarkdown": "报告正文",
+        }
+    )
+    mirrored: list[tuple[str, str, str]] = []
+
+    monkeypatch.setattr(portal_backend, "_load_cards_for_chat_from_db", lambda _chat_id: {})
+
+    async def fake_backfill(*, request, session_id: str, chat_id: str, employee_id: str):
+        assert session_id == "portal-fault-alarm-COM_2079409043571912704"
+        assert chat_id == "chat-1"
+        assert employee_id == "fault"
+        return backfilled_card
+
+    async def fake_mirror(_request, *, session_id: str, chat_id: str, message_id: str, card):
+        mirrored.append((session_id, chat_id, message_id))
+        assert card.source.message_id == "assistant-backfilled"
+
+    monkeypatch.setattr(
+        portal_backend,
+        "_try_persist_alarm_analyst_card_from_agent_context",
+        fake_backfill,
+    )
+    monkeypatch.setattr(
+        portal_backend,
+        "_mirror_alarm_analyst_card_to_session_state",
+        fake_mirror,
+    )
+
+    response = client.get(
+        "/api/portal/alarm-analyst/cards/chat-1",
+        params={"sessionId": "portal-fault-alarm-COM_2079409043571912704"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["cards"][0]["summary"]["title"] == "系统平均负载过高"
+    assert mirrored == [
+        (
+            "portal-fault-alarm-COM_2079409043571912704",
+            "chat-1",
+            "assistant-backfilled",
+        )
+    ]
+
+
+
+def test_alarm_analyst_cards_route_reuses_existing_db_card_for_alarm_session(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = TestClient(portal_backend.app)
+    card_store: dict[str, dict[str, dict[str, dict]]] = {"portal-fault-alarm-abc": {}}
+    existing_card = {
+        "type": "alarm-analyst-card",
+        "version": "v1",
+        "source": {
+            "chatId": "chat-1",
+            "messageId": "assistant-1",
+            "skillName": "alarm-analyst",
+            "contentHash": "hash-1",
+        },
+        "summary": {
+            "title": "数据库锁异常",
+            "conclusion": "MySQL 锁等待放大",
+        },
+        "rootCause": {"reason": "MySQL 锁等待放大"},
+        "impact": {"affectedApplications": [], "affectedResources": []},
+        "topology": {"nodes": [], "edges": []},
+        "recommendations": [],
+        "evidence": [],
+        "workorderProposal": {
+            "proposalId": "proposal-1",
+            "idempotencyKey": "proposal-1",
+            "enabled": True,
+            "title": "数据库锁异常",
+            "summary": "建议创建故障工单",
+            "alarmId": "abc",
+            "suggestions": ["先止血后修复"],
+            "expiresInSeconds": 10,
+        },
+        "workorderStatus": {"state": "idle"},
+        "rawReportMarkdown": "已存在报告正文",
+    }
+    db_store = {"chat-1": {"assistant-1": existing_card}}
+    save_calls: list[tuple[str, str]] = []
+
+    monkeypatch.setattr(portal_backend.app.state, "multi_agent_manager", object(), raising=False)
+
+    async def fake_load_cards(_request, *, session_id: str, user_id: str = "default") -> dict:
+        return dict(card_store.get(session_id, {}))
+
+    async def fake_save_cards(
+        _request,
+        *,
+        session_id: str,
+        records: dict[str, dict[str, dict]],
+        user_id: str = "default",
+    ) -> None:
+        card_store[session_id] = dict(records)
+
+    monkeypatch.setattr(portal_backend, "_load_portal_alarm_analyst_cards", fake_load_cards)
+    monkeypatch.setattr(portal_backend, "_save_portal_alarm_analyst_cards", fake_save_cards)
+    monkeypatch.setattr(
+        portal_backend,
+        "_load_cards_for_chat_from_db",
+        lambda chat_id: dict(db_store.get(chat_id, {})),
+    )
+
+    def fake_save_card_to_db(*, chat_id: str, message_id: str, card: dict, session_id: str = "") -> None:
+        save_calls.append((chat_id, message_id))
+        db_store.setdefault(chat_id, {})[message_id] = dict(card)
+
+    monkeypatch.setattr(portal_backend, "_save_card_to_db", fake_save_card_to_db)
+
+    response = client.post(
+        "/api/portal/alarm-analyst/cards",
+        json={
+            "sessionId": "portal-fault-alarm-abc",
+            "chatId": "chat-1",
+            "messageId": "assistant-1",
+            "employeeId": "fault",
+            "reportMarkdown": "这是一次失败的兜底重试文本，不应该覆盖已落库卡片。",
+            "processBlocks": [],
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["matched"] is True
+    assert response.json()["card"]["summary"]["title"] == "数据库锁异常"
+    assert save_calls == []
+    assert card_store["portal-fault-alarm-abc"]["chat-1"]["assistant-1"]["summary"]["title"] == "数据库锁异常"
+
+
+def test_alarm_analyst_cards_route_returns_existing_card_for_same_message_id(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = TestClient(portal_backend.app)
+    card_store: dict[str, dict[str, dict[str, dict]]] = {"portal-fault-alarm-abc": {}}
+    existing_card = {
+        "type": "alarm-analyst-card",
+        "version": "v1",
+        "source": {
+            "chatId": "chat-1",
+            "messageId": "assistant-1",
+            "skillName": "alarm-analyst",
+            "contentHash": "hash-1",
+        },
+        "summary": {
+            "title": "数据库锁异常",
+            "conclusion": "MySQL 锁等待放大",
+        },
+        "rootCause": {"reason": "MySQL 锁等待放大"},
+        "impact": {"affectedApplications": [], "affectedResources": []},
+        "topology": {"nodes": [], "edges": []},
+        "recommendations": [],
+        "evidence": [],
+        "workorderProposal": {
+            "proposalId": "proposal-1",
+            "idempotencyKey": "proposal-1",
+            "enabled": True,
+            "title": "数据库锁异常",
+            "summary": "建议创建故障工单",
+            "alarmId": "abc",
+            "suggestions": ["先止血后修复"],
+            "expiresInSeconds": 10,
+        },
+        "workorderStatus": {"state": "idle"},
+        "rawReportMarkdown": "已存在报告正文",
+    }
+    db_store = {"chat-1": {"assistant-1": existing_card}}
+    save_calls: list[tuple[str, str]] = []
+
+    monkeypatch.setattr(portal_backend.app.state, "multi_agent_manager", object(), raising=False)
+
+    async def fake_load_cards(_request, *, session_id: str, user_id: str = "default") -> dict:
+        return dict(card_store.get(session_id, {}))
+
+    async def fake_save_cards(
+        _request,
+        *,
+        session_id: str,
+        records: dict[str, dict[str, dict]],
+        user_id: str = "default",
+    ) -> None:
+        card_store[session_id] = dict(records)
+
+    monkeypatch.setattr(portal_backend, "_load_portal_alarm_analyst_cards", fake_load_cards)
+    monkeypatch.setattr(portal_backend, "_save_portal_alarm_analyst_cards", fake_save_cards)
+    monkeypatch.setattr(
+        portal_backend,
+        "_load_cards_for_chat_from_db",
+        lambda chat_id: dict(db_store.get(chat_id, {})),
+    )
+
+    def fake_save_card_to_db(*, chat_id: str, message_id: str, card: dict, session_id: str = "") -> None:
+        save_calls.append((chat_id, message_id))
+        db_store.setdefault(chat_id, {})[message_id] = dict(card)
+
+    monkeypatch.setattr(portal_backend, "_save_card_to_db", fake_save_card_to_db)
+
+    response = client.post(
+        "/api/portal/alarm-analyst/cards",
+        json={
+            "sessionId": "portal-fault-alarm-abc",
+            "chatId": "chat-1",
+            "messageId": "assistant-1",
+            "employeeId": "fault",
+            "reportMarkdown": "这是一次失败的兜底重试文本，不应该覆盖已落库卡片。",
+            "processBlocks": [],
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["matched"] is True
+    assert response.json()["card"]["summary"]["title"] == "数据库锁异常"
+    assert save_calls == []
+    assert card_store["portal-fault-alarm-abc"]["chat-1"]["assistant-1"]["summary"]["title"] == "数据库锁异常"
+
+
+def test_alarm_analyst_cards_route_reuses_existing_card_for_same_chat_report(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = TestClient(portal_backend.app)
+    card_store: dict[str, dict[str, dict[str, dict]]] = {"portal-fault-alarm-abc": {}}
+    existing_card = {
+        "type": "alarm-analyst-card",
+        "version": "v1",
+        "source": {
+            "chatId": "chat-1",
+            "messageId": "assistant-1",
+            "skillName": "alarm-analyst",
+            "contentHash": "hash-1",
+        },
+        "summary": {
+            "title": "数据库锁异常",
+            "conclusion": "MySQL 锁等待放大",
+        },
+        "rootCause": {"reason": "MySQL 锁等待放大"},
+        "impact": {"affectedApplications": [], "affectedResources": []},
+        "topology": {"nodes": [], "edges": []},
+        "recommendations": [],
+        "evidence": [],
+        "workorderProposal": {
+            "proposalId": "proposal-1",
+            "idempotencyKey": "proposal-1",
+            "enabled": True,
+            "title": "数据库锁异常",
+            "summary": "建议创建故障工单",
+            "alarmId": "abc",
+            "suggestions": ["先止血后修复"],
+            "expiresInSeconds": 10,
+        },
+        "workorderStatus": {"state": "idle"},
+        "rawReportMarkdown": (
+            "## 告警分析报告：数据库锁异常\n"
+            "## 告警基础信息\n"
+            "- 告警时间：2026-07-28 10:00:00\n"
+            "## 根因判断\n"
+            "- MySQL 锁等待放大，导致写入链路受阻。\n"
+            "## 影响范围\n"
+            "- 受影响应用：CMDB\n"
+            "## 处置建议\n"
+            "- P0：终止异常慢 SQL 会话。\n"
+            "## 📊 总结\n"
+            "- 置信度：86%"
+        ),
+    }
+    db_store = {"chat-1": {"assistant-1": existing_card}}
+    save_calls: list[tuple[str, str]] = []
+
+    monkeypatch.setattr(portal_backend.app.state, "multi_agent_manager", object(), raising=False)
+
+    async def fake_load_cards(_request, *, session_id: str, user_id: str = "default") -> dict:
+        return dict(card_store.get(session_id, {}))
+
+    async def fake_save_cards(
+        _request,
+        *,
+        session_id: str,
+        records: dict[str, dict[str, dict]],
+        user_id: str = "default",
+    ) -> None:
+        card_store[session_id] = dict(records)
+
+    monkeypatch.setattr(portal_backend, "_load_portal_alarm_analyst_cards", fake_load_cards)
+    monkeypatch.setattr(portal_backend, "_save_portal_alarm_analyst_cards", fake_save_cards)
+    monkeypatch.setattr(
+        portal_backend,
+        "_load_cards_for_chat_from_db",
+        lambda chat_id: dict(db_store.get(chat_id, {})),
+    )
+
+    def fake_save_card_to_db(*, chat_id: str, message_id: str, card: dict, session_id: str = "") -> None:
+        save_calls.append((chat_id, message_id))
+        db_store.setdefault(chat_id, {})[message_id] = dict(card)
+
+    monkeypatch.setattr(portal_backend, "_save_card_to_db", fake_save_card_to_db)
+
+    response = client.post(
+        "/api/portal/alarm-analyst/cards",
+        json={
+            "sessionId": "portal-fault-alarm-abc",
+            "chatId": "chat-1",
+            "messageId": "assistant-2",
+            "employeeId": "fault",
+            "reportMarkdown": existing_card["rawReportMarkdown"],
+            "processBlocks": [],
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["matched"] is True
+    assert response.json()["card"]["source"]["messageId"] == "assistant-1"
+    assert response.json()["card"]["workorderProposal"]["proposalId"] == "proposal-1"
+    assert save_calls == []
+
+
+def test_alarm_analyst_cards_route_allows_alarm_session_fallback_for_report_like_text(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = TestClient(portal_backend.app)
+    card_store: dict[str, dict[str, dict[str, dict]]] = {"portal-fault-alarm-abc": {}}
+    db_store: dict[str, dict[str, dict]] = {}
+    registry_calls: list[dict[str, object]] = []
+
+    monkeypatch.setattr(portal_backend.app.state, "multi_agent_manager", object(), raising=False)
+
+    async def fake_load_cards(_request, *, session_id: str, user_id: str = "default") -> dict:
+        return dict(card_store.get(session_id, {}))
+
+    async def fake_save_cards(
+        _request,
+        *,
+        session_id: str,
+        records: dict[str, dict[str, dict]],
+        user_id: str = "default",
+    ) -> None:
+        card_store[session_id] = dict(records)
+
+    monkeypatch.setattr(portal_backend, "_load_portal_alarm_analyst_cards", fake_load_cards)
+    monkeypatch.setattr(portal_backend, "_save_portal_alarm_analyst_cards", fake_save_cards)
+    monkeypatch.setattr(portal_backend, "_load_cards_for_chat_from_db", lambda chat_id: dict(db_store.get(chat_id, {})))
+
+    def fake_save_card_to_db(*, chat_id: str, message_id: str, card: dict, session_id: str = "") -> None:
+        db_store.setdefault(chat_id, {})[message_id] = dict(card)
+
+    monkeypatch.setattr(portal_backend, "_save_card_to_db", fake_save_card_to_db)
+    monkeypatch.setattr(
+        portal_backend,
+        "_persist_analysis_result_to_registry",
+        lambda **kwargs: registry_calls.append(dict(kwargs)),
+    )
+
+    response = client.post(
+        "/api/portal/alarm-analyst/cards",
+        json={
+            "sessionId": "portal-fault-alarm-abc",
+            "chatId": "chat-1",
+            "messageId": "assistant-2",
+            "employeeId": "fault",
+            "reportMarkdown": (
+                "## 告警分析报告：数据库锁异常\n"
+                "## 根因判断\n"
+                "- MySQL 锁等待放大，导致写入链路受阻。\n"
+                "## 影响范围\n"
+                "- 受影响应用：CMDB\n"
+                "## 处置建议\n"
+                "- P0：终止异常慢 SQL 会话。\n"
+            ),
+            "processBlocks": [],
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["matched"] is True
+    assert db_store["chat-1"]["assistant-2"]["summary"]["title"] == "数据库锁异常"
+    assert registry_calls == [
+        {
+            "session_id": "portal-fault-alarm-abc",
+            "card": db_store["chat-1"]["assistant-2"],
+            "chat_id": "chat-1",
+        }
+    ]
+
+
+def test_alarm_analyst_workorders_route_returns_existing_created_status(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = TestClient(portal_backend.app)
+
+    card_payload = {
+        "type": "alarm-analyst-card",
+        "version": "v1",
+        "source": {
+            "chatId": "chat-1",
+            "messageId": "assistant-1",
+            "skillName": "alarm-analyst",
+            "contentHash": "hash-1",
+        },
+        "summary": {
+            "title": "数据库锁异常",
+            "conclusion": "MySQL 锁等待放大",
+        },
+        "rootCause": {"reason": "MySQL 锁等待放大"},
+        "impact": {"affectedApplications": [], "affectedResources": []},
+        "topology": {"nodes": [], "edges": []},
+        "recommendations": [],
+        "evidence": [],
+        "workorderProposal": {
+            "proposalId": "proposal-1",
+            "idempotencyKey": "proposal-1",
+            "enabled": True,
+            "title": "数据库锁异常",
+            "summary": "建议创建故障工单",
+            "alarmId": "alarm-1",
+            "suggestions": ["先止血后修复"],
+            "expiresInSeconds": 10,
+        },
+        "workorderStatus": {
+            "state": "created",
+            "workorderId": "wo-1",
+            "processId": "proc-1",
+        },
+        "rawReportMarkdown": "报告正文",
+    }
+
+    monkeypatch.setattr(
+        portal_backend,
+        "_find_alarm_analyst_card_by_proposal",
+        lambda **_kwargs: (
+            portal_backend.AlarmAnalystCard.model_validate(card_payload),
+            "assistant-1",
+        ),
+    )
+
+    response = client.post(
+        "/api/portal/alarm-analyst/workorders",
+        json={
+            "proposalId": "proposal-1",
+            "messageId": "assistant-1",
+            "chatId": "chat-1",
+            "alarmId": "alarm-1",
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "already_exists"
+    assert body["workorderId"] == "wo-1"
+    assert body["workorderStatus"]["processId"] == "proc-1"
+
+
+
+def test_alarm_analyst_workorders_route_uses_original_alarm_fields(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = TestClient(portal_backend.app)
+    saved_cards: list[dict[str, object]] = []
+    registry_updates: list[dict[str, object]] = []
+    create_payloads: list[dict[str, object]] = []
+
+    card_payload = {
+        "type": "alarm-analyst-card",
+        "version": "v1",
+        "source": {
+            "chatId": "chat-1",
+            "messageId": "assistant-2",
+            "skillName": "alarm-analyst",
+            "contentHash": "hash-2",
+        },
+        "summary": {
+            "title": "报告推送成功。现在整理完整分析报告给用户。",
+            "conclusion": "疑似数据库锁等待",
+            "severity": "critical",
+        },
+        "rootCause": {"reason": "锁等待放大"},
+        "impact": {"affectedApplications": [], "affectedResources": []},
+        "topology": {"nodes": [], "edges": []},
+        "recommendations": [],
+        "evidence": [],
+        "workorderProposal": {
+            "proposalId": "proposal-2",
+            "idempotencyKey": "proposal-2",
+            "enabled": True,
+            "title": "报告推送成功。现在整理完整分析报告给用户。",
+            "summary": "建议创建故障工单",
+            "alarmId": "alarm-2",
+            "deviceName": "db_mysql_001",
+            "manageIp": "10.43.150.186",
+            "eventTime": "2026-07-21 16:42:32",
+            "severity": "critical",
+            "suggestions": ["先止血后修复"],
+            "expiresInSeconds": 10,
+        },
+        "rawReportMarkdown": "报告正文",
+    }
+
+    monkeypatch.setattr(
+        portal_backend,
+        "_find_alarm_analyst_card_by_proposal",
+        lambda **_kwargs: (
+            portal_backend.AlarmAnalystCard.model_validate(card_payload),
+            "assistant-2",
+        ),
+    )
+    monkeypatch.setattr(
+        portal_backend,
+        "get_alarm_record",
+        lambda alarm_id: {
+            "alarmId": alarm_id,
+            "id": alarm_id,
+            "title": "系统平均负载过高",
+            "deviceName": "db_mysql_001",
+            "manageIp": "10.43.150.186",
+            "eventTime": "2026-07-21 16:42:32",
+            "level": "critical",
+            "status": "active",
+            "resId": "3094",
+            "visibleContent": "系统平均负载过高（db_mysql_001 10.43.150.186）",
+            "additionalText": "原始报文：load average 15m 持续超过阈值",
+            "alarmLocation": "db_mysql_001 / 10.43.150.186",
+        },
+    )
+    monkeypatch.setattr(
+        portal_backend,
+        "create_order_disposal_workorder",
+        lambda payload: create_payloads.append(payload) or {
+            "code": 200,
+            "data": {"workOrderId": "wo-2", "processId": "proc-2"},
+        },
+    )
+    monkeypatch.setattr(
+        portal_backend,
+        "_save_card_to_db",
+        lambda **kwargs: saved_cards.append(kwargs),
+    )
+    monkeypatch.setattr(
+        portal_backend,
+        "_update_portal_real_alarm_registry_safe",
+        lambda **kwargs: registry_updates.append(kwargs) or {},
+    )
+
+    response = client.post(
+        "/api/portal/alarm-analyst/workorders",
+        json={
+            "proposalId": "proposal-2",
+            "messageId": "assistant-2",
+            "chatId": "chat-1",
+            "alarmId": "alarm-2",
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "created"
+    assert body["workorderId"] == "wo-2"
+    assert create_payloads[0]["alarm"]["alarmId"] == "alarm-2"
+    assert create_payloads[0]["alarm"]["alarmSeq"] == "alarm-2"
+    assert create_payloads[0]["alarm"]["alarmTitle"] == "系统平均负载过高"
+    assert (
+        create_payloads[0]["alarm"]["additionalText"]
+        == "原始报文：load average 15m 持续超过阈值"
+    )
+    assert create_payloads[0]["alarm"]["alarmLocation"] == "db_mysql_001 / 10.43.150.186"
+    assert create_payloads[0]["ticket"]["title"] == "报告推送成功。现在整理完整分析报告给用户。"
+    assert saved_cards[0]["message_id"] == "assistant-2"
+    assert registry_updates[0]["status"] == "manual_pending"
+
 
 
 def test_real_alarms_route_returns_backend_payload(monkeypatch) -> None:
@@ -517,7 +1206,216 @@ def test_real_alarms_route_returns_backend_payload(monkeypatch) -> None:
     assert response.json()["items"][0]["resId"] == "3094"
 
 
-def test_real_alarms_route_does_not_auto_create_sessions(
+
+
+def test_real_alarm_register_route_persists_session_id(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = TestClient(portal_backend.app)
+    update_calls: list[dict[str, object]] = []
+
+    def fake_update_alarm_record(**kwargs):
+        update_calls.append(kwargs)
+        return {
+            "alarmId": kwargs["alarm_id"],
+            "sessionId": kwargs.get("session_id", ""),
+            "status": kwargs.get("status", ""),
+        }
+
+    monkeypatch.setattr(
+        portal_backend,
+        "update_alarm_record",
+        fake_update_alarm_record,
+    )
+
+    response = client.post(
+        "/api/portal/alarm-registry/register",
+        json={
+            "alarmId": "alarm-1",
+            "sessionId": "portal-fault-alarm-alarm-1",
+            "title": "数据库锁异常",
+            "additionalText": "原始报文：lock wait timeout",
+            "alarmLocation": "db_mysql_001 / 10.43.150.186",
+            "status": "analyzing",
+            "source": "manual-bell",
+        },
+    )
+
+    assert response.status_code == 200
+    assert update_calls[0]["session_id"] == "portal-fault-alarm-alarm-1"
+    assert update_calls[0]["alarm"]["additionalText"] == "原始报文：lock wait timeout"
+    assert update_calls[0]["alarm"]["alarmLocation"] == "db_mysql_001 / 10.43.150.186"
+    assert response.json()["record"]["sessionId"] == "portal-fault-alarm-alarm-1"
+
+
+
+def test_stream_done_status_update_uses_session_id_when_chat_id_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    update_calls: list[dict[str, object]] = []
+
+    monkeypatch.setattr(
+        portal_backend,
+        "_try_persist_analysis_result_from_stream",
+        lambda **_kwargs: None,
+    )
+    monkeypatch.setattr(
+        portal_backend,
+        "_update_portal_real_alarm_registry_safe",
+        lambda **kwargs: update_calls.append(kwargs) or {},
+    )
+
+    class DummyStream:
+        async def aclose(self) -> None:
+            return None
+
+        def __aiter__(self):
+            async def _gen():
+                if False:
+                    yield ""
+            return _gen()
+
+    class DummyTaskTracker:
+        def stream_from_queue(self, _queue, _chat_id):
+            return DummyStream()
+
+    asyncio.run(
+        portal_backend._drain_portal_real_alarm_stream(
+            DummyTaskTracker(),
+            object(),
+            "",
+            "portal-fault-alarm-abc",
+        ),
+    )
+
+    assert update_calls[0]["session_id"] == "portal-fault-alarm-abc"
+    assert update_calls[0]["status"] == "analyzed"
+
+
+
+def test_stream_persistence_uses_unified_alarm_card_helper(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    persisted_calls: list[dict[str, object]] = []
+
+    monkeypatch.setattr(
+        portal_backend,
+        "_collect_sse_report_messages",
+        lambda _chunks: [
+            ("assistant-1", "普通结束语"),
+            (
+                "assistant-2",
+                "## 告警分析报告：数据库锁异常\n"
+                "## 根因判断\n"
+                "- MySQL 锁等待放大。\n"
+                "## 影响范围\n"
+                "- 受影响应用：CMDB\n"
+                "## 处置建议\n"
+                "- P0：终止异常慢 SQL 会话。\n",
+            ),
+        ],
+    )
+
+    def fake_persist(**kwargs):
+        persisted_calls.append(kwargs)
+        return (kwargs["message_id"] == "assistant-2", None, False)
+
+    monkeypatch.setattr(
+        portal_backend,
+        "_persist_alarm_analyst_card_from_report",
+        fake_persist,
+    )
+
+    portal_backend._try_persist_analysis_result_from_stream(
+        chunks=["ignored"],
+        chat_id="chat-1",
+        session_id="portal-fault-alarm-abc",
+    )
+
+    assert [call["message_id"] for call in persisted_calls] == ["assistant-2"]
+    assert persisted_calls[0]["session_id"] == "portal-fault-alarm-abc"
+    assert persisted_calls[0]["employee_id"] == "fault"
+
+
+
+def test_list_alarm_analyst_cards_enriches_missing_proposal_fields_from_registry(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = TestClient(portal_backend.app)
+
+    monkeypatch.setattr(
+        portal_backend.app.state,
+        "multi_agent_manager",
+        object(),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        portal_backend,
+        "_load_cards_for_chat_from_db",
+        lambda _chat_id: {
+            "assistant-1": {
+                "type": "alarm-analyst-card",
+                "version": "v1",
+                "source": {
+                    "chatId": "chat-1",
+                    "messageId": "assistant-1",
+                    "skillName": "alarm-analyst",
+                    "contentHash": "hash-1",
+                },
+                "summary": {
+                    "title": "项目 | 值",
+                    "conclusion": "系统平均负载超过阈值（如 >80）才应告警",
+                },
+                "rootCause": {
+                    "reason": "系统平均负载超过阈值（如 >80）才应告警",
+                },
+                "impact": {"affectedApplications": [], "affectedResources": []},
+                "topology": {"nodes": [], "edges": []},
+                "recommendations": [],
+                "evidence": [],
+                "workorderProposal": {
+                    "proposalId": "proposal-1",
+                    "idempotencyKey": "proposal-1",
+                    "enabled": True,
+                    "title": "项目 | 值",
+                    "summary": "建议创建故障工单",
+                    "alarmId": "portal-abc",
+                    "suggestions": ["检查规则配置"],
+                    "expiresInSeconds": 10,
+                },
+                "workorderStatus": {"state": "idle"},
+                "rawReportMarkdown": "报告正文",
+            }
+        },
+    )
+    monkeypatch.setattr(
+        portal_backend,
+        "get_alarm_record",
+        lambda alarm_id: {
+            "alarmId": alarm_id,
+            "title": "系统平均负载过高",
+            "deviceName": "172.28.75.4",
+            "manageIp": "172.28.75.4",
+            "eventTime": "2026-07-21 16:42:32",
+            "level": "严重",
+            "resId": "3094",
+        },
+    )
+
+    response = client.get(
+        "/api/portal/alarm-analyst/cards/chat-1",
+        params={"sessionId": "portal-fault-alarm-abc"},
+    )
+
+    assert response.status_code == 200
+    card = response.json()["cards"][0]
+    assert card["workorderProposal"]["title"] == "系统平均负载过高"
+    assert card["workorderProposal"]["deviceName"] == "172.28.75.4"
+    assert card["workorderProposal"]["manageIp"] == "172.28.75.4"
+
+
+
+def test_real_alarms_route_does_not_start_sessions_on_list_when_runtime_available(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     client = TestClient(portal_backend.app)
@@ -544,13 +1442,21 @@ def test_real_alarms_route_does_not_auto_create_sessions(
     }
     called: dict[str, object] = {}
 
-    monkeypatch.setattr(portal_backend, "_query_visible_portal_real_alarms", lambda limit: payload)
+    monkeypatch.setattr(
+        portal_backend,
+        "_query_visible_portal_real_alarms",
+        lambda limit: payload,
+    )
 
     async def fake_ensure(request, alarms_payload):
         called["request"] = request
         called["payload"] = alarms_payload
 
-    monkeypatch.setattr(portal_backend, "_ensure_portal_real_alarm_sessions", fake_ensure)
+    monkeypatch.setattr(
+        portal_backend,
+        "_ensure_portal_real_alarm_sessions",
+        fake_ensure,
+    )
 
     response = client.get("/api/portal/real-alarms?limit=8")
 

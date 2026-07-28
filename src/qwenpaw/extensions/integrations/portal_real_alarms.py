@@ -470,6 +470,25 @@ def _normalize_alarm_row(row: dict[str, Any]) -> dict[str, Any]:
     region = str(row.get("alarmregion") or "").strip()
     ci_id = str(row.get("neId") or "").strip() or res_id
     event_last_time = str(row.get("eventlasttime") or "").strip()
+    alarm_location = " ".join(
+        token
+        for token in (
+            str(row.get("alarmLocation") or "").strip(),
+            region,
+            str(row.get("location") or "").strip(),
+        )
+        if token
+    )
+    visible_content = f"{title}（{device_name} {manage_ip}）"
+    additional_text = str(
+        row.get("additionalText")
+        or row.get("alarmtext")
+        or row.get("alarmText")
+        or row.get("rawMessage")
+        or row.get("content")
+        or row.get("alarmContent")
+        or ""
+    ).strip() or visible_content
     normalized = {
         "id": alarm_id,
         "alarmId": alarm_id,
@@ -487,7 +506,9 @@ def _normalize_alarm_row(row: dict[str, Any]) -> dict[str, Any]:
             title=title,
             device_name=device_name,
         ),
-        "visibleContent": f"{title}（{device_name} {manage_ip}）",
+        "visibleContent": visible_content,
+        "additionalText": additional_text,
+        "alarmLocation": alarm_location,
         # --- rich display fields (aligned with real-alarm skill) ---
         "levelName": level_name,
         "statusName": status_name,

@@ -508,12 +508,16 @@ export default function DigitalEmployeePage({
     remoteSessions,
     isCreatingChat,
     isStreaming,
+    pendingAlarmWorkorderProposal,
+    isSubmittingAlarmWorkorder,
     activeAssistantMessageIdRef,
     handleRemoteSendMessage,
     stopActiveStream,
     refreshRemoteSessions,
     handleOpenHistory,
     handleSelectRemoteHistory,
+    handleCancelAlarmWorkorderProposal,
+    handleConfirmAlarmWorkorderProposal,
     resetRemoteState,
   } = useRemoteChatSession({
     currentEmployee,
@@ -1755,13 +1759,19 @@ export default function DigitalEmployeePage({
           ) : isSelfMonitorMode ? (
             renderDeferredPanel(<SelfMonitorPanel />)
           ) : isAlarmRegistryMode ? (
-            renderDeferredPanel(<AlarmRegistryPanel pageTheme={pageTheme} onOpenChat={(chatId) => {
+            renderDeferredPanel(<AlarmRegistryPanel pageTheme={pageTheme} onOpenChat={(chatId, sessionId) => {
               const employee = getEmployeeById("fault");
               if (employee) {
                 navigateToEmployeePage(employee, {
                   view: "chat",
                   panel: null,
-                  state: { openSession: { employeeId: "fault", sessionId: chatId } },
+                  state: {
+                    openSession: {
+                      employeeId: "fault",
+                      sessionId: sessionId || chatId,
+                      chatId,
+                    },
+                  },
                 });
               }
             }} />)
@@ -2064,11 +2074,21 @@ export default function DigitalEmployeePage({
       />
 
       <DisposalConfirmModal
-        action={pendingDisposalAction}
-        submitting={isSubmittingDisposalAction}
-        onCancel={handleCancelDisposalAction}
+        action={pendingDisposalAction || pendingAlarmWorkorderProposal}
+        submitting={isSubmittingDisposalAction || isSubmittingAlarmWorkorder}
+        onCancel={() => {
+          if (pendingDisposalAction) {
+            handleCancelDisposalAction();
+            return;
+          }
+          handleCancelAlarmWorkorderProposal();
+        }}
         onConfirm={() => {
-          void handleConfirmDisposalAction();
+          if (pendingDisposalAction) {
+            void handleConfirmDisposalAction();
+            return;
+          }
+          void handleConfirmAlarmWorkorderProposal();
         }}
       />
       </div>

@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+from datetime import datetime
 from typing import Any, Iterable
 
 from qwenpaw.extensions.api.alarm_analyst_card_models import (
@@ -17,6 +18,8 @@ from qwenpaw.extensions.api.alarm_analyst_card_models import (
     AlarmAnalystCardSource,
     AlarmAnalystCardSummary,
     AlarmAnalystCardTopology,
+    AlarmAnalystCardWorkorderProposal,
+    AlarmAnalystCardWorkorderStatus,
 )
 
 SECTION_HEADING_RE = re.compile(r"^#{1,6}\s*(.+?)\s*$", re.MULTILINE)
@@ -39,6 +42,8 @@ SEVERITY_KEYWORDS = (
     ("major", ("p1", "major", "高", "重要")),
     ("minor", ("p2", "minor", "一般", "低")),
 )
+WORKORDER_PROPOSAL_EXPIRES_SECONDS = 10
+PORTAL_AUTO_WORKORDER_ACTION = "create-disposal-workorder"
 PORTAL_ALARM_ANALYST_CARD_MARKER = "# PORTAL ALARM ANALYST CARD MODE"
 
 
@@ -139,6 +144,17 @@ def build_alarm_analyst_card(
         topology_nodes=nodes,
         topology_edges=edges,
     )
+    workorder_proposal = _build_workorder_proposal(
+        message_id=str(message_id or "").strip(),
+        report_text=report_text,
+        title=title,
+        resource_id=resource_id,
+        resource_name=resource_name,
+        severity=severity,
+        conclusion=conclusion,
+        recommendations=recommendations,
+    )
+    workorder_status = _build_workorder_status(raw_report_text)
 
     return AlarmAnalystCard(
         source=AlarmAnalystCardSource(
@@ -174,6 +190,8 @@ def build_alarm_analyst_card(
         ),
         recommendations=recommendations,
         evidence=evidence,
+        workorder_proposal=workorder_proposal,
+        workorder_status=workorder_status,
         raw_report_markdown=raw_report_text,
     )
 
@@ -185,7 +203,9 @@ def _extract_title(report_markdown: str) -> str:
         flags=re.MULTILINE,
     )
     if heading_match:
-        return _sanitize_inline_text(heading_match.group(1)) or "故障根因分析"
+        title = _sanitize_inline_text(heading_match.group(1)) or ""
+        if title and not _looks_like_table_header(title):
+            return title
 
     # Try extracting "故障性质" from 📊 总结 section as a structured title
     summary_section = _extract_named_section(report_markdown, ("总结",))
@@ -203,9 +223,177 @@ def _extract_title(report_markdown: str) -> str:
             continue
         text = re.sub(r"^[\W_]+", "", text)
         text = re.split(r"\s+[—-]\s+", text, maxsplit=1)[0].strip()
-        if text and not _is_ai_thinking_text(text):
+        if (
+            text
+            and not _is_ai_thinking_text(text)
+            and not _looks_like_table_header(text)
+        ):
             return text
     return "故障根因分析"
+
+
+def _build_workorder_proposal(
+    *,
+    message_id: str,
+    report_text: str,
+    title: str,
+    resource_id: str,
+    resource_name: str,
+    severity: str | None,
+    conclusion: str,
+    recommendations: list[AlarmAnalystCardRecommendation],
+) -> AlarmAnalystCardWorkorderProposal | None:
+    alarm_title = title.strip()
+    if not alarm_title or _looks_like_table_header(alarm_title):
+        alarm_title = ""
+    if not alarm_title:
+        return None
+
+    device_name = (
+        _extract_labeled_value(
+            report_text,
+            (
+                "监控对象",
+                "主机名",
+                "主机",
+                "设备名称",
+                "资源名称",
+                "设备",
+            ),
+        )
+        or (resource_name or "").strip()
+    )
+    manage_ip = _extract_labeled_value(
+        report_text,
+        (
+            "主机 IP",
+            "主机IP",
+            "设备 IP",
+            "设备IP",
+            "管理 IP",
+            "管理IP",
+            "IP",
+        ),
+    )
+    if not (device_name or manage_ip):
+        return None
+
+    event_time = _extract_labeled_value(
+        report_text,
+        (
+            "告警时间",
+            "发生时间",
+            "事件时间",
+        ),
+    )
+    alarm_id = _extract_labeled_value(
+        report_text,
+        (
+            "告警编号",
+            "告警ID",
+            "alarmId",
+        ),
+    ) or _build_fallback_alarm_id(message_id, resource_id, alarm_title)
+
+    suggestions = [
+        cleaned
+        for item in recommendations
+        if (
+            cleaned := _sanitize_inline_text(
+                item.description or item.title or ""
+            )
+        )
+    ]
+    if not suggestions:
+        priority_action = _extract_labeled_value(report_text, ("优先动作",))
+        if priority_action:
+            suggestions = [priority_action]
+    if not suggestions:
+        return None
+
+    root_cause_summary = _sanitize_inline_text(conclusion or "")
+    summary = root_cause_summary or suggestions[0]
+    proposal_seed = "|".join(
+        [
+            PORTAL_AUTO_WORKORDER_ACTION,
+            alarm_id,
+            message_id,
+            resource_id,
+            alarm_title,
+        ]
+    )
+    proposal_id = hashlib.sha1(proposal_seed.encode("utf-8")).hexdigest()[:16]
+    return AlarmAnalystCardWorkorderProposal(
+        proposal_id=proposal_id,
+        idempotency_key=proposal_id,
+        enabled=True,
+        title=alarm_title,
+        summary=summary,
+        alarm_id=alarm_id,
+        resource_id=(resource_id or "").strip(),
+        device_name=device_name,
+        manage_ip=manage_ip,
+        event_time=event_time,
+        severity=(severity or "").strip(),
+        root_cause_summary=root_cause_summary,
+        suggestions=suggestions,
+        expires_in_seconds=WORKORDER_PROPOSAL_EXPIRES_SECONDS,
+    )
+
+
+def _build_workorder_status(
+    raw_report_markdown: str,
+) -> AlarmAnalystCardWorkorderStatus:
+    workorder_id = _extract_labeled_value(
+        raw_report_markdown,
+        (
+            "工单号",
+            "workOrderId",
+        ),
+    )
+    process_id = _extract_labeled_value(
+        raw_report_markdown,
+        (
+            "流程号",
+            "流程",
+            "processId",
+        ),
+    )
+    created_at = _extract_labeled_value(
+        raw_report_markdown,
+        (
+            "创建时间",
+            "建单时间",
+        ),
+    )
+    if workorder_id or process_id:
+        return AlarmAnalystCardWorkorderStatus(
+            state="created",
+            workorder_id=workorder_id,
+            process_id=process_id,
+            created_at=created_at,
+            last_updated_at=created_at or datetime.now().isoformat(timespec="seconds"),
+        )
+    return AlarmAnalystCardWorkorderStatus()
+
+
+def _build_fallback_alarm_id(
+    message_id: str,
+    resource_id: str,
+    alarm_title: str,
+) -> str:
+    seed = "|".join([message_id, resource_id, alarm_title])
+    return f"portal-{hashlib.sha1(seed.encode('utf-8')).hexdigest()[:12]}"
+
+
+def _looks_like_table_header(value: str) -> bool:
+    text = _sanitize_inline_text(value)
+    normalized = re.sub(r"\s+", "", text)
+    if not normalized:
+        return False
+    if "|" in text and any(token in normalized for token in ("项目|值", "字段|值", "字段|内容", "项目|内容")):
+        return True
+    return normalized in {"项目|值", "字段|值", "字段|内容", "项目|内容"}
 
 
 def _unwrap_portal_alarm_analyst_card_content(report_markdown: str) -> str:
@@ -476,7 +664,17 @@ def _is_ai_thinking_text(text: str) -> bool:
 def _extract_root_resource_name(text: str) -> str:
     labeled = _extract_labeled_value(
         text,
-        ("设备名称", "资源名称", "根因资源", "根资源", "实例", "资产编号"),
+        (
+            "监控对象",
+            "主机名",
+            "主机",
+            "设备名称",
+            "资源名称",
+            "根因资源",
+            "根资源",
+            "实例",
+            "资产编号",
+        ),
     )
     if labeled and labeled.lower().strip() not in _RESOURCE_NAME_REJECT_VALUES:
         return labeled
@@ -646,6 +844,85 @@ def _extract_recommendations(text: str) -> list[AlarmAnalystCardRecommendation]:
             )
         )
         index += 1
+
+    if recommendations:
+        return recommendations
+
+    return _extract_recommendations_from_markdown_table(text)
+
+
+def _extract_recommendations_from_markdown_table(
+    text: str,
+) -> list[AlarmAnalystCardRecommendation]:
+    table_lines = [
+        line.strip()
+        for line in str(text or "").splitlines()
+        if line.strip().startswith("|") and "|" in line.strip()[1:]
+    ]
+    if len(table_lines) < 3:
+        return []
+
+    def _split_row(line: str) -> list[str]:
+        trimmed = line.strip().strip("|")
+        return [_sanitize_inline_text(cell) for cell in trimmed.split("|")]
+
+    headers = _split_row(table_lines[0])
+    if not headers:
+        return []
+
+    normalized_headers = [_normalize_heading(header) for header in headers]
+
+    def _find_index(*aliases: str) -> int | None:
+        alias_set = {_normalize_heading(alias) for alias in aliases}
+        for idx, header in enumerate(normalized_headers):
+            if header in alias_set:
+                return idx
+        return None
+
+    priority_idx = _find_index("优先级", "级别", "priority")
+    action_idx = _find_index("动作", "建议", "处置动作", "行动", "操作")
+    desc_idx = _find_index("说明", "描述", "详情", "处置说明", "处置内容")
+    if action_idx is None and desc_idx is None:
+        return []
+
+    recommendations: list[AlarmAnalystCardRecommendation] = []
+    for line in table_lines[1:]:
+        cells = _split_row(line)
+        if all(re.fullmatch(r":?-{2,}:?", cell or "-") for cell in cells):
+            continue
+        action_text = cells[action_idx] if action_idx is not None and action_idx < len(cells) else ""
+        desc_text = cells[desc_idx] if desc_idx is not None and desc_idx < len(cells) else ""
+        priority_text = (
+            cells[priority_idx] if priority_idx is not None and priority_idx < len(cells) else ""
+        )
+        if not action_text and not desc_text:
+            continue
+        if action_text and desc_text:
+            content = f"{action_text}：{desc_text}"
+        else:
+            content = action_text or desc_text
+        content = _sanitize_inline_text(content)
+        if not content:
+            continue
+        stage = _detect_bullet_stage(priority_text or content, None)
+        if stage is None:
+            stage = _detect_recommendation_stage(priority_text or content, None)
+        priority = (
+            "p0"
+            if stage == "emergency"
+            else _detect_priority(priority_text or content, fallback=len(recommendations))
+        )
+        title = _extract_brief_title(action_text or desc_text, fallback=f"建议 {len(recommendations) + 1}")
+        recommendations.append(
+            AlarmAnalystCardRecommendation(
+                title=title,
+                priority=priority,
+                description=content,
+                risk=_extract_risk(desc_text or content),
+                action_type=_detect_action_type(content),
+                stage=stage,
+            )
+        )
 
     return recommendations
 
@@ -1031,6 +1308,21 @@ def extract_display_fields(card_dict: dict[str, Any]) -> dict[str, Any]:
     ) or "故障根因分析"
 
     resource_name = _sanitize_inline_text(root_cause.get("resourceName") or "")
+    if not resource_name:
+        resource_name = _extract_labeled_value(
+            raw_md,
+            (
+                "监控对象",
+                "主机名",
+                "主机",
+                "设备名称",
+                "资源名称",
+                "根因资源",
+                "根资源",
+                "实例",
+                "资产编号",
+            ),
+        )
     fault_nature = rows_by_label.get("故障性质", "")
     root_cause_direction = rows_by_label.get("根因方向", "")
     confidence = rows_by_label.get("置信度", "")

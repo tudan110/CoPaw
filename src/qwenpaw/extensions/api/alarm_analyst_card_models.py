@@ -180,6 +180,99 @@ class AlarmAnalystCardEvidence(BaseModel):
     summary: str = ""
 
 
+class AlarmAnalystCardWorkorderProposal(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    proposal_id: str = Field(
+        default="",
+        validation_alias=AliasChoices("proposal_id", "proposalId"),
+        serialization_alias="proposalId",
+    )
+    idempotency_key: str = Field(
+        default="",
+        validation_alias=AliasChoices("idempotency_key", "idempotencyKey"),
+        serialization_alias="idempotencyKey",
+    )
+    enabled: bool = True
+    title: str = ""
+    summary: str = ""
+    alarm_id: str = Field(
+        default="",
+        validation_alias=AliasChoices("alarm_id", "alarmId"),
+        serialization_alias="alarmId",
+    )
+    resource_id: str = Field(
+        default="",
+        validation_alias=AliasChoices("resource_id", "resourceId"),
+        serialization_alias="resourceId",
+    )
+    device_name: str = Field(
+        default="",
+        validation_alias=AliasChoices("device_name", "deviceName"),
+        serialization_alias="deviceName",
+    )
+    manage_ip: str = Field(
+        default="",
+        validation_alias=AliasChoices("manage_ip", "manageIp"),
+        serialization_alias="manageIp",
+    )
+    event_time: str = Field(
+        default="",
+        validation_alias=AliasChoices("event_time", "eventTime"),
+        serialization_alias="eventTime",
+    )
+    severity: str = ""
+    root_cause_summary: str = Field(
+        default="",
+        validation_alias=AliasChoices("root_cause_summary", "rootCauseSummary"),
+        serialization_alias="rootCauseSummary",
+    )
+    suggestions: list[str] = Field(default_factory=list)
+    expires_in_seconds: int = Field(
+        default=10,
+        validation_alias=AliasChoices("expires_in_seconds", "expiresInSeconds"),
+        serialization_alias="expiresInSeconds",
+    )
+
+
+class AlarmAnalystCardWorkorderStatus(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    state: Literal[
+        "idle",
+        "creating",
+        "created",
+        "failed",
+        "expired",
+        "dismissed",
+    ] = "idle"
+    workorder_id: str = Field(
+        default="",
+        validation_alias=AliasChoices("workorder_id", "workorderId"),
+        serialization_alias="workorderId",
+    )
+    process_id: str = Field(
+        default="",
+        validation_alias=AliasChoices("process_id", "processId"),
+        serialization_alias="processId",
+    )
+    created_at: str = Field(
+        default="",
+        validation_alias=AliasChoices("created_at", "createdAt"),
+        serialization_alias="createdAt",
+    )
+    error_message: str = Field(
+        default="",
+        validation_alias=AliasChoices("error_message", "errorMessage"),
+        serialization_alias="errorMessage",
+    )
+    last_updated_at: str = Field(
+        default="",
+        validation_alias=AliasChoices("last_updated_at", "lastUpdatedAt"),
+        serialization_alias="lastUpdatedAt",
+    )
+
+
 class AlarmAnalystCard(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -195,6 +288,16 @@ class AlarmAnalystCard(BaseModel):
     topology: AlarmAnalystCardTopology
     recommendations: list[AlarmAnalystCardRecommendation] = Field(default_factory=list)
     evidence: list[AlarmAnalystCardEvidence] = Field(default_factory=list)
+    workorder_proposal: AlarmAnalystCardWorkorderProposal | None = Field(
+        default=None,
+        validation_alias=AliasChoices("workorder_proposal", "workorderProposal"),
+        serialization_alias="workorderProposal",
+    )
+    workorder_status: AlarmAnalystCardWorkorderStatus | None = Field(
+        default=None,
+        validation_alias=AliasChoices("workorder_status", "workorderStatus"),
+        serialization_alias="workorderStatus",
+    )
     raw_report_markdown: str = Field(
         validation_alias=AliasChoices("raw_report_markdown", "rawReportMarkdown"),
         serialization_alias="rawReportMarkdown",

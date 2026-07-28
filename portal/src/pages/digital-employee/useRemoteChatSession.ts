@@ -18,6 +18,7 @@ import { getFaultDisposalHistory } from "../../api/faultDisposalBridge";
 import {
   buildAlarmAnalystCardRequest,
   getAlarmAnalystReportMarkdown,
+  looksLikeAlarmAnalystReportForAlarmSession,
   mergeAlarmAnalystCards,
   shouldAttemptAlarmAnalystCardByContent,
   shouldEnableAlarmAnalystCards,
@@ -40,6 +41,7 @@ import { isResourceImportIntent } from "./pageHelpers";
 import { toFriendlyChatError } from "../../lib/chatErrorMessage";
 import {
   createAlarmAnalystCard,
+  createAlarmAnalystWorkorder,
   listAlarmAnalystCards,
 } from "../../api/alarmAnalystCards";
 import {
@@ -121,6 +123,12 @@ export function useRemoteChatSession({
   const [remoteSessions, setRemoteSessions] = useState<any[]>([]);
   const [isCreatingChat, setIsCreatingChat] = useState(false);
   const [isStreaming, setIsStreaming] = useState(false);
+  const [pendingAlarmWorkorderProposal, setPendingAlarmWorkorderProposal] = useState<any>(null);
+  const [isSubmittingAlarmWorkorder, setIsSubmittingAlarmWorkorder] = useState(false);
+
+  const handledAlarmWorkorderProposalIdsRef = useRef<Set<string>>(new Set());
+  const alarmWorkorderDismissTimerRef = useRef(0);
+  const alarmWorkorderCountdownIntervalRef = useRef(0);
 
   const streamAbortRef = useRef<AbortController | null>(null);
   const streamAbortNoticeModeRef = useRef<"show" | "silent" | null>(null);
@@ -151,6 +159,14 @@ export function useRemoteChatSession({
       if (flushTimerRef.current) {
         window.clearTimeout(flushTimerRef.current);
         flushTimerRef.current = 0;
+      }
+      if (alarmWorkorderDismissTimerRef.current) {
+        window.clearTimeout(alarmWorkorderDismissTimerRef.current);
+        alarmWorkorderDismissTimerRef.current = 0;
+      }
+      if (alarmWorkorderCountdownIntervalRef.current) {
+        window.clearInterval(alarmWorkorderCountdownIntervalRef.current);
+        alarmWorkorderCountdownIntervalRef.current = 0;
       }
       remoteWaitNoticeTimersRef.current.forEach((timer) => window.clearTimeout(timer));
       remoteWaitNoticeTimersRef.current = [];
@@ -273,6 +289,156 @@ export function useRemoteChatSession({
       ),
     );
   };
+
+  const openAlarmWorkorderProposal = useCallback((proposal: any) => {
+    const proposalId = String(proposal?.proposalId || "").trim();
+    if (!proposalId || handledAlarmWorkorderProposalIdsRef.current.has(proposalId)) {
+      return;
+    }
+    const messageId = String(proposal?.messageId || "").trim();
+    const currentPendingMessageId = String(pendingAlarmWorkorderProposal?.messageId || "").trim();
+    if (
+      messageId
+      && currentPendingMessageId
+      && currentPendingMessageId !== messageId
+      && pendingAlarmWorkorderProposal
+    ) {
+      return;
+    }
+    if (alarmWorkorderDismissTimerRef.current) {
+      window.clearTimeout(alarmWorkorderDismissTimerRef.current);
+      alarmWorkorderDismissTimerRef.current = 0;
+    }
+    if (alarmWorkorderCountdownIntervalRef.current) {
+      window.clearInterval(alarmWorkorderCountdownIntervalRef.current);
+      alarmWorkorderCountdownIntervalRef.current = 0;
+    }
+    const expiresInSeconds = Math.max(1, Number(proposal?.expiresInSeconds || 10));
+    setPendingAlarmWorkorderProposal({
+      ...proposal,
+      expiresInSeconds,
+    });
+    alarmWorkorderCountdownIntervalRef.current = window.setInterval(() => {
+      setPendingAlarmWorkorderProposal((current: any) => {
+        if (!current || String(current?.proposalId || "").trim() !== proposalId) {
+          return current;
+        }
+        const nextSeconds = Math.max(0, Number(current?.expiresInSeconds || expiresInSeconds) - 1);
+        return {
+          ...current,
+          expiresInSeconds: nextSeconds,
+        };
+      });
+    }, 1000) as unknown as number;
+    alarmWorkorderDismissTimerRef.current = window.setTimeout(() => {
+      handledAlarmWorkorderProposalIdsRef.current.add(proposalId);
+      setPendingAlarmWorkorderProposal((current: any) => (
+        String(current?.proposalId || "").trim() === proposalId ? null : current
+      ));
+      if (alarmWorkorderCountdownIntervalRef.current) {
+        window.clearInterval(alarmWorkorderCountdownIntervalRef.current);
+        alarmWorkorderCountdownIntervalRef.current = 0;
+      }
+      alarmWorkorderDismissTimerRef.current = 0;
+    }, expiresInSeconds * 1000) as unknown as number;
+  }, [pendingAlarmWorkorderProposal]);
+
+  const dismissAlarmWorkorderProposal = useCallback((proposalId: string, markHandled = true) => {
+    const normalized = String(proposalId || "").trim();
+    if (normalized && markHandled) {
+      handledAlarmWorkorderProposalIdsRef.current.add(normalized);
+    }
+    if (alarmWorkorderDismissTimerRef.current) {
+      window.clearTimeout(alarmWorkorderDismissTimerRef.current);
+      alarmWorkorderDismissTimerRef.current = 0;
+    }
+    if (alarmWorkorderCountdownIntervalRef.current) {
+      window.clearInterval(alarmWorkorderCountdownIntervalRef.current);
+      alarmWorkorderCountdownIntervalRef.current = 0;
+    }
+    setPendingAlarmWorkorderProposal(null);
+  }, []);
+
+  const updateAlarmAnalystCardStatus = useCallback((messageId: string, workorderStatus: any) => {
+    setMessages((prevMessages) =>
+      prevMessages.map((message) => {
+        const card = message?.alarmAnalystCard;
+        if (!card || String(card?.source?.messageId || "").trim() !== String(messageId || "").trim()) {
+          return message;
+        }
+        return {
+          ...message,
+          alarmAnalystCard: {
+            ...card,
+            workorderStatus,
+          },
+        };
+      }),
+    );
+  }, [setMessages]);
+
+  const handleCancelAlarmWorkorderProposal = useCallback(() => {
+    if (isSubmittingAlarmWorkorder) {
+      return;
+    }
+    dismissAlarmWorkorderProposal(String(pendingAlarmWorkorderProposal?.proposalId || ""));
+  }, [dismissAlarmWorkorderProposal, isSubmittingAlarmWorkorder, pendingAlarmWorkorderProposal]);
+
+  const handleConfirmAlarmWorkorderProposal = useCallback(async () => {
+    const proposal = pendingAlarmWorkorderProposal;
+    if (!proposal) {
+      return;
+    }
+    const proposalId = String(proposal?.proposalId || "").trim();
+    const messageId = String(proposal?.messageId || "").trim();
+    if (!proposalId || !messageId) {
+      dismissAlarmWorkorderProposal(proposalId);
+      return;
+    }
+
+    setIsSubmittingAlarmWorkorder(true);
+    updateAlarmAnalystCardStatus(messageId, {
+      ...(proposal.workorderStatus || {}),
+      state: "creating",
+      errorMessage: "",
+      lastUpdatedAt: new Date().toISOString(),
+    });
+
+    try {
+      const response = await createAlarmAnalystWorkorder(
+        {
+          proposalId,
+          messageId,
+          chatId: currentChatIdRef.current,
+          alarmId: proposal.alarmId,
+        },
+        { agentId: remoteAgentIdRef.current || undefined },
+      );
+      const nextStatus = response?.workorderStatus || {
+        state: response?.status === "already_exists" ? "created" : "failed",
+        workorderId: response?.workorderId || "",
+        processId: response?.processId || "",
+        errorMessage: response?.message || "",
+        lastUpdatedAt: new Date().toISOString(),
+      };
+      updateAlarmAnalystCardStatus(messageId, nextStatus);
+      dismissAlarmWorkorderProposal(proposalId);
+    } catch (error: any) {
+      updateAlarmAnalystCardStatus(messageId, {
+        ...(proposal.workorderStatus || {}),
+        state: "failed",
+        errorMessage: String(error?.message || "工单创建失败"),
+        lastUpdatedAt: new Date().toISOString(),
+      });
+      dismissAlarmWorkorderProposal(proposalId);
+    } finally {
+      setIsSubmittingAlarmWorkorder(false);
+    }
+  }, [
+    dismissAlarmWorkorderProposal,
+    pendingAlarmWorkorderProposal,
+    updateAlarmAnalystCardStatus,
+  ]);
 
   const seedStreamStateFromMessages = (messages: any[] = []) => {
     streamAssistantMapRef.current = new Map();
@@ -631,6 +797,16 @@ export function useRemoteChatSession({
   }) => {
     const normalizedFinalText = String(finalText || "").trim();
     const shouldAttemptByContent = shouldAttemptAlarmAnalystCardByContent(normalizedFinalText);
+    const currentMeta = currentChatMetaRef.current || {};
+    const shouldTreatAsAlarmBoundFaultChat = (
+      String(currentEmployeeRef.current?.id || "").trim() === "fault"
+      && Boolean(
+        currentMeta?.alarmId
+        || currentMeta?.resId
+        || currentMeta?.visibleContent
+      )
+      && looksLikeAlarmAnalystReportForAlarmSession(normalizedFinalText)
+    );
     if (
       (
         !shouldEnableAlarmAnalystCards({
@@ -638,6 +814,7 @@ export function useRemoteChatSession({
           session: currentChatMetaRef.current,
         })
         && !shouldAttemptByContent
+        && !shouldTreatAsAlarmBoundFaultChat
       ) ||
       !currentChatIdRef.current ||
       !currentSessionIdRef.current ||
@@ -670,6 +847,8 @@ export function useRemoteChatSession({
       if (!response?.matched || !response.card) {
         return;
       }
+      const createdCard = response.card as any;
+      const proposal = createdCard?.workorderProposal;
       setMessages((prevMessages) =>
         mergeAlarmAnalystCards(
           prevMessages.map((message) =>
@@ -681,13 +860,24 @@ export function useRemoteChatSession({
                 }
               : message,
           ),
-          [response.card as any],
+          [createdCard],
         ),
       );
+      if (
+        proposal
+        && proposal.enabled !== false
+        && (!createdCard?.workorderStatus || createdCard.workorderStatus.state === "idle")
+      ) {
+        openAlarmWorkorderProposal({
+          ...proposal,
+          messageId: backendMessageId,
+          workorderStatus: createdCard?.workorderStatus || null,
+        });
+      }
     } catch (error) {
       console.warn("Failed to create alarm analyst card:", error);
     }
-  }, [setMessages]);
+  }, [openAlarmWorkorderProposal, setMessages]);
 
   const hydrateAlarmAnalystCardsForHistory = useCallback(async ({
     messages,
@@ -1317,6 +1507,13 @@ export function useRemoteChatSession({
     setCurrentSessionId("");
     setCurrentChatId("");
     currentChatMetaRef.current = null;
+    setPendingAlarmWorkorderProposal(null);
+    setIsSubmittingAlarmWorkorder(false);
+    handledAlarmWorkorderProposalIdsRef.current = new Set();
+    if (alarmWorkorderDismissTimerRef.current) {
+      window.clearTimeout(alarmWorkorderDismissTimerRef.current);
+      alarmWorkorderDismissTimerRef.current = 0;
+    }
     setIsCreatingChat(false);
     streamMessageMetaRef.current = new Map();
     streamPendingTextRef.current = new Map();
@@ -1340,6 +1537,8 @@ export function useRemoteChatSession({
     remoteSessions,
     isCreatingChat,
     isStreaming,
+    pendingAlarmWorkorderProposal,
+    isSubmittingAlarmWorkorder,
     activeAssistantMessageIdRef,
     flushTimerRef,
     handleRemoteSendMessage,
@@ -1347,6 +1546,8 @@ export function useRemoteChatSession({
     refreshRemoteSessions,
     handleOpenHistory,
     handleSelectRemoteHistory,
+    handleCancelAlarmWorkorderProposal,
+    handleConfirmAlarmWorkorderProposal,
     resetRemoteState,
   };
 }

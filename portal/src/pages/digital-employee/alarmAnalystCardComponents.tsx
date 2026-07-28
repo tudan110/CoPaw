@@ -496,7 +496,10 @@ function extractReportField(content: string, labels: string[]) {
       `\\|\\s*(?:\\*\\*)?${escaped}(?:\\*\\*)?\\s*\\|\\s*([^|\\n]+?)\\s*\\|`,
       "iu",
     );
-    const linePattern = new RegExp(`(?:^|\\n)${escaped}\\s*[：:]\\s*([^\\n]+)`, "iu");
+    const linePattern = new RegExp(
+      `(?:^|\\n)\\s*(?:[-*•]\\s*)?${escaped}\\s*[：:]\\s*([^\\n]+)`,
+      "iu",
+    );
     const match = normalized.match(tablePattern) || normalized.match(linePattern);
     const value = stripMarkdownInline(match?.[1] || "").replace(/^自身$/u, "").trim();
     if (value) {
@@ -569,10 +572,45 @@ function buildNotificationAutomationCard(reportText: string, notificationStatus:
 const RESOURCE_NAME_REJECT_VALUES = new Set([
   "ci id", "ciid", "ci_id", "ci", "resid", "res_id", "res id",
   "资源id", "资源 id", "无", "未知", "n/a", "-", "--", "未配置",
+  "详情", "detail", "details", "详细信息",
 ]);
 
 function isValidResourceName(value: string): boolean {
   return Boolean(value) && !RESOURCE_NAME_REJECT_VALUES.has(value.toLowerCase().trim());
+}
+
+function buildFaultNatureText(card: AlarmAnalystCardV1) {
+  const conclusionText = isJunkValue(card.summary.conclusion || "")
+    ? ""
+    : stripMarkdownInline(card.summary.conclusion || "");
+  if (conclusionText) {
+    return conclusionText;
+  }
+
+  const reasonText = isJunkValue(card.rootCause.reason || "")
+    ? ""
+    : stripMarkdownInline(card.rootCause.reason || "");
+  if (reasonText) {
+    return reasonText;
+  }
+
+  const titleText = stripMarkdownInline(card.summary.title || "");
+  return isJunkValue(titleText) ? "" : titleText;
+}
+
+function buildPriorityActionText(card: AlarmAnalystCardV1) {
+  const primaryRecommendation = card.recommendations[0];
+  if (!primaryRecommendation) {
+    return "";
+  }
+
+  const title = stripMarkdownInline(primaryRecommendation.title || "");
+  const description = stripMarkdownInline(primaryRecommendation.description || "");
+  const merged = title && description && title !== description && !description.includes(title)
+    ? `${title}：${description}`
+    : (description || title);
+
+  return isJunkValue(merged) ? "" : merged;
 }
 
 function buildAnchorText(card: AlarmAnalystCardV1) {
@@ -582,13 +620,40 @@ function buildAnchorText(card: AlarmAnalystCardV1) {
       ? card.rootCause.resourceName
       : ""
   );
-  const resourceName = isValidResourceName(candidateName)
-    ? candidateName
-    : extractReportField(reportText, ["设备名称", "资产编号", "资源名称", "实例", "根因资源"]);
-  const manageIp = extractReportField(reportText, ["管理 IP", "设备 IP", "IP"]);
-
-  return [isValidResourceName(resourceName) ? resourceName : "", manageIp]
+  const resourceCandidates = [
+    candidateName,
+    card.workorderProposal?.deviceName || "",
+    ...card.impact.affectedResources.map((item) => item.name || item.id || ""),
+    extractReportField(reportText, [
+      "监控对象",
+      "主机名",
+      "主机",
+      "设备名称",
+      "资产编号",
+      "资源名称",
+      "实例",
+      "根因资源",
+    ]),
+  ];
+  const resourceName = resourceCandidates
     .map((item) => stripMarkdownInline(item))
+    .find((item) => isValidResourceName(item)) || "";
+  const manageIp = [
+    card.workorderProposal?.manageIp || "",
+    extractReportField(reportText, [
+      "主机 IP",
+      "主机IP",
+      "管理 IP",
+      "管理IP",
+      "设备 IP",
+      "设备IP",
+      "IP",
+    ]),
+  ]
+    .map((item) => stripMarkdownInline(item))
+    .find(Boolean) || "";
+
+  return [resourceName, manageIp]
     .filter(Boolean)
     .join(" · ");
 }
@@ -600,9 +665,7 @@ function buildFallbackRows(card: AlarmAnalystCardV1): AlarmAnalystSummaryRow[] {
     rows.push({ label: "置信度", value: confidence, tone: "neutral" });
   }
 
-  const severity = mapSeverityLabel(card.summary.severity || "");
-  const conclusionText = isJunkValue(card.summary.conclusion || "") ? "" : stripMarkdownInline(card.summary.conclusion || "");
-  const faultNature = joinUnique([severity, conclusionText].filter(Boolean));
+  const faultNature = buildFaultNatureText(card);
   if (faultNature) {
     rows.push({ label: "故障性质", value: faultNature, tone: "neutral" });
   }
@@ -634,13 +697,9 @@ function buildFallbackRows(card: AlarmAnalystCardV1): AlarmAnalystSummaryRow[] {
     rows.push({ label: "影响范围", value: impactSegments.join("；"), tone: "neutral" });
   }
 
-  const primaryRecommendation = card.recommendations[0];
-  if (primaryRecommendation) {
-    rows.push({
-      label: "优先动作",
-      value: stripMarkdownInline(primaryRecommendation.description || primaryRecommendation.title || ""),
-      tone: "accent",
-    });
+  const priorityAction = buildPriorityActionText(card);
+  if (priorityAction) {
+    rows.push({ label: "优先动作", value: priorityAction, tone: "accent" });
   }
 
   const evidenceSummary = joinUnique(
@@ -649,11 +708,7 @@ function buildFallbackRows(card: AlarmAnalystCardV1): AlarmAnalystSummaryRow[] {
       .filter((item) => !isJunkValue(item))
   );
   if (evidenceSummary && !isJunkValue(evidenceSummary)) {
-    rows.push({
-      label: "关键提醒",
-      value: stripMarkdownInline(evidenceSummary),
-      tone: "warning",
-    });
+    rows.push({ label: "关键提醒", value: stripMarkdownInline(evidenceSummary), tone: "warning" });
   }
 
   return rows;
@@ -678,11 +733,8 @@ function buildDisplayModel(card: AlarmAnalystCardV1, showConfidence: boolean) {
   const confidenceLabel = showConfidence
     ? (rowsByLabel.get("置信度")?.value || mapConfidenceLabel(card.summary.confidence || ""))
     : "";
-  const badges = [
-    confidenceLabel ? `置信度 ${confidenceLabel}` : "",
-    !reportSummaryRows.length ? mapStatusLabel(card.summary.status || "") : "",
-    !reportSummaryRows.length ? mapSeverityLabel(card.summary.severity || "") : "",
-  ].filter(Boolean);
+  const severityBadge = mapSeverityLabel(card.summary.severity || "");
+  const badges = severityBadge ? [severityBadge] : [];
 
   const anchorText = buildAnchorText(card);
   const workorderTitle = extractReportField(reportText, ["工单标题"]);
@@ -719,53 +771,35 @@ function buildDisplayModel(card: AlarmAnalystCardV1, showConfidence: boolean) {
   ].filter((item): item is AlarmAnalystSpotlight => Boolean(item));
 
   const automationCards: AlarmAnalystAutomationCard[] = [
-    workorderTitle || procInsId
-      ? {
-          label: "AI 自动建单",
-          title: "已自动创建处置工单",
-          detail: joinUnique([
-            workorderTitle ? `工单：${workorderTitle}` : "",
-            procInsId ? `流程号：${procInsId}` : "",
-          ].filter(Boolean)),
-          variant: "workorder",
-        }
-      : null,
     buildNotificationAutomationCard(reportText, notificationStatus, notificationPayload),
   ].filter((item): item is AlarmAnalystAutomationCard => Boolean(item));
 
-  const statusChecklist: AlarmAnalystStatusItem[] = [
+  const statusChecklist = [
     rowsByLabel.get("关联资源告警查询状态")
       ? {
           label: rowsByLabel.get("关联资源告警查询状态")!.value,
           state: /完成|成功|正常|已清除/u.test(rowsByLabel.get("关联资源告警查询状态")!.value)
-            ? "success"
-            : "alert",
-        }
-      : null,
-    automationCards.find((item) => item.variant === "workorder")
-      ? {
-          label: "AI 自动建单已完成",
-          detail: automationCards.find((item) => item.variant === "workorder")!.title,
-          state: "success",
+            ? ("success" as const)
+            : ("alert" as const),
         }
       : null,
     automationCards.find((item) => item.variant === "notification")
       ? {
           label: "AI 自动通知已完成",
           detail: automationCards.find((item) => item.variant === "notification")!.title,
-          state: "success",
+          state: "success" as const,
         }
       : null,
     rowsByLabel.get("关键提醒")
       ? {
           label: "关键提醒需优先处理",
           detail: rowsByLabel.get("关键提醒")!.value,
-          state: "alert",
+          state: "alert" as const,
         }
       : null,
-  ].filter((item): item is AlarmAnalystStatusItem => Boolean(item));
+  ].filter(Boolean) as AlarmAnalystStatusItem[];
 
-  const decisionCards: AlarmAnalystDecisionCard[] = [
+  const decisionCards = [
     rowsByLabel.get("故障性质")?.value
       ? { label: "根因类型", value: rowsByLabel.get("故障性质")!.value }
       : null,
@@ -778,7 +812,7 @@ function buildDisplayModel(card: AlarmAnalystCardV1, showConfidence: boolean) {
     confidenceLabel
       ? { label: "定位置信度", value: confidenceLabel, accent: true }
       : null,
-  ].filter((item): item is AlarmAnalystDecisionCard => Boolean(item));
+  ].filter(Boolean) as AlarmAnalystDecisionCard[];
 
   const hasDetailTiers = card.recommendations.some(
     (r) => r.stage === "prevention",

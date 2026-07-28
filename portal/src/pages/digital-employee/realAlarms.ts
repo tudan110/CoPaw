@@ -25,6 +25,11 @@ type PortalBellAlert = {
   routeEntry?: string | null;
   dispatchContent?: string;
   visibleContent?: string;
+  title?: string;
+  deviceName?: string;
+  manageIp?: string;
+  additionalText?: string;
+  alarmLocation?: string;
 };
 
 function toAlertMessage(item: PortalRealAlarmItem) {
@@ -58,5 +63,10 @@ export function normalizePortalBellAlerts(
       routeEntry: null,
       dispatchContent: item.dispatchContent,
       visibleContent: item.visibleContent,
+      title: item.title,
+      deviceName: item.deviceName,
+      manageIp: item.manageIp,
+      additionalText: item.additionalText,
+      alarmLocation: item.alarmLocation,
     }));
 }
