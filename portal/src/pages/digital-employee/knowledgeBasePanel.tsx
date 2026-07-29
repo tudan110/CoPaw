@@ -216,6 +216,7 @@ function ingestStageLabel(stage?: string | null) {
 export function KnowledgeBasePanel() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const queryResultRef = useRef<HTMLDivElement | null>(null);
+  const errorDismissButtonRef = useRef<HTMLButtonElement | null>(null);
   const finalizedIngestJobRef = useRef("");
   const ingestRefreshTimerRef = useRef<number | null>(null);
   const panelInstanceIdRef = useRef(createKnowledgeBaseChangeId());
@@ -413,6 +414,27 @@ export function KnowledgeBasePanel() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [selectedSource]);
 
+  useEffect(() => {
+    if (!error) {
+      return undefined;
+    }
+    const previouslyFocused = document.activeElement instanceof HTMLElement
+      ? document.activeElement
+      : null;
+    const focusTimer = window.setTimeout(() => errorDismissButtonRef.current?.focus(), 0);
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setError("");
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.clearTimeout(focusTimer);
+      window.removeEventListener("keydown", handleKeyDown);
+      previouslyFocused?.focus();
+    };
+  }, [error]);
+
   const stats = useMemo(() => {
     const active = sources.filter((item) => !item.archived_at);
     const archived = sources.length - active.length;
@@ -424,7 +446,7 @@ export function KnowledgeBasePanel() {
   async function runQuery() {
     const text = query.trim();
     if (!text) {
-      setQueryFeedback("请输入检索问题");
+      setError("请输入检索问题");
       return;
     }
     setLoading(true);
@@ -446,7 +468,8 @@ export function KnowledgeBasePanel() {
       }
       setQueryFeedback("检索完成，已定位到结果。");
     } catch (err: any) {
-      setQueryFeedback(err?.message || "检索失败");
+      setQueryFeedback("");
+      setError(err?.message || "检索失败");
     } finally {
       setQueryLoading(false);
       setLoading(false);
@@ -760,10 +783,9 @@ export function KnowledgeBasePanel() {
             </div>
           </div>
 
-          {notice || error || job ? (
+          {notice || job ? (
             <div className="kb-source-feedback">
               {notice ? <div className="kb-notice">{notice}</div> : null}
-              {error ? <div className="kb-error">{error}</div> : null}
               {job ? (
                 <div className="kb-job">
                   <strong>{job.filename}</strong>
@@ -1151,6 +1173,43 @@ export function KnowledgeBasePanel() {
                   ))}
                   {selectedSource.units?.length ? null : <div className="kb-empty-line">暂无切片内容</div>}
                 </div>
+              </div>
+            </div>
+          </section>
+        </div>
+      ) : null}
+
+      {error ? (
+        <div
+          className="kb-error-modal-backdrop"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) {
+              setError("");
+            }
+          }}
+        >
+          <section
+            className="kb-error-modal"
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="kb-error-modal-title"
+            aria-describedby="kb-error-modal-message"
+          >
+            <div className="kb-error-modal-icon" aria-hidden="true">
+              <i className="fas fa-circle-exclamation" />
+            </div>
+            <div className="kb-error-modal-content">
+              <h3 id="kb-error-modal-title">操作未完成</h3>
+              <p id="kb-error-modal-message">{error}</p>
+              <div className="kb-error-modal-actions">
+                <button
+                  ref={errorDismissButtonRef}
+                  type="button"
+                  className="portal-model-btn"
+                  onClick={() => setError("")}
+                >
+                  我知道了
+                </button>
               </div>
             </div>
           </section>
