@@ -762,7 +762,7 @@ export function buildDashboardEmployeeSnapshots(
         runtime?.currentJob ||
         template?.currentJob ||
         (runtimeState === "running" ? `${employee.name}任务处理中` : "暂无对话"),
-      historyCount: historyCounts[employee.id] || 0,
+      historyCount: runtime?.totalChatCount ?? historyCounts[employee.id] ?? 0,
       progress: parseRuntimeProgress(runtime?.progress) ?? template?.progress ?? 0,
       workStatus:
         runtime?.workStatus ||
