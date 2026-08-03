@@ -13,6 +13,7 @@ from qwenpaw.token_usage.buffer import (
     _UsageEvent,
     _apply_event,
 )
+from qwenpaw.token_usage.ledger import TokenUsageLedger
 from qwenpaw.token_usage.manager import (
     TokenUsageByDateModel,
     TokenUsageByModel,
@@ -201,6 +202,69 @@ class TestTokenUsageBuffer:
         entry = buffer._disk_cache["2026-04-24"]["openai:gpt-4"]
         assert entry["prompt_tokens"] == 300
         assert entry["call_count"] == 3
+
+    @pytest.mark.asyncio
+    async def test_two_buffers_read_the_same_durable_ledger(self, tmp_path):
+        """A request served by either worker must observe both workers' usage."""
+        legacy_path = tmp_path / "token_usage.json"
+        ledger_path = tmp_path / "token_usage.db"
+        first = TokenUsageBuffer(legacy_path, ledger_path=ledger_path)
+        second = TokenUsageBuffer(legacy_path, ledger_path=ledger_path)
+        first.start()
+        second.start()
+        first.enqueue(
+            _UsageEvent("openai", "gpt-4", 100, 20, "2026-04-24", "")
+        )
+        second.enqueue(
+            _UsageEvent("openai", "gpt-4", 200, 30, "2026-04-24", "")
+        )
+
+        await asyncio.sleep(0.2)
+        first_view = await first.get_merged_data()
+        second_view = await second.get_merged_data()
+
+        assert first_view == second_view
+        row = first_view["2026-04-24"]["openai:gpt-4"]
+        assert row == {
+            "provider_id": "openai",
+            "model_name": "gpt-4",
+            "prompt_tokens": 300,
+            "completion_tokens": 50,
+            "call_count": 2,
+        }
+        await first.stop()
+        await second.stop()
+
+
+class TestTokenUsageLedger:
+    def test_migrates_legacy_json_only_once(self, tmp_path):
+        legacy_path = tmp_path / "token_usage.json"
+        legacy_path.write_text(
+            json.dumps(
+                {
+                    "2026-04-24": {
+                        "openai:gpt-4": {
+                            "provider_id": "openai",
+                            "model_name": "gpt-4",
+                            "prompt_tokens": 100,
+                            "completion_tokens": 20,
+                            "call_count": 1,
+                        }
+                    }
+                }
+            ),
+            encoding="utf-8",
+        )
+        first = TokenUsageLedger(tmp_path / "token_usage.db", legacy_path)
+        second = TokenUsageLedger(tmp_path / "token_usage.db", legacy_path)
+
+        first.initialize()
+        second.initialize()
+
+        row = first.export_data()["2026-04-24"]["openai:gpt-4"]
+        assert row["prompt_tokens"] == 100
+        assert row["completion_tokens"] == 20
+        assert row["call_count"] == 1
 
 
 # =============================================================================
