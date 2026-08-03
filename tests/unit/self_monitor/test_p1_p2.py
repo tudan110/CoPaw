@@ -458,7 +458,6 @@ def test_sessions_endpoint_aggregates_workspaces(client, store, monkeypatch, tmp
 
 @pytest.mark.asyncio
 async def test_token_ledger_merges_durable_book(client, monkeypatch, tmp_path):
-    import importlib
     import json as _json
     from datetime import date
 
@@ -480,24 +479,15 @@ async def test_token_ledger_merges_durable_book(client, monkeypatch, tmp_path):
         ),
         encoding="utf-8",
     )
-    import qwenpaw.token_usage.buffer as buffer_mod
     import qwenpaw.token_usage.manager as manager_mod
 
-    monkeypatch.setattr(
-        buffer_mod.TokenUsageBuffer,
-        "_default_path",
-        lambda self: tmp_path / "token_usage.json",
-        raising=False,
-    )
-    # fresh manager singleton bound to the tmp ledger
-    manager_mod._manager = None
-    importlib.reload(manager_mod)
+    monkeypatch.setattr(manager_mod, "WORKING_DIR", tmp_path)
+    monkeypatch.setattr(manager_mod, "TOKEN_USAGE_FILE", "token_usage.json")
+    monkeypatch.setattr(manager_mod, "TOKEN_USAGE_DB_FILE", "token_usage.db")
+    manager_mod.TokenUsageManager._instance = None
     from qwenpaw.token_usage import get_token_usage_manager
 
-    manager = get_token_usage_manager()
-    if hasattr(manager, "_buffer"):
-        manager._buffer._path = tmp_path / "token_usage.json"
-        manager._buffer._cache_loaded = False
+    get_token_usage_manager()
 
     data = client.get("/api/portal/self-monitor/token-ledger?days=7").json()
     assert data["available"] is True

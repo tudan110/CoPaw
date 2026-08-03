@@ -195,6 +195,10 @@ TOKEN_USAGE_FILE = EnvVarLoader.get_str(
     "QWENPAW_TOKEN_USAGE_FILE",
     "token_usage.json",
 )
+TOKEN_USAGE_DB_FILE = EnvVarLoader.get_str(
+    "QWENPAW_TOKEN_USAGE_DB_FILE",
+    "token_usage.db",
+)
 
 CONFIG_FILE = EnvVarLoader.get_str("QWENPAW_CONFIG_FILE", "config.json")
 

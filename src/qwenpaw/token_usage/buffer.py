@@ -3,12 +3,11 @@
 """
 
 import asyncio
-import copy
 import logging
 from pathlib import Path
 from typing import NamedTuple, Optional
 
-from .storage import load_data, save_data_sync
+from .ledger import TokenUsageLedger
 
 logger = logging.getLogger(__name__)
 
@@ -53,15 +52,21 @@ class TokenUsageBuffer:
         self,
         path: Path,
         flush_interval: int = _DEFAULT_FLUSH_INTERVAL,
+        *,
+        ledger_path: Path | None = None,
     ) -> None:
         self._path = path
         self._flush_interval = flush_interval
+        self._ledger = TokenUsageLedger(
+            ledger_path or path.with_suffix(".db"), path
+        )
 
         # Format: { "2026-04-23": { "provider:model": {...} } }
         self._disk_cache: dict = {}
         self._cache_loaded = False
 
         self._dirty: bool = False
+        self._pending_events: list[_UsageEvent] = []
         self._queue: asyncio.Queue = asyncio.Queue()
         self._consumer_task: Optional[asyncio.Task] = None
         self._flush_task: Optional[asyncio.Task] = None
@@ -123,16 +128,20 @@ class TokenUsageBuffer:
     async def get_merged_data(self) -> dict:
         """Return a consistent view of all known token usage.
 
-        Combines ``_disk_cache`` (fully processed events) with a snapshot
-        of events currently sitting in the queue (not yet consumed).
-        The merge is purely in-memory — no disk I/O.
+        Reads the shared ledger, then adds this worker's uncommitted events.
         """
         if not self._cache_loaded:
             await self._seed_cache()
 
-        # Deep-copy the cache so the caller can freely iterate it while
-        # the consumer continues mutating the original.
-        result = copy.deepcopy(self._disk_cache)
+        # Read the shared SQLite book on every query.  A worker-local cache
+        # would otherwise make responses vary with the uvicorn worker.
+        result = await asyncio.to_thread(self._ledger.export_data)
+
+        # Events not yet committed by this worker are visible to its own
+        # request immediately; all other workers see them after the consumer
+        # commits the atomic SQLite increment.
+        for ev in self._pending_events:
+            _apply_event(result, ev)
 
         # Peek at pending queue items and fold them in.
         # pylint: disable=protected-access
@@ -152,7 +161,14 @@ class TokenUsageBuffer:
                 event = await self._queue.get()
                 try:
                     _apply_event(self._disk_cache, event)
+                    self._pending_events.append(event)
                     self._dirty = True
+                    try:
+                        await self._flush_once()
+                    except Exception:
+                        logger.exception(
+                            "token_usage: durable ledger write failed"
+                        )
                 finally:
                     self._queue.task_done()
         except asyncio.CancelledError:
@@ -161,6 +177,7 @@ class TokenUsageBuffer:
                 try:
                     event = self._queue.get_nowait()
                     _apply_event(self._disk_cache, event)
+                    self._pending_events.append(event)
                     self._dirty = True
                     self._queue.task_done()
                 except asyncio.QueueEmpty:
@@ -172,9 +189,19 @@ class TokenUsageBuffer:
             return
         self._dirty = False
 
-        snapshot = copy.deepcopy(self._disk_cache)
-        await asyncio.to_thread(save_data_sync, self._path, snapshot)
-        logger.debug("token_usage: flushed cache to disk")
+        pending = list(self._pending_events)
+        if not pending:
+            return
+        try:
+            await asyncio.to_thread(self._ledger.record_many, pending)
+        except Exception:
+            self._dirty = True
+            raise
+        del self._pending_events[: len(pending)]
+        self._dirty = bool(self._pending_events)
+        logger.debug(
+            "token_usage: flushed %s usage events to ledger", len(pending)
+        )
 
     async def _flush_loop(self) -> None:
         """Periodically flush the cache to disk."""
@@ -191,10 +218,11 @@ class TokenUsageBuffer:
             pass
 
     async def _seed_cache(self) -> None:
-        """Load existing data from disk into ``_disk_cache`` (once)."""
+        """Initialize shared ledger and local diagnostic cache."""
         if self._cache_loaded:
             return
-        self._disk_cache = await load_data(self._path)
+        await asyncio.to_thread(self._ledger.initialize)
+        self._disk_cache = await asyncio.to_thread(self._ledger.export_data)
         self._cache_loaded = True
         logger.debug("token_usage: cache seeded from disk")
 

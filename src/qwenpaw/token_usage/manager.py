@@ -10,7 +10,7 @@ from typing import Optional
 
 from pydantic import BaseModel, Field
 
-from ..constant import WORKING_DIR, TOKEN_USAGE_FILE
+from ..constant import WORKING_DIR, TOKEN_USAGE_DB_FILE, TOKEN_USAGE_FILE
 from .buffer import TokenUsageBuffer, _UsageEvent
 
 logger = logging.getLogger(__name__)
@@ -70,7 +70,8 @@ class TokenUsageManager:
 
     def __init__(self) -> None:
         path: Path = (WORKING_DIR / TOKEN_USAGE_FILE).expanduser()
-        self._buffer = TokenUsageBuffer(path)
+        ledger_path: Path = (WORKING_DIR / TOKEN_USAGE_DB_FILE).expanduser()
+        self._buffer = TokenUsageBuffer(path, ledger_path=ledger_path)
         self._flush_interval = 10  # default
 
     def start(self, flush_interval: int = 10) -> None:
@@ -83,9 +84,13 @@ class TokenUsageManager:
         # Recreate buffer with desired flush_interval if different from default
         if flush_interval != 10:
             path: Path = (WORKING_DIR / TOKEN_USAGE_FILE).expanduser()
+            ledger_path: Path = (
+                WORKING_DIR / TOKEN_USAGE_DB_FILE
+            ).expanduser()
             self._buffer = TokenUsageBuffer(
                 path,
                 flush_interval=flush_interval,
+                ledger_path=ledger_path,
             )
         self._buffer.start()
 

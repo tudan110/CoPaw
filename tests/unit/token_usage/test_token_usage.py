@@ -205,7 +205,7 @@ class TestTokenUsageBuffer:
 
     @pytest.mark.asyncio
     async def test_two_buffers_read_the_same_durable_ledger(self, tmp_path):
-        """A request served by either worker must observe both workers' usage."""
+        """Either worker must observe usage written by both workers."""
         legacy_path = tmp_path / "token_usage.json"
         ledger_path = tmp_path / "token_usage.db"
         first = TokenUsageBuffer(legacy_path, ledger_path=ledger_path)
