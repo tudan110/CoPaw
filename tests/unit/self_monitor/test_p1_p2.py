@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
@@ -22,6 +23,7 @@ from qwenpaw.self_monitor.probes import load_probes
 from qwenpaw.self_monitor.registry import MetricRegistry
 from qwenpaw.self_monitor.store import SelfMonitorStore
 from qwenpaw.self_monitor.topology import build_topology
+from qwenpaw.self_monitor.sampler import _seconds_until_daily_time
 
 
 @pytest.fixture()
@@ -202,6 +204,14 @@ def test_trace_llm_usage_is_grouped_by_agent_not_global_total(tmp_path, monkeypa
         "fault": {"llmCalls": 1, "promptTokens": 120, "completionTokens": 30},
         "query": {"llmCalls": 1, "promptTokens": 40, "completionTokens": 10},
     }
+
+
+def test_daily_trace_prune_waits_until_the_next_fixed_local_time():
+    before_run = datetime(2026, 8, 3, 3, 29, 30, tzinfo=timezone.utc)
+    after_run = datetime(2026, 8, 3, 3, 30, 1, tzinfo=timezone.utc)
+
+    assert _seconds_until_daily_time(3, 30, now=before_run) == 30
+    assert _seconds_until_daily_time(3, 30, now=after_run) == 24 * 3600 - 1
 
 
 # ── topology ─────────────────────────────────────────────────────

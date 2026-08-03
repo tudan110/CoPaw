@@ -4,6 +4,8 @@
 from __future__ import annotations
 
 import importlib
+import os
+import time
 
 import pytest
 from fastapi import FastAPI
@@ -70,6 +72,26 @@ async def test_index_aggregates_llm_calls_and_tokens(store):
     assert entry["llm_call_count"] == 2
     assert entry["tool_call_count"] == 1
     assert entry["total_tokens"] == 15745 + 15862
+
+
+@pytest.mark.asyncio
+async def test_prune_expired_sessions_removes_old_jsonl_and_index_entry(store):
+    """Trace replay storage follows the configured retention window."""
+    await store.record_event("expired", "user_message", {"text": "old"})
+    await store.record_event("recent", "user_message", {"text": "new"})
+    now = time.time()
+    expired_at = now - 8 * 86400
+    index = store._read_index()
+    index["sessions"]["expired"]["first_event_at"] = expired_at
+    index["sessions"]["expired"]["last_event_at"] = expired_at
+    store._write_index(index)
+    os.utime(store._session_path("expired"), (expired_at, expired_at))
+
+    removed = await store.prune_expired_sessions(retention_days=7, now=now)
+
+    assert removed == 1
+    assert store.read_session("expired")["exists"] is False
+    assert [item["session_id"] for item in store.list_sessions()["items"]] == ["recent"]
 
 
 @pytest.mark.asyncio
