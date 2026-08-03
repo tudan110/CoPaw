@@ -23,6 +23,7 @@ import logging
 import os
 import socket
 import time
+from datetime import datetime, timedelta
 
 from ..constant import WORKING_DIR, EnvVarLoader
 from .events import emit_event, get_event_bus
@@ -38,11 +39,34 @@ ROLLUP_INTERVAL_SECONDS = EnvVarLoader.get_float(
 RETENTION_DAYS = EnvVarLoader.get_float(
     "QWENPAW_SELF_MONITOR_RETENTION_DAYS", 7.0, min_value=0.25, max_value=365.0
 )
+TRACE_RETENTION_DAYS = EnvVarLoader.get_float(
+    "QWENPAW_TRACE_RETENTION_DAYS",
+    RETENTION_DAYS,
+    min_value=0.25,
+    max_value=365.0,
+)
 _DISK_HIGH_PERCENT = 90.0
-_PRUNE_INTERVAL_SECONDS = 3600.0
+_PRUNE_HOUR = EnvVarLoader.get_int("QWENPAW_SELF_MONITOR_PRUNE_HOUR", 3, 0, 23)
+_PRUNE_MINUTE = EnvVarLoader.get_int(
+    "QWENPAW_SELF_MONITOR_PRUNE_MINUTE", 30, 0, 59
+)
 
 # Datasources probed via the big-screen connection checkers (L3).
 _DATASOURCES = ("inoe", "n9e", "zgops", "order")
+
+
+def _seconds_until_daily_time(
+    hour: int,
+    minute: int,
+    *,
+    now: datetime | None = None,
+) -> float:
+    """Return the wait to the next local wall-clock cleanup time."""
+    current = now or datetime.now().astimezone()
+    target = current.replace(hour=hour, minute=minute, second=0, microsecond=0)
+    if target <= current:
+        target += timedelta(days=1)
+    return (target - current).total_seconds()
 
 
 class _LogErrorCounterHandler(logging.Handler):
@@ -143,14 +167,34 @@ class SelfMonitorService:
             await asyncio.sleep(ROLLUP_INTERVAL_SECONDS)
 
     async def _prune_loop(self) -> None:
+        # Clean on startup too: a stopped service must not keep stale data
+        # simply because it missed the scheduled wall-clock time.
+        await self._prune_once()
         while True:
             try:
-                self.store.prune(RETENTION_DAYS)
+                await asyncio.sleep(
+                    _seconds_until_daily_time(_PRUNE_HOUR, _PRUNE_MINUTE)
+                )
+                await self._prune_once()
             except asyncio.CancelledError:
                 raise
             except Exception:
                 logger.warning("self_monitor prune tick failed", exc_info=True)
-            await asyncio.sleep(_PRUNE_INTERVAL_SECONDS)
+
+    async def _prune_once(self) -> None:
+        """Prune the metric database and replay traces with aligned windows."""
+        self.store.prune(RETENTION_DAYS)
+        from ..extensions.traceability import trace_store
+
+        trace_count = await trace_store.prune_expired_sessions(
+            TRACE_RETENTION_DAYS
+        )
+        if trace_count:
+            logger.info(
+                "self_monitor pruned %s expired trace session(s) (retention=%.2fd)",
+                trace_count,
+                TRACE_RETENTION_DAYS,
+            )
 
     async def _probe_loop(self) -> None:
         from .probes import PROBE_INTERVAL_SECONDS, ProbeRunner

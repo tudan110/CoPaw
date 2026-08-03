@@ -91,7 +91,9 @@ async def test_prune_expired_sessions_removes_old_jsonl_and_index_entry(store):
 
     assert removed == 1
     assert store.read_session("expired")["exists"] is False
-    assert [item["session_id"] for item in store.list_sessions()["items"]] == ["recent"]
+    assert [item["session_id"] for item in store.list_sessions()["items"]] == [
+        "recent"
+    ]
 
 
 @pytest.mark.asyncio

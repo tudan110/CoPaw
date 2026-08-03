@@ -407,3 +407,63 @@ async def delete_session(session_id: str) -> bool:
             removed = True
             _write_index(index)
         return removed
+
+
+async def prune_expired_sessions(
+    retention_days: float,
+    *,
+    now: float | None = None,
+) -> int:
+    """Delete replay sessions whose last event is outside the retention window.
+
+    The index and its JSONL payload are removed together.  Old JSONL files
+    left behind without an index entry are also removed by file mtime, so an
+    interrupted earlier cleanup cannot cause trace storage to grow forever.
+    """
+    if retention_days <= 0:
+        raise ValueError("retention_days must be positive")
+    cutoff = (now if now is not None else _now()) - retention_days * 86400
+    removed = 0
+    async with _LOCK:
+        index = _read_index()
+        sessions: dict[str, Any] = index.get("sessions", {})
+        stale_ids: list[str] = []
+        for session_id, entry in sessions.items():
+            try:
+                last_event_at = float(
+                    entry.get("last_event_at", entry.get("first_event_at", 0))
+                )
+            except (TypeError, ValueError):
+                continue
+            if last_event_at < cutoff:
+                stale_ids.append(session_id)
+
+        for session_id in stale_ids:
+            path = _session_path(session_id)
+            try:
+                path.unlink(missing_ok=True)
+            except OSError as exc:
+                logger.warning(
+                    "trace_store: failed to prune %s: %s", session_id, exc
+                )
+                continue
+            sessions.pop(session_id, None)
+            removed += 1
+
+        indexed_paths = {_session_path(session_id) for session_id in sessions}
+        if _TRACE_DIR.exists():
+            for path in _TRACE_DIR.glob("*.jsonl"):
+                if path in indexed_paths:
+                    continue
+                try:
+                    if path.stat().st_mtime < cutoff:
+                        path.unlink()
+                        removed += 1
+                except OSError as exc:
+                    logger.warning(
+                        "trace_store: failed to prune orphan %s: %s", path, exc
+                    )
+
+        if stale_ids:
+            _write_index(index)
+    return removed
