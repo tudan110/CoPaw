@@ -856,6 +856,51 @@ _sessions_cache: dict[str, Any] = {"key": None, "ts": 0.0, "payload": None}
 _SESSIONS_CACHE_TTL_S = 60.0
 
 
+def _trace_llm_usage_by_agent(since: float) -> dict[str, dict[str, int]]:
+    """Aggregate replayable LLM spans by their originating digital employee.
+
+    ``token_usage.json`` is intentionally a global finance ledger keyed only
+    by date/provider/model. It cannot be split back into agents, so using it
+    once per workspace repeats its total in every employee row. Trace spans
+    carry ``agent_id`` plus exact token usage and are the authoritative source
+    for this per-agent view.
+    """
+    usage: dict[str, dict[str, int]] = {}
+    trace_dir = WORKING_DIR / "chat_traces"
+    if not trace_dir.exists():
+        return usage
+
+    for path in trace_dir.glob("*.jsonl"):
+        try:
+            if path.stat().st_mtime < since:
+                continue
+            with path.open("r", encoding="utf-8") as handle:
+                for line in handle:
+                    try:
+                        event = json.loads(line)
+                    except (TypeError, ValueError):
+                        continue
+                    if event.get("type") != "llm_call":
+                        continue
+                    if float(event.get("ts") or 0) < since:
+                        continue
+                    agent = str(event.get("agent_id") or "").strip()
+                    if not agent:
+                        continue
+                    row = usage.setdefault(
+                        agent,
+                        {"llmCalls": 0, "promptTokens": 0, "completionTokens": 0},
+                    )
+                    row["llmCalls"] += 1
+                    row["promptTokens"] += int(event.get("prompt_tokens") or 0)
+                    row["completionTokens"] += int(
+                        event.get("completion_tokens") or 0
+                    )
+        except (OSError, UnicodeDecodeError):
+            continue
+    return usage
+
+
 @router.get("/sessions")
 async def self_monitor_sessions(
     days: int = Query(default=7, ge=1, le=90),
@@ -880,6 +925,9 @@ async def self_monitor_sessions(
     end_date = date.today()
     start_date = end_date - timedelta(days=days - 1)
     service = get_agent_stats_service()
+    trace_llm_usage = _trace_llm_usage_by_agent(
+        time.mktime(start_date.timetuple())
+    )
 
     workspaces: list[dict[str, Any]] = []
     by_date: dict[str, dict[str, Any]] = {}
@@ -910,7 +958,15 @@ async def self_monitor_sessions(
             )
         except Exception:
             continue
-        if summary.total_messages == 0 and summary.total_active_sessions == 0:
+        llm_usage = trace_llm_usage.get(
+            workspace_dir.name,
+            {"llmCalls": 0, "promptTokens": 0, "completionTokens": 0},
+        )
+        if (
+            summary.total_messages == 0
+            and summary.total_active_sessions == 0
+            and not llm_usage["llmCalls"]
+        ):
             continue
         workspaces.append(
             {
@@ -919,20 +975,20 @@ async def self_monitor_sessions(
                 "messages": summary.total_messages,
                 "userMessages": summary.total_user_messages,
                 "assistantMessages": summary.total_assistant_messages,
-                "llmCalls": summary.total_llm_calls,
+                "llmCalls": llm_usage["llmCalls"],
                 "toolCalls": summary.total_tool_calls,
-                "promptTokens": summary.total_prompt_tokens,
-                "completionTokens": summary.total_completion_tokens,
+                "promptTokens": llm_usage["promptTokens"],
+                "completionTokens": llm_usage["completionTokens"],
             }
         )
         totals["activeSessions"] += summary.total_active_sessions
         totals["messages"] += summary.total_messages
         totals["userMessages"] += summary.total_user_messages
         totals["assistantMessages"] += summary.total_assistant_messages
-        totals["llmCalls"] += summary.total_llm_calls
+        totals["llmCalls"] += llm_usage["llmCalls"]
         totals["toolCalls"] += summary.total_tool_calls
-        totals["promptTokens"] += summary.total_prompt_tokens
-        totals["completionTokens"] += summary.total_completion_tokens
+        totals["promptTokens"] += llm_usage["promptTokens"]
+        totals["completionTokens"] += llm_usage["completionTokens"]
         for daily in summary.by_date:
             row = by_date.setdefault(
                 daily.date,
@@ -948,7 +1004,6 @@ async def self_monitor_sessions(
             row["chats"] += daily.chats
             row["activeSessions"] += daily.active_sessions
             row["messages"] += daily.total_messages
-            row["llmCalls"] += daily.llm_calls
             row["toolCalls"] += daily.tool_calls
         for channel in summary.channel_stats:
             row = by_channel.setdefault(

@@ -30,6 +30,7 @@ const WINDOW_OPTIONS = [
   { label: "1h", seconds: 3600 },
   { label: "6h", seconds: 21600 },
   { label: "24h", seconds: 86400 },
+  { label: "7d", seconds: 7 * 86400 },
 ] as const;
 
 const STATE_META: Record<SelfMonitorStatus, { text: string; en: string }> = {
