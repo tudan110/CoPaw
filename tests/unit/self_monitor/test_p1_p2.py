@@ -3,7 +3,9 @@
 
 from __future__ import annotations
 
+import json
 import time
+from pathlib import Path
 
 import pytest
 from fastapi import FastAPI
@@ -158,6 +160,48 @@ def test_cost_summary_prices_and_unpriced(store):
 def test_cost_summary_unconfigured_is_honest(store):
     summary = cost_summary(store, since=time.time() - 60, config={})
     assert summary["total"] is None and summary["configured"] is False
+
+
+def test_trace_llm_usage_is_grouped_by_agent_not_global_total(tmp_path, monkeypatch):
+    """The digital-employee table must not repeat the global token ledger."""
+    trace_dir = tmp_path / "chat_traces"
+    trace_dir.mkdir()
+    now = time.time()
+    events = [
+        {
+            "type": "llm_call",
+            "ts": now - 10,
+            "agent_id": "fault",
+            "prompt_tokens": 120,
+            "completion_tokens": 30,
+        },
+        {
+            "type": "llm_call",
+            "ts": now - 8,
+            "agent_id": "query",
+            "prompt_tokens": 40,
+            "completion_tokens": 10,
+        },
+        {
+            "type": "llm_call",
+            "ts": now - 8 * 86400,
+            "agent_id": "fault",
+            "prompt_tokens": 999,
+            "completion_tokens": 999,
+        },
+    ]
+    (trace_dir / "session.jsonl").write_text(
+        "".join(json.dumps(event) + "\n" for event in events),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(self_monitor_api, "WORKING_DIR", tmp_path)
+
+    usage = self_monitor_api._trace_llm_usage_by_agent(now - 7 * 86400)
+
+    assert usage == {
+        "fault": {"llmCalls": 1, "promptTokens": 120, "completionTokens": 30},
+        "query": {"llmCalls": 1, "promptTokens": 40, "completionTokens": 10},
+    }
 
 
 # ── topology ─────────────────────────────────────────────────────
