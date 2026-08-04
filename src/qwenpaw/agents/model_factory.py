@@ -39,6 +39,7 @@ from .utils.message_request_normalizer import (
     normalize_messages_for_model_request,
 )
 from ..exceptions import ProviderError, ModelFormatterError
+from ..config.config import ModelSlotConfig
 from ..providers import ProviderManager
 from ..providers.capping_formatter import MAX_INLINE_MEDIA_BYTES
 from ..providers.retry_chat_model import (
@@ -1068,6 +1069,8 @@ def _strip_top_level_message_name(
 
 def create_model_and_formatter(
     agent_id: Optional[str] = None,
+    *,
+    model_slot: Optional[ModelSlotConfig] = None,
 ) -> Tuple[ChatModelBase, FormatterBase]:
     """Factory method to create model and formatter instances.
 
@@ -1077,6 +1080,9 @@ def create_model_and_formatter(
     Args:
         agent_id: Optional agent ID to load agent-specific model config.
             If None, tries to get from context, then falls back to global.
+        model_slot: An explicit provider/model selection for a caller that
+            is intentionally independent from Agent routing. When supplied,
+            it takes precedence over ``agent_id`` and the global default.
 
     Returns:
         Tuple of (model_instance, formatter_instance)
@@ -1087,8 +1093,9 @@ def create_model_and_formatter(
     from ..app.agent_context import get_current_agent_id
     from ..config.config import load_agent_config
 
-    # Determine agent_id (parameter > context > None)
-    if agent_id is None:
+    # Determine agent_id (parameter > context > None) only when no explicit
+    # standalone model slot was supplied by the caller.
+    if model_slot is None and agent_id is None:
         try:
             agent_id = get_current_agent_id()
         except Exception:
@@ -1099,7 +1106,7 @@ def create_model_and_formatter(
     retry_config = None
     rate_limit_config = None
     compact_threshold: Optional[float] = None
-    if agent_id:
+    if model_slot is None and agent_id:
         try:
             agent_config = load_agent_config(agent_id)
             model_slot = agent_config.active_model

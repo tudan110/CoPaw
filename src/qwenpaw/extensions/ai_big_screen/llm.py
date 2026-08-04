@@ -17,6 +17,7 @@ import asyncio
 from dataclasses import dataclass
 from typing import Any, Awaitable, Callable, Generic, TypeVar
 
+from qwenpaw.config.config import ModelSlotConfig
 from qwenpaw.exceptions import ProviderError
 
 T = TypeVar("T")
@@ -101,8 +102,12 @@ async def _consume_model_response(
     return _extract_model_text(response)
 
 
-def create_pipeline_model() -> ModelCallable:
-    """Create the active chat model for pipeline calls.
+def create_pipeline_model(
+    model_slot: ModelSlotConfig | None = None,
+    *,
+    use_global_default: bool = False,
+) -> ModelCallable:
+    """Create a chat model for pipeline calls.
 
     Maps provider-configuration errors to operator-actionable messages.
     Imported lazily to keep module import light (CLAUDE.md rule).
@@ -119,14 +124,23 @@ def create_pipeline_model() -> ModelCallable:
     from qwenpaw.agents import model_factory
 
     try:
-        model, _formatter = model_factory.create_model_and_formatter()
+        model, _formatter = model_factory.create_model_and_formatter(
+            # ``""`` is a deliberate sentinel accepted by the factory: it
+            # bypasses the request/current-Agent lookup and reaches the
+            # system global model branch. Keep ordinary pipeline callers'
+            # legacy Agent-aware behaviour unless they opt in explicitly.
+            agent_id="" if use_global_default else None,
+            model_slot=model_slot,
+        )
     except Exception as exc:
         message = str(exc).strip() or exc.__class__.__name__
         if isinstance(exc, ProviderError):
             if "No active model configured" in message:
                 raise ValueError(CONFIGURE_LLM_MESSAGE) from exc
-            raise ValueError(f"默认大模型不可用：{message}") from exc
-        raise ValueError(f"默认大模型初始化失败：{message}") from exc
+            prefix = "综合功能模型" if model_slot else "默认大模型"
+            raise ValueError(f"{prefix}不可用：{message}") from exc
+        prefix = "综合功能模型" if model_slot else "默认大模型"
+        raise ValueError(f"{prefix}初始化失败：{message}") from exc
 
     async def _call(messages: list[dict[str, str]]) -> Any:
         msgs = [

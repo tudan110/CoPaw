@@ -12,6 +12,7 @@ import {
   settingsApi,
   diagnosisSettingsApi,
   inoeSettingsApi,
+  platformAiModelSettingsApi,
   qimingSettingsApi,
   xingchenSettingsApi,
   kunlunSettingsApi,
@@ -24,7 +25,9 @@ import {
   type NotificationChannelSettings,
   type DiagnosisSettingsPayload,
   type MaskedSecret,
+  type PlatformAiModelSettingsPayload,
 } from "../../api/settings";
+import { modelsApi, type ProviderInfo } from "../../api/models";
 import ProviderSettingsSection, {
   type ProviderFieldDesc,
 } from "./ProviderSettingsSection";
@@ -236,6 +239,27 @@ const INOE_BOOL_FIELD = {
   label: "启用 curl 兜底",
   hint: "调用网关失败（网络异常）时，技能自动改用系统 curl 重试一次。",
 };
+
+function selectableModels(provider: ProviderInfo | undefined) {
+  if (!provider) {
+    return [];
+  }
+  const seen = new Set<string>();
+  return [...(provider.models || []), ...(provider.extra_models || [])].filter(
+    (model) => {
+      const id = String(model?.id || "").trim();
+      if (!id || seen.has(id)) {
+        return false;
+      }
+      seen.add(id);
+      return true;
+    },
+  );
+}
+
+function selectableProviders(providers: ProviderInfo[]) {
+  return providers.filter((provider) => selectableModels(provider).length > 0);
+}
 
 function isMaskedSecret(value: unknown): value is MaskedSecret {
   return (
@@ -1236,6 +1260,124 @@ export function SettingsPanel() {
     }
   };
 
+  // --- Shared model for standalone platform AI capabilities ---
+  // It must never affect Agent model routing. The selectable list comes from
+  // the existing model configuration API; this setting merely saves one
+  // provider/model reference for APIs such as the system summary.
+  const [platformAiModelPayload, setPlatformAiModelPayload] =
+    useState<PlatformAiModelSettingsPayload | null>(null);
+  const [platformAiModelProviders, setPlatformAiModelProviders] = useState<
+    ProviderInfo[]
+  >([]);
+  const [platformAiModelDraft, setPlatformAiModelDraft] = useState({
+    providerId: "",
+    modelId: "",
+  });
+  const [platformAiModelLoading, setPlatformAiModelLoading] = useState(true);
+  const [platformAiModelSaving, setPlatformAiModelSaving] = useState(false);
+  const [platformAiModelNotice, setPlatformAiModelNotice] = useState<{
+    type: "success" | "error";
+    text: string;
+  } | null>(null);
+
+  const applyPlatformAiModelPayload = (
+    payload: PlatformAiModelSettingsPayload,
+  ) => {
+    setPlatformAiModelPayload(payload);
+    setPlatformAiModelDraft({
+      providerId: payload.providerId,
+      modelId: payload.modelId,
+    });
+  };
+
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      setPlatformAiModelLoading(true);
+      try {
+        const [payload, providers] = await Promise.all([
+          platformAiModelSettingsApi.get(),
+          modelsApi.listProviders(),
+        ]);
+        if (!cancelled) {
+          applyPlatformAiModelPayload(payload);
+          setPlatformAiModelProviders(selectableProviders(providers));
+          setPlatformAiModelNotice(null);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setPlatformAiModelNotice({
+            type: "error",
+            text:
+              error instanceof Error
+                ? error.message
+                : "综合功能模型设置加载失败",
+          });
+        }
+      } finally {
+        if (!cancelled) {
+          setPlatformAiModelLoading(false);
+        }
+      }
+    };
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const platformAiSelectedProvider = useMemo(
+    () =>
+      platformAiModelProviders.find(
+        (provider) => provider.id === platformAiModelDraft.providerId,
+      ),
+    [platformAiModelDraft.providerId, platformAiModelProviders],
+  );
+  const platformAiSelectedModels = useMemo(
+    () => selectableModels(platformAiSelectedProvider),
+    [platformAiSelectedProvider],
+  );
+  const platformAiModelDirty =
+    platformAiModelPayload !== null &&
+    (platformAiModelPayload.providerId !== platformAiModelDraft.providerId ||
+      platformAiModelPayload.modelId !== platformAiModelDraft.modelId);
+  const platformAiModelSelectionComplete =
+    (platformAiModelDraft.providerId === "" &&
+      platformAiModelDraft.modelId === "") ||
+    (platformAiModelDraft.providerId !== "" &&
+      platformAiModelDraft.modelId !== "");
+
+  const handleSavePlatformAiModel = async () => {
+    if (
+      !platformAiModelPayload ||
+      platformAiModelSaving ||
+      !platformAiModelSelectionComplete
+    ) {
+      return;
+    }
+    setPlatformAiModelSaving(true);
+    setPlatformAiModelNotice(null);
+    try {
+      const payload = await platformAiModelSettingsApi.update(
+        platformAiModelDraft,
+      );
+      applyPlatformAiModelPayload(payload);
+      setPlatformAiModelNotice({
+        type: "success",
+        text: payload.usesGlobalDefault
+          ? "已恢复为系统全局默认模型"
+          : "综合功能模型已保存",
+      });
+    } catch (error) {
+      setPlatformAiModelNotice({
+        type: "error",
+        text: error instanceof Error ? error.message : "保存失败",
+      });
+    } finally {
+      setPlatformAiModelSaving(false);
+    }
+  };
+
   useEffect(() => {
     let cancelled = false;
 
@@ -2015,6 +2157,115 @@ export function SettingsPanel() {
                         >
                           <i className="fas fa-floppy-disk" />
                           {inoeSaving ? "保存中…" : "保存"}
+                        </button>
+                      </div>
+                    </section>
+                  </div>
+                  <div className="portal-model-shell">
+                    <section className="settings-section">
+                      <div className="portal-model-block-head">
+                        <div>
+                          <h4>综合功能模型</h4>
+                          <p>
+                            用于系统摘要及后续独立平台 AI 接口，不影响任何 Agent 的模型、提示词或运行配置。留空则回退系统全局默认模型。
+                          </p>
+                        </div>
+                      </div>
+
+                      {platformAiModelNotice ? (
+                        <div
+                          className={`settings-notice ${platformAiModelNotice.type}`}
+                        >
+                          {platformAiModelNotice.text}
+                        </div>
+                      ) : null}
+
+                      <div className="settings-form-grid">
+                        <div className="portal-form-group settings-field">
+                          <label htmlFor="platform-ai-model-provider">
+                            模型提供商
+                          </label>
+                          <select
+                            id="platform-ai-model-provider"
+                            value={platformAiModelDraft.providerId}
+                            disabled={
+                              platformAiModelLoading || platformAiModelSaving
+                            }
+                            onChange={(event) => {
+                              const providerId = event.target.value;
+                              setPlatformAiModelDraft({
+                                providerId,
+                                modelId:
+                                  providerId ===
+                                  platformAiModelDraft.providerId
+                                    ? platformAiModelDraft.modelId
+                                    : "",
+                              });
+                            }}
+                          >
+                            <option value="">系统全局默认模型</option>
+                            {platformAiModelProviders.map((provider) => (
+                              <option key={provider.id} value={provider.id}>
+                                {provider.name}（{provider.id}）
+                              </option>
+                            ))}
+                          </select>
+                          <small>
+                            仅选择模型引用，不保存或复制 API Key。当前设置：
+                            {platformAiModelPayload?.usesGlobalDefault
+                              ? "系统全局默认模型"
+                              : "已单独指定"}
+                          </small>
+                        </div>
+
+                        <div className="portal-form-group settings-field">
+                          <label htmlFor="platform-ai-model-id">模型</label>
+                          <select
+                            id="platform-ai-model-id"
+                            value={platformAiModelDraft.modelId}
+                            disabled={
+                              platformAiModelLoading ||
+                              platformAiModelSaving ||
+                              !platformAiModelDraft.providerId
+                            }
+                            onChange={(event) =>
+                              setPlatformAiModelDraft((current) => ({
+                                ...current,
+                                modelId: event.target.value,
+                              }))
+                            }
+                          >
+                            <option value="">
+                              {platformAiModelDraft.providerId
+                                ? "请选择模型"
+                                : "随系统全局默认模型"}
+                            </option>
+                            {platformAiSelectedModels.map((model) => (
+                              <option key={model.id} value={model.id}>
+                                {model.name || model.id}（{model.id}）
+                              </option>
+                            ))}
+                          </select>
+                          <small>
+                            保存后，独立接口优先使用这里选定的模型；Agent 始终按自身配置运行。
+                          </small>
+                        </div>
+                      </div>
+
+                      <div className="portal-model-form-actions compact-row">
+                        <button
+                          type="button"
+                          className="portal-model-btn compact"
+                          disabled={
+                            platformAiModelLoading ||
+                            platformAiModelSaving ||
+                            !platformAiModelDirty ||
+                            !platformAiModelSelectionComplete
+                          }
+                          onClick={handleSavePlatformAiModel}
+                        >
+                          <i className="fas fa-floppy-disk" />
+                          {platformAiModelSaving ? "保存中…" : "保存"}
                         </button>
                       </div>
                     </section>

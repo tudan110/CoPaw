@@ -116,6 +116,34 @@ export const inoeSettingsApi = {
     }),
 };
 
+// --- Standalone platform AI model ---
+//
+// This is deliberately independent from Agent model routing. It stores only
+// a reference to an existing provider/model; an empty pair means use the
+// system global default model.
+
+export interface PlatformAiModelSettingsPayload {
+  providerId: string;
+  modelId: string;
+  usesGlobalDefault: boolean;
+}
+
+export const platformAiModelSettingsApi = {
+  get: () =>
+    requestSettings<PlatformAiModelSettingsPayload>(
+      "/platform-ai-model-settings",
+    ),
+
+  update: (body: Pick<PlatformAiModelSettingsPayload, "providerId" | "modelId">) =>
+    requestSettings<PlatformAiModelSettingsPayload>(
+      "/platform-ai-model-settings",
+      {
+        method: "PUT",
+        body: JSON.stringify(body),
+      },
+    ),
+};
+
 // --- Model-provider adapters (Qiming / Xingchen / Kunlun) ---
 //
 // Connection + credentials + models for the OpenAI-compatible adapters,

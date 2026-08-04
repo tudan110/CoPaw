@@ -227,6 +227,54 @@ async def test_create_pipeline_model_maps_unconfigured_provider(
     )
 
 
+def test_create_pipeline_model_forwards_explicit_standalone_slot(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from qwenpaw.config.config import ModelSlotConfig
+
+    selected_slot = ModelSlotConfig(provider_id="ctyun", model="GLM-5.1")
+    received: list[ModelSlotConfig | None] = []
+
+    def _create(
+        *_args: Any,
+        agent_id: str | None = None,
+        model_slot: ModelSlotConfig | None = None,
+    ):
+        assert agent_id is None
+        received.append(model_slot)
+        return object(), object()
+
+    monkeypatch.setattr(
+        "qwenpaw.agents.model_factory.create_model_and_formatter",
+        _create,
+    )
+
+    llm.create_pipeline_model(selected_slot)
+
+    assert received == [selected_slot]
+
+
+def test_create_pipeline_model_can_bypass_agent_context_for_global_default(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    received: list[dict[str, Any]] = []
+
+    def _create(*args: Any, **kwargs: Any):
+        received.append({"args": args, "kwargs": kwargs})
+        return object(), object()
+
+    monkeypatch.setattr(
+        "qwenpaw.agents.model_factory.create_model_and_formatter",
+        _create,
+    )
+
+    llm.create_pipeline_model(use_global_default=True)
+
+    assert received == [
+        {"args": (), "kwargs": {"agent_id": "", "model_slot": None}},
+    ]
+
+
 class _Block:
     """Stand-in for an agentscope content block (object with attributes)."""
 

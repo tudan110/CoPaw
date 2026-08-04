@@ -149,6 +149,7 @@ from qwenpaw.extensions.integrations.order_workflow import (
 from qwenpaw.extensions.integrations import knowledge_base
 from qwenpaw.extensions.api import diagnosis_settings_store
 from qwenpaw.extensions.api import inoe_settings_store
+from qwenpaw.extensions.api import platform_ai_model_settings_store
 from qwenpaw.extensions.api import qiming_settings_store
 from qwenpaw.extensions.api import xingchen_settings_store
 from qwenpaw.extensions.api import kunlun_settings_store
@@ -1805,6 +1806,28 @@ async def reset_inoe_setting(
         raise HTTPException(status_code=400, detail=str(exc))
     _refresh_inoe_environ()
     return inoe_settings_store.build_settings_payload()
+
+
+@router.get("/platform-ai-model-settings")
+async def get_platform_ai_model_settings() -> dict[str, Any]:
+    """Return the model selected for standalone platform AI interfaces."""
+    return platform_ai_model_settings_store.build_settings_payload()
+
+
+@router.put("/platform-ai-model-settings")
+async def put_platform_ai_model_settings(
+    body: dict[str, Any] = Body(default_factory=dict),
+) -> dict[str, Any]:
+    """Select the existing model used by standalone platform AI APIs.
+
+    This setting is deliberately not an Agent setting.  An empty
+    ``providerId``/``modelId`` pair restores the system global default.
+    """
+    try:
+        platform_ai_model_settings_store.apply_settings_update(body)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return platform_ai_model_settings_store.build_settings_payload()
 
 
 # ---------------------------------------------------------------------------

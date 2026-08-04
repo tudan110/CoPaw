@@ -233,6 +233,64 @@ async def test_system_summary_exposes_safe_html_and_active_alarm_health(
 
 
 @pytest.mark.asyncio
+async def test_system_summary_uses_the_standalone_platform_model_selection(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A platform selection wins without inheriting an Agent model."""
+    from qwenpaw.config.config import ModelSlotConfig
+    from qwenpaw.extensions.api import system_summary_service as service
+
+    monkeypatch.setattr(
+        service.portal_monitoring_overview,
+        "query_asset_overview",
+        lambda: {"code": 200, "data": {"totalResources": 12}},
+    )
+    monkeypatch.setattr(
+        service.portal_monitoring_overview,
+        "query_dashboard_alarm_severity",
+        lambda **_kwargs: {"code": 200, "data": {"1": 0, "2": 0, "3": 0, "4": 0}},
+    )
+    monkeypatch.setattr(
+        service.portal_monitoring_overview,
+        "query_dashboard_alarm_history",
+        lambda **_kwargs: {"code": 200, "total": 0, "rows": []},
+    )
+    selected_slot = ModelSlotConfig(provider_id="ctyun", model="GLM-5.1")
+    monkeypatch.setattr(
+        service.platform_ai_model_settings_store,
+        "get_model_slot",
+        lambda: selected_slot,
+    )
+    received: list[ModelSlotConfig | None] = []
+
+    async def model(_messages):
+        return json.dumps(
+            {
+                "riskLevel": "low",
+                "summary": "当前共纳管12个资产对象，当天暂未发现告警，系统运行正常。",
+                "issueKeys": [],
+                "targetKey": "",
+                "recommendationReason": "",
+            },
+        )
+
+    def create_selected_model(
+        slot: ModelSlotConfig | None,
+        *,
+        use_global_default: bool,
+    ):
+        assert use_global_default is True
+        received.append(slot)
+        return model
+
+    monkeypatch.setattr(service, "create_pipeline_model", create_selected_model)
+
+    await service.build_system_summary()
+
+    assert received == [selected_slot]
+
+
+@pytest.mark.asyncio
 async def test_system_summary_uses_dashboard_alarm_sources_with_one_snapshot(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

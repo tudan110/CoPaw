@@ -25,6 +25,7 @@ from qwenpaw.extensions.ai_big_screen.llm import (
     create_pipeline_model,
     structured_call,
 )
+from qwenpaw.extensions.api import platform_ai_model_settings_store
 from qwenpaw.extensions.integrations import portal_monitoring_overview
 
 _MAX_ALARMS_TO_ANALYZE = 1000
@@ -860,7 +861,10 @@ async def build_system_summary(
     try:
         if not facts["alarmsAvailable"]:
             raise RuntimeError("告警数据不可用，跳过 AI 风险结论")
-        active_model = model if model is not None else create_pipeline_model()
+        active_model = model if model is not None else create_pipeline_model(
+            platform_ai_model_settings_store.get_model_slot(),
+            use_global_default=True,
+        )
         result = await structured_call(
             active_model,
             _messages_for(facts),

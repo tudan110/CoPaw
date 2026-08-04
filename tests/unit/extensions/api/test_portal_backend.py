@@ -50,6 +50,36 @@ def _make_request(manager: _FakeManager):
     )
 
 
+def test_platform_ai_model_settings_api_is_separate_from_agent_models(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    stored: list[dict[str, object]] = []
+    monkeypatch.setattr(
+        portal_backend.platform_ai_model_settings_store,
+        "build_settings_payload",
+        lambda: {
+            "providerId": "ctyun",
+            "modelId": "GLM-5.1",
+            "usesGlobalDefault": False,
+        },
+    )
+    monkeypatch.setattr(
+        portal_backend.platform_ai_model_settings_store,
+        "apply_settings_update",
+        lambda body: stored.append(body),
+    )
+
+    client = TestClient(portal_backend.app)
+    assert client.get("/api/portal/platform-ai-model-settings").json()[
+        "modelId"
+    ] == "GLM-5.1"
+    assert client.put(
+        "/api/portal/platform-ai-model-settings",
+        json={"providerId": "ctyun", "modelId": "GLM-5.1"},
+    ).status_code == 200
+    assert stored == [{"providerId": "ctyun", "modelId": "GLM-5.1"}]
+
+
 @pytest.fixture(autouse=True)
 def _reset_portal_alarm_runtime_state() -> None:
     refresh_task = portal_backend.PORTAL_REAL_ALARM_REFRESH_TASK
