@@ -493,6 +493,24 @@ export function AdvancedModelEntry({
           <div className="sidebar-advanced-item-desc">自然语言定制运维大屏</div>
           <div className="sidebar-advanced-item-meta">生成 / 修改 / 发布</div>
         </button>
+        {/* AI大屏·代码版：未开发完成，暂时隐藏 */}
+        {false && (
+          <button
+            className="sidebar-advanced-item"
+            onClick={() =>
+              window.open("/screen-studio", "_blank", "noopener,noreferrer")
+            }
+          >
+            <div className="sidebar-advanced-item-icon">
+              <span role="img" aria-label="screen-studio">
+                ⚡
+              </span>
+            </div>
+            <div className="sidebar-advanced-item-name">AI大屏·代码版</div>
+            <div className="sidebar-advanced-item-desc">对话让AI直接写大屏代码</div>
+            <div className="sidebar-advanced-item-meta">代码生成 / 实时预览 / 自动纠错</div>
+          </button>
+        )}
         {/* 应用中心：未开发完成，暂时隐藏 */}
         {false && (
           <button
