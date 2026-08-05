@@ -1918,6 +1918,21 @@ export default function DigitalEmployeePage({
                   onOpenResourceImport={() => openResourceImport()}
                   onOpenHistory={() => void handleOpenHistory()}
                   onSendPreset={handleQuickCommand}
+                  modelSelector={showModelSelector ? (
+                    <ChatModelSelector
+                      activeModelLabel={activeModelLabel}
+                      activeProviderId={activeProviderId}
+                      activeModelId={activeModelId}
+                      eligibleProviders={eligibleProviders}
+                      loading={modelsLoading}
+                      switching={modelsSwitching}
+                      disabled={isInteractionLocked}
+                      notice={modelNotice}
+                      onSelectModel={handleSelectModel}
+                      onOpenConfig={openModelConfig}
+                      onRefresh={() => void fetchModelState()}
+                    />
+                  ) : null}
                   onPrimaryAction={() => {
                     if (isKnowledgeBaseRunning) {
                       stopKnowledgeBaseTask();

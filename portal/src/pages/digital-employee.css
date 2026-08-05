@@ -4429,6 +4429,12 @@
   background: #fff;
 }
 
+.portal-digital-employee .portal-home-composer-actions .model-selector-panel {
+  top: auto;
+  bottom: calc(100% + 10px);
+  max-height: min(420px, calc(100vh - 48px));
+}
+
 .portal-digital-employee .portal-home-history-btn {
   display: inline-flex;
   align-items: center;

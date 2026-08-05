@@ -339,6 +339,7 @@ export function PortalHomeHero({
   onOpenHistory,
   onSendPreset,
   onPrimaryAction,
+  modelSelector,
 }: {
   alertBell: ReactNode;
   themeToggleIcon: ReactNode;
@@ -367,6 +368,7 @@ export function PortalHomeHero({
   onOpenHistory: () => void;
   onSendPreset: (command: string) => void;
   onPrimaryAction: () => void;
+  modelSelector: ReactNode;
 }) {
   return (
     <div className="portal-home-stage">
@@ -455,6 +457,7 @@ export function PortalHomeHero({
             ))}
           </div>
           <div className="portal-home-composer-actions">
+            {modelSelector}
             <button
               type="button"
               className="history-btn portal-home-history-btn"
