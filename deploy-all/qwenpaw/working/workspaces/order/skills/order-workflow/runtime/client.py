@@ -69,34 +69,6 @@ def _load_skill_env() -> None:
 _load_skill_env()
 
 
-def _load_notification_setting_helpers():
-    current_path = Path(__file__).resolve()
-    for parent in current_path.parents:
-        helper_dir = parent / "extensions" / "notifications"
-        if helper_dir.is_dir() and (parent / "workspaces").is_dir():
-            if str(helper_dir) not in sys.path:
-                sys.path.insert(0, str(helper_dir))
-            from notification_settings import (
-                resolve_notification_bool,
-                resolve_notification_int,
-                resolve_notification_text,
-            )
-
-            return (
-                resolve_notification_bool,
-                resolve_notification_int,
-                resolve_notification_text,
-            )
-    raise RuntimeError("无法定位 working/extensions/notifications/notification_settings.py")
-
-
-(
-    _RESOLVE_NOTIFICATION_BOOL,
-    _RESOLVE_NOTIFICATION_INT,
-    _RESOLVE_NOTIFICATION_TEXT,
-) = _load_notification_setting_helpers()
-
-
 @dataclass(slots=True)
 class OrderWorkflowConfig:
     base_url: str
@@ -152,56 +124,31 @@ class OrderWorkflowConfig:
                     if value is not None
                 }
 
-        create_notify_push_url = _RESOLVE_NOTIFICATION_TEXT(
-            "order_workflow",
-            "push_url",
-            env_keys=["ORDER_CREATE_NOTIFY_PUSH_URL"],
-            start_path=start_path,
+        create_notify_push_url = os.getenv(
+            "QWENPAW_NOTIFICATION_ORDER_WORKFLOW_PUSH_URL", ""
+        ).strip()
+        create_notify_webhook_url = create_notify_push_url
+        create_notify_dingtalk_webhook_url = os.getenv(
+            "QWENPAW_NOTIFICATION_ORDER_WORKFLOW_DINGTALK_WEBHOOK_URL", ""
+        ).strip()
+        create_notify_dingtalk_secret = os.getenv(
+            "QWENPAW_NOTIFICATION_ORDER_WORKFLOW_DINGTALK_SECRET", ""
+        ).strip()
+        create_notify_feishu_webhook_url = os.getenv(
+            "QWENPAW_NOTIFICATION_ORDER_WORKFLOW_FEISHU_WEBHOOK_URL", ""
+        ).strip()
+        create_notify_feishu_secret = os.getenv(
+            "QWENPAW_NOTIFICATION_ORDER_WORKFLOW_FEISHU_SECRET", ""
+        ).strip()
+        create_notify_timeout_seconds = int(
+            os.getenv(
+                "QWENPAW_NOTIFICATION_ORDER_WORKFLOW_TIMEOUT_SECONDS", "8"
+            ).strip()
+            or "8"
         )
-        create_notify_webhook_url = _RESOLVE_NOTIFICATION_TEXT(
-            "order_workflow",
-            "push_url",
-            env_keys=["ORDER_CREATE_NOTIFY_WEBHOOK_URL"],
-            start_path=start_path,
-        )
-        create_notify_dingtalk_webhook_url = _RESOLVE_NOTIFICATION_TEXT(
-            "order_workflow",
-            "dingtalk_webhook_url",
-            env_keys=["ORDER_CREATE_NOTIFY_DINGTALK_WEBHOOK_URL"],
-            start_path=start_path,
-        )
-        create_notify_dingtalk_secret = _RESOLVE_NOTIFICATION_TEXT(
-            "order_workflow",
-            "dingtalk_secret",
-            env_keys=["ORDER_CREATE_NOTIFY_DINGTALK_SECRET"],
-            start_path=start_path,
-        )
-        create_notify_feishu_webhook_url = _RESOLVE_NOTIFICATION_TEXT(
-            "order_workflow",
-            "feishu_webhook_url",
-            env_keys=["ORDER_CREATE_NOTIFY_FEISHU_WEBHOOK_URL"],
-            start_path=start_path,
-        )
-        create_notify_feishu_secret = _RESOLVE_NOTIFICATION_TEXT(
-            "order_workflow",
-            "feishu_secret",
-            env_keys=["ORDER_CREATE_NOTIFY_FEISHU_SECRET"],
-            start_path=start_path,
-        )
-        create_notify_timeout_seconds = _RESOLVE_NOTIFICATION_INT(
-            "order_workflow",
-            "timeout_seconds",
-            env_keys=["ORDER_CREATE_NOTIFY_TIMEOUT_SECONDS"],
-            start_path=start_path,
-            default=8,
-        )
-        create_notify_mention_all = _RESOLVE_NOTIFICATION_BOOL(
-            "order_workflow",
-            "mention_all",
-            env_keys=["ORDER_CREATE_NOTIFY_MENTION_ALL"],
-            start_path=start_path,
-            default=False,
-        )
+        create_notify_mention_all = os.getenv(
+            "QWENPAW_NOTIFICATION_ORDER_WORKFLOW_MENTION_ALL", "false"
+        ).strip().lower() in {"1", "true", "yes", "on"}
 
         return cls(
             base_url=base_url.rstrip("/"),

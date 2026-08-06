@@ -110,39 +110,18 @@ def _list_envelope(rows, *, total=None, page=1, per_page=10):
 
 
 class OrderWorkflowTests(unittest.TestCase):
-    def test_order_workflow_config_prefers_workspace_notification_settings(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            settings_db = Path(tmp_dir) / "extensions" / "settings" / "settings.db"
-            settings_db.parent.mkdir(parents=True, exist_ok=True)
-            connection = sqlite3.connect(settings_db)
-            try:
-                connection.execute(
-                    "CREATE TABLE settings (namespace TEXT, key TEXT, value TEXT)"
-                )
-                connection.execute(
-                    "INSERT INTO settings VALUES (?, ?, ?)",
-                    (
-                        "notification_channels",
-                        "order_workflow",
-                        '{"push_url":"http://settings.example.com/push",'
-                        '"timeout_seconds":17,"mention_all":false}',
-                    ),
-                )
-                connection.commit()
-            finally:
-                connection.close()
-
-            with mock.patch.dict(
-                "os.environ",
-                {
-                    "QWENPAW_WORKING_DIR": tmp_dir,
-                    "ORDER_CREATE_NOTIFY_PUSH_URL": "http://env.example.com/push",
-                    "ORDER_CREATE_NOTIFY_TIMEOUT_SECONDS": "8",
-                    "ORDER_CREATE_NOTIFY_MENTION_ALL": "true",
-                },
-                clear=False,
-            ):
-                config = OrderWorkflowConfig.from_env()
+    def test_order_workflow_config_reads_materialized_notification_env(self) -> None:
+        with mock.patch.dict(
+            "os.environ",
+            {
+                "QWENPAW_NOTIFICATION_ORDER_WORKFLOW_PUSH_URL": "http://settings.example.com/push",
+                "QWENPAW_NOTIFICATION_ORDER_WORKFLOW_TIMEOUT_SECONDS": "17",
+                "QWENPAW_NOTIFICATION_ORDER_WORKFLOW_MENTION_ALL": "false",
+                "ORDER_CREATE_NOTIFY_PUSH_URL": "http://env.example.com/push",
+            },
+            clear=False,
+        ):
+            config = OrderWorkflowConfig.from_env()
 
         self.assertEqual(config.create_notify_push_url, "http://settings.example.com/push")
         self.assertEqual(config.create_notify_timeout_seconds, 17)

@@ -78,34 +78,6 @@ def _load_skill_env() -> None:
 _load_skill_env()
 
 
-def _load_notification_setting_helpers():
-    current_path = Path(__file__).resolve()
-    for parent in current_path.parents:
-        helper_dir = parent / "extensions" / "notifications"
-        if helper_dir.is_dir() and (parent / "workspaces").is_dir():
-            if str(helper_dir) not in sys.path:
-                sys.path.insert(0, str(helper_dir))
-            from notification_settings import (
-                resolve_notification_bool,
-                resolve_notification_int,
-                resolve_notification_text,
-            )
-
-            return (
-                resolve_notification_bool,
-                resolve_notification_int,
-                resolve_notification_text,
-            )
-    raise RuntimeError("无法定位 working/extensions/notifications/notification_settings.py")
-
-
-(
-    _RESOLVE_NOTIFICATION_BOOL,
-    _RESOLVE_NOTIFICATION_INT,
-    _RESOLVE_NOTIFICATION_TEXT,
-) = _load_notification_setting_helpers()
-
-
 def _safe_str(value: Any) -> str:
     if value is None:
         return ""
@@ -115,77 +87,20 @@ def _safe_str(value: Any) -> str:
 
 
 def _get_notify_env(name: str) -> str:
-    setting_key_map = {
-        "PUSH_URL": (
-            "push_url",
-            ["ORDER_CREATE_NOTIFY_PUSH_URL", "ALARM_ANALYST_CREATE_NOTIFY_PUSH_URL"],
-        ),
-        "DINGTALK_WEBHOOK_URL": (
-            "dingtalk_webhook_url",
-            [
-                "ORDER_CREATE_NOTIFY_DINGTALK_WEBHOOK_URL",
-                "ALARM_ANALYST_CREATE_NOTIFY_DINGTALK_WEBHOOK_URL",
-            ],
-        ),
-        "DINGTALK_SECRET": (
-            "dingtalk_secret",
-            [
-                "ORDER_CREATE_NOTIFY_DINGTALK_SECRET",
-                "ALARM_ANALYST_CREATE_NOTIFY_DINGTALK_SECRET",
-            ],
-        ),
-        "FEISHU_WEBHOOK_URL": (
-            "feishu_webhook_url",
-            [
-                "ORDER_CREATE_NOTIFY_FEISHU_WEBHOOK_URL",
-                "ALARM_ANALYST_CREATE_NOTIFY_FEISHU_WEBHOOK_URL",
-            ],
-        ),
-        "FEISHU_SECRET": (
-            "feishu_secret",
-            [
-                "ORDER_CREATE_NOTIFY_FEISHU_SECRET",
-                "ALARM_ANALYST_CREATE_NOTIFY_FEISHU_SECRET",
-            ],
-        ),
-    }
-    if name not in setting_key_map:
-        return ""
-    setting_key, env_keys = setting_key_map[name]
     return _safe_str(
-        _RESOLVE_NOTIFICATION_TEXT(
-            "alarm_analyst",
-            setting_key,
-            env_keys=env_keys,
-            start_path=Path(__file__).resolve(),
-        )
+        os.getenv(f"QWENPAW_NOTIFICATION_ALARM_ANALYST_{name}", "")
     )
 
 
 def _get_notify_timeout() -> int:
-    return _RESOLVE_NOTIFICATION_INT(
-        "alarm_analyst",
-        "timeout_seconds",
-        env_keys=[
-            "ORDER_CREATE_NOTIFY_TIMEOUT_SECONDS",
-            "ALARM_ANALYST_CREATE_NOTIFY_TIMEOUT_SECONDS",
-        ],
-        start_path=Path(__file__).resolve(),
-        default=DEFAULT_NOTIFY_TIMEOUT_SECONDS,
-    )
+    raw = os.getenv("QWENPAW_NOTIFICATION_ALARM_ANALYST_TIMEOUT_SECONDS", "")
+    return int(raw) if raw.strip() else DEFAULT_NOTIFY_TIMEOUT_SECONDS
 
 
 def _get_notify_mention_all() -> bool:
-    return _RESOLVE_NOTIFICATION_BOOL(
-        "alarm_analyst",
-        "mention_all",
-        env_keys=[
-            "ORDER_CREATE_NOTIFY_MENTION_ALL",
-            "ALARM_ANALYST_CREATE_NOTIFY_MENTION_ALL",
-        ],
-        start_path=Path(__file__).resolve(),
-        default=False,
-    )
+    return os.getenv(
+        "QWENPAW_NOTIFICATION_ALARM_ANALYST_MENTION_ALL", "false"
+    ).strip().lower() in {"1", "true", "yes", "on"}
 
 
 def _join_suggestions(value: Any) -> str:

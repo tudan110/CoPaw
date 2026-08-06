@@ -373,6 +373,106 @@ def refresh_n9e_environ(*, db_path: Optional[Path] = None) -> None:
     materialize_n9e_to_environ(force=True, db_path=db_path)
 
 
+_NOTIFICATION_FIELDS = (
+    "push_url",
+    "dingtalk_webhook_url",
+    "dingtalk_secret",
+    "feishu_webhook_url",
+    "feishu_secret",
+    "timeout_seconds",
+    "mention_all",
+)
+_NOTIFICATION_SCOPE_ALIASES = {
+    "alarm_analyst": ("order_create",),
+    "order_workflow": ("order_create",),
+}
+_NOTIFICATION_LEGACY_PREFIXES = {
+    "inspection": ("INSPECTION_NOTIFY",),
+    "alarm_analyst": ("ALARM_ANALYST_CREATE_NOTIFY",),
+    "order_workflow": ("ORDER_CREATE_NOTIFY",),
+}
+
+
+def _notification_env_keys(scope: str, field: str) -> tuple[str, ...]:
+    suffix = field.upper()
+    canonical = f"QWENPAW_NOTIFICATION_{scope.upper()}_{suffix}"
+    aliases = tuple(
+        f"{prefix}_{suffix}" for prefix in _NOTIFICATION_LEGACY_PREFIXES[scope]
+    )
+    if scope == "order_workflow" and field == "push_url":
+        aliases += ("ORDER_CREATE_NOTIFY_WEBHOOK_URL",)
+    return (canonical, *aliases)
+
+
+def _clear_notification_environ() -> None:
+    for scope in _NOTIFICATION_LEGACY_PREFIXES:
+        for field in _NOTIFICATION_FIELDS:
+            for env_key in _notification_env_keys(scope, field):
+                os.environ.pop(env_key, None)
+
+
+def _format_notification_value(field: str, value: object) -> str:
+    if field == "mention_all":
+        return "true" if bool(value) else "false"
+    return str(value or "").strip()
+
+
+def materialize_notification_channels_to_environ(
+    *,
+    force: bool = False,
+    db_path: Optional[Path] = None,
+) -> None:
+    """Materialise built-in notification scopes for skill subprocesses.
+
+    Notification settings are DB-authoritative.  A refresh clears every
+    managed key first, so clearing a URL or secret in the settings page cannot
+    leave a stale destination in subsequently spawned skill processes.
+    """
+    try:
+        from qwenpaw.extensions.api import settings_store
+        from qwenpaw.extensions.runtime_data_paths import SETTINGS_DB_PATH
+    except Exception:  # noqa: BLE001 - never break secret loading
+        return
+
+    resolved_db_path = SETTINGS_DB_PATH if db_path is None else db_path
+    try:
+        channels = settings_store.get_namespace(
+            "notification_channels", db_path=resolved_db_path
+        )
+    except Exception:  # noqa: BLE001 - never break secret loading
+        return
+    if not force and not channels:
+        return
+
+    _clear_notification_environ()
+    for scope in _NOTIFICATION_LEGACY_PREFIXES:
+        payload = channels.get(scope)
+        if not isinstance(payload, dict):
+            for alias in _NOTIFICATION_SCOPE_ALIASES.get(scope, ()):
+                candidate = channels.get(alias)
+                if isinstance(candidate, dict):
+                    payload = candidate
+                    break
+        if not isinstance(payload, dict):
+            continue
+        for field in _NOTIFICATION_FIELDS:
+            if field not in payload:
+                continue
+            value = _format_notification_value(field, payload[field])
+            if not value:
+                continue
+            for env_key in _notification_env_keys(scope, field):
+                os.environ[env_key] = value
+
+
+def refresh_notification_channels_environ(
+    *,
+    db_path: Optional[Path] = None,
+) -> None:
+    """Force notification settings into the process environment."""
+    materialize_notification_channels_to_environ(force=True, db_path=db_path)
+
+
 def ensure_working_secrets_loaded() -> None:
     """Inject ``WORKING_DIR/secrets/<file>`` into ``os.environ`` once.
 
@@ -394,3 +494,4 @@ def ensure_working_secrets_loaded() -> None:
     materialize_order_to_environ(force=False)
     materialize_resource_import_llm_to_environ(force=False)
     materialize_n9e_to_environ(force=False)
+    materialize_notification_channels_to_environ(force=False)

@@ -212,6 +212,17 @@ def _get_notification_settings_payload(
     return _normalize_existing_notifications(raw_notifications)
 
 
+def _refresh_notification_environ() -> None:
+    try:
+        from qwenpaw.extensions.integrations.working_secrets import (
+            refresh_notification_channels_environ,
+        )
+
+        refresh_notification_channels_environ(db_path=_SETTINGS_DB)
+    except Exception:  # noqa: BLE001 - settings save must not fail on refresh
+        return
+
+
 @router.get("/notification-channels", summary="Get portal notification channel settings")
 async def get_notification_channels() -> dict[str, dict[str, object]]:
     return _get_notification_settings_payload()
@@ -259,6 +270,7 @@ async def put_notification_channels(
 
     data["notification_channels"] = existing_notifications
     _save(data)
+    _refresh_notification_environ()
     return _get_notification_settings_payload(data)
 
 
@@ -287,4 +299,5 @@ async def delete_notification_channel_scope(
     existing_notifications.pop(normalized_scope_name, None)
     data["notification_channels"] = existing_notifications
     _save(data)
+    _refresh_notification_environ()
     return _get_notification_settings_payload(data)

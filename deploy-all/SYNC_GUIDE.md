@@ -92,7 +92,7 @@ if [ -d ~/.qwenpaw/extensions ]; then
 fi
 
 # 再覆盖仓库内置 extensions 代码（如 notification_settings.py）。
-# 不提供或读取 extensions/notifications/settings.json。
+# 不再提供 notifications helper；通知配置由 settings.db 物化为环境变量。
 if [ -d deploy-all/qwenpaw/working/extensions ]; then
   rsync -a --exclude='.DS_Store' --exclude='__pycache__' --exclude='*.pyc' --exclude='.git' \
     deploy-all/qwenpaw/working/extensions/ deploy-all/qwenpaw/data/qwenpaw/extensions/
@@ -576,7 +576,7 @@ du -sh .
 ```bash
 # 检查主目录结构
 ls deploy-all/qwenpaw/data/qwenpaw/
-ls deploy-all/qwenpaw/data/qwenpaw/extensions/notifications/
+ls deploy-all/qwenpaw/data/qwenpaw/extensions/settings/settings.db
 ls deploy-all/qwenpaw/data/qwenpaw/workspaces/fault/
 ls deploy-all/qwenpaw/data/qwenpaw/skill_pool/
 
