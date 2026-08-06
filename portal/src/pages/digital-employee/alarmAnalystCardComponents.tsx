@@ -78,6 +78,8 @@ const GENERIC_FILLER_PATTERNS = [
 const AI_THINKING_RE =
   /^(?:我来分析|我先|先读取|先加载|先并行|先查|先执行|好的[，,。]|现在按|现在开始|现在继续|技能文档已|文档已读取|文档已加载|让我|让我们|资源确认为|资源确认完毕|很好[！!]|接下来|下一步|📋\s*Step|\d+\.\s*(?:查|读取|确认|执行)|拓扑关系中|指标值返回|关键发现|数据完整|数据非常|现在推送|分析报告已)/u;
 
+const PROGRESS_CHATTER_RE = /(?:报告推送成功|通知已推送|现在我来汇总|汇总完整的?分析结论|下面输出完整(?:的)?分析报告|开始输出完整(?:的)?分析报告)/u;
+
 function isAiThinkingText(value: string): boolean {
   const cleaned = String(value || "")
     .trim()
@@ -101,7 +103,7 @@ function isGenericFiller(value: string): boolean {
 }
 
 function isJunkValue(value: string): boolean {
-  return isGenericFiller(value) || isAiThinkingText(value);
+  return isGenericFiller(value) || isAiThinkingText(value) || PROGRESS_CHATTER_RE.test(value);
 }
 
 function buildHighlightTokens(card: AlarmAnalystCardV1) {

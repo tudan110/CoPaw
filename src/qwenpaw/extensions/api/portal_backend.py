@@ -4425,6 +4425,8 @@ async def create_portal_alarm_analyst_card(
 
 def _extract_alarm_analyst_card_candidate_text(
     report_markdown: str,
+    *,
+    allow_alarm_session_fallback: bool = False,
 ) -> str:
     normalized = str(report_markdown or "").strip()
     if not normalized:
@@ -4445,10 +4447,12 @@ def _extract_alarm_analyst_card_candidate_text(
     ]
     if marker_positions:
         start = min(marker_positions)
-        normalized = normalized[start:].strip()
-    if not normalized:
-        return ""
-    return normalized
+        return normalized[start:].strip()
+    if allow_alarm_session_fallback and _looks_like_alarm_analyst_report_for_alarm_session(
+        normalized,
+    ):
+        return normalized
+    return ""
 
 
 async def _try_persist_alarm_analyst_card_from_agent_context(
@@ -4499,17 +4503,22 @@ async def _try_persist_alarm_analyst_card_from_agent_context(
         if str(raw_message.get("role") or "").strip() != "assistant":
             continue
         message_id = str(raw_message.get("id") or "").strip()
-        text_parts = []
-        for block in raw_message.get("content") or []:
-            if not isinstance(block, dict):
-                continue
-            if str(block.get("type") or "").strip() != "text":
-                continue
-            text = str(block.get("text") or "").strip()
-            if text:
-                text_parts.append(text)
+        content = raw_message.get("content")
+        if isinstance(content, str):
+            text_parts = [content.strip()] if content.strip() else []
+        else:
+            text_parts = []
+            for block in content or []:
+                if not isinstance(block, dict):
+                    continue
+                if str(block.get("type") or "").strip() != "text":
+                    continue
+                text = str(block.get("text") or "").strip()
+                if text:
+                    text_parts.append(text)
         report_markdown = _extract_alarm_analyst_card_candidate_text(
             "\n".join(text_parts),
+            allow_alarm_session_fallback=True,
         )
         if not report_markdown:
             continue

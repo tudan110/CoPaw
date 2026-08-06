@@ -652,6 +652,11 @@ _AI_THINKING_RE = re.compile(
     r")",
     re.UNICODE,
 )
+_PROGRESS_CHATTER_RE = re.compile(
+    r"(?:报告推送成功|通知已推送|现在我来汇总|汇总完整的?分析结论|"
+    r"下面输出完整(?:的)?分析报告|开始输出完整(?:的)?分析报告)",
+    re.UNICODE,
+)
 
 
 def _is_ai_thinking_text(text: str) -> bool:
@@ -659,6 +664,10 @@ def _is_ai_thinking_text(text: str) -> bool:
     if not cleaned:
         return False
     return bool(_AI_THINKING_RE.match(cleaned))
+
+
+def _is_progress_chatter(text: str) -> bool:
+    return bool(_PROGRESS_CHATTER_RE.search(str(text or "")))
 
 
 def _extract_root_resource_name(text: str) -> str:
@@ -1191,7 +1200,7 @@ def _is_readable_summary_line(raw_line: str, cleaned_line: str) -> bool:
         return False
     if "完整故障分析报告" in cleaned_line or "告警分析报告" in cleaned_line:
         return False
-    if _is_ai_thinking_text(cleaned_line):
+    if _is_ai_thinking_text(cleaned_line) or _is_progress_chatter(cleaned_line):
         return False
     if cleaned_line in _GENERIC_FILLER_VALUES:
         return False
@@ -1290,6 +1299,8 @@ def extract_display_fields(card_dict: dict[str, Any]) -> dict[str, Any]:
 
             # Normalize alias
             normalized_label = _SUMMARY_LABEL_ALIASES.get(label, label)
+            if _is_progress_chatter(value):
+                continue
             if normalized_label not in rows_by_label:
                 rows_by_label[normalized_label] = value
 

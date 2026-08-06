@@ -2011,3 +2011,130 @@ def test_manual_workorder_close_notification_returns_404_when_record_missing(
 
     assert response.status_code == 404
     assert "manual workorder not found" in response.json()["detail"]
+
+
+def test_alarm_card_context_backfill_recovers_markerless_alarm_report(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session_id = "portal-fault-alarm-COM_2085161809489604608"
+    report = (
+        "通知已推送至飞书。下面输出完整分析报告：\n\n"
+        "---\n\n"
+        "## 告警接收与解析\n"
+        "| 字段 | 值 |\n"
+        "|---|---|\n"
+        "| 告警标题 | 块设备写速率过高 |\n"
+        "| 资源 ID（CI ID） | 8341 |\n"
+        "| 设备名称 | 天翼智观部署虚机 |\n"
+        "| 管理 IP | 10.2.0.15 |\n"
+        "## 异常指标\n"
+        "- 块设备写速率短时超过告警阈值。\n"
+        "## 根因方向\n"
+        "- 告警阈值过于敏感，未发现持续性 I/O 瓶颈。\n"
+        "## 影响范围\n"
+        "- 受影响应用：天翼智观\n"
+        "- 受影响资源：8341\n"
+        "## 处置建议\n"
+        "- P1：核对阈值设置并持续观察。\n"
+        "## 📊 总结\n"
+        "- 置信度：80%\n"
+        "- 根因方向：告警阈值过于敏感\n"
+    )
+    chat_spec = ChatSpec(
+        id="chat-markerless",
+        session_id=session_id,
+        user_id="default",
+        channel="console",
+        name="告警分析 · 块设备写速率过高",
+    )
+
+    class _Session:
+        async def get_session_state_dict(self, *_args) -> dict:
+            return {
+                "agent": {
+                    "state": {
+                        "context": [
+                            {
+                                "role": "assistant",
+                                "id": "assistant-markerless",
+                                "content": report,
+                            }
+                        ]
+                    }
+                }
+            }
+
+    class _ChatManager:
+        async def get_chat(self, chat_id: str) -> ChatSpec:
+            assert chat_id == chat_spec.id
+            return chat_spec
+
+    workspace = SimpleNamespace(chat_manager=_ChatManager(), session=_Session())
+    db_store: dict[str, dict[str, dict]] = {}
+    registry_updates: list[dict] = []
+
+    async def fake_workspace(_request, employee_id: str):
+        assert employee_id == "fault"
+        return workspace
+
+    monkeypatch.setattr(portal_backend, "_get_portal_employee_workspace", fake_workspace)
+    monkeypatch.setattr(
+        portal_backend,
+        "get_alarm_record",
+        lambda alarm_id: {"title": "块设备写速率过高"}
+        if alarm_id == "COM_2085161809489604608"
+        else None,
+    )
+    monkeypatch.setattr(
+        portal_backend,
+        "_load_cards_for_chat_from_db",
+        lambda chat_id: dict(db_store.get(chat_id, {})),
+    )
+    monkeypatch.setattr(
+        portal_backend,
+        "_save_card_to_db",
+        lambda *, chat_id, message_id, card, session_id="": db_store.setdefault(
+            chat_id, {}
+        ).update({message_id: dict(card)}),
+    )
+    monkeypatch.setattr(
+        portal_backend,
+        "_persist_analysis_result_to_registry",
+        lambda **kwargs: registry_updates.append(dict(kwargs)),
+    )
+
+    card = asyncio.run(
+        portal_backend._try_persist_alarm_analyst_card_from_agent_context(
+            request=SimpleNamespace(),
+            session_id=session_id,
+            chat_id=chat_spec.id,
+            employee_id="fault",
+        )
+    )
+
+    assert card is not None
+    assert card.source.message_id == "assistant-markerless"
+    assert card.summary.title == "块设备写速率过高"
+    assert "阈值过于敏感" in card.root_cause.reason
+    assert card.recommendations[0].priority == "p1"
+    assert db_store[chat_spec.id]["assistant-markerless"]
+    assert registry_updates[0]["session_id"] == session_id
+
+
+def test_alarm_card_candidate_text_keeps_markerless_alarm_report_for_backfill() -> None:
+    report = (
+        "## 告警接收与解析\n"
+        "## 异常指标\n"
+        "## 根因方向\n"
+        "## 处置建议\n"
+        "## 📊 总结\n"
+    )
+
+    assert portal_backend._extract_alarm_analyst_card_candidate_text(report) == ""
+    assert (
+        portal_backend._extract_alarm_analyst_card_candidate_text(
+            report,
+            allow_alarm_session_fallback=True,
+        )
+        == report
+    )

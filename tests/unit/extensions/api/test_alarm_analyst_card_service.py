@@ -593,7 +593,47 @@ def test_extract_display_fields_includes_emergency_plan_row() -> None:
     assert display["emergencyPlan"] == "先将受影响用户切换至备用链路恢复访问"
 
 
-def test_extract_display_fields_includes_numbered_disposal_suggestions() -> None:
+def test_alarm_analyst_card_ignores_progress_chatter_as_impact_scope() -> None:
+    card = build_alarm_analyst_card(
+        chat_id="chat-progress",
+        message_id="assistant-progress",
+        employee_id="fault",
+        report_markdown=(
+            "## 告警分析报告：网卡带宽利用率过高\n"
+            "## 影响范围\n"
+            "报告推送成功！现在我来汇总完整的分析结论。\n"
+            "## 处置建议\n"
+            "- P1：核对网卡流量和 QoS 策略。\n"
+        ),
+        process_blocks=[],
+    )
+
+    assert card.impact.blast_radius_text is None
+    assert not card.impact.affected_applications
+    assert not card.impact.affected_resources
+    assert not any(item.title == "影响范围" for item in card.evidence)
+
+
+def test_extract_display_fields_ignores_progress_chatter_impact_scope() -> None:
+    from qwenpaw.extensions.api.alarm_analyst_card_service import (
+        extract_display_fields,
+    )
+
+    display = extract_display_fields(
+        {
+            "rawReportMarkdown": (
+                "## 告警分析报告：网卡带宽利用率过高\n"
+                "## 📊 总结\n"
+                "- 影响范围：报告推送成功！现在我来汇总完整的分析结论。\n"
+            ),
+            "summary": {},
+            "rootCause": {},
+        }
+    )
+
+    assert "impactScope" not in display
+
+
     from qwenpaw.extensions.api.alarm_analyst_card_service import (
         extract_display_fields,
     )
