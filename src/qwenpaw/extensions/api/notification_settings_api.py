@@ -1,29 +1,18 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
-import json
 import re
 
 from fastapi import APIRouter, Body, HTTPException
 
-from qwenpaw.constant import WORKING_DIR
 from qwenpaw.extensions.api import settings_store
-from qwenpaw.extensions.runtime_data_paths import (
-    NOTIFICATIONS_SETTINGS_PATH,
-    SETTINGS_DB_PATH,
-)
+from qwenpaw.extensions.runtime_data_paths import SETTINGS_DB_PATH
 
 router = APIRouter(prefix="/settings", tags=["portal"])
 
-# Notification channels now persist in the shared settings DB under this
-# namespace. The legacy JSON files are imported once (see _ensure_migrated)
-# and then left untouched for rollback safety.
+# Notification channels persist in the shared settings database.
 _SETTINGS_DB = SETTINGS_DB_PATH
 _NAMESPACE = "notification_channels"
-_MIGRATION_FLAG = "notification_channels_migrated"
-
-_SETTINGS_FILE = NOTIFICATIONS_SETTINGS_PATH
-_LEGACY_SETTINGS_FILE = WORKING_DIR / "settings.json"
 
 _NOTIFICATION_SCOPE_DEFAULT = {
     "push_url": "",
@@ -70,53 +59,7 @@ def _validate_scope_name(scope_name: object) -> str:
     return normalized
 
 
-def _load_json(path) -> dict:
-    if path.is_file():
-        try:
-            return json.loads(path.read_text("utf-8"))
-        except (json.JSONDecodeError, OSError):
-            return {}
-    return {}
-
-
-def _legacy_channels() -> dict:
-    """Read ``notification_channels`` from the legacy JSON files, if any.
-
-    Prefers the dedicated ``notifications/settings.json`` then falls back to
-    the old shared ``WORKING_DIR/settings.json`` — mirroring the original
-    load order.
-    """
-    data = _load_json(_SETTINGS_FILE)
-    channels = data.get("notification_channels")
-    if isinstance(channels, dict):
-        return channels
-
-    legacy_data = _load_json(_LEGACY_SETTINGS_FILE)
-    legacy_channels = legacy_data.get("notification_channels")
-    if isinstance(legacy_channels, dict):
-        return legacy_channels
-    return {}
-
-
-def _ensure_migrated() -> None:
-    """Import legacy JSON into the shared settings DB exactly once."""
-    if settings_store.is_migrated(_MIGRATION_FLAG, db_path=_SETTINGS_DB):
-        return
-    # Only import when the namespace is still empty, so we never clobber
-    # data already written through the SQLite path.
-    if not settings_store.get_namespace(_NAMESPACE, db_path=_SETTINGS_DB):
-        channels = _legacy_channels()
-        if channels:
-            settings_store.replace_namespace(
-                _NAMESPACE,
-                channels,
-                db_path=_SETTINGS_DB,
-            )
-    settings_store.mark_migrated(_MIGRATION_FLAG, db_path=_SETTINGS_DB)
-
-
 def _load() -> dict:
-    _ensure_migrated()
     return {
         "notification_channels": settings_store.get_namespace(
             _NAMESPACE,

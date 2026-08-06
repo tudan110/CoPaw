@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import unittest
 import json
+import sqlite3
 from pathlib import Path
 import sys
 import tempfile
@@ -111,26 +112,25 @@ def _list_envelope(rows, *, total=None, page=1, per_page=10):
 class OrderWorkflowTests(unittest.TestCase):
     def test_order_workflow_config_prefers_workspace_notification_settings(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
-            settings_file = Path(tmp_dir) / "extensions" / "notifications" / "settings.json"
-            settings_file.parent.mkdir(parents=True, exist_ok=True)
-            settings_file.write_text(
-                json.dumps(
-                    {
-                        "notification_channels": {
-                            "order_workflow": {
-                                "push_url": "http://settings.example.com/push",
-                                "dingtalk_webhook_url": "",
-                                "dingtalk_secret": "",
-                                "feishu_webhook_url": "",
-                                "feishu_secret": "",
-                                "timeout_seconds": 17,
-                                "mention_all": False,
-                            }
-                        }
-                    }
-                ),
-                "utf-8",
-            )
+            settings_db = Path(tmp_dir) / "extensions" / "settings" / "settings.db"
+            settings_db.parent.mkdir(parents=True, exist_ok=True)
+            connection = sqlite3.connect(settings_db)
+            try:
+                connection.execute(
+                    "CREATE TABLE settings (namespace TEXT, key TEXT, value TEXT)"
+                )
+                connection.execute(
+                    "INSERT INTO settings VALUES (?, ?, ?)",
+                    (
+                        "notification_channels",
+                        "order_workflow",
+                        '{"push_url":"http://settings.example.com/push",'
+                        '"timeout_seconds":17,"mention_all":false}',
+                    ),
+                )
+                connection.commit()
+            finally:
+                connection.close()
 
             with mock.patch.dict(
                 "os.environ",

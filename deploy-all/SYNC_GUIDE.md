@@ -76,27 +76,30 @@ for ws in $(ls ~/.qwenpaw/workspaces/); do
 done
 ```
 
-### 4. 同步 extensions 目录（本地设置 + 仓库内置扩展）
+### 4. 同步 extensions 目录（运行时设置数据库 + 仓库内置扩展）
 
 ```bash
 # 先清理旧的 extensions 目录，避免遗留无效文件
 rm -rf deploy-all/qwenpaw/data/qwenpaw/extensions 2>/dev/null
 mkdir -p deploy-all/qwenpaw/data/qwenpaw/extensions
 
-# 先同步本地 extensions 运行数据（如通知 settings.json）
+# 同步本地 extensions 运行数据。通知通道等设置统一保存在
+# extensions/settings/settings.db；该数据库可能含 webhook 和密钥，
+# 同步前必须确认目标环境，且不要将真实凭据提交到仓库。
 if [ -d ~/.qwenpaw/extensions ]; then
   rsync -a --exclude='.DS_Store' --exclude='__pycache__' --exclude='*.pyc' --exclude='.git' \
     ~/.qwenpaw/extensions/ deploy-all/qwenpaw/data/qwenpaw/extensions/
 fi
 
-# 再覆盖仓库内置 extensions 代码（如 notification_settings.py）
+# 再覆盖仓库内置 extensions 代码（如 notification_settings.py）。
+# 不提供或读取 extensions/notifications/settings.json。
 if [ -d deploy-all/qwenpaw/working/extensions ]; then
   rsync -a --exclude='.DS_Store' --exclude='__pycache__' --exclude='*.pyc' --exclude='.git' \
     deploy-all/qwenpaw/working/extensions/ deploy-all/qwenpaw/data/qwenpaw/extensions/
 fi
 ```
 
-> **说明**：`deploy-all/qwenpaw/working/extensions` 里维护的是随仓库发布的扩展辅助代码；`~/.qwenpaw/extensions` 里可能还有运行时配置（例如通知设置）。打包镜像前应先同步本地数据，再覆盖仓库内置扩展。
+> **说明**：`deploy-all/qwenpaw/working/extensions` 维护随仓库发布的扩展辅助代码；`~/.qwenpaw/extensions/settings/settings.db` 是共享运行时设置数据库。数据库可含 webhook、secret 等敏感信息，务必在同步前确认 4A / 北京 / 上海 / 大装置 / 生产 / 本地目标环境，不能用某个环境的数据库覆盖另一个环境。
 
 ### 5. 同步配置文件并替换路径
 

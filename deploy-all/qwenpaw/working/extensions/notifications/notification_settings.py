@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import sqlite3
 from pathlib import Path
 from typing import Any
 
@@ -9,6 +10,7 @@ LEGACY_SCOPE_ALIASES = {
     "alarm_analyst": ("order_create",),
     "order_workflow": ("order_create",),
 }
+_NOTIFICATION_NAMESPACE = "notification_channels"
 
 
 def _resolve_working_dir(start_path: Path) -> Path | None:
@@ -25,19 +27,31 @@ def _resolve_working_dir(start_path: Path) -> Path | None:
 
 
 def _load_notification_channels(working_dir: Path) -> dict[str, Any]:
-    for settings_file in (
-        working_dir / "extensions" / "notifications" / "settings.json",
-        working_dir / "settings.json",
-    ):
+    db_path = working_dir / "extensions" / "settings" / "settings.db"
+    try:
+        connection = sqlite3.connect(
+            f"{db_path.resolve().as_uri()}?mode=ro",
+            uri=True,
+        )
         try:
-            payload = json.loads(settings_file.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            continue
+            rows = connection.execute(
+                "SELECT key, value FROM settings WHERE namespace = ?",
+                (_NOTIFICATION_NAMESPACE,),
+            ).fetchall()
+        finally:
+            connection.close()
+    except sqlite3.Error:
+        return {}
 
-        notifications = payload.get("notification_channels")
-        if isinstance(notifications, dict):
-            return notifications
-    return {}
+    channels: dict[str, Any] = {}
+    for scope_name, raw_value in rows:
+        try:
+            payload = json.loads(raw_value)
+        except (TypeError, json.JSONDecodeError):
+            continue
+        if isinstance(scope_name, str) and isinstance(payload, dict):
+            channels[scope_name] = payload
+    return channels
 
 
 def _load_notification_scope(scope: str, *, start_path: Path) -> dict[str, Any]:
