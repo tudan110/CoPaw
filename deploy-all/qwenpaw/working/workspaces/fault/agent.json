@@ -182,7 +182,7 @@
       "tts_voice": "en-US-Journey-D",
       "stt_provider": "deepgram",
       "language": "en-US",
-      "welcome_greeting": "Hi! This is QwenPaw. How can I help you?"
+      "welcome_greeting": "你好，我是智观 Paw，可以协助你处理相关业务。"
     },
     "wecom": {
       "enabled": false,

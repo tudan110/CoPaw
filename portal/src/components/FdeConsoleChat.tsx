@@ -791,7 +791,7 @@ export function FdeConsoleChat({
         {streaming ? (
           <span
             className="fde-cc-bg-pill"
-            title="任务在 qwenpaw 后端持续运行，离开本面板或刷新页面再回来都能续上"
+            title="任务在后台持续运行，离开本面板或刷新页面后可继续查看"
           >
             <i className="fas fa-cloud" />
             后台运行

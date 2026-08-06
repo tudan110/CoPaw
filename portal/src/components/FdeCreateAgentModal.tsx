@@ -156,7 +156,7 @@ export function FdeCreateAgentModal({
         </div>
         <div className="fde-modal-body">
           <p className="fde-modal-hint">
-            和 QwenPaw 控制台的「创建智能体」一致 —— 建好后这次生成的技能会装进它。新智能体不会出现在左侧精选清单里，但可正常对话、技能也跑在它里面。
+            和智观 Paw 控制台的「创建智能体」一致 —— 建好后这次生成的技能会装进它。新智能体不会出现在左侧精选清单里，但可正常对话、技能也跑在它里面。
           </p>
           <label className="fde-modal-field">
             <span>

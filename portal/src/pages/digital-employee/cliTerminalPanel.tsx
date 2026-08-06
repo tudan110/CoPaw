@@ -137,7 +137,7 @@ function buildHelpEntries(): CliOutputEntry[] {
   return [
     { content: "" },
     { content: "  ╔══════════════════════════════════════════════════════╗", tone: "accent" },
-    { content: "  ║              opsPaw Command Reference               ║", tone: "banner" },
+    { content: "  ║             智观 Paw Command Reference              ║", tone: "banner" },
     { content: "  ╠══════════════════════════════════════════════════════╣", tone: "accent" },
     { content: "  ║  直接输入自然语言       与当前数字员工对话          ║", tone: "info" },
     { content: "  ║  输入 /                打开命令面板                ║", tone: "info" },
@@ -153,7 +153,7 @@ function buildHelpEntries(): CliOutputEntry[] {
 function buildWelcomeEntries(employee: EmployeeRecord | null): CliLine[] {
   const targetLabel = employee ? `${employee.name} (${employee.id})` : "未指定";
   return [
-    createCliLine("Welcome to opsPaw CLI Terminal", "banner"),
+    createCliLine("欢迎使用智观 Paw CLI", "banner"),
     createCliLine('直接输入自然语言即可开始对话；输入 "/" 可打开命令面板。', "info"),
     createCliLine(`当前数字员工：${targetLabel}`, "accent"),
     createCliLine("", "info"),
@@ -642,7 +642,7 @@ export function CliTerminalPanel({
 
     setCommandHistory((current) => [...current, displayCommand]);
     setHistoryIndex(-1);
-    appendLine(`opsPaw> ${displayCommand}`, "cmd");
+    appendLine(`智观 Paw> ${displayCommand}`, "cmd");
 
     const usesSlash = displayCommand.startsWith("/");
     const command = usesSlash ? displayCommand.slice(1).trim() : displayCommand;
@@ -1006,7 +1006,7 @@ export function CliTerminalPanel({
               <span className="yellow" />
               <span className="green" />
             </div>
-            <div className="cli-terminal-topbar-title">opsPaw CLI / Portal</div>
+            <div className="cli-terminal-topbar-title">智观 Paw CLI</div>
             <div className="cli-terminal-topbar-target">
               {isStreaming ? "streaming" : activeTarget?.id || "default"}
             </div>
@@ -1027,7 +1027,7 @@ export function CliTerminalPanel({
           </div>
 
           <div className="cli-input-row">
-            <span className="cli-prompt">opsPaw&gt;</span>
+            <span className="cli-prompt">智观 Paw&gt;</span>
             <div className="cli-input-field">
               {slashMenuOpen ? (
                 <div className="cli-command-menu" role="listbox" aria-label="Slash commands">

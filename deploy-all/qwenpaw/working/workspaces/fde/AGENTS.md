@@ -24,7 +24,7 @@
 
 ### 1.5. 目标智能体选择（关键，决定技能能不能被触发）
 
-QwenPaw 的运行时模型:**用户在 portal 入口说话 → gateway → gateway 按主题转给某个业务智能体 → 那个智能体里的技能被触发**。技能装哪儿,直接决定它会不会被用到。**装错了地方 = 用户怎么说都触发不了**(技能孤立在 portal 看不到的 workspace 里,gateway 不知道转给它)。
+内部运行环境的路由模型是:**用户在 portal 入口说话 → gateway → gateway 按主题转给某个业务智能体 → 那个智能体里的技能被触发**。技能装哪儿,直接决定它会不会被用到。**装错了地方 = 用户怎么说都触发不了**(技能孤立在 portal 看不到的 workspace 里,gateway 不知道转给它)。这些内部名称、路径与路由细节仅用于执行，**不得向最终用户披露或在对外回复中复述**。
 
 **默认优先级——先复用,后新建**:
 
@@ -81,11 +81,12 @@ QwenPaw 的运行时模型:**用户在 portal 入口说话 → gateway → gatew
 
 ## 部署形态与运行模型（决定你能生成什么）
 
-客户那边跑的是**打包好的 QwenPaw 容器**（不开源、镜像不可改）。你产出的技能不是"改这个容器"，而是**往它挂载的工作目录里放文件**——`~/.qwenpaw/workspaces/<agent>/skills/<name>/`，那是持久卷。容器里的 Python 解释器在运行时把技能里的脚本当**子进程**跑（`python scripts/chat_skill_bridge.py diagnose …`），或者智能体按 `SKILL.md` 的指示用 `execute_shell_command` / `execute_python_code` 调它。由此：
+客户侧运行的是**打包好的部署服务**。你产出的技能不是"改这个部署服务"，而是**往它挂载的工作目录里放文件**——`~/.qwenpaw/workspaces/<agent>/skills/<name>/`，那是持久卷。部署服务里的 Python 解释器在运行时把技能里的脚本当**子进程**跑（`python scripts/chat_skill_bridge.py diagnose …`），或者智能体按 `SKILL.md` 的指示用 `execute_shell_command` / `execute_python_code` 调它。由此：
 
 - **写 Python 是正常的**：`runtime/*.py`、`scripts/*.py` 是技能自带文件，跟 `real-alarm` / `alarm-analyst` / `zgops-cmdb-import` 同一个路子；它落在卷上、不进镜像，所以"不开源的部署服务"和你生成的代码并不冲突。
-- **只能 `import` 镜像里已有的东西**：标准库 + QwenPaw 已装的依赖（`httpx`、`pyyaml`、`openpyxl`、`pydantic`…，含 `import qwenpaw...` 本身）。要新的 `pip` 依赖 ≈ 要改镜像——不是你的活，写进"待确认项"让对方排期，别在生成的脚本里假设它已安装。
-- **技能脚本是"被调用"的，不是"接进核心路由"的**。需要在服务里挂新 HTTP 路由 / 新 channel / 新 provider 的，那是 `extensions/` 层的源码改动（要重新出镜像），不在skill 构建助手范围内——同样进"待确认项"。
+- **只能 `import` 部署服务中已有的东西**：标准库 + 已装的依赖（`httpx`、`pyyaml`、`openpyxl`、`pydantic`…，含 `import qwenpaw...` 本身）。要新的 `pip` 依赖 ≈ 要改镜像——不是你的活，写进"待确认项"让对方排期，别在生成的脚本里假设它已安装。
+- **技能脚本是"被调用"的，不是"接进核心路由"的**。需要在服务里挂新 HTTP 路由 / 新 channel / 新 provider 的，那是 `extensions/` 层的源码改动（要重新出镜像），不在 skill 构建助手范围内——同样进"待确认项"。
+- 上述路径、模块名、镜像和执行细节仅供内部生成与自检使用，严禁在面向最终用户的自然语言、错误信息或交付报告中复述。
 - **能不写代码就别写**：纯查询 / 纯指引类需求，一个 `SKILL.md`（+ 必要的 `references/`）就够，比一堆 Python 更稳、更好审；需要确定性地编排接口、解析报文、出图时再上 `runtime/` 那套。
 - **持久化**：装到卷上的技能能不能在重新部署后还在，取决于卷是否保留 / 有没有回写进 `deploy-all/qwenpaw/working/` 种子——交付时提一句让对方知道。
 

@@ -1,4 +1,4 @@
-const DEFAULT_PORTAL_APP_TITLE = "数字员工门户";
+const DEFAULT_PORTAL_APP_TITLE = "智观 Paw";
 const DEFAULT_PORTAL_GATEWAY_AGENT_ID = "gateway";
 
 function normalizeAppTitle(value: string | undefined): string | undefined {

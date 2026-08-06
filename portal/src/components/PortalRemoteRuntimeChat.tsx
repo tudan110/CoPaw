@@ -271,7 +271,7 @@ export function PortalRemoteRuntimeChat({
         },
         welcome: {
           greeting: `你好，我是 ${agentName}`,
-          description: "当前聊天区已切换为 QwenPaw 原生流式前端链路。",
+          description: "智观 Paw 流式聊天服务。",
           prompts: [],
         },
         session: {
