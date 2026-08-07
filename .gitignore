@@ -165,6 +165,7 @@ deploy-all/qwenpaw/data*/
 deploy-all/qwenpaw/working/secrets/*.env
 !deploy-all/qwenpaw/working/secrets/*.env.example
 deploy-all/DEPLOY_GUIDE.md
+deploy-all/higress/
 
 # 敏感知识库目录
 /knowledge/
