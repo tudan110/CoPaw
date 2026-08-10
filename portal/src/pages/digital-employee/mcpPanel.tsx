@@ -5,11 +5,27 @@ import {
   McpClientInfo,
   McpClientUpdateRequest,
   McpToolInfo,
+  MCPAccessEffect,
+  MCPAccessPolicy,
+  MCPAccessRule,
+  MCPToolAccessOverride,
   McpTransport,
   importMcpClient,
   mcpApi,
 } from "../../api/mcp";
-import { type McpImportEntry, parseMcpImportText } from "../../api/mcpImport";
+import {
+  MCP_CHANNEL_SOURCE_VALUES,
+  addClientRule,
+  addToolRule,
+  buildMCPAccessToolGroups,
+  normalizeMCPAccessPolicy,
+  removeClientRule,
+  removeToolRule,
+  upsertClientRule,
+  upsertToolDefault,
+  upsertToolRule,
+  validateMCPAccessPolicy,
+} from "../../api/mcpAccessPolicy";
 import { portalGatewayAgentId } from "../../config/portalBranding";
 import "../mcp-panel.css";
 
@@ -104,6 +120,74 @@ function formatFormState(client?: McpClientInfo): FormState {
   };
 }
 
+function buildEditableJson(client: McpClientInfo) {
+  return JSON.stringify(
+    {
+      key: client.key,
+      name: client.name,
+      description: client.description || "",
+      enabled: client.enabled,
+      transport: client.transport,
+      url: client.url || "",
+      headers: client.headers || {},
+      command: client.command || "",
+      args: client.args || [],
+      env: client.env || {},
+      cwd: client.cwd || "",
+      tools: client.tools,
+    },
+    null,
+    2,
+  );
+}
+
+function parseEditableJson(value: string, clientKey?: string): McpClientCreateRequest | McpClientUpdateRequest {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(value);
+  } catch {
+    throw new Error("JSON 格式无效，请修正后再保存");
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error("JSON 必须是一个 MCP 配置对象");
+  }
+
+  const source = parsed as Record<string, unknown>;
+  if (source.key !== undefined && clientKey !== undefined && source.key !== clientKey) {
+    throw new Error("MCP Key 创建后不可修改");
+  }
+  if (
+    source.transport !== undefined &&
+    source.transport !== "stdio" &&
+    source.transport !== "streamable_http" &&
+    source.transport !== "sse"
+  ) {
+    throw new Error("transport 仅支持 stdio、streamable_http 或 sse");
+  }
+
+  const updates: McpClientUpdateRequest = {};
+  for (const key of [
+    "name",
+    "description",
+    "enabled",
+    "transport",
+    "url",
+    "headers",
+    "command",
+    "args",
+    "env",
+    "cwd",
+    "tools",
+  ] as const) {
+    if (source[key] !== undefined) {
+      Object.assign(updates, { [key]: source[key] });
+    }
+  }
+  return updates;
+}
+
+export { parseEditableJson };
+
 function getTransportIcon(transport: McpTransport) {
   if (transport === "stdio") {
     return "ri-terminal-box-line";
@@ -177,6 +261,63 @@ function buildPayload(form: FormState): {
   return { clientKey, payload };
 }
 
+const MCP_VISIBLE_CHANNEL_SOURCE_VALUES = ["console", "feishu", "dingtalk"] as const;
+
+function getChannelSourceLabel(sourceValue: string) {
+  const labels: Record<string, string> = {
+    console: "控制台",
+    dingtalk: "钉钉",
+    feishu: "飞书",
+  };
+  return labels[sourceValue] || sourceValue;
+}
+
+function EffectSelector({ value, onChange }: { value: MCPAccessEffect; onChange: (effect: MCPAccessEffect) => void }) {
+  return <div className="mcp-effect-selector">{([['ask', '审批'], ['allow', '允许'], ['deny', '拒绝']] as const).map(([effect, label]) => <button key={effect} type="button" className={value === effect ? 'active' : ''} onClick={() => onChange(effect)}>{label}</button>)}</div>;
+}
+
+function AccessRuleRow({ rule, onChange, onDelete }: { rule: MCPAccessRule | MCPToolAccessOverride; onChange: (rule: typeof rule) => void; onDelete: () => void }) {
+  const update = (patch: Partial<MCPAccessRule>) => {
+    const nextSubjectType = (patch.subject_type ?? rule.subject_type) as MCPAccessRule['subject_type'];
+    onChange({
+      ...rule,
+      ...patch,
+      subject_type: nextSubjectType,
+      subject_value: nextSubjectType === 'all' ? '' : patch.subject_value ?? rule.subject_value ?? '',
+    });
+  };
+
+  return <div className="mcp-access-rule-row">
+    <label className="mcp-access-field">
+      <span>来源</span>
+      <select value={rule.source_value} onChange={(event) => update({ source_value: event.target.value })}>
+        {MCP_VISIBLE_CHANNEL_SOURCE_VALUES.map((sourceValue) => (
+          <option key={sourceValue} value={sourceValue}>{getChannelSourceLabel(sourceValue)}</option>
+        ))}
+      </select>
+    </label>
+    <label className="mcp-access-field">
+      <span>对象</span>
+      <select value={rule.subject_type} onChange={(event) => update({ subject_type: event.target.value as MCPAccessRule['subject_type'] })}>
+        <option value="all">全部</option>
+        <option value="user">用户</option>
+      </select>
+    </label>
+    {rule.subject_type === 'user' ? <label className="mcp-access-field">
+      <span>用户 ID</span>
+      <input value={rule.subject_value} onChange={(event) => update({ subject_value: event.target.value })} placeholder="用户 ID" />
+    </label> : <div className="mcp-access-field">
+      <span>范围</span>
+      <span className="mcp-access-all">全部对象</span>
+    </div>}
+    <div className="mcp-access-field mcp-access-effect-field">
+      <span>策略</span>
+      <EffectSelector value={rule.effect} onChange={(effect) => update({ effect })} />
+    </div>
+    <button type="button" className="mcp-rule-delete" onClick={onDelete} aria-label="删除规则">×</button>
+  </div>;
+}
+
 export function McpPanel() {
   // The Portal only exposes a single public entry agent ("gateway"); MCP
   // clients are always read from / written to that agent. The internal
@@ -192,13 +333,15 @@ export function McpPanel() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingClient, setEditingClient] = useState<McpClientInfo | null>(null);
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
-  const [selectedClientKey, setSelectedClientKey] = useState<string | null>(null);
-  const [tools, setTools] = useState<Record<string, McpToolInfo[]>>({});
-  const [toolsLoadingKey, setToolsLoadingKey] = useState<string | null>(null);
-  const [importModalOpen, setImportModalOpen] = useState(false);
-  const [importText, setImportText] = useState("");
-  const [importBusy, setImportBusy] = useState(false);
-  const [importError, setImportError] = useState("");
+  const [editMode, setEditMode] = useState<"form" | "json">("form");
+  const [editJson, setEditJson] = useState("");
+  const [editJsonError, setEditJsonError] = useState("");
+  const [accessClient, setAccessClient] = useState<McpClientInfo | null>(null);
+  const [accessTools, setAccessTools] = useState<McpToolInfo[]>([]);
+  const [accessPolicy, setAccessPolicy] = useState<MCPAccessPolicy | null>(null);
+  const [accessLoading, setAccessLoading] = useState(false);
+  const [accessSaving, setAccessSaving] = useState(false);
+  const [accessError, setAccessError] = useState("");
 
   const loadClients = useCallback(async () => {
     setLoading(true);
@@ -216,11 +359,9 @@ export function McpPanel() {
   }, [agentId]);
 
   useEffect(() => {
-    setSelectedClientKey(null);
-    setTools({});
     setNotice(null);
     void loadClients();
-  }, [agentId, loadClients]);
+  }, [loadClients]);
 
   const filteredClients = useMemo(() => {
     const keyword = search.trim().toLowerCase();
@@ -244,20 +385,22 @@ export function McpPanel() {
     });
   }, [clients, filter, search]);
 
-  const selectedTools = selectedClientKey ? tools[selectedClientKey] : undefined;
-  const selectedClient = selectedClientKey
-    ? clients.find((client) => client.key === selectedClientKey) || null
-    : null;
 
   const openCreateModal = () => {
     setEditingClient(null);
     setForm(EMPTY_FORM);
+    setEditMode("form");
+    setEditJson("");
+    setEditJsonError("");
     setIsModalOpen(true);
   };
 
   const openEditModal = (client: McpClientInfo) => {
     setEditingClient(client);
     setForm(formatFormState(client));
+    setEditMode("form");
+    setEditJson(buildEditableJson(client));
+    setEditJsonError("");
     setIsModalOpen(true);
   };
 
@@ -268,39 +411,161 @@ export function McpPanel() {
     setIsModalOpen(false);
     setEditingClient(null);
     setForm(EMPTY_FORM);
+    setEditMode("form");
+    setEditJson("");
+    setEditJsonError("");
   };
 
-  const showTools = async (clientKey: string) => {
-    setSelectedClientKey(clientKey);
-    if (tools[clientKey]) {
+  const openAccessModal = async (client: McpClientInfo) => {
+    setAccessClient(client);
+    setAccessLoading(true);
+    setAccessError("");
+    try {
+      const [toolsResponse, policyResponse] = await Promise.all([
+        mcpApi.listTools(client.key, agentId),
+        mcpApi.getPolicy(client.key, agentId),
+      ]);
+      setAccessTools(toolsResponse);
+      setAccessPolicy(normalizeMCPAccessPolicy(policyResponse));
+    } catch (error) {
+      setAccessError(error instanceof Error ? error.message : "工具与权限加载失败");
+    } finally {
+      setAccessLoading(false);
+    }
+  };
+
+  const closeAccessModal = () => {
+    if (!accessSaving) {
+      setAccessClient(null);
+      setAccessPolicy(null);
+      setAccessError("");
+    }
+  };
+
+  const saveAccessPolicy = async () => {
+    if (!accessClient || !accessPolicy) return;
+    const validation = validateMCPAccessPolicy(accessPolicy);
+    if (validation) {
+      setAccessError("规则中的来源或用户值无效，请补全后再保存");
+      return;
+    }
+    setAccessSaving(true);
+    setAccessError("");
+    try {
+      const saved = await mcpApi.updatePolicy(accessClient.key, accessPolicy, agentId);
+      setAccessPolicy(normalizeMCPAccessPolicy(saved));
+      setNotice({ type: "success", message: `已保存 ${accessClient.name} 的工具权限` });
+      await loadClients();
+      closeAccessModal();
+    } catch (error) {
+      setAccessError(error instanceof Error ? error.message : "权限保存失败");
+    } finally {
+      setAccessSaving(false);
+    }
+  };
+
+  const switchEditMode = (nextMode: "form" | "json") => {
+    if (nextMode === editMode) {
+      return;
+    }
+    if (nextMode === "json") {
+      try {
+        if (editingClient) {
+          const { clientKey, payload } = buildPayload(form);
+          setEditJson(
+            JSON.stringify(
+              { key: clientKey, ...payload, tools: editingClient.tools ?? null },
+              null,
+              2,
+            ),
+          );
+        } else {
+          setEditJson(
+            JSON.stringify(
+              {
+                key: form.clientKey,
+                name: form.name,
+                description: form.description,
+                enabled: form.enabled,
+                transport: form.transport,
+                url: form.url,
+                headers: parseKeyValueLines(form.headersText, "Headers"),
+                command: form.command,
+                args: parseLines(form.argsText),
+                env: parseKeyValueLines(form.envText, "Env"),
+                cwd: form.cwd,
+              },
+              null,
+              2,
+            ),
+          );
+        }
+        setEditJsonError("");
+        setEditMode("json");
+      } catch (error) {
+        setEditJsonError(error instanceof Error ? error.message : "表单配置无效");
+      }
       return;
     }
 
-    setToolsLoadingKey(clientKey);
     try {
-      const response = await mcpApi.listTools(clientKey, agentId);
-      setTools((current) => ({
-        ...current,
-        [clientKey]: response,
-      }));
+      const updates = parseEditableJson(editJson, editingClient?.key);
+      const clientKey = typeof JSON.parse(editJson).key === "string"
+        ? JSON.parse(editJson).key
+        : "";
+      setForm(
+        formatFormState({
+          ...editingClient,
+          ...updates,
+          key: editingClient?.key || clientKey,
+        } as McpClientInfo),
+      );
+      setEditJsonError("");
+      setEditMode("form");
     } catch (error) {
-      setNotice({
-        type: "error",
-        message: error instanceof Error ? error.message : "工具列表加载失败",
-      });
-    } finally {
-      setToolsLoadingKey(null);
+      setEditJsonError(error instanceof Error ? error.message : "JSON 配置无效");
     }
+  };
+
+  const parseCreateJson = () => {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(editJson);
+    } catch {
+      throw new Error("JSON 格式无效，请修正后再创建");
+    }
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      throw new Error("JSON 必须是一个 MCP 配置对象");
+    }
+    const source = parsed as Record<string, unknown>;
+    const clientKey = typeof source.key === "string" ? source.key.trim() : "";
+    if (!clientKey) {
+      throw new Error("JSON 配置必须包含 MCP Key");
+    }
+    const payload = parseEditableJson(editJson) as McpClientCreateRequest;
+    if (!payload.name || !payload.transport) {
+      throw new Error("JSON 配置必须包含 name 和 transport");
+    }
+    return { clientKey, payload };
   };
 
   const handleSubmit = async () => {
     try {
       setSaving(true);
-      const { clientKey, payload } = buildPayload(form);
+      const { clientKey, payload } = editingClient
+        ? editMode === "json"
+          ? {
+              clientKey: editingClient.key,
+              payload: parseEditableJson(editJson, editingClient.key),
+            }
+          : buildPayload(form)
+        : editMode === "json"
+          ? parseCreateJson()
+          : buildPayload(form);
 
       if (editingClient) {
         await mcpApi.updateClient(clientKey, payload, agentId);
-        setNotice({ type: "success", message: `已更新 MCP：${payload.name}` });
+        setNotice({ type: "success", message: `已更新 MCP：${payload.name || editingClient.name}` });
       } else {
         // Domain-checked create: off-domain clients are rejected by the backend.
         await importMcpClient(clientKey, payload as McpClientCreateRequest, agentId);
@@ -317,87 +582,6 @@ export function McpPanel() {
     } finally {
       setSaving(false);
     }
-  };
-
-  const openImportModal = () => {
-    setImportText("");
-    setImportError("");
-    setImportModalOpen(true);
-  };
-
-  const closeImportModal = () => {
-    if (importBusy) {
-      return;
-    }
-    setImportModalOpen(false);
-  };
-
-  const handleImportSubmit = async () => {
-    let entries: McpImportEntry[];
-    try {
-      entries = parseMcpImportText(importText);
-    } catch (error) {
-      setImportError(error instanceof Error ? error.message : "解析 MCP 配置失败");
-      return;
-    }
-    setImportError("");
-    setImportBusy(true);
-    const created: string[] = [];
-    const skipped: string[] = [];
-    const rejected: string[] = []; // 领域不符
-    const unavailable: string[] = []; // 领域审核未完成 / 不可用，可重试
-    const failed: string[] = [];
-    for (const entry of entries) {
-      try {
-        // Domain-checked create — off-domain entries are rejected by the backend.
-        await importMcpClient(entry.clientKey, entry.payload, agentId);
-        created.push(entry.clientKey);
-      } catch (error) {
-        const message = error instanceof Error ? error.message : "";
-        if (/exist/i.test(message) || message.includes("已存在")) {
-          skipped.push(entry.clientKey);
-        } else if (
-          message.includes("领域审核失败") ||
-          message.includes("审核未完成") ||
-          message.includes("稍后重试")
-        ) {
-          unavailable.push(`${entry.clientKey}（${message}）`);
-        } else if (
-          message.includes("当前系统仅支持") ||
-          message.includes("加入白名单")
-        ) {
-          rejected.push(`${entry.clientKey}（${message}）`);
-        } else {
-          failed.push(`${entry.clientKey}（${message || "未知错误"}）`);
-        }
-      }
-    }
-    setImportBusy(false);
-    setImportModalOpen(false);
-    await loadClients();
-    const summary: string[] = [];
-    if (created.length) {
-      summary.push(`新增 ${created.length} 个`);
-    }
-    if (skipped.length) {
-      summary.push(`跳过 ${skipped.length} 个（已存在）`);
-    }
-    if (rejected.length) {
-      summary.push(`领域不符 ${rejected.length} 个`);
-    }
-    if (unavailable.length) {
-      summary.push(`审核未完成 ${unavailable.length} 个（可重试）`);
-    }
-    if (failed.length) {
-      summary.push(`失败 ${failed.length} 个`);
-    }
-    const details = [...rejected, ...unavailable, ...failed];
-    setNotice({
-      type: failed.length || rejected.length || unavailable.length ? "error" : "success",
-      message:
-        `MCP 导入完成：${summary.join("，") || "无变更"}` +
-        (details.length ? `；${details.join("；")}` : ""),
-    });
   };
 
   const handleToggle = async (client: McpClientInfo) => {
@@ -424,9 +608,6 @@ export function McpPanel() {
     try {
       await mcpApi.deleteClient(client.key, agentId);
       setNotice({ type: "success", message: `已删除 MCP：${client.name}` });
-      if (selectedClientKey === client.key) {
-        setSelectedClientKey(null);
-      }
       await loadClients();
     } catch (error) {
       setNotice({
@@ -435,8 +616,6 @@ export function McpPanel() {
       });
     }
   };
-
-  const selectedToolsCount = selectedClientKey ? tools[selectedClientKey]?.length : 0;
 
   return (
     <div className="mcp-panel">
@@ -448,10 +627,6 @@ export function McpPanel() {
           <button type="button" className="portal-model-btn" onClick={openCreateModal}>
             <i className="fas fa-plus" />
             新增MCP
-          </button>
-          <button type="button" className="portal-model-btn" onClick={openImportModal}>
-            <i className="fas fa-file-import" />
-            JSON 导入
           </button>
           <button
             type="button"
@@ -515,7 +690,7 @@ export function McpPanel() {
           <div className="mcp-grid">
             {filteredClients.map((client) => {
               const transportStyle = getTransportColor(client.transport);
-              const toolsCount = tools[client.key]?.length;
+              const toolsCount = null;
               return (
                 <article key={client.key} className="mcp-card">
                   <div className="mcp-card-head">
@@ -557,7 +732,7 @@ export function McpPanel() {
                   </div>
 
                   <div className="mcp-card-actions">
-                    <button type="button" className="mcp-card-action" onClick={() => void showTools(client.key)}>
+                    <button type="button" className="mcp-card-action" onClick={() => void openAccessModal(client)}>
                       工具
                     </button>
                     <button type="button" className="mcp-card-action" onClick={() => openEditModal(client)}>
@@ -582,60 +757,53 @@ export function McpPanel() {
           </div>
         )}
 
-        {selectedClient ? (
-          <section className="mcp-tool-panel">
-            <div className="mcp-tool-header">
+      </div>
+
+      {accessClient ? (
+        <div className="mcp-modal-backdrop" onClick={closeAccessModal}>
+          <div className="mcp-modal mcp-access-modal" onClick={(event) => event.stopPropagation()}>
+            <div className="mcp-modal-header">
               <div>
-                <h3>{selectedClient.name} · 工具能力</h3>
-                <p>
-                  协议：{selectedClient.transport} · 已读取 {selectedToolsCount || 0} 个工具
-                </p>
+                <h3>{accessClient.name} · 工具与权限</h3>
+                <p>配置整体策略、调用规则和每个工具的权限。</p>
               </div>
-              <div className="mcp-panel-actions">
-                <button
-                  type="button"
-                  className="mcp-panel-refresh"
-                  onClick={() => {
-                    setTools((current) => {
-                      const next = { ...current };
-                      delete next[selectedClient.key];
-                      return next;
-                    });
-                    void showTools(selectedClient.key);
-                  }}
-                >
-                  <i className="ri-refresh-line" />
-                  重新读取
-                </button>
-              </div>
+              <button type="button" className="mcp-modal-close" onClick={closeAccessModal} aria-label="关闭">×</button>
             </div>
-            {toolsLoadingKey === selectedClient.key && !selectedTools ? (
-              <div className="mcp-loading">
-                <i className="ri-loader-4-line ri-spin" />
-                正在读取工具列表...
-              </div>
-            ) : selectedTools?.length ? (
-              <div className="mcp-tool-list">
-                {selectedTools.map((tool) => (
-                  <div key={tool.name} className="mcp-tool-item">
-                    <strong>{tool.name}</strong>
-                    <p>{tool.description || "未提供说明"}</p>
-                    <pre className="mcp-tool-schema">
-                      {JSON.stringify(tool.input_schema || {}, null, 2)}
-                    </pre>
-                  </div>
-                ))}
-              </div>
+            {accessLoading || !accessPolicy ? (
+              <div className="mcp-loading">正在读取工具与权限...</div>
             ) : (
-              <div className="mcp-empty" style={{ minHeight: 160 }}>
-                <i className="ri-tools-line" />
-                <strong>没有读取到工具</strong>
-                <span>若服务已启用但仍为空，请检查 MCP 服务本身是否暴露了 tools/list。</span>
+              <div className="mcp-access-body">
+                <section className="mcp-access-section">
+                  <div className="mcp-access-heading"><h4>整体权限</h4><span>默认策略</span></div>
+                  <EffectSelector value={accessPolicy.default_effect} onChange={(effect) => setAccessPolicy({ ...accessPolicy, default_effect: effect })} />
+                  <div className="mcp-rule-list">
+                    {accessPolicy.client_overrides.map((rule) => (
+                      <AccessRuleRow key={`${rule.source_value}:${rule.subject_type}:${rule.subject_value}`} rule={rule} onChange={(next) => setAccessPolicy(upsertClientRule(accessPolicy, next, rule))} onDelete={() => setAccessPolicy(removeClientRule(accessPolicy, rule))} />
+                    ))}
+                  </div>
+                  <button type="button" className="mcp-add-rule" onClick={() => setAccessPolicy(addClientRule(accessPolicy))}>＋ 新增规则</button>
+                </section>
+                <section className="mcp-access-section">
+                  <div className="mcp-access-heading"><h4>工具权限</h4><span>{accessTools.length} 个工具</span></div>
+                  <div className="mcp-access-tools">
+                    {buildMCPAccessToolGroups(accessTools, accessPolicy).map((tool) => (
+                      <article className="mcp-access-tool" key={tool.toolName}>
+                        <div className="mcp-access-tool-header"><div><strong>{tool.toolName}</strong>{tool.stale ? <em>已失效规则</em> : null}<p>{tool.description || "未提供说明"}</p></div><EffectSelector value={tool.defaultEffect} onChange={(effect) => setAccessPolicy(upsertToolDefault(accessPolicy, tool.toolName, effect))} /></div>
+                        <details><summary>描述与参数</summary><pre className="mcp-tool-schema">{JSON.stringify(tool.inputSchema, null, 2)}</pre></details>
+                        {tool.rules.map((rule) => <AccessRuleRow key={`${tool.toolName}:${rule.source_value}:${rule.subject_type}:${rule.subject_value}`} rule={rule} onChange={(next) => setAccessPolicy(upsertToolRule(accessPolicy, next as MCPToolAccessOverride, rule))} onDelete={() => setAccessPolicy(removeToolRule(accessPolicy, rule))} />)}
+                        <button type="button" className="mcp-add-rule" onClick={() => setAccessPolicy(addToolRule(accessPolicy, tool.toolName))}>＋ 新增规则</button>
+                      </article>
+                    ))}
+                  </div>
+                </section>
+                {accessPolicy.unmanaged_rules_count ? <div className="mcp-access-warning">有 {accessPolicy.unmanaged_rules_count} 条高级规则会被保留，不能在此编辑。</div> : null}
+                {accessError ? <div className="mcp-panel-notice error">{accessError}</div> : null}
+                <div className="mcp-form-actions"><button type="button" className="mcp-form-cancel" onClick={closeAccessModal}>取消</button><button type="button" className="mcp-form-submit" onClick={() => void saveAccessPolicy()} disabled={accessSaving}>{accessSaving ? "保存中..." : "保存"}</button></div>
               </div>
             )}
-          </section>
-        ) : null}
-      </div>
+          </div>
+        </div>
+      ) : null}
 
       {isModalOpen ? (
         <div className="mcp-modal-backdrop" onClick={closeModal}>
@@ -645,13 +813,61 @@ export function McpPanel() {
                 <h3>{editingClient ? "编辑 MCP" : "新增 MCP"}</h3>
                 <p>支持 streamable HTTP、SSE 与 stdio 三种协议接入。</p>
               </div>
-              <button type="button" className="mcp-modal-close" onClick={closeModal}>
-                <i className="ri-close-line" />
+              <button
+                type="button"
+                className="mcp-modal-close"
+                onClick={closeModal}
+                aria-label="关闭"
+                title="关闭"
+              >
+                ×
               </button>
             </div>
 
+            <div className="mcp-edit-tabs" role="tablist" aria-label="MCP 配置模式">
+                <button
+                  type="button"
+                  className={editMode === "form" ? "active" : ""}
+                  onClick={() => switchEditMode("form")}
+                  role="tab"
+                  aria-selected={editMode === "form"}
+                >
+                  表单模式
+                </button>
+                <button
+                  type="button"
+                  className={editMode === "json" ? "active" : ""}
+                  onClick={() => switchEditMode("json")}
+                  role="tab"
+                  aria-selected={editMode === "json"}
+                >
+                  JSON 编辑
+                </button>
+            </div>
+
             <div className="mcp-form">
-              <div className="mcp-form-grid">
+              {editMode === "json" ? (
+                <div className="mcp-form-field full">
+                  <label>完整 MCP 配置</label>
+                  <textarea
+                    className="mcp-json-editor"
+                    value={editJson}
+                    onChange={(event) => {
+                      setEditJson(event.target.value);
+                      setEditJsonError("");
+                    }}
+                    rows={18}
+                    spellCheck={false}
+                  />
+                  <span className="mcp-form-hint">
+                    {editingClient
+                      ? "MCP Key 仅供查看，保存时不可修改；Header 与 Env 的掩码值保持原样即可保留现有凭证。"
+                      : "请填写单个 MCP 配置，必须包含 key、name 和 transport。"}
+                  </span>
+                  {editJsonError ? <div className="mcp-panel-notice error">{editJsonError}</div> : null}
+                </div>
+              ) : (
+                <div className="mcp-form-grid">
                 <div className="mcp-form-field">
                   <label>MCP Key</label>
                   <input
@@ -702,7 +918,7 @@ export function McpPanel() {
 
                 <div className="mcp-form-field">
                   <label>启用状态</label>
-                  <div className="mcp-form-switch">
+                  <label className="mcp-form-switch" htmlFor="mcp-enabled">
                     <input
                       id="mcp-enabled"
                       type="checkbox"
@@ -711,10 +927,12 @@ export function McpPanel() {
                         setForm((current) => ({ ...current, enabled: event.target.checked }))
                       }
                     />
-                    <label htmlFor="mcp-enabled" style={{ margin: 0 }}>
-                      创建后立即可用
-                    </label>
-                  </div>
+                    <span className="mcp-form-switch-track" aria-hidden="true" />
+                    <span>
+                      <strong>{form.enabled ? "已启用" : "已停用"}</strong>
+                      <small>{form.enabled ? "保存后可参与工具编排" : "保存后不会被 Agent 调用"}</small>
+                    </span>
+                  </label>
                 </div>
 
                 {form.transport === "stdio" ? (
@@ -783,7 +1001,8 @@ export function McpPanel() {
                     </div>
                   </>
                 )}
-              </div>
+                </div>
+              )}
 
               <div className="mcp-form-actions">
                 <button type="button" className="mcp-form-cancel" onClick={closeModal}>
@@ -796,61 +1015,6 @@ export function McpPanel() {
                   onClick={() => void handleSubmit()}
                 >
                   {saving ? "保存中..." : editingClient ? "保存修改" : "创建 MCP"}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      ) : null}
-
-      {importModalOpen ? (
-        <div className="mcp-modal-backdrop" onClick={closeImportModal}>
-          <div className="mcp-modal" onClick={(event) => event.stopPropagation()}>
-            <div className="mcp-modal-header">
-              <div>
-                <h3>JSON 批量导入 MCP</h3>
-                <p>
-                  支持标准 <code>{"{ \"mcpServers\": { ... } }"}</code> 或直接的 <code>{"{ \"客户端名\": { ... } }"}</code> 映射；
-                  会逐条创建到网关入口 Agent，并先做领域校验（非网管相关的会被拒绝）。
-                </p>
-              </div>
-              <button type="button" className="mcp-modal-close" onClick={closeImportModal}>
-                <i className="ri-close-line" />
-              </button>
-            </div>
-
-            <div className="mcp-form">
-              <div className="mcp-form-field full">
-                <label>MCP 配置 JSON</label>
-                <textarea
-                  value={importText}
-                  onChange={(event) => {
-                    setImportText(event.target.value);
-                    setImportError("");
-                  }}
-                  rows={16}
-                  placeholder={
-                    '{\n  "mcpServers": {\n    "filesystem": {\n      "command": "npx",\n      "args": ["-y", "@modelcontextprotocol/server-filesystem", "/data"]\n    },\n    "monitoring": {\n      "transport": "streamable_http",\n      "url": "http://localhost:3001/mcp",\n      "headers": { "Authorization": "Bearer xxx" }\n    }\n  }\n}'
-                  }
-                />
-                <span className="mcp-form-hint">
-                  没写 transport 时：含 command 视为 stdio，含 url 视为 streamable_http；已存在的 Key 会跳过。
-                </span>
-              </div>
-
-              {importError ? <div className="mcp-panel-notice error">{importError}</div> : null}
-
-              <div className="mcp-form-actions">
-                <button type="button" className="mcp-form-cancel" onClick={closeImportModal}>
-                  取消
-                </button>
-                <button
-                  type="button"
-                  className="mcp-form-submit"
-                  disabled={importBusy}
-                  onClick={() => void handleImportSubmit()}
-                >
-                  {importBusy ? "导入中..." : "解析并导入"}
                 </button>
               </div>
             </div>

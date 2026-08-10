@@ -17,6 +17,47 @@ interface CopawRequestOptions {
 
 export type McpTransport = "stdio" | "streamable_http" | "sse";
 
+export type MCPAccessEffect = "allow" | "ask" | "deny";
+export type MCPAccessSourceType = "channel";
+export type MCPAccessSubjectType = "all" | "user";
+
+export interface MCPAccessRule {
+  source_type: MCPAccessSourceType;
+  source_value: string;
+  subject_type: MCPAccessSubjectType;
+  subject_value: string;
+  effect: MCPAccessEffect;
+}
+
+export interface MCPAccessPrincipalOption {
+  source_type: MCPAccessSourceType;
+  source_value: string;
+  subject_type: "user";
+  subject_value: string;
+  label: string;
+  chat_id: string;
+  chat_name: string;
+  session_id: string;
+  updated_at: string | null;
+}
+
+export interface MCPToolDefaultPolicy {
+  tool_name: string;
+  effect: MCPAccessEffect;
+}
+
+export interface MCPToolAccessOverride extends MCPAccessRule {
+  tool_name: string;
+}
+
+export interface MCPAccessPolicy {
+  default_effect: MCPAccessEffect;
+  client_overrides: MCPAccessRule[];
+  tool_defaults: MCPToolDefaultPolicy[];
+  tool_overrides: MCPToolAccessOverride[];
+  unmanaged_rules_count: number;
+}
+
 export interface McpClientInfo {
   key: string;
   name: string;
@@ -29,6 +70,7 @@ export interface McpClientInfo {
   args: string[];
   env: Record<string, string>;
   cwd: string;
+  tools: string[] | null;
 }
 
 export interface McpToolInfo {
@@ -61,6 +103,7 @@ export interface McpClientUpdateRequest {
   args?: string[];
   env?: Record<string, string>;
   cwd?: string;
+  tools?: string[] | null;
 }
 
 function getAgentCandidates(agentId?: string) {
@@ -175,10 +218,23 @@ export const mcpApi = {
     }),
 
   listTools: (clientKey: string, agentId?: string, signal?: AbortSignal) =>
-    requestCopaw<McpToolInfo[]>(`/mcp/${encodeURIComponent(clientKey)}/tools`, {
+    requestCopaw<McpToolInfo[]>(`/mcp/tools/${encodeURIComponent(clientKey)}`, {
       agentId,
       signal,
     }),
+
+  getPolicy: (clientKey: string, agentId?: string) =>
+    requestCopaw<MCPAccessPolicy>(`/mcp/policy/${encodeURIComponent(clientKey)}`, { agentId }),
+
+  updatePolicy: (clientKey: string, policy: MCPAccessPolicy, agentId?: string) =>
+    requestCopaw<MCPAccessPolicy>(`/mcp/policy/${encodeURIComponent(clientKey)}`, {
+      agentId,
+      method: "PUT",
+      body: policy,
+    }),
+
+  listAccessPrincipals: (agentId?: string) =>
+    requestCopaw<MCPAccessPrincipalOption[]>("/mcp/access-principals", { agentId }),
 
   createClient: (
     clientKey: string,
@@ -206,7 +262,7 @@ export const mcpApi = {
     }),
 
   toggleClient: (clientKey: string, agentId?: string) =>
-    requestCopaw<McpClientInfo>(`/mcp/${encodeURIComponent(clientKey)}/toggle`, {
+    requestCopaw<McpClientInfo>(`/mcp/toggle/${encodeURIComponent(clientKey)}`, {
       agentId,
       method: "PATCH",
     }),
