@@ -247,6 +247,7 @@ def test_inspect_resource_metrics_triggers_notification_by_default():
         INSPECTION_MODULE,
         "fetch_metric_data_batch",
         return_value={
+            "apiStatus": "ok",
             "source": "live",
             "metricResults": [
                 {
@@ -296,6 +297,7 @@ def test_inspect_resource_metrics_can_skip_notification():
         INSPECTION_MODULE,
         "fetch_metric_data_batch",
         return_value={
+            "apiStatus": "ok",
             "source": "live",
             "metricResults": [],
         },
@@ -316,8 +318,8 @@ def test_inspect_resource_metrics_can_skip_notification():
 @patch.dict(
     "os.environ",
     {
-        "INSPECTION_NOTIFY_PUSH_URL": "http://notify.example.com/push",
-        "INSPECTION_NOTIFY_MENTION_ALL": "true",
+        "QWENPAW_NOTIFICATION_INSPECTION_PUSH_URL": "http://notify.example.com/push",
+        "QWENPAW_NOTIFICATION_INSPECTION_MENTION_ALL": "true",
     },
     clear=False,
 )
@@ -362,8 +364,8 @@ def test_app_notification_payload_uses_plain_text_content():
 @patch.dict(
     "os.environ",
     {
-        "INSPECTION_NOTIFY_DINGTALK_WEBHOOK_URL": "https://oapi.dingtalk.com/robot/send?access_token=test",
-        "INSPECTION_NOTIFY_MENTION_ALL": "true",
+        "QWENPAW_NOTIFICATION_INSPECTION_DINGTALK_WEBHOOK_URL": "https://oapi.dingtalk.com/robot/send?access_token=test",
+        "QWENPAW_NOTIFICATION_INSPECTION_MENTION_ALL": "true",
     },
     clear=False,
 )
@@ -406,9 +408,9 @@ def test_dingtalk_notification_payload_uses_markdown_message():
 @patch.dict(
     "os.environ",
     {
-        "INSPECTION_NOTIFY_FEISHU_WEBHOOK_URL": "https://open.feishu.cn/open-apis/bot/v2/hook/test",
-        "INSPECTION_NOTIFY_FEISHU_SECRET": "feishu-secret",
-        "INSPECTION_NOTIFY_MENTION_ALL": "true",
+        "QWENPAW_NOTIFICATION_INSPECTION_FEISHU_WEBHOOK_URL": "https://open.feishu.cn/open-apis/bot/v2/hook/test",
+        "QWENPAW_NOTIFICATION_INSPECTION_FEISHU_SECRET": "feishu-secret",
+        "QWENPAW_NOTIFICATION_INSPECTION_MENTION_ALL": "true",
     },
     clear=False,
 )

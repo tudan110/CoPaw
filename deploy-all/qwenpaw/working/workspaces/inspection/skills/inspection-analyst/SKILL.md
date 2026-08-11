@@ -29,13 +29,64 @@ bigscreen:
    - `../zgops-cmdb/scripts/zgops-cmdb.sh fetch "/api/v0.1/ci/s?q=_type:<name>&page=1&count=100"` → 获取实例列表
    - 多实例时列出候选让用户选择
    - 从选中实例取 `_id` 作为 resId；ciType 使用 `list-models` 查出的模型名称（如 `mysql`），也可直接传实例的 `_type` 数字 ID（脚本会自动转换）
-3. **查询指标**：调用巡检脚本，批量查询全部指标定义与指标值
-4. **输出结果**：包含拓扑关系、指标数据表、巡检结论
-5. **通知推送**：脚本自动按配置推送到飞书/钉钉/应用
+3. **查询指标**：优先直接调用已注册的 `inspection` MCP Server，按“指标 MCP 调用”章节获取指标定义、指标值、阈值规则与操作符字典。
+4. **输出结果**：按既有规则完成阈值判定，包含拓扑关系、指标数据表、巡检结论。
+5. **通知推送**：只读 MCP Tools 不发送通知；仅在执行现有脚本回退路径时，才保留脚本按配置推送的行为。
 
-## 执行命令
+## 指标 MCP 调用
 
-拿到 resId 与 ciType 后立即执行，不要停在"计划调用""是否继续"：
+本工作区已启用 `inspection` MCP Server。完成 CMDB 确认后，必须优先直接调用以下 MCP Tools；不要自行使用 `curl`、`requests`、SSE 或 JSON-RPC 访问接口，也不要为此编写额外 MCP 客户端。
+
+### 调用顺序
+
+1. 调用 `inspection__getMetricDefinitions`：
+
+   ```json
+   {
+     "metricType": "<CMDB 确认的模型名称，例如 mysql>",
+     "pageNum": 1,
+     "pageSize": 100
+   }
+   ```
+
+   - `metricType` 必须使用 CMDB `list-models` 确认后的模型名称，不能传空值。
+   - CMDB 返回数字 `_type` 时，先按既有 CMDB 流程解析为模型名称，不能直接把数字传给 MCP Tool。
+   - 逐页读取至全部指标定义完成，并按指标编码去重。
+
+2. 从指标定义中提取全部有效指标编码，单次调用 `inspection__getMetricData`：
+
+   ```json
+   {
+     "mulRes": [{"resId": "<CMDB 确认的真实 CI ID>"}],
+     "queryKeys": ["<全部指标编码>"],
+     "queryType": "0"
+   }
+   ```
+
+   - `resId` 必须是 CMDB 确认的真实值，不能猜测或使用示例值。
+   - `queryKeys` 必须一次传入全部有效指标编码；不要无必要拆成单指标多次查询。
+   - 历史查询的 `queryType` 不等于 `"0"` 时，必须同时传 `startTime` 和 `endTime`。
+
+3. 调用 `inspection__listInspectionConfigs`，以分页方式读取完整巡检规则；只使用与当前资源类型和指标编码匹配的规则。
+
+4. 调用 `inspection__listDictionaryData`：
+
+   ```json
+   {"dictType": "verification_rules_new"}
+   ```
+
+   仅使用该字典解码规则 `operator`，不能传空 `dictType` 或用无关全量字典替代。
+
+### 判定与回退
+
+- MCP Tool 返回上游错误、协议错误或不可解析结果时，立即按失败处理，不要换参数反复重试；仅在 MCP Driver 未加载、不可用或返回协议无法解析时，才允许回退到下方旧脚本路径，并在过程说明中写明回退原因。
+- 指标 Tool 成功但全部最近值为空，是“无实时监控数据”的合法结论；不要回退脚本、不要重复调用、不要转其他 Skill 验证。
+- 使用 MCP 结果时，按本 Skill 的既有规则完成判定：满足阈值规则为正常，不满足为异常，无规则标注“需大模型判断”。
+- MCP Tools 只负责取数，不自动发送通知。MCP 路径下应在报告中写明“通知未配置”；不要把只读巡检查询变成通知动作。
+
+## 旧脚本回退路径
+
+仅当 MCP Driver 未加载、工具不可用或 MCP 返回协议无法解析时，才执行以下命令。该脚本保留用于回退与结果基线，不作为默认指标查询方式：
 
 ```bash
 cd skills/inspection-analyst && python scripts/inspect_resource_metrics.py \
@@ -67,11 +118,11 @@ cd skills/inspection-analyst && python scripts/inspect_resource_metrics.py \
 
 - **不能猜测 resId / ciType**：多个候选时列出清单让用户选择
 - **不能假装查询成功**：接口失败直接报错，不返回假数据
-- **Fail Fast，单次尝试即可下结论**：CMDB / 指标查询接口失败（超时、401/403/404/5xx、连接错误）或返回空，按失败/空直接处理，不做二次三次重试，不切换参数硬凑结果
-- **指标值为空是合法结论**：脚本成功返回但指标最近值全空（采集链路无数据 / `originalDatas: []`），**直接如实产出"无实时监控数据"报告即可**。不要为"证明真的没数据"绕去 alarm-analyst / resource-insight-query 等其他 skill 反复验证，也不要重复重跑巡检脚本（单次约 12s）——一次拿到空值就可以下结论
+- **Fail Fast，单次尝试即可下结论**：CMDB / MCP 指标查询接口失败（超时、401/403/404/5xx、连接错误）或返回不可解析结果时，按失败处理，不做二次三次重试，不切换参数硬凑结果；只有 MCP Driver 未加载、不可用或协议无法解析时，才按“旧脚本回退路径”执行一次回退。
+- **指标值为空是合法结论**：MCP 指标查询成功但指标最近值全空（采集链路无数据 / `originalDatas: []`），**直接如实产出“无实时监控数据”报告即可**。不要为“证明真的没数据”绕去 alarm-analyst / resource-insight-query 等其他 skill 反复验证，也不要重复调用 MCP Tool 或回退脚本。
 - **必须展示拓扑**：最终输出中显式展示 CMDB 拓扑关系，不能省略成"拓扑已确认"
 - **阈值判定**：满足规则 = 正常，不满足 = 异常；无规则的标注"需大模型判断"
-- **通知未配置时**：明确写出"通知未配置"
+- **通知**：MCP 只读查询不发送通知，报告中明确写出“通知未配置”；只有旧脚本回退路径才按其现有配置处理通知。
 
 ## 输出结构
 
