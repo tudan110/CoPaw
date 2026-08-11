@@ -10,9 +10,9 @@ import {
   MCPAccessRule,
   MCPToolAccessOverride,
   McpTransport,
-  importMcpClient,
   mcpApi,
 } from "../../api/mcp";
+import { parseMcpImportText } from "../../api/mcpImport";
 import {
   MCP_CHANNEL_SOURCE_VALUES,
   addClientRule,
@@ -480,25 +480,7 @@ export function McpPanel() {
             ),
           );
         } else {
-          setEditJson(
-            JSON.stringify(
-              {
-                key: form.clientKey,
-                name: form.name,
-                description: form.description,
-                enabled: form.enabled,
-                transport: form.transport,
-                url: form.url,
-                headers: parseKeyValueLines(form.headersText, "Headers"),
-                command: form.command,
-                args: parseLines(form.argsText),
-                env: parseKeyValueLines(form.envText, "Env"),
-                cwd: form.cwd,
-              },
-              null,
-              2,
-            ),
-          );
+          setEditJson("");
         }
         setEditJsonError("");
         setEditMode("json");
@@ -549,27 +531,66 @@ export function McpPanel() {
     return { clientKey, payload };
   };
 
+  const parseJsonCreateEntries = () => {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(editJson);
+    } catch {
+      throw new Error("JSON 格式无效，请修正后再创建");
+    }
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      throw new Error("JSON 必须是一个 MCP 配置对象");
+    }
+    const source = parsed as Record<string, unknown>;
+    if (source.mcpServers !== undefined || !source.key) {
+      return parseMcpImportText(editJson);
+    }
+    return [parseCreateJson()];
+  };
+
   const handleSubmit = async () => {
     try {
       setSaving(true);
-      const { clientKey, payload } = editingClient
-        ? editMode === "json"
+      if (editingClient) {
+        const { clientKey, payload } = editMode === "json"
           ? {
               clientKey: editingClient.key,
               payload: parseEditableJson(editJson, editingClient.key),
             }
-          : buildPayload(form)
-        : editMode === "json"
-          ? parseCreateJson()
           : buildPayload(form);
-
-      if (editingClient) {
         await mcpApi.updateClient(clientKey, payload, agentId);
         setNotice({ type: "success", message: `已更新 MCP：${payload.name || editingClient.name}` });
       } else {
-        // Domain-checked create: off-domain clients are rejected by the backend.
-        await importMcpClient(clientKey, payload as McpClientCreateRequest, agentId);
-        setNotice({ type: "success", message: `已新增 MCP：${payload.name}` });
+        const entries = editMode === "json"
+          ? parseJsonCreateEntries()
+          : [buildPayload(form)];
+        const created: string[] = [];
+        const failed: string[] = [];
+        for (const entry of entries) {
+          try {
+            await mcpApi.createClient(
+              entry.clientKey,
+              entry.payload as McpClientCreateRequest,
+              agentId,
+            );
+            created.push(entry.clientKey);
+          } catch (error) {
+            const message = error instanceof Error ? error.message : "未知错误";
+            failed.push(`${entry.clientKey}（${message}）`);
+          }
+        }
+        if (failed.length) {
+          throw new Error(
+            `MCP 导入未全部完成：已新增 ${created.length} 个` +
+              `；失败 ${failed.length} 个：${failed.join("；")}`,
+          );
+        }
+        setNotice({
+          type: "success",
+          message: entries.length === 1
+            ? `已新增 MCP：${created[0]}`
+            : `已新增 ${created.length} 个 MCP：${created.join("、")}`,
+        });
       }
 
       closeModal();
@@ -579,6 +600,7 @@ export function McpPanel() {
         type: "error",
         message: error instanceof Error ? error.message : "保存 MCP 失败",
       });
+      await loadClients();
     } finally {
       setSaving(false);
     }
@@ -774,24 +796,31 @@ export function McpPanel() {
             ) : (
               <div className="mcp-access-body">
                 <section className="mcp-access-section">
-                  <div className="mcp-access-heading"><h4>整体权限</h4><span>默认策略</span></div>
-                  <EffectSelector value={accessPolicy.default_effect} onChange={(effect) => setAccessPolicy({ ...accessPolicy, default_effect: effect })} />
+                  <div className="mcp-access-control-row">
+                    <div className="mcp-access-heading"><h4>整体权限</h4><span>默认策略</span></div>
+                    <EffectSelector value={accessPolicy.default_effect} onChange={(effect) => setAccessPolicy({ ...accessPolicy, default_effect: effect })} />
+                    <button type="button" className="mcp-add-rule mcp-access-add-rule" onClick={() => setAccessPolicy(addClientRule(accessPolicy))}>＋ 新增规则</button>
+                  </div>
                   <div className="mcp-rule-list">
                     {accessPolicy.client_overrides.map((rule) => (
                       <AccessRuleRow key={`${rule.source_value}:${rule.subject_type}:${rule.subject_value}`} rule={rule} onChange={(next) => setAccessPolicy(upsertClientRule(accessPolicy, next, rule))} onDelete={() => setAccessPolicy(removeClientRule(accessPolicy, rule))} />
                     ))}
                   </div>
-                  <button type="button" className="mcp-add-rule" onClick={() => setAccessPolicy(addClientRule(accessPolicy))}>＋ 新增规则</button>
                 </section>
                 <section className="mcp-access-section">
                   <div className="mcp-access-heading"><h4>工具权限</h4><span>{accessTools.length} 个工具</span></div>
                   <div className="mcp-access-tools">
                     {buildMCPAccessToolGroups(accessTools, accessPolicy).map((tool) => (
                       <article className="mcp-access-tool" key={tool.toolName}>
-                        <div className="mcp-access-tool-header"><div><strong>{tool.toolName}</strong>{tool.stale ? <em>已失效规则</em> : null}<p>{tool.description || "未提供说明"}</p></div><EffectSelector value={tool.defaultEffect} onChange={(effect) => setAccessPolicy(upsertToolDefault(accessPolicy, tool.toolName, effect))} /></div>
+                        <div className="mcp-access-tool-header">
+                          <div className="mcp-access-tool-info"><strong>{tool.toolName}</strong>{tool.stale ? <em>已失效规则</em> : null}<p>{tool.description || "未提供说明"}</p></div>
+                          <div className="mcp-access-tool-actions">
+                            <EffectSelector value={tool.defaultEffect} onChange={(effect) => setAccessPolicy(upsertToolDefault(accessPolicy, tool.toolName, effect))} />
+                            <button type="button" className="mcp-add-rule mcp-access-add-rule" onClick={() => setAccessPolicy(addToolRule(accessPolicy, tool.toolName))}>＋ 新增规则</button>
+                          </div>
+                        </div>
                         <details><summary>描述与参数</summary><pre className="mcp-tool-schema">{JSON.stringify(tool.inputSchema, null, 2)}</pre></details>
                         {tool.rules.map((rule) => <AccessRuleRow key={`${tool.toolName}:${rule.source_value}:${rule.subject_type}:${rule.subject_value}`} rule={rule} onChange={(next) => setAccessPolicy(upsertToolRule(accessPolicy, next as MCPToolAccessOverride, rule))} onDelete={() => setAccessPolicy(removeToolRule(accessPolicy, rule))} />)}
-                        <button type="button" className="mcp-add-rule" onClick={() => setAccessPolicy(addToolRule(accessPolicy, tool.toolName))}>＋ 新增规则</button>
                       </article>
                     ))}
                   </div>
@@ -857,12 +886,13 @@ export function McpPanel() {
                       setEditJsonError("");
                     }}
                     rows={18}
+                    placeholder={'{\n  "mcpServers": {\n    "example-client": {\n      "command": "npx",\n      "args": ["-y", "@example/mcp-server"],\n      "env": {\n        "API_KEY": "<YOUR_API_KEY>"\n      }\n    }\n  }\n}'}
                     spellCheck={false}
                   />
                   <span className="mcp-form-hint">
                     {editingClient
                       ? "MCP Key 仅供查看，保存时不可修改；Header 与 Env 的掩码值保持原样即可保留现有凭证。"
-                      : "请填写单个 MCP 配置，必须包含 key、name 和 transport。"}
+                      : "支持单个 MCP 配置或 QwenPaw 标准 { \"mcpServers\": { ... } } 格式；可一次创建多个配置。"}
                   </span>
                   {editJsonError ? <div className="mcp-panel-notice error">{editJsonError}</div> : null}
                 </div>
