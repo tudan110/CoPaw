@@ -884,9 +884,8 @@
 
 .portal-digital-employee .danmaku-toast {
   position: absolute;
-  right: calc(100% + 10px);
-  top: 50%;
-  transform: translateY(-50%);
+  right: 0;
+  top: calc(100% + 10px);
   max-width: 420px;
   padding: 6px 16px;
   border-radius: 20px;
