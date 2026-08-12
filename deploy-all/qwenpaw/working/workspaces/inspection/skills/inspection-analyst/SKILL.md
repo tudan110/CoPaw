@@ -24,13 +24,14 @@ bigscreen:
 ## 执行流程
 
 1. **识别巡检对象**：用户指定的资源（数据库、中间件、主机等）
-2. **CMDB 确认**：`zgops-cmdb` 是**同工作区下的兄弟 skill**（不是 inspection-analyst 内部脚本），从 inspection-analyst 目录用相对路径 `../zgops-cmdb/scripts/zgops-cmdb.sh` 调用，完成以下链路：
-   - `../zgops-cmdb/scripts/zgops-cmdb.sh list-models` → 确认目标类型的 `name`（如 `redis`、`mysql`）
-   - `../zgops-cmdb/scripts/zgops-cmdb.sh fetch "/api/v0.1/ci/s?q=_type:<name>&page=1&count=100"` → 获取实例列表
-   - 多实例时列出候选让用户选择
-   - 从选中实例取 `_id` 作为 resId；ciType 使用 `list-models` 查出的模型名称（如 `mysql`），也可直接传实例的 `_type` 数字 ID（脚本会自动转换）
-3. **查询指标**：优先直接调用已注册的 `inspection` MCP Server，按“指标 MCP 调用”章节获取指标定义、指标值、阈值规则与操作符字典。
-4. **输出结果**：按既有规则完成阈值判定，包含拓扑关系、指标数据表、巡检结论。
+2. **CMDB MCP 确认**：本工作区已启用 `cmdb` MCP Server。必须优先直接调用以下只读 Tools；不要自行使用 `curl`、`requests`、SSE 或 JSON-RPC，也不要为此编写额外 MCP 客户端：
+   - `cmdb__listCiTypes`：分页确认目标模型的真实 `name`（如 `redis`、`mysql`）。模型名必须来自返回值；数字类型 ID 只能用于展示或关联，不能直接作为 `metricType`。
+   - `cmdb__searchCiInstances`：以 `_type:<模型 name>` 搜索实例并完整处理分页。零候选时直接说明无法确认资源；多候选时列出候选让用户选择，禁止自动任选。
+   - `cmdb__getCiInstance`：对选中候选的真实 `_id` 做二次确认。只将确认后的 `_id` 作为 `resId`，模型 `name` 作为 `ciType` / `metricType`。
+   - `cmdb__getCiRelations`：仅当用户要求依赖、影响面、拓扑，或指标异常确有必要时，以确认后的 `_id` 查询关系。空关系是合法结论，不能伪造拓扑。
+   - 仅当 CMDB MCP Driver 未加载、客户端或 Tool 不可用、或协议响应无法解析时，才允许一次性回退 `../zgops-cmdb/scripts/zgops-cmdb.sh list-models` 与 `fetch`；过程说明必须标记 `zgops-cmdb-script-fallback` 和具体原因。可解析的业务 4xx/5xx、鉴权、参数或上游错误必须 fail-fast，不换参数重试。
+3. **查询指标**：完成 CMDB MCP 确认后，优先直接调用已注册的 `inspection` MCP Server，按“指标 MCP 调用”章节获取指标定义、指标值、阈值规则与操作符字典。
+4. **输出结果**：按既有规则完成阈值判定，包含按需查询的真实拓扑关系、指标数据表、巡检结论。
 5. **通知推送**：只读 MCP Tools 不发送通知；仅在执行现有脚本回退路径时，才保留脚本按配置推送的行为。
 
 ## 指标 MCP 调用
@@ -79,10 +80,14 @@ bigscreen:
 
 ### 判定与回退
 
-- MCP Tool 返回上游错误、协议错误或不可解析结果时，立即按失败处理，不要换参数反复重试；仅在 MCP Driver 未加载、不可用或返回协议无法解析时，才允许回退到下方旧脚本路径，并在过程说明中写明回退原因。
+- CMDB 或 inspection MCP Tool 返回上游错误、协议错误或不可解析结果时，立即按失败处理，不要换参数反复重试；仅在对应 MCP Driver 未加载、客户端/工具不可用或协议无法解析时，才允许回退到下方旧脚本路径，并在过程说明中写明回退原因。
 - 指标 Tool 成功但全部最近值为空，是“无实时监控数据”的合法结论；不要回退脚本、不要重复调用、不要转其他 Skill 验证。
 - 使用 MCP 结果时，按本 Skill 的既有规则完成判定：满足阈值规则为正常，不满足为异常，无规则标注“需大模型判断”。
 - MCP Tools 只负责取数，不自动发送通知。MCP 路径下应在报告中写明“通知未配置”；不要把只读巡检查询变成通知动作。
+
+## CMDB 脚本回退路径
+
+`zgops-cmdb` 仍是同工作区下的兄弟 Skill，但在本巡检流程中仅作为 CMDB MCP 的回退基线：只有 CMDB MCP Driver 未加载、客户端/工具不可用或协议无法解析时，才允许从 inspection-analyst 目录按相对路径调用一次 `../zgops-cmdb/scripts/zgops-cmdb.sh list-models` 与 `fetch`。普通 MCP 成功路径不得调用该脚本。
 
 ## 旧脚本回退路径
 
@@ -104,13 +109,9 @@ cd skills/inspection-analyst && python scripts/inspect_resource_metrics.py \
 
 建议直接使用 CMDB 模型名称（即 `list-models` 输出的"模型名"列），避免额外查询开销。
 
-## 本地优先原则
+## CMDB MCP 优先原则
 
-查 CMDB / 拓扑时默认先用 **inspection 本地的 `zgops-cmdb`**。只有以下情况才回退协作 query：
-
-- inspection 工作区下没有 `zgops-cmdb`
-- 本地 skill 配置缺失 / 接口未接通 / 执行失败
-- 用户明确要求协作其他智能体
+查 CMDB / 拓扑时，`inspection-analyst` 默认优先使用当前工作区已启用的 `cmdb` MCP Tools。只有 CMDB MCP Driver 未加载、客户端/工具不可用或协议无法解析时，才一次性回退本地 `zgops-cmdb`；只有本地回退也缺失、未配置、不可用或用户明确要求时，才使用 multi_agent_collaboration 协同 query。涉及应用或资源拓扑时，CMDB MCP 或回退路径都必须返回可直接渲染的 `echarts` 树状图代码块，不能只保留文字版拓扑摘要。
 
 回退时必须在过程说明中写出回退原因。
 

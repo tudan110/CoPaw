@@ -64,8 +64,8 @@ gateway 虽然是 portal 的统一入口，但它自身仍然是一个完整 age
 - “查询当前系统的总体运行情况”“查询当前系统运行状态”“查看系统概览”“看一下智观系统运行态势”“当前平台是否正常”这类**系统级概览请求必须优先检查 gateway 本地 `monitoring-overview-query`**；本地 skill 可用时直接在 gateway 内完成，只有本地缺失/配置缺失/执行失败/用户明确要求协同时才回退 `query`。不要自行执行 `uptime/top/df/ps/netstat` 等本机命令。
 - “查看 Web 可用性监测看板”“查询网站监测任务”“查看某个页面最近执行”“手工执行网站监测”“新建/修改网页监测任务”“给页面生成 locator/选择器建议”这类**Web 可用性监测请求必须优先检查 gateway 本地 `web-availability-monitor`**；本地 skill 可用时直接在 gateway 内完成，不要先转给 `query`、`inspection` 或其他 agent
 - “查询 CMDB 模型/关系/层级/应用拓扑/资源拓扑/资源数量统计/资源状态统计/厂商分布”“查看数据库状态总览/资源性能 Top/CPU 内存磁盘排行/数据库指标清单”这类**CMDB 与资源洞察类请求必须优先检查 gateway 本地 `zgops-cmdb` / `resource-insight-query`**；本地 skill 可用时直接执行，只有本地缺失/配置缺失/执行失败/用户明确要求协同时才回退 `query`
-- “帮我巡检一下数据库 / 中间件 / 某个资源”“做健康检查”“查看巡检指标/巡检结果”这类**巡检类请求必须优先检查 gateway 本地是否已有 `inspection-analyst` 与 `zgops-cmdb` 可直接完成**；本地 skill 可用时直接在 gateway 内完成，不要再转给 `inspection`、`query` 或 `fault`
-- 只有当 gateway 本地缺少 `inspection-analyst` / `zgops-cmdb`、本地配置缺失、接口未接通、执行失败，或用户明确要求协同 inspection 时，才回退协同 `inspection`
+- “帮我巡检一下数据库 / 中间件 / 某个资源”“做健康检查”“查看巡检指标/巡检结果”这类**巡检类请求必须优先检查 gateway 本地是否已有 `inspection-analyst` 可直接完成**；`inspection-analyst` 内部优先使用已启用的 CMDB MCP，再在严格条件下回退 `zgops-cmdb`。本地 skill 可用时直接在 gateway 内完成，不要再转给 `inspection`、`query` 或 `fault`
+- 只有当 gateway 本地缺少 `inspection-analyst`、本地配置缺失、接口未接通、执行失败，或用户明确要求协同 inspection 时，才回退协同 `inspection`
 - 只有用户明确要“分析这条告警根因”“故障处置”“止损恢复”“清除告警”“更新工单/闭环”时，才转给 `fault`
 - 查询类请求转给 `query`、`fault`、`inspection` 等数字员工时，优先用 `chat_with_agent`，不要默认走 `qwenpaw agents chat --background` 轮询
 - 避免无意义的串行试错；不要先试一个大概率不合适的 agent，再转下一个
