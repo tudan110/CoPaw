@@ -80,6 +80,7 @@ from qwenpaw.extensions.api.sso_backend import (
     router as sso_router,
 )
 from qwenpaw.config.utils import load_config
+from qwenpaw import constant
 from qwenpaw.extensions.api.fault_manual_workorder_models import (
     AlarmAnalystWorkorderCreateRequest,
     AlarmAnalystWorkorderCreateResponse,
@@ -3637,6 +3638,74 @@ def _run_alarm_metric_verification(
 @router.get("/health")
 async def health():
     return {"status": "healthy"}
+
+
+@router.get("/chats/{chat_id}/trace-recovery")
+async def recover_chat_trace_reply(request: Request, chat_id: str):
+    """Return the latest matching final reply from a local chat trace.
+
+    This is a display-only fallback for Portal when the stream completed but
+    the upstream chat history did not persist its final assistant message.
+    """
+    workspace = await get_agent_for_request(request)
+    chat_spec = await workspace.chat_manager.get_chat(chat_id)
+    if not chat_spec:
+        raise HTTPException(status_code=404, detail=f"Chat not found: {chat_id}")
+
+    session_id = str(chat_spec.session_id or "")
+    if not session_id:
+        return {"available": False, "reason": "missing_session_id"}
+    trace_root = (constant.WORKING_DIR / "chat_traces").resolve()
+    trace_path = (trace_root / f"{session_id}.jsonl").resolve()
+    try:
+        trace_path.relative_to(trace_root)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid chat session") from None
+    if not trace_path.is_file():
+        return {"available": False, "reason": "trace_not_found"}
+
+    latest: dict[str, Any] | None = None
+    try:
+        with trace_path.open("r", encoding="utf-8") as trace_file:
+            for line_number, line in enumerate(trace_file, start=1):
+                if line_number > 10000:
+                    break
+                if len(line) > 2_000_000:
+                    continue
+                try:
+                    event = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if (
+                    event.get("type") == "agent_reply"
+                    and event.get("agent_id") == workspace.agent_id
+                    and event.get("session_id") == session_id
+                    and event.get("user_id") in (None, chat_spec.user_id)
+                    and event.get("channel") in (None, chat_spec.channel)
+                    and isinstance(event.get("text"), str)
+                    and event["text"].strip()
+                ):
+                    latest = event
+    except OSError:
+        return {"available": False, "reason": "trace_unavailable"}
+
+    if not latest:
+        return {"available": False, "reason": "reply_not_found"}
+    text = latest["text"].strip()
+    if len(text) > 200_000:
+        text = text[:200_000]
+    return {
+        "available": True,
+        "source": "chat_trace_recovery",
+        "trace_ts": latest.get("ts"),
+        "message": {
+            "type": "message",
+            "role": "assistant",
+            "content": [{"type": "text", "text": text}],
+            "status": "completed",
+            "metadata": {"source": "chat_trace_recovery"},
+        },
+    }
 
 
 @router.get("/resource-import/metadata")

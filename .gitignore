@@ -9,6 +9,7 @@
 # AI agent / copilot local config
 .aone_copilot/
 .agents/
+.reasonix/
 
 # dependencies
 /.pnp

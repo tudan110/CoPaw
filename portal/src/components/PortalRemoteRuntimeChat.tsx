@@ -53,6 +53,32 @@ function extractUserMessageText(message: any): string {
     .trim();
 }
 
+function parseRuntimeResponse(chunk: string) {
+  const payload = JSON.parse(chunk) as Record<string, any>;
+  if (payload.type === "turn_usage" || payload.type === "replay_end") {
+    return null;
+  }
+  if (
+    payload.object === "response"
+    && payload.status === "completed"
+    && (!payload.output || (Array.isArray(payload.output) && !payload.output.length))
+  ) {
+    payload.output = [
+      {
+        type: "message",
+        role: "assistant",
+        content: [
+          {
+            type: "text",
+            text: payload.error?.message || "本次回复未返回可展示内容。",
+          },
+        ],
+      },
+    ];
+  }
+  return payload;
+}
+
 function canScrollVertically(element: Element, deltaY: number) {
   if (!(element instanceof HTMLElement)) {
     return false;
@@ -284,6 +310,7 @@ export function PortalRemoteRuntimeChat({
         },
         api: {
           fetch: customFetch,
+          responseParser: parseRuntimeResponse,
           cancel(data: { session_id: string }) {
             const chatId =
               sessionApi.getRealIdForSession(data.session_id) ?? data.session_id;

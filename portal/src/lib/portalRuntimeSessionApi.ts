@@ -6,6 +6,7 @@ import type {
 import {
   createChat,
   deleteChat,
+  getChatTraceRecovery,
   getChatHistory,
   listChats,
   updateChat,
@@ -429,6 +430,21 @@ export class PortalRuntimeSessionApi implements IAgentScopeRuntimeWebUISessionAP
     }
   }
 
+  private async buildHistoryMessages(chatId: string, chatHistory: any) {
+    const messages = convertMessages(chatHistory.messages || []);
+    if (!isGenerating(chatHistory) && messages.at(-1)?.role !== ROLE_ASSISTANT) {
+      try {
+        const recovery = await getChatTraceRecovery(this.agentId, chatId);
+        if (recovery.available && recovery.message) {
+          messages.push(buildResponseCard([recovery.message]));
+        }
+      } catch {
+        // The canonical QwenPaw history remains usable when trace recovery is unavailable.
+      }
+    }
+    return messages;
+  }
+
   private async doGetSession(sessionId: string): Promise<IAgentScopeRuntimeWebUISession> {
     if (isLocalTimestamp(sessionId)) {
       const fromList = this.sessionList.find((session) => session.id === sessionId) as
@@ -438,7 +454,7 @@ export class PortalRuntimeSessionApi implements IAgentScopeRuntimeWebUISessionAP
       if (fromList?.realId) {
         const chatHistory = await getChatHistory(this.agentId, fromList.realId);
         const generating = isGenerating(chatHistory);
-        const messages = convertMessages(chatHistory.messages || []);
+        const messages = await this.buildHistoryMessages(fromList.realId, chatHistory);
         this.patchLastUserMessage(messages, generating, fromList.realId);
         const session: ExtendedSession = {
           id: sessionId,
@@ -458,7 +474,7 @@ export class PortalRuntimeSessionApi implements IAgentScopeRuntimeWebUISessionAP
       if (refreshed?.realId) {
         const chatHistory = await getChatHistory(this.agentId, refreshed.realId);
         const generating = isGenerating(chatHistory);
-        const messages = convertMessages(chatHistory.messages || []);
+        const messages = await this.buildHistoryMessages(refreshed.realId, chatHistory);
         this.patchLastUserMessage(messages, generating, refreshed.realId);
         const session: ExtendedSession = {
           id: sessionId,
@@ -486,7 +502,7 @@ export class PortalRuntimeSessionApi implements IAgentScopeRuntimeWebUISessionAP
       | undefined;
     const chatHistory = await getChatHistory(this.agentId, sessionId);
     const generating = isGenerating(chatHistory);
-    const messages = convertMessages(chatHistory.messages || []);
+    const messages = await this.buildHistoryMessages(sessionId, chatHistory);
     this.patchLastUserMessage(messages, generating, sessionId);
 
     const session: ExtendedSession = {
@@ -503,11 +519,11 @@ export class PortalRuntimeSessionApi implements IAgentScopeRuntimeWebUISessionAP
   }
 
   async updateSession(session: Partial<IAgentScopeRuntimeWebUISession>) {
-    session.messages = [];
-    const targetIndex = this.sessionList.findIndex((item) => item.id === session.id);
+    const { messages: _messages, ...metadata } = session;
+    const targetIndex = this.sessionList.findIndex((item) => item.id === metadata.id);
 
     if (targetIndex > -1) {
-      this.sessionList[targetIndex] = { ...this.sessionList[targetIndex], ...session };
+      this.sessionList[targetIndex] = { ...this.sessionList[targetIndex], ...metadata };
 
       const existing = this.sessionList[targetIndex] as ExtendedSession;
       if (isLocalTimestamp(existing.id) && !existing.realId) {
@@ -525,9 +541,9 @@ export class PortalRuntimeSessionApi implements IAgentScopeRuntimeWebUISessionAP
       });
     }
 
-    const realId = this.getRealIdForSession(session.id || "");
-    if (realId && session.name) {
-      await updateChat(this.agentId, realId, { name: session.name });
+    const realId = this.getRealIdForSession(metadata.id || "");
+    if (realId && metadata.name) {
+      await updateChat(this.agentId, realId, { name: metadata.name });
     }
 
     return [...this.sessionList];

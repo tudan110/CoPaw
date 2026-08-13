@@ -1,3 +1,5 @@
+import { requestPortalApi } from "./portalWorkorders";
+
 const DEFAULT_API_BASE_URL = "/copaw-api/api";
 const DEFAULT_FALLBACK_AGENT_ID = "default";
 // Plain JSON calls (create chat, list chats, history, stop). These also cover
@@ -201,6 +203,23 @@ export function getChatHistory(agentId: string | undefined, chatId: string) {
   return requestCopaw(`/chats/${encodeURIComponent(chatId)}`, {
     agentId,
   });
+}
+
+export interface ChatTraceRecovery {
+  available: boolean;
+  source?: "chat_trace_recovery";
+  trace_ts?: number;
+  reason?: string;
+  message?: Record<string, unknown>;
+}
+
+export function getChatTraceRecovery(agentId: string | undefined, chatId: string) {
+  return requestPortalApi<ChatTraceRecovery>(
+    `/chats/${encodeURIComponent(chatId)}/trace-recovery`,
+    {
+      headers: agentId ? { "X-Agent-Id": agentId } : undefined,
+    },
+  );
 }
 
 export function updateChat(

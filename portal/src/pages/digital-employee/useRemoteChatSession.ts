@@ -8,6 +8,7 @@ import {
 } from "react";
 import {
   createChat,
+  getChatTraceRecovery,
   getChatHistory,
   listChats,
   reconnectChat,
@@ -1096,6 +1097,7 @@ export function useRemoteChatSession({
         && String(session?.meta?.source || "") === "portal-fault-workorder";
       let history = null;
       let nextMessages = null;
+      let recoveredTraceReply = false;
       let enhancementSessionId = String(session?.sessionId || "").trim();
 
       if (isPortalFaultWorkbench) {
@@ -1136,6 +1138,54 @@ export function useRemoteChatSession({
           nextEmployee,
           session,
         );
+        const lastHistoryMessage = nextMessages.at(-1);
+        const lastAgentContent = String(lastHistoryMessage?.content || "").trim();
+        const hasFinalAgentReply =
+          lastHistoryMessage?.type === "agent"
+          && lastAgentContent.length > 0
+          && (lastAgentContent.includes("# PORTAL INSPECTION CARD MODE")
+            || lastAgentContent.includes("# PORTAL ALARM ANALYST CARD MODE")
+            || lastAgentContent.includes("# PORTAL FAULT WORKORDER MODE")
+            || lastAgentContent.length > 500);
+        if (!isRunningRemoteStatus(history.status) && !hasFinalAgentReply) {
+          try {
+            const recovery = await getChatTraceRecovery(nextRemoteAgentId, session.id);
+            const recoveredContent = recovery.message?.content;
+            const recoveredText = Array.isArray(recoveredContent)
+              ? recoveredContent
+                  .filter((item: any) => item?.type === "text")
+                  .map((item: any) => String(item.text || ""))
+                  .join("\n")
+                  .trim()
+              : "";
+            if (recovery.available && recoveredText) {
+              recoveredTraceReply = true;
+              const targetIndex = nextMessages
+                .map((message: any) => message?.type)
+                .lastIndexOf("agent");
+              if (targetIndex >= 0) {
+                nextMessages = nextMessages.map((message: any, index: number) =>
+                  index === targetIndex
+                    ? {
+                        ...message,
+                        content: recoveredText,
+                      }
+                    : message,
+                );
+              } else {
+                nextMessages = [
+                  ...nextMessages,
+                  createAgentMessage(nextEmployee, {
+                    id: `trace-recovery-${recovery.trace_ts || session.id}`,
+                    content: recoveredText,
+                  }),
+                ];
+              }
+            }
+          } catch {
+            // The canonical history remains usable when trace recovery is unavailable.
+          }
+        }
         enhancementSessionId = String(
           enhancementSessionId ||
           history.session_id ||
@@ -1157,9 +1207,11 @@ export function useRemoteChatSession({
 
       const selectedSessionId = enhancementSessionId || session.sessionId || "";
       const selectedStatus =
-        isRunningRemoteStatus(history.status) || isRunningRemoteStatus(session.status)
-          ? "running"
-          : history.status || session.status || "idle";
+        recoveredTraceReply
+          ? "idle"
+          : isRunningRemoteStatus(history.status) || isRunningRemoteStatus(session.status)
+            ? "running"
+            : history.status || session.status || "idle";
       setCurrentChatId(session.id);
       setCurrentSessionId(selectedSessionId);
       setCurrentChatStatus(selectedStatus);
@@ -1167,7 +1219,7 @@ export function useRemoteChatSession({
       setMessages(nextMessages);
       setHistoryVisible(false);
 
-      if (isRunningRemoteStatus(selectedStatus)) {
+      if (!recoveredTraceReply && isRunningRemoteStatus(selectedStatus)) {
         window.setTimeout(() => {
           void reconnectRunningChat({
             agentId: nextRemoteAgentId,
