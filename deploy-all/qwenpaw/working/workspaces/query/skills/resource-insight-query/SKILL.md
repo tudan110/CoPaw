@@ -5,75 +5,49 @@ description: 查询 INOE 资源状态与性能数据。适用于用户询问设�
 
 # Resource Insight Query
 
-这是 query 数字员工的资源状态与性能查询技能。它只封装 INOE 资源状态/性能接口，不处理实时告警列表，也不替代 `zgops-cmdb`。
+查询 INOE 资源状态与性能数据。不处理实时告警列表，也不替代 `zgops-cmdb`。
+
+## MCP 优先级
+
+本工作区已启用 `resource` MCP Server。Agent 必须优先直接调用以下 MCP Tools；不要自行使用 `curl`、`requests`、SSE 或 JSON-RPC。
+
+仅在 resource MCP Driver 未加载、客户端/工具不可用或协议响应无法解析时，才允许回退到旧脚本路径（见末尾"旧脚本回退路径"）。
 
 ## 边界
 
-- 实时告警列表、告警级别统计、当前告警详情：使用 `real-alarm`。
-- CMDB 模型、CI 列表、CI 关系、`/cmdb/api/v0.1/ci/count...`：使用 `zgops-cmdb`。
-- 资源状态总览、性能 Top、数据库指标清单：使用本技能。
+- 实时告警列表、告警级别统计、当前告警详情：使用 `real-alarm`
+- CMDB 模型、CI 列表、CI 关系、count 类接口：使用 `zgops-cmdb`
+- 资源状态总览、性能 Top、数据库指标清单：使用本技能
 
-## 配置
+## MCP Tools
 
-配置优先从共享 `secrets/`（`working/secrets/`）读取，未配置时回退本技能目录 `.env` 或同名环境变量：
+| 操作 | MCP Tool | 参数 |
+| --- | --- | --- |
+| 数据库状态总览 | `resource__getDatabaseResourceStatusOverview` | 无 |
+| 页面性能 Top | `resource__getTopMetricData` | `orderCode`, `topNum`, `type` |
+| 资源性能 Top | `resource__getTopResourceMetricData` | `orderKey`, `topNum`, `type` |
+| 数据库性能指标 | `resource__queryDatabasePerformanceMetrics` | `keyWord`, `pageNum`, `pageSize` |
 
-```bash
-INOE_API_BASE_URL=http://<host>:<port>
-INOE_API_TOKEN=your_jwt_token_here
-INOE_ENABLE_CURL_FALLBACK=true
-```
+## 自然语言映射
 
-不要在回答里泄露 token。
+- "数据库状态总览 / 数据库状态统计" → `resource__getDatabaseResourceStatusOverview`
+- "数据库性能 Top / 磁盘使用率排行" → `resource__getTopMetricData(orderCode="diskRate", topNum=5)`
+- "网络设备性能 / CPU 排行" → `resource__getTopResourceMetricData(orderKey="cpuRate", topNum=5)`
+- "操作系统性能 / 服务器性能" → `resource__getTopResourceMetricData(type="os" 或 "server")`
+- "主机磁盘使用率排行 / 磁盘 Top" → `resource__getTopResourceMetricData(orderKey="diskRate", topNum=5)`
+- "列出磁盘使用率超 80% 的主机" → 调对应 MCP Tool 获取数据后，本地过滤
+- "数据库性能指标清单" → `resource__queryDatabasePerformanceMetrics(pageNum=1, pageSize=20)`
+- "资源概览汇总" → 组合调用上述 MCP Tools 后自行汇总
 
-## 常用命令
+## 旧脚本回退路径
 
-查询数据库状态总览：
+仅当 resource MCP Driver 不可用时，才执行以下命令。脚本自动从环境变量读取凭证。
 
 ```bash
 cd skills/resource-insight-query
 python3 scripts/resource_insight.py status-overview --resource_type database --output markdown
-```
-
-查询数据库性能 Top：
-
-```bash
-cd skills/resource-insight-query
 python3 scripts/resource_insight.py top-metric --resource_type database --top_num 5 --output markdown
-```
-
-查询网络设备 CPU Top：
-
-```bash
-cd skills/resource-insight-query
-python3 scripts/resource_insight.py top-metric --resource_type network --order_code cpuRate --top_num 5 --output markdown
-```
-
-生成资源概览汇总：
-
-```bash
-cd skills/resource-insight-query
 python3 scripts/resource_insight.py summary --resource_type database --output markdown
 ```
 
-输出 JSON 给后续渲染：
-
-```bash
-python3 scripts/resource_insight.py top-metric --resource_type database --output json
-```
-
-## 自然语言映射
-
-- “数据库状态总览 / 数据库状态统计 / 数据库资源状态”：执行 `status-overview --resource_type database`。
-- “数据库性能 Top / 数据库磁盘使用率排行”：执行 `top-metric --resource_type database`，默认 `order_code=diskRate`。
-- “网络设备性能 / 网络设备 CPU 排行”：执行 `top-metric --resource_type network --order_code cpuRate`。
-- “操作系统性能 / 服务器性能”：分别使用 `resource_type os` 或 `resource_type server`。
-- “主机磁盘使用率排行 / 主机磁盘 Top / 服务器磁盘使用率”：执行 `top-metric --resource_type host --order_code diskRate`（`host`/`主机` 已映射到「操作系统」维度，默认按磁盘排行）；服务器口径用 `--resource_type server --order_code diskRate`。
-- “列出磁盘使用率超 80% 的主机 / CPU 超 90% 的服务器 / 超阈值的资源”：在对应 `top-metric` 命令上追加 `--min_rate 80`（阈值取用户给的百分比），脚本会服务端取回后按该指标 **一次性筛出 ≥ 阈值** 的行，无需自己再过滤；topN 不够时调大 `--top_num`。
-- “帮我进行设备状态的统计”：如果用户没有指定资源类型，先用 `summary --resource_type database` 展示已封装的数据库状态，并说明其他资源状态统计后续由 CMDB count 类接口在 `zgops-cmdb` 中承载。
-
-## 已封装接口
-
-- `GET /resource/database/resource/status/overview`
-- `POST /resource/pm/TopMetricDataNew`
-- `POST /resource/resource/performance/topResMetricData`
-- `POST /resource/database/performance/metric/page?pageNum=<pageNum>&pageSize=<pageSize>`
+回退时必须在过程说明中写明回退原因（如 `resource-mcp-unavailable`）。
