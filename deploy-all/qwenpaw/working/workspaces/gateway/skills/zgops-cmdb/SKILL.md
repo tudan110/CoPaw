@@ -5,153 +5,95 @@ description: 用于查询当前配置所指向的 CMDB 环境。当用户询问�
 
 # ZGOPS CMDB 查询技能
 
-仅面向当前配置所指向的 CMDB 环境。CMDB 请求统一复用设置页「平台」中的 INOE 网关地址和访问令牌，运行时物化为 `INOE_API_BASE_URL` / `INOE_API_TOKEN`；脚本通过 `Authorization: Bearer <token>` 访问 `${INOE_API_BASE_URL}/cmdb/api/v0.1/...`。不再读取或使用 CMDB 地址、账号、密码、`.env` 或 `secrets/zgops-cmdb.env`。
+仅面向当前配置所指向的 CMDB 环境。
 
-不要在对外描述里写死某个固定地址、某套“测试环境”或特定站点；环境信息应完全来自上述配置（设置页 / 物化的环境变量）。
+## CMDB MCP 优先级
 
-## 默认行为
+本工作区已启用 `cmdb` MCP Server。Agent 必须优先直接调用以下 MCP Tools；不要自行使用 `curl`、`requests`、SSE 或 JSON-RPC，也不要为此编写额外 MCP 客户端。不要打开浏览器或使用 `browser_use` 等浏览器工具。
 
-- 优先使用随 skill 附带的脚本。
-- 即使 agent 具备 `browser_use` 或其他浏览器相关工具，处理本 skill 的 CMDB 查询时也**禁止**使用它们；只允许后台脚本、HTTP 请求、curl、Python 标准库/HTTP 客户端这类无界面方式。
-- 除非用户明确询问页面布局、截图或仅能在页面上看到的配置，否则**不要**打开浏览器。
-- 除非需要接口名或已整理的场景关系，否则**不要**读取 `references/endpoints.md`。
-- 涉及统计分布、目标数量对比类图表时，优先使用 `scripts/zgops-cmdb.sh analyze ...`。
-- 涉及资源数量、资源状态、制造商/厂商分布、`/cmdb/api/v0.1/ci/count...` 这类网关 CMDB 统计接口时，使用 `scripts/zgops-cmdb.sh inoe-stat ...`，不要改用 `resource-insight-query`。
-- 执行 `inoe-stat` 时，资源 `type` 默认从当前环境的 `/cmdb/api/v0.1/ci_types/groups` 动态解析；内置 `database=5 / middleware=6 ...` 只作为元数据接口不可用时的兜底。
-- 涉及具体应用的关系拓扑，先运行 `scripts/zgops-cmdb.sh find-project <应用名>` 解析目标应用；唯一命中后直接使用 `scripts/zgops-cmdb.sh app-topology <应用名>` 输出标准 ECharts `series` 结构，不要手写拓扑 option。
-- 如果用户只是说“简易拓扑 / 系统拓扑 / 全局拓扑 / 监控拓扑 / 总览拓扑”，且没有明确给出某个应用名或项目名，不要使用本 skill 追问应用；这类请求应交给 `monitoring-overview-query` 的 `topology`。
-- 如果用户没有明确指定应用名，且当前系统里存在多个应用，**不要默认任选一个**。必须先列出候选应用名并请用户明确指定。
-- 当用户要求展示某个应用的关系拓扑图时，默认使用 ECharts `series.type = 'tree'`，并设置为从左到右展开；根节点使用 CMDB 中实际应用名。
-- 除非用户明确要求导出独立页面，否则**不要**生成 `.html` 图表文件；默认直接输出可渲染的 ```echarts 代码块。
-- 默认返回精简总结，不返回原始 JSON；只有用户明确要求时才返回原始响应。
+仅在 cmdb MCP Driver 未加载、客户端/工具不可用或协议响应无法解析时，才允许回退到旧脚本路径（见末尾"旧脚本回退路径"）。MCP Tool 返回的可解析业务错误（4xx/5xx、鉴权、参数错误）必须 fail-fast，不换参数重试。
 
-## 网关分工
+## MCP Tools
 
-本 skill 涉及两个网关，脚本内部已自动路由，但理解分工有助于排错：
+| 操作 | MCP Tool | 参数 | 说明 |
+| --- | --- | --- | --- |
+| 查 CI 类型列表 | `cmdb__listCiTypes` | `page`, `per_page` | 分页取全，模型 `name` 是后续查询标识 |
+| 查 CI 类型属性 | `cmdb__getCiTypeAttributes` | `id` | 传 CI 类型 ID |
+| 查 CI 类型关系 | `cmdb__listCiTypeRelations` | `ci_type_id` | 传 CI 类型 ID |
+| 查 CI 类型分组 | `cmdb__listCiTypeGroups` | — | 返回类型分组目录 |
+| 查 CI 关系类型 | `cmdb__listRelationTypes` | — | 返回所有关系类型 |
+| 查 CMDB 类型 | `cmdb__listCmdbTypes` | — | 返回 CMDB 类型列表 |
+| 搜索 CI 实例 | `cmdb__searchCiInstances` | `q`, `page`, `count` | `q=_type:<模型名>` 按类型搜索 |
+| 查 CI 实例详情 | `cmdb__getCiInstance` | `id` | 传 CI 的 `_id` |
+| 查 CI 关系拓扑 | `cmdb__getCiRelations` | `root_id`, `level`, `count` | 查上下游关系链 |
+| 登录 | `cmdb__cmdbLogin` | — | 获取会话 token（通常只读查询不需要） |
+| 查用户信息 | `cmdb__getCmdbUserInfo` | — | — |
+| CI 数量统计 | `cmdb__countCi` | — | 全量 CI 数量 |
+| CI 属性分组统计 | `cmdb__countCiByAttribute` | — | 按属性分组计数 |
+| CI 分组统计 | `cmdb__countCiByGroup` | — | 按 CI 类型分组计数 |
+| CI 子类型统计 | `cmdb__countChildCi` | — | 子类型数量 |
+| CI 子类型分组统计 | `cmdb__countChildCiByGroup` | — | 子类型按属性分组 |
 
-| 网关 | 环境变量 | 职责 |
-|------|----------|------|
-| INOE CMDB 网关 | `INOE_API_BASE_URL` + `INOE_API_TOKEN` | CI 类型查询、实例搜索、关系拓扑与统计（所有命令） |
+## 常见场景
 
-**重要：** 查 CI 类型和实例统一用 `list-models` + `fetch`，脚本会自动拼接 `/cmdb/api/v0.1` 路由并附加 Bearer 令牌。
+### 按类型查资源实例
 
-## 快速路径
+1. 调用 `cmdb__listCiTypes`，分页取全，找到目标模型的 `name`（如 `redis`、`mysql`）
+2. 调用 `cmdb__searchCiInstances(q="_type:<模型名>", page=1, count=100)` 搜索实例
+3. 多实例时列出候选让用户选择，禁止自动任选
+4. 返回结果中 `_id` 是 CI ID（即 `resId`），`_type` 是 `ciType`
 
-1. 统一主入口是 `scripts/zgops-cmdb.sh`。
-2. 需要鉴权时，先运行一次 `scripts/zgops-cmdb.sh login`。
-   它现在走后台 HTTP 会话，不会再打开桌面浏览器。
-3. `fetch` 子命令**只接受 API 路径**，不支持 `--ci-id` 等快捷参数。查询资源必须拼完整路径：
-   - ✅ `scripts/zgops-cmdb.sh fetch "/api/v0.1/ci/s?q=_id:3034&count=1"`
-   - ✅ `scripts/zgops-cmdb.sh fetch "/api/v0.1/ci_relations/s?root_id=3034&level=1&level=2&level=3&count=10000"`
-   - ❌ `scripts/zgops-cmdb.sh fetch --ci-id 3034`（不存在此用法）
-4. 按问题选择最小可用命令：
+### 查应用拓扑
 
-```bash
-scripts/zgops-cmdb.sh find-project <应用名>
-scripts/zgops-cmdb.sh app-topology <应用名>
-scripts/zgops-cmdb.sh list-models
-scripts/zgops-cmdb.sh model-attributes <type_id>
-scripts/zgops-cmdb.sh model-relations <type_id>
-scripts/zgops-cmdb.sh fetch "/api/v0.1/relation_types"
-scripts/zgops-cmdb.sh fetch "/api/v0.1/ci/s?q=_type:project&count=20"
-scripts/zgops-cmdb.sh fetch "/api/v0.1/ci_relations/s?root_id=<ci_id>&level=1&level=2&level=3&count=10000"
-scripts/zgops-cmdb.sh analyze --mode summary --output markdown
-scripts/zgops-cmdb.sh analyze --mode app-relations --output markdown
-scripts/zgops-cmdb.sh analyze --mode summary --output markdown-echarts-only
-scripts/zgops-cmdb.sh inoe-stat types --output markdown
-scripts/zgops-cmdb.sh inoe-stat group --resource_type middleware --attr vendor --output markdown
-scripts/zgops-cmdb.sh inoe-stat count --resource_type database --output markdown
-scripts/zgops-cmdb.sh inoe-stat child-group --type_id 5 --attr vendor --output markdown
-```
+1. "找某个应用" → 调用 `cmdb__searchCiInstances(q="_type:project")`，本地过滤名称
+2. 唯一命中后 → 调用 `cmdb__getCiRelations(root_id=<应用_ci_id>, level=1, count=10000)`
+3. 输出 ECharts 从左到右树状图（`series.type='tree'`），根节点用实际应用名
 
-## 按类型查资源实例
+### 统计分析
 
-当用户说"查 redis 资源""列出所有 MySQL 实例"等，需要两步：
+| 用户意图 | MCP 调用 | 输出 |
+| --- | --- | --- |
+| 资源类型分布 | `cmdb__countCiByGroup` | 饼图 |
+| 按厂商分布 | `cmdb__countCiByAttribute` + 本地过滤 `vendor` | 柱状图 |
+| 子类型统计 | `cmdb__countChildCi` | 表格 |
+| 子类型分组 | `cmdb__countChildCiByGroup` | 饼图/柱状图 |
 
-**第一步：确认 CI 类型名**
+### 应用拓扑
 
-```bash
-scripts/zgops-cmdb.sh list-models
-```
-
-在输出的表格中找到目标类型的 `name` 列值（小写，如 `redis`、`mysql`、`Kafka`）。`name` 是后续查询所需的标识。
-
-**第二步：按类型名查实例**
-
-```bash
-scripts/zgops-cmdb.sh fetch "/api/v0.1/ci/s?q=_type:<name>&page=1&count=100"
-```
-
-将 `<name>` 替换为第一步得到的值。例如：
-
-```bash
-# 查所有 redis 实例
-scripts/zgops-cmdb.sh fetch "/api/v0.1/ci/s?q=_type:redis&page=1&count=100"
-
-# 查所有 mysql 实例
-scripts/zgops-cmdb.sh fetch "/api/v0.1/ci/s?q=_type:mysql&page=1&count=100"
-```
-
-返回结果中每条 CI 的 `_id` 就是 `CI_ID`（即其他 skill 所需的 `resId`），`_type` 对应 `ciType`。
-
-**多实例时：** 如果返回多条记录且上下文无法确定唯一目标，列出候选让用户选择。
-
-## INOE 网关 CMDB 统计
-
-当用户询问“中间件制造商分布统计 / 中间件厂商统计 / 中间件按厂家分布”时，直接执行：
-
-```bash
-scripts/zgops-cmdb.sh inoe-stat group --resource_type middleware --attr vendor --output markdown
-```
-
-资源类型解析（仅针对 `inoe-stat` 统计场景）：
-
-- `inoe-stat` 内部使用 INOE 网关的分组接口解析分组 id。
-- 如果用户输入的是具体模型名（如 `Kafka`、`Redis`、`mysql`），**不要用 `inoe-stat` 查类型**——改用 `list-models` 确认类型名后按"按类型查资源实例"流程操作。
-- 只有在做分组统计（如"中间件按厂商分布"）且元数据接口不可用时，才使用下面的兜底映射：
-
-- `database / 数据库` -> `type=5`
-- `middleware / 中间件` -> `type=6`
-- `network / 网络设备` -> `type=4`
-- `server / 服务器 / 计算资源` -> `type=2`
-- `os / 操作系统` -> `type=17`
-
-查询当前环境可用类型目录：
-
-```bash
-scripts/zgops-cmdb.sh inoe-stat types --output markdown
-```
-
-环境切换：
-
-- 测试、生产等不同环境只需在设置页改 INOE / ZGOPS 的地址与凭证（对下一次技能调用即时生效）。
-- 如果 CMDB 接口走独立网关，可单独配置 `INOE_CMDB_API_BASE_URL`。
-- 如果不同网关路径前缀不同，可覆盖 `INOE_CMDB_TYPES_PATH`、`INOE_CMDB_TYPE_GROUPS_PATH`、`INOE_CMDB_COUNT_GROUP_PATH` 等路径变量。
-
-分组字段映射：
-
-- `制造商 / 厂商 / 厂家 / vendor / manufacturer` -> `attr=vendor`
-- `数据库类型` -> `attr=db_type`
-- `系统类型` -> `attr=os_type`
-- `设备类型` -> `attr=dev_class`
+- 用户说"某个应用的关系拓扑/架构关系图" → 先 `cmdb__searchCiInstances(q="_type:project")` 确认目标，再 `cmdb__getCiRelations`
+- 用户只说"简易拓扑/系统拓扑/全局拓扑"且无应用名 → 这不是 CMDB 拓扑，交给 `monitoring-overview-query`
+- 多应用时先列出候选让用户选择，不要默认任选
 
 ## 输出风格
 
-- 模型列表类问题：优先输出 `ID / 名称 / 别名 / 唯一键` 表格。
-- 单模型问题：只总结关键字段和关键关系。
-- 场景类问题：简要说明业务、运行时、IPAM、DCIM 四条链路。
-- 图表类问题：优先输出 ECharts；饼图用于分布，占比；柱状图用于目标数量对比。
-- 关系拓扑类问题：优先输出从左到右树状图；根节点放应用，向右展开产品归属、运行时、中间件、数据库、IPAM、DCIM 等关系链。
-- 若用户要“某个应用的关系拓扑 / 拓扑图 / 架构关系图”，先用 `find-project` 明确目标应用；只有在唯一命中时才运行 `app-topology`，并直接返回它生成的标准 ```echarts 代码块，不要自己重写成简写结构。
-- 若用户没有提供应用名，只问“简易拓扑 / 全局拓扑 / 监控拓扑 / 系统拓扑”，这不是 CMDB 应用拓扑，改用 `monitoring-overview-query`。
-- 若当前存在多个应用而用户没有给出明确应用名，先回复候选应用名让用户选择，不要默认返回任意一个应用的拓扑。
-- 若用户只说“画图 / 渲染图表 / 可视化”，默认返回 Markdown + ```echarts，而不是 HTML 文件路径。
-- 面向最终用户的回复、标题、摘要、图表标题中，不要出现 `ZGOPS`、`zgops`、`OneOps` 等产品字样，除非用户明确要求保留这些名称。
+- 模型列表：`ID / 名称 / 别名 / 唯一键` 表格
+- 单模型：关键字段和关键关系
+- 图表：ECharts，饼图用于分布占比，柱状图用于数量对比
+- 关系拓扑：从左到右树状图，根节点放应用
+- 不要生成 `.html` 文件，直接输出 ```echarts 代码块
+- 回复中不要出现 `ZGOPS`、`zgops`、`OneOps` 等产品字样
+- 默认返回精简总结，只有用户明确要求时才返回原始 JSON
+
+## 旧脚本回退路径
+
+仅当 cmdb MCP Driver 未加载、客户端/工具不可用或协议响应无法解析时，才执行以下命令。脚本自动从环境变量读取凭证（由设置页热加载）。
+
+```bash
+scripts/zgops-cmdb.sh list-models
+scripts/zgops-cmdb.sh fetch "/api/v0.1/ci/s?q=_type:<name>&page=1&count=100"
+scripts/zgops-cmdb.sh fetch "/api/v0.1/ci_relations/s?root_id=<ci_id>&level=1&level=2&level=3&count=10000"
+scripts/zgops-cmdb.sh find-project <应用名>
+scripts/zgops-cmdb.sh app-topology <应用名>
+scripts/zgops-cmdb.sh analyze --mode summary --output markdown
+scripts/zgops-cmdb.sh inoe-stat types --output markdown
+scripts/zgops-cmdb.sh inoe-stat group --resource_type middleware --attr vendor --output markdown
+```
+
+回退时必须在过程说明中写明回退原因（如 `cmdb-mcp-unavailable`）。
 
 ## 备注
 
-- 这套环境中，`project` 对应“应用”模型。
-- 凭据由设置页统一管理、物化为环境变量；不再回退共享 `secrets/zgops-cmdb.env` 或本技能 `.env`。
-- 如果配置了用户名密码但登录失败，允许继续尝试匿名访问只读接口；不要因为登录失败就阻断整个查询链路。
-- 如需图表规范，读取 `references/chart-guide.md` 或 `references/echarts-examples.md`。
-- 如果用户要做资源导入、资源纳管、批量导入，改用同级 `zgops-cmdb-import` skill。
+- 这套环境中 `project` 对应"应用"模型
+- 凭据由设置页统一管理，MCP 路径无需任何配置
+- 如需图表规范，读取 `references/chart-guide.md` 或 `references/echarts-examples.md`
+- 如果用户要做资源导入/纳管/批量导入，改用同级 `zgops-cmdb-import` skill
