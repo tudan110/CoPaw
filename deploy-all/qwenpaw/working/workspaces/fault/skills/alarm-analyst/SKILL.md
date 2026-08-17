@@ -29,14 +29,17 @@ description: 面向单条活动告警或单个应用故障现象驱动的故障�
 
 ### 执行优先，不要停在"计划调用"
 
-只要当前工作区具备可用工具（shell、chat_with_agent），就必须先执行真实动作再汇报结果。不需要问"是否继续"，直接做。只有在工具不可用、参数不明确或用户明确要求"先不要执行"时才允许只展示计划。
+只要当前工作区具备可用工具，就必须先执行真实动作再汇报结果。不需要问"是否继续"，直接做。只有在工具不可用、参数不明确或用户明确要求"先不要执行"时才允许只展示计划。
 
-### 本地 skill 优先
+### MCP 优先
 
-1. CMDB 查询 → 优先使用 fault 本地的 `zgops-cmdb`
-2. 活动告警查询 → 优先使用 fault 本地的 `real-alarm`
-3. 只有本地 skill 不可用时才回退到跨智能体协作（chat_with_agent → query）
-4. 回退时必须说明原因
+本工作区已启用 `cmdb`、`alarm`、`inspection` MCP Server。Agent 必须优先直接调用 MCP Tools；仅在 MCP Driver 未加载或不可用时才回退到本地脚本。
+
+1. CMDB 查询 → `cmdb__searchCiInstances` / `cmdb__getCiInstance` / `cmdb__getCiRelations`
+2. 活动告警查询 → `alarm__queryHistoricalAlarms`
+3. 指标查询 → `inspection__getMetricDefinitions` / `inspection__getMetricData`
+4. 只有 MCP 不可用时才回退脚本，只有本地脚本也缺失/不可用时才回退跨智能体（chat_with_agent → query）
+5. 回退时必须说明原因
 
 ### 拓扑驱动分析
 
@@ -58,7 +61,7 @@ description: 面向单条活动告警或单个应用故障现象驱动的故障�
 任何单个数据源（CMDB、告警上下文、指标查询、跨智能体调用）失败或返回空，都遵循"单次尝试 → 如实记录 → 继续下一步"，不允许为了"凑出结果"而反复重试或换参数试探：
 
 - **单次尝试即可下结论**：接口调用失败（超时、401/403/404/5xx、连接错误）或返回空数据，直接按失败/空处理，不做二次三次重试，不切换参数硬凑
-- **指标数为 0 是合法结果**：脚本已内置 ciType 三级回退，若仍查不到指标，说明该资源类型确实无指标定义，直接进入下一步（另见下文"⚠️ 不要在脚本返回 ciType 为空时手动重跑"）
+- **指标数为 0 是合法结果**：若查不到指标，说明该资源类型确实无指标定义，直接进入下一步
 - **降级而不是卡住**：某个环节失败不代表整体分析失败，把该环节标记为 `partial`/`blocked` 并说明原因，继续完成其余环节，最终在"📊 总结"中如实体现置信度和缺失项
 - **不要靠切换到其他 skill 来"证明"空结果**：比如指标查询为空，不要绕去 `real-alarm` / 跨智能体反复验证"是不是真的没有"，一次拿到空值即可下结论
 - **跨智能体调用同样受此约束**：`chat_with_agent` 超时或无响应，不要重复发起同一请求，按"本地已尽力、协作补充缺失"如实说明
@@ -72,14 +75,14 @@ description: 面向单条活动告警或单个应用故障现象驱动的故障�
 ### 并行组划分
 
 **第一波（立即发出，无依赖）**：
-- 查智观活动告警上下文（real-alarm 脚本，ci_id）
-- 查 CMDB 根资源详情（zgops-cmdb fetch）
-- 查 CMDB 拓扑关系（zgops-cmdb ci_relations）
+- 查智观活动告警上下文（`alarm__queryHistoricalAlarms`，按 ci_id 过滤）
+- 查 CMDB 根资源详情（`cmdb__getCiInstance`）
+- 查 CMDB 拓扑关系（`cmdb__getCiRelations`）
 - 读取对应场景的 rca-*.md
 
 **第二波（等第一波返回后）**：
-- 从拓扑/链路告警提取关联资源 ID → 批量查关联资源告警（可多个 CI ID 并行）
-- 查指标定义 + 指标值（`analyze_alarm_context.py` 内部已并行）
+- 从拓扑/链路告警提取关联资源 ID → 批量查关联资源告警（可多个 CI ID 并行调用 `alarm__queryHistoricalAlarms`）
+- 查指标定义（`inspection__getMetricDefinitions`）+ 指标值（`inspection__getMetricData`）
 - 如果本地拓扑为空，才考虑 `chat_with_agent(query)` 补充
 
 **第三波（等第二波返回后）**：
@@ -87,11 +90,10 @@ description: 面向单条活动告警或单个应用故障现象驱动的故障�
 
 ### 关键约束
 
-- **禁止用 `chat_with_agent` 查询指标数据**：不要通过跨智能体调用 query 智能体来查询指标，直接使用本技能的 `get_metric_definitions.py` + `getMetricData` 脚本。跨智能体调用开销极大（常超时 5-10 分钟），且本地脚本完全能满足需求
-- **本地查拓扑优先**：先用 `zgops-cmdb.sh fetch` 或链路告警提取对端信息，不要首选 `chat_with_agent(query)` 查拓扑（跨智能体调用可能超时 60s+）
+- **禁止用 `chat_with_agent` 查询指标数据**：不要通过跨智能体调用 query 智能体来查询指标，直接使用 MCP `inspection__*` Tools。跨智能体调用开销极大（常超时 5-10 分钟），且 MCP 完全能满足需求
+- **本地查拓扑优先**：先用 `cmdb__getCiRelations` 或链路告警提取对端信息，不要首选 `chat_with_agent(query)` 查拓扑（跨智能体调用可能超时 60s+）
 - **跨智能体调用只做补充**：如果本地 CMDB 拓扑为空且链路告警也无法推断对端，才发起 `chat_with_agent`，且用 `submit_to_agent` 后台模式，不阻塞主流程
-- **对端设备告警批量查**：多个 CI ID 的告警查询是独立的，必须并行发出（脚本内部已实现并行）
-- **ciType 自动解析**：`analyze_alarm_context.py` 已支持从 CMDB `ci_type` 字段、`_type` 数字映射、告警标题关键词三级回退推断 metricType，不需要手动重跑
+- **对端设备告警批量查**：多个 CI ID 的告警查询是独立的，必须并行发出
 
 ---
 
@@ -99,11 +101,11 @@ description: 面向单条活动告警或单个应用故障现象驱动的故障�
 
 ```
 1. 接收告警 → 提取告警标题、resId/CI ID、告警时间、设备名/IP
-2. 查智观活动告警上下文（活跃状态、近7日历史）
-3. CMDB 资源确认 → 根资源详情 + ciType + 拓扑关系
+2. 查智观活动告警上下文（alarm__queryHistoricalAlarms，活跃状态、近7日历史）
+3. CMDB 资源确认（cmdb__getCiInstance → cmdb__getCiRelations）→ 根资源详情 + ciType + 拓扑关系
 4. 变更关联 → 查询故障前24h内相关配置变更/版本升级/割接记录（变更命中=高置信线索）
 5. 拓扑关联资源告警查询（硬约束）
-6. 指标定义查询 → AI 筛选关键指标 → 查指标值（含动态基线偏离分析）
+6. 指标定义查询（inspection__getMetricDefinitions）→ AI 筛选关键指标 → 查指标值（inspection__getMetricData）
 7. AI 综合分析 → 故障类型识别 + 根因判断（六步分析法）
 8. 影响范围分析（业务等级/用户范围/冗余备份状态——决定处置建议是否需要把紧急预案条目排最前）
 9. 推送分析报告 + 通知推送
@@ -112,40 +114,45 @@ description: 面向单条活动告警或单个应用故障现象驱动的故障�
 
 ---
 
-## 关键步骤详解
+## MCP 调用指引
 
-### 拓扑关联资源告警查询（硬约束）
+### CMDB 查询
 
-这是 RCA 完成的**必要条件**，不是可选步骤：
+```json
+// 查 CI 实例详情
+cmdb__getCiInstance(id=<CI_ID>)
 
-1. 拿到根资源 resId 后，通过 zgops-cmdb 查询 CMDB 拓扑关系
-2. 从拓扑中提取**全部**关联资源 ID（根资源、节点 `_id/ci_id`、关系边 `src_ci_id/dst_ci_id`）
-3. 对这些资源 ID 的告警查询已由 `analyze_alarm_context.py` 内部并行完成，无需手动逐个调用
-4. 如果 CMDB 拓扑为空，可从链路类告警标题中提取对端设备信息作为补充
+// 查 CI 关系拓扑
+cmdb__getCiRelations(root_id=<CI_ID>, level=1, count=10000)
 
-如果这一步没完成，不能宣称"分析完成"，只能标记为 `partial`，置信度降为低/中。
+// 搜索 CI 实例（按名称模糊匹配）
+cmdb__searchCiInstances(q="name:xxx", page=1, count=20)
 
-### CMDB 查询语法参考
-
-```bash
-# 单条件查询（按 CI ID）
-zgops-cmdb.sh fetch --ci-id 18
-
-# 多条件查询（按名称模糊匹配）
-zgops-cmdb.sh search --q "name:DKCZZ-HUAWEI"
-
-# 查拓扑关系
-zgops-cmdb.sh fetch --ci-id 18 --relations
-
-# 按 IP 查设备
-zgops-cmdb.sh search --q "manage_ip:172.27.34.1"
+// 搜索 CI 实例（按 IP）
+cmdb__searchCiInstances(q="manage_ip:172.27.34.1", page=1, count=20)
 ```
 
-注意：多条件查询用空格分隔（不要用 `+AND+`），如 `--q "ci_type:networkdevice manage_ip:172.27.34.1"`
+### 告警查询
 
-### 指标分析
+```json
+// 查活动告警（按 CI ID 过滤，需本地过滤 devId）
+alarm__queryHistoricalAlarms(isClear="0", beginTime="<7天前>", endTime="<当前>", pageNum=1, pageSize=100)
+// 然后本地过滤 devId == CI_ID
+```
 
-执行聚合脚本（**不需要**先手动确认 ciType，脚本会自动解析）：
+### 指标查询
+
+```json
+// 查指标定义
+inspection__getMetricDefinitions(metricType="<模型名>", pageNum=1, pageSize=100)
+
+// 查指标值
+inspection__getMetricData(mulRes=[{"resId":"<CI_ID>"}], queryKeys=["<指标编码列表>"], queryType="0")
+```
+
+### 聚合脚本回退
+
+仅当 MCP Driver 不可用时，才使用聚合脚本（脚本自动解析 ciType、并行查询、结构化输出）：
 
 ```bash
 cd skills/alarm-analyst && python scripts/analyze_alarm_context.py \
@@ -154,18 +161,31 @@ cd skills/alarm-analyst && python scripts/analyze_alarm_context.py \
   --event-time "<告警时间>" --output markdown
 ```
 
-该脚本会：查根资源详情 → 自动解析 ciType（三级回退：ci_type 字段 → _type 数字映射 → 告警标题关键词推断）→ 查拓扑 → **并行**收集关联资源告警 → 查指标定义 → 筛选并查询指标值 → 输出结构化结果。
+回退时必须在过程说明中写明回退原因（如 `cmdb-mcp-unavailable`）。
 
-⚠️ **不要在脚本返回 ciType 为空时手动重跑 `get_metric_definitions.py`**——脚本已内置回退逻辑。如果脚本仍返回指标数为 0，说明该资源类型确实无指标定义，直接进入下一步。
+## 关键步骤详解
 
-**异常指标识别**：脚本返回的 `metricDataResults` 包含所有查询到的指标值，AI 必须结合告警上下文判断哪些指标存在异常（如与告警有因果关系、值偏离正常范围等），并在最终报告的 `## 异常指标` 章节中以表格形式列出。不要列出所有指标，只列出判断为异常的指标，并附带简要异常说明。
+### 拓扑关联资源告警查询（硬约束）
 
-如果只需单独查指标：
+这是 RCA 完成的**必要条件**，不是可选步骤：
 
-```bash
-cd skills/alarm-analyst && python scripts/get_metric_definitions.py \
-  --metric-type <ciType> --res-id <CI_ID> --output markdown
-```
+1. 拿到根资源 resId 后，通过 `cmdb__getCiRelations` 查询 CMDB 拓扑关系
+2. 从拓扑中提取**全部**关联资源 ID（根资源、节点 `_id`、关系边 `src_ci_id/dst_ci_id`）
+3. 对这些资源 ID 批量调用 `alarm__queryHistoricalAlarms` 并按 `devId` 本地过滤
+4. 如果 CMDB 拓扑为空，可从链路类告警标题中提取对端设备信息作为补充
+
+如果这一步没完成，不能宣称"分析完成"，只能标记为 `partial`，置信度降为低/中。
+
+### 指标分析
+
+优先使用 MCP：
+
+1. 调用 `inspection__getMetricDefinitions(metricType=<模型名>)` 获取指标定义
+2. AI 从指标定义中筛选与告警相关的关键指标编码
+3. 调用 `inspection__getMetricData(mulRes=[{"resId":"<CI_ID>"}], queryKeys=["<编码列表>"], queryType="0")` 获取指标值
+4. AI 结合告警上下文判断哪些指标异常，在 `## 异常指标` 章节中以表格列出
+
+**异常指标识别**：不要列出所有指标，只列出判断为异常的指标，并附带简要异常说明。
 
 ### 故障类型识别
 
@@ -194,12 +214,9 @@ cd skills/alarm-analyst && python scripts/send_analysis_report.py \
 ```
 
 > **`--level` 必传**：从告警信息中提取等级值（如 `urgent`、`3`、`严重` 等均可），不传则通知中显示为"-"。
-> **处置建议一律用 `--suggestions-json`（带 `stage` 字段），不要再用 `--suggestion` + 单独的 `--emergency-plan`**：报告正文按「处置建议规则」把紧急预案动作排最前时，就把对应条目标 `"stage":"emergency"`、其余标 `"stage":"repair"` 传进同一个 `--suggestions-json` 数组——脚本会自动把 `stage=emergency` 的条目前缀 `🚑 ` 并排到处置建议列表最前，其余条目紧随其后，卡片和飞书推送用的是同一份数据、同一份顺序，不会再出现"卡片有、推送没有"。只给根因处置（无需止血）时，`stage` 全部写 `"repair"` 或干脆不传 `stage`。`--emergency-plan` 参数仍然存在，仅作手工兜底，正常流程不要用。
-> **`--abnormal-metrics-json` 可选**：传入 AI 判断的异常指标 JSON 数组，通知中会展示。如无异常指标可不传。
-
-详见 `references/notification-protocol.md`。推送成功后通知会发送到配置的渠道。
-
-> ⚠️ **审批规避**：`--root-cause`、`--suggestion`、`--abnormal-metrics-json` 的文本内容会经过 shell 审批系统的文本模式检测。避免在文案中直接出现 `kill`、`sudo`、`rm`、`crontab`、`ssh` 等命令关键词，改用中性措辞（如"终止进程"代替"kill"，"定时任务"代替"crontab"，"登录主机"代替"ssh"），以免触发误审批导致推送超时。
+> **处置建议一律用 `--suggestions-json`（带 `stage` 字段）**。
+> 详见 `references/notification-protocol.md`。推送成功后通知会发送到配置的渠道。
+> ⚠️ **审批规避**：`--root-cause`、`--suggestion`、`--abnormal-metrics-json` 的文本内容会经过 shell 审批系统的文本模式检测。避免在文案中直接出现 `kill`、`sudo`、`rm`、`crontab`、`ssh` 等命令关键词，改用中性措辞。
 
 ---
 
@@ -265,7 +282,7 @@ cd skills/alarm-analyst && python scripts/send_analysis_report.py \
 ```
 
 - 每级都是编号列表，每个条目必须具体可执行
-- 素材来源：`rca-*.md` 各场景「⚑ 处置建议」块中的 🚑 紧急预案 / 🔧 根因处置 / 🛡️ 预防措施（参考文件中已有的预防措施素材，其余场景 LLM 需根据故障类型自行推导合理的中长期预防措施）
+- 素材来源：`rca-*.md` 各场景「⚑ 处置建议」块中的 🚑 紧急预案 / 🔧 根因处置 / 🛡️ 预防措施
 - `--suggestions-json` 中每个条目按所属子节标注 stage：`"emergency"`（紧急止血）/ `"repair"`（根因修复）/ `"prevention"`（预防措施）
 - 影响范围可控时：🚨 紧急止血子节可省略，直接从 🔧 根因修复子节开始
 - 影响范围可控、且预防措施无需单独成节时：🛡️ 预防措施子节也可省略
@@ -275,62 +292,25 @@ cd skills/alarm-analyst && python scripts/send_analysis_report.py \
 **禁止事项**：
 - **禁止未经用户确认自动创建工单**：不要在分析流程中直接调用工单 API 自动建单；仅允许 Portal 在分析完成后弹出确认框，且只有用户明确确认后，才可由 Portal 后端受控调用工单创建能力
 - **报告正文禁止使用 `---` 分隔线**：`---` 仅用于 `PORTAL ALARM ANALYST CARD MODE` 标志行与正文之间的唯一分隔，正文内出现 `---` 会导致卡片解析截断
-- **扁平模式下，处置建议不要再用 `### 🚑 紧急预案` / `### 🔧 根因处置` 二级标题分节**：统一放在同一个列表里，靠 `🚑 ` 前缀和排序区分。详细展示模式开启时，`### 🚨 紧急止血` / `### 🔧 根因修复` / `### 🛡️ 预防措施` 三个子节是受控例外，仅在此模式允许
+- **扁平模式下，处置建议不要再用 `### 🚑 紧急预案` / `### 🔧 根因处置` 二级标题分节**：统一放在同一个列表里，靠 `🚑 ` 前缀和排序区分
 - 每条建议必须是具体可执行的动作，不要给出笼统的方向性描述
 
 ---
 
 ## 拓扑可视化
 
-当 zgops-cmdb 或 query 返回拓扑关系（应用/集群/容器/虚拟机等层级或依赖关系）时，**必须**在报告正文中输出一个 ` ```echarts ` 代码块（围栏语言标记必须精确写成 `echarts`，前端按此标记提取渲染，写成 `json` 或纯文字表格都不会被识别）：
+当 CMDB 或 query 返回拓扑关系时，**必须**在报告正文中输出一个 ` ```echarts ` 代码块：
 
-- **优先使用 `series.type='tree'`**（`orient='LR'`，从左到右分层），根节点用实际应用名或核心资源名，逐层用 `children` 挂接下游资源，例如：
-  ```echarts
-  {
-    "series": [
-      {
-        "type": "tree",
-        "orient": "LR",
-        "data": [
-          {
-            "name": "天翼智观",
-            "children": [
-              {
-                "name": "k3s-SYM01",
-                "children": [{ "name": "天翼智观部署虚机" }]
-              }
-            ]
-          }
-        ]
-      }
-    ]
-  }
-  ```
-- 仅当拓扑呈现多对多网状依赖、无法用单一树形表达时，才退化使用 `series.type='graph'`（`data`/`links` 描述节点与关系）
-- 禁止只用 markdown 表格或文字描述拓扑而不给 echarts 代码块——那属于协议未遵守，会导致 portal 卡片的拓扑区域留空
-- 保留 query 返回的 echarts 代码块，不要改写成纯文字；如需补充说明，放在代码块前后，不要替代代码块
+- **优先使用 `series.type='tree'`**（`orient='LR'`，从左到右分层），根节点用实际应用名或核心资源名
+- 仅当拓扑呈现多对多网状依赖时，才退化使用 `series.type='graph'`
+- 禁止只用 markdown 表格或文字描述拓扑而不给 echarts 代码块
+- 保留 query 返回的 echarts 代码块，不要改写成纯文字
 
 ---
 
 ## 配置
 
-**配置来源**：由设置页「平台 / INOE」统一管理，运行时物化为环境变量（`INOE_*`），脚本从环境变量读取（设置页改动对下一次技能调用即时生效）。**不再回退共享 `secrets/inoe.env` 或技能目录下的 `.env`。**
-
-如果配置缺失或无效，脚本会直接返回配置错误信息，不会继续执行请求。
-
-涉及的环境变量（在设置页配置，勿手填 `.env`）：
-
-```bash
-INOE_API_BASE_URL=...           # 设置页：INOE 平台地址
-INOE_API_TOKEN=...              # 设置页：INOE 令牌
-ALARM_ANALYST_METRIC_TIMEOUT_SECONDS=120
-ALARM_ANALYST_METRIC_PAGE_SIZE=20
-ALARM_ANALYST_DISPOSAL_DETAIL_MODE=false  # 详细展示模式开关，见处置建议规则
-```
-
-- 缺少 token 时必须停止调用并明确报错
-- `getMetricDefinitions` 与 `getMetricData` 共用同一个 base URL
-- 分析报告推送复用同一个 base URL / token
+**配置来源**：由设置页「平台 / INOE」统一管理，运行时物化为环境变量。MCP 路径无需任何配置；脚本回退路径自动从环境变量读取。
 
 ---
 
@@ -338,9 +318,9 @@ ALARM_ANALYST_DISPOSAL_DETAIL_MODE=false  # 详细展示模式开关，见处置
 
 | 文件 | 何时读取 |
 |------|---------|
-| `rca-facility.md` | 告警来自机房动环（供配电/UPS/制冷空调/温湿度漏水烟感/消防/安防门禁/动环采集器），物理底座层 |
+| `rca-facility.md` | 告警来自机房动环（供配电/UPS/制冷空调/温湿度漏水烟感/消防/安防门禁/动环采集器） |
 | `rca-network.md` | 告警涉及网络层（链路/设备/性能劣化/配置错误/路由震荡/二层环路/IP地址冲突/DHCP/安全攻击） |
-| `rca-ipran-ip.md` | 告警涉及 IP 专业设备（BRAS/CR/路由器：NodeDown/中继质差/LinkDown/端口翻转/板卡/风扇/电源，含 API 清单与光功率阈值） |
+| `rca-ipran-ip.md` | 告警涉及 IP 专业设备（BRAS/CR/路由器：NodeDown/中继质差/LinkDown/端口翻转/板卡/风扇/电源） |
 | `rca-iaas.md` | 告警涉及 IaaS 层（硬件/虚拟化/存储/操作系统/资源耗尽/时钟同步/进程与服务） |
 | `rca-paas.md` | 告警涉及 PaaS 层（容器K8s/中间件/服务网格/数据库缓存/云主机计算/负载均衡网关/配置证书） |
 | `rca-application.md` | 告警涉及应用层（拨测不可用/响应劣化/部分功能/业务逻辑/第三方依赖/前端用户侧/流量并发/代码/API） |
