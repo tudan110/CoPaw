@@ -33,9 +33,9 @@ description: 面向单条活动告警或单个应用故障现象驱动的故障�
 
 ### MCP 优先
 
-本工作区已启用 `cmdb`、`alarm`、`inspection` MCP Server。Agent 必须优先直接调用 MCP Tools；仅在 MCP Driver 未加载或不可用时才回退到本地脚本。
+本工作区已启用 `cmdb-query`、`alarm`、`inspection` MCP Server。Agent 必须优先直接调用 MCP Tools；仅在 MCP Driver 未加载或不可用时才回退到本地脚本。
 
-1. CMDB 查询 → `cmdb__searchCiInstances` / `cmdb__getCiInstance` / `cmdb__getCiRelations`
+1. CMDB 查询 → `cmdb-query__searchCiInstances` / `cmdb-query__getCiInstance` / `cmdb-query__getCiRelations`
 2. 活动告警查询 → `alarm__queryHistoricalAlarms`
 3. 指标查询 → `inspection__getMetricDefinitions` / `inspection__getMetricData`
 4. 只有 MCP 不可用时才回退脚本，只有本地脚本也缺失/不可用时才回退跨智能体（chat_with_agent → query）
@@ -76,8 +76,8 @@ description: 面向单条活动告警或单个应用故障现象驱动的故障�
 
 **第一波（立即发出，无依赖）**：
 - 查智观活动告警上下文（`alarm__queryHistoricalAlarms`，按 ci_id 过滤）
-- 查 CMDB 根资源详情（`cmdb__getCiInstance`）
-- 查 CMDB 拓扑关系（`cmdb__getCiRelations`）
+- 查 CMDB 根资源详情（`cmdb-query__getCiInstance`）
+- 查 CMDB 拓扑关系（`cmdb-query__getCiRelations`）
 - 读取对应场景的 rca-*.md
 
 **第二波（等第一波返回后）**：
@@ -91,7 +91,7 @@ description: 面向单条活动告警或单个应用故障现象驱动的故障�
 ### 关键约束
 
 - **禁止用 `chat_with_agent` 查询指标数据**：不要通过跨智能体调用 query 智能体来查询指标，直接使用 MCP `inspection__*` Tools。跨智能体调用开销极大（常超时 5-10 分钟），且 MCP 完全能满足需求
-- **本地查拓扑优先**：先用 `cmdb__getCiRelations` 或链路告警提取对端信息，不要首选 `chat_with_agent(query)` 查拓扑（跨智能体调用可能超时 60s+）
+- **本地查拓扑优先**：先用 `cmdb-query__getCiRelations` 或链路告警提取对端信息，不要首选 `chat_with_agent(query)` 查拓扑（跨智能体调用可能超时 60s+）
 - **跨智能体调用只做补充**：如果本地 CMDB 拓扑为空且链路告警也无法推断对端，才发起 `chat_with_agent`，且用 `submit_to_agent` 后台模式，不阻塞主流程
 - **对端设备告警批量查**：多个 CI ID 的告警查询是独立的，必须并行发出
 
@@ -102,7 +102,7 @@ description: 面向单条活动告警或单个应用故障现象驱动的故障�
 ```
 1. 接收告警 → 提取告警标题、resId/CI ID、告警时间、设备名/IP
 2. 查智观活动告警上下文（alarm__queryHistoricalAlarms，活跃状态、近7日历史）
-3. CMDB 资源确认（cmdb__getCiInstance → cmdb__getCiRelations）→ 根资源详情 + ciType + 拓扑关系
+3. CMDB 资源确认（cmdb-query__getCiInstance → cmdb-query__getCiRelations）→ 根资源详情 + ciType + 拓扑关系
 4. 变更关联 → 查询故障前24h内相关配置变更/版本升级/割接记录（变更命中=高置信线索）
 5. 拓扑关联资源告警查询（硬约束）
 6. 指标定义查询（inspection__getMetricDefinitions）→ AI 筛选关键指标 → 查指标值（inspection__getMetricData）
@@ -120,16 +120,16 @@ description: 面向单条活动告警或单个应用故障现象驱动的故障�
 
 ```json
 // 查 CI 实例详情
-cmdb__getCiInstance(id=<CI_ID>)
+cmdb-query__getCiInstance(id=<CI_ID>)
 
 // 查 CI 关系拓扑
-cmdb__getCiRelations(root_id=<CI_ID>, level=1, count=10000)
+cmdb-query__getCiRelations(root_id=<CI_ID>, level=1, count=10000)
 
 // 搜索 CI 实例（按名称模糊匹配）
-cmdb__searchCiInstances(q="name:xxx", page=1, count=20)
+cmdb-query__searchCiInstances(q="name:xxx", page=1, count=20)
 
 // 搜索 CI 实例（按 IP）
-cmdb__searchCiInstances(q="manage_ip:172.27.34.1", page=1, count=20)
+cmdb-query__searchCiInstances(q="manage_ip:172.27.34.1", page=1, count=20)
 ```
 
 ### 告警查询
@@ -161,7 +161,7 @@ cd skills/alarm-analyst && python scripts/analyze_alarm_context.py \
   --event-time "<告警时间>" --output markdown
 ```
 
-回退时必须在过程说明中写明回退原因（如 `cmdb-mcp-unavailable`）。
+回退时必须在过程说明中写明回退原因（如 `cmdb-query-mcp-unavailable`）。
 
 ## 关键步骤详解
 
@@ -169,7 +169,7 @@ cd skills/alarm-analyst && python scripts/analyze_alarm_context.py \
 
 这是 RCA 完成的**必要条件**，不是可选步骤：
 
-1. 拿到根资源 resId 后，通过 `cmdb__getCiRelations` 查询 CMDB 拓扑关系
+1. 拿到根资源 resId 后，通过 `cmdb-query__getCiRelations` 查询 CMDB 拓扑关系
 2. 从拓扑中提取**全部**关联资源 ID（根资源、节点 `_id`、关系边 `src_ci_id/dst_ci_id`）
 3. 对这些资源 ID 批量调用 `alarm__queryHistoricalAlarms` 并按 `devId` 本地过滤
 4. 如果 CMDB 拓扑为空，可从链路类告警标题中提取对端设备信息作为补充

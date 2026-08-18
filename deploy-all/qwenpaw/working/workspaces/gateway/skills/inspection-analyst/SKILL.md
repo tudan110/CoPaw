@@ -13,11 +13,11 @@ description: 资源巡检技能。当用户要求巡检、健康检查、查看�
 ## 执行流程
 
 1. **识别巡检对象**：用户指定的资源（数据库、中间件、主机等）
-2. **CMDB MCP 确认**：本工作区已启用 `cmdb` MCP Server。必须优先直接调用以下只读 Tools；不要自行使用 `curl`、`requests`、SSE 或 JSON-RPC，也不要为此编写额外 MCP 客户端：
-   - `cmdb__listCiTypes`：分页确认目标模型的真实 `name`（如 `redis`、`mysql`）。模型名必须来自返回值；数字类型 ID 只能用于展示或关联，不能直接作为 `metricType`。
-   - `cmdb__searchCiInstances`：以 `_type:<模型 name>` 搜索实例并完整处理分页。零候选时直接说明无法确认资源；多候选时列出候选让用户选择，禁止自动任选。
-   - `cmdb__getCiInstance`：对选中候选的真实 `_id` 做二次确认。只将确认后的 `_id` 作为 `resId`，模型 `name` 作为 `ciType` / `metricType`。
-   - `cmdb__getCiRelations`：仅当用户要求依赖、影响面、拓扑，或指标异常确有必要时，以确认后的 `_id` 查询关系。空关系是合法结论，不能伪造拓扑。
+2. **CMDB MCP 确认**：本工作区已启用 `cmdb-query` MCP Server。必须优先直接调用以下只读 Tools；不要自行使用 `curl`、`requests`、SSE 或 JSON-RPC，也不要为此编写额外 MCP 客户端：
+   - `cmdb-query__listCiTypes`：分页确认目标模型的真实 `name`（如 `redis`、`mysql`）。模型名必须来自返回值；数字类型 ID 只能用于展示或关联，不能直接作为 `metricType`。
+   - `cmdb-query__searchCiInstances`：以 `_type:<模型 name>` 搜索实例并完整处理分页。零候选时直接说明无法确认资源；多候选时列出候选让用户选择，禁止自动任选。
+   - `cmdb-query__getCiInstance`：对选中候选的真实 `_id` 做二次确认。只将确认后的 `_id` 作为 `resId`，模型 `name` 作为 `ciType` / `metricType`。
+   - `cmdb-query__getCiRelations`：仅当用户要求依赖、影响面、拓扑，或指标异常确有必要时，以确认后的 `_id` 查询关系。空关系是合法结论，不能伪造拓扑。
    - 仅当 CMDB MCP Driver 未加载、客户端或 Tool 不可用、或协议响应无法解析时，才允许一次性回退 `../zgops-cmdb/scripts/zgops-cmdb.sh list-models` 与 `fetch`；过程说明必须标记 `zgops-cmdb-script-fallback` 和具体原因。可解析的业务 4xx/5xx、鉴权、参数或上游错误必须 fail-fast，不换参数重试。
 3. **查询指标**：完成 CMDB MCP 确认后，优先直接调用已注册的 `inspection` MCP Server，按“指标 MCP 调用”章节获取指标定义、指标值、阈值规则与操作符字典。
 4. **输出结果**：按既有规则完成阈值判定，包含按需查询的真实拓扑关系、指标数据表、巡检结论。
@@ -100,7 +100,7 @@ cd skills/inspection-analyst && python scripts/inspect_resource_metrics.py \
 
 ## CMDB MCP 优先原则
 
-查 CMDB / 拓扑时，`inspection-analyst` 默认优先使用当前工作区已启用的 `cmdb` MCP Tools。只有 CMDB MCP Driver 未加载、客户端/工具不可用或协议无法解析时，才一次性回退本地 `zgops-cmdb`；只有本地回退也缺失、未配置、不可用或用户明确要求时，才使用 multi_agent_collaboration 协同 query。涉及应用或资源拓扑时，CMDB MCP 或回退路径都必须返回可直接渲染的 `echarts` 树状图代码块，不能只保留文字版拓扑摘要。
+查 CMDB / 拓扑时，`inspection-analyst` 默认优先使用当前工作区已启用的 `cmdb-query` MCP Tools。只有 CMDB MCP Driver 未加载、客户端/工具不可用或协议无法解析时，才一次性回退本地 `zgops-cmdb`；只有本地回退也缺失、未配置、不可用或用户明确要求时，才使用 multi_agent_collaboration 协同 query。涉及应用或资源拓扑时，CMDB MCP 或回退路径都必须返回可直接渲染的 `echarts` 树状图代码块，不能只保留文字版拓扑摘要。
 
 回退时必须在过程说明中写出回退原因。
 
