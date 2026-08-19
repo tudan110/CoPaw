@@ -703,19 +703,6 @@ export function OverviewPanel({ pageTheme, onOpenEmployeeChat, employees }: Over
                   </>
                 );
 
-                if (event.employeeId) {
-                  return (
-                    <button
-                      key={event.title}
-                      type="button"
-                      className="overview-ref-event"
-                      onClick={() => onOpenEmployeeChat(event.employeeId!)}
-                    >
-                      {content}
-                    </button>
-                  );
-                }
-
                 return (
                   <div key={event.title} className="overview-ref-event">
                     {content}
