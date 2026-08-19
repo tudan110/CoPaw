@@ -39,7 +39,31 @@ WEB_MONITOR_EXTRA_HEADERS={}
 2. 如果后续接入认证，再把 token 或 cookie 填进去
 3. 不要在回答中泄露 token、cookie 或额外请求头明文
 
-## 常用命令
+## MCP 优先级
+
+本工作区已启用 `web-check-app` MCP Server。Agent 必须优先直接调用对应的 MCP Tool，不要自行使用 curl、requests、SSE 或 JSON-RPC。工具与能力映射如下：
+
+| 能力 | MCP Tool |
+|---|---|
+| 健康检查 | `web-check-app__getWebMonitorHealth` |
+| 监测看板 | `web-check-app__getMonitorDashboard` |
+| 任务列表 | `web-check-app__listMonitors` |
+| 任务详情 | `web-check-app__getMonitor` |
+| 创建任务 | `web-check-app__createMonitor` |
+| 更新任务 | `web-check-app__updateMonitor` |
+| 删除任务 | `web-check-app__deleteMonitor` |
+| 发布任务 | `web-check-app__publishMonitor` |
+| 手工触发 | `web-check-app__triggerMonitor` |
+| 任务运行列表 | `web-check-app__listMonitorRuns` |
+| 单次运行详情 | `web-check-app__getMonitorRun` |
+| 删除单次运行 | `web-check-app__deleteMonitorRun` |
+| 批量删除运行 | `web-check-app__batchDeleteMonitorRuns` |
+| Selector Helper | `web-check-app__suggestSelectors` |
+
+MCP 不可用时才允许使用下方 `scripts/web_monitor.py` 作为兜底，具体仅限：MCP Driver 未加载、工具不存在、连接/传输不可用，或响应无法按 MCP 协议解析。MCP 已经成功调用但返回可解析的业务错误、鉴权错误、参数错误或上游 4xx/5xx 时必须立即失败，不换参数、不自动重试、不回退脚本。
+## 旧脚本回退路径
+
+仅在 MCP Driver 未加载、工具不存在、连接/传输不可用，或响应无法按 MCP 协议解析时，才允许执行以下脚本命令。
 
 查看可用性监测看板：
 
@@ -181,24 +205,31 @@ python3 scripts/web_monitor.py update --monitor-name "网易163门户" --payload
 
 ## 自然语言映射
 
-- “看一下 Web 可用性监测概况 / 最近失败”：执行 `dashboard`
-- “查看网站监测任务 / 当前有哪些监测任务”：执行 `list-monitors`
-- “看一下某个监测任务详情”：执行 `detail`
-- “看一下某个任务最近执行 / 最近失败记录”：执行 `runs`
-- “查看这次执行失败在哪一步”：执行 `run`
-- “帮我手工执行一下这个网站监测”：执行 `trigger`
-- “给这个页面推荐 locator / 选择器”：执行 `selector-helper`
-- “帮我新建一个网站监测任务”：整理 JSON 后执行 `create`
-- “帮我修改这个监测任务”：整理 JSON 后执行 `update`
+- “看一下 Web 可用性监测概况 / 最近失败”：优先调用 `web-check-app__getMonitorDashboard`
+- “查看网站监测任务 / 当前有哪些监测任务”：优先调用 `web-check-app__listMonitors`
+- “看一下某个监测任务详情”：先用 `web-check-app__listMonitors` 定位任务 ID，再调用 `web-check-app__getMonitor`
+- “看一下某个任务最近执行 / 最近失败记录”：先定位任务 ID，再调用 `web-check-app__listMonitorRuns`
+- “查看这次执行失败在哪一步”：调用 `web-check-app__getMonitorRun`
+- “帮我手工执行一下这个网站监测”：调用 `web-check-app__triggerMonitor`
+- “给这个页面推荐 locator / 选择器”：调用 `web-check-app__suggestSelectors`
+- “帮我新建一个网站监测任务”：整理 JSON 后调用 `web-check-app__createMonitor`
+- “帮我修改这个监测任务”：先定位任务 ID，整理 JSON 后调用 `web-check-app__updateMonitor`
+- 查看健康状态：调用 `web-check-app__getWebMonitorHealth`
+- 发布任务：调用 `web-check-app__publishMonitor`
+- 删除任务或运行记录：按确认规则调用 `web-check-app__deleteMonitor`、`web-check-app__deleteMonitorRun` 或 `web-check-app__batchDeleteMonitorRuns`
+
+只有触发上述 fallback 条件时，才使用对应的 `health`、`dashboard`、`list-monitors`、`detail`、`runs`、`run`、`trigger`、`selector-helper`、`create`、`update`、`publish`、`delete-monitor`、`delete-run` 或 `delete-runs` 脚本命令。
 
 ## 执行要求
 
-1. **优先走 HTTP API，不要默认用浏览器自动化点击页面**
-2. 查询类请求直接执行
-3. 创建/更新/发布前，先确认任务名、URL、调度和步骤定义
-4. 删除类操作必须明确对象并得到用户确认
-5. 如果用户只描述了“点击某元素/检查某元素”，但没有 locator，优先先调用 `selector-helper`
-6. 如果 `selector-helper` 返回多个候选，优先用语义更稳定的 locator（`role` / `text`）而不是脆弱 CSS 路径
+1. **优先使用 `web-check-app` MCP Tool；不要默认使用浏览器自动化点击页面**
+2. 查询类请求和 Selector Helper 直接执行
+3. 创建/更新前，先确认任务名、URL、调度和步骤定义
+4. 发布和手工触发前，确认用户的明确意图
+5. 删除任务、删除运行记录和批量删除必须明确对象并得到用户确认
+6. 如果用户只描述了“点击某元素/检查某元素”，但没有 locator，优先调用 `web-check-app__suggestSelectors`
+7. 如果 `web-check-app__suggestSelectors` 返回多个候选，优先用语义更稳定的 locator（`role` / `text`）而不是脆弱 CSS 路径
+8. MCP 与 Python fallback 必须遵守同一确认规则；手工触发成功后保留 `monitorId` 或 `runId`，需要时再调用 `web-check-app__getMonitorRun`
 
 ## 返回要求
 
