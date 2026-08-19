@@ -3,6 +3,25 @@ from datetime import datetime, timedelta, timezone
 from qwenpaw.extensions.integrations import portal_monitoring_overview
 
 
+def test_query_business_cockpit_uses_dashboard_contract(monkeypatch) -> None:
+    captured = {}
+
+    monkeypatch.setattr(
+        portal_monitoring_overview,
+        "_get_envelope",
+        lambda path, params: captured.update(path=path, params=params)
+        or {"code": 200},
+    )
+
+    result = portal_monitoring_overview.query_business_cockpit()
+
+    assert result == {"code": 200}
+    assert captured == {
+        "path": "/resource/monitor/overview/business/cockpit",
+        "params": {"status": -1, "name": "", "sort": "error"},
+    }
+
+
 def test_query_active_alarm_total_uses_current_list_without_status_filter(monkeypatch) -> None:
     captured = {}
 

@@ -6,8 +6,9 @@ import { digitalEmployees } from "../../data/portalData";
 import {
   getMonitoringOverviewDashboard,
   type AlarmTop5Item,
-  type ApplicationHealth,
   type AssetOverviewData,
+  type BusinessCockpitData,
+  type BusinessSystem,
   type CmdbSummaryData,
   type MonitoringOverviewDashboardResponse,
   type ResourceTypeStat,
@@ -51,9 +52,8 @@ type OverviewTicket = {
 type OverviewService = {
   name: string;
   status: "healthy" | "warning" | "critical";
-  uptime: string;
-  latency: string;
-  latencyClass: "" | "warn" | "bad";
+  health: string;
+  availability: string;
 };
 
 type OverviewEvent = {
@@ -82,10 +82,10 @@ const STATUS_LABELS: Record<string, string> = {
   completed: "已完成",
 };
 
-const HEALTH_STATUS_TO_SERVICE: Record<string, OverviewService["status"]> = {
-  green: "healthy",
-  yellow: "warning",
-  red: "critical",
+const BUSINESS_STATUS_TO_SERVICE: Record<string, OverviewService["status"]> = {
+  "0": "healthy",
+  "1": "warning",
+  "2": "critical",
 };
 
 const RESOURCE_TYPE_ICONS: Array<{ keywords: string[]; icon: string; color: string }> = [
@@ -323,38 +323,30 @@ function buildAlerts(top5: AlarmTop5Item[] | null): OverviewAlert[] {
   }));
 }
 
-function parseLatency(value: ApplicationHealth["responseTime"]): { display: string; numeric: number } {
-  if (value === null || value === undefined || value === "") {
-    return { display: "—", numeric: 0 };
-  }
-  if (typeof value === "number") {
-    return { display: `${value}ms`, numeric: value };
-  }
-  const text = String(value).trim();
-  const match = text.match(/-?\d+(?:\.\d+)?/);
-  const numeric = match ? Number(match[0]) : 0;
-  return {
-    display: /ms|s$/i.test(text) ? text : numeric > 0 ? `${text}ms` : text,
-    numeric,
-  };
+function formatPercent(value: number | string | undefined): string {
+  if (value === null || value === undefined || value === "") return "—";
+  const numeric = Number(String(value).replace(/%$/, ""));
+  return Number.isFinite(numeric) ? `${numeric.toFixed(2)}%` : "—";
 }
 
-function buildServices(apps: ApplicationHealth[] | undefined): OverviewService[] {
+function buildServices(apps: BusinessSystem[] | undefined): OverviewService[] {
   if (!apps || apps.length === 0) return [];
   return apps.slice(0, 8).map((app) => {
-    const healthRate = Number(app.healthRate || 0);
-    const { display: latency, numeric } = parseLatency(app.responseTime);
-    const status: OverviewService["status"] =
-      HEALTH_STATUS_TO_SERVICE[String(app.healthStatus || "").toLowerCase()] || "healthy";
-    let latencyClass: OverviewService["latencyClass"] = "";
-    if (numeric >= 500) latencyClass = "bad";
-    else if (numeric >= 100) latencyClass = "warn";
+    const status =
+      BUSINESS_STATUS_TO_SERVICE[String(app.status ?? "")] || "healthy";
+    const errorAssets = Number(app.errorAssets ?? 0);
+    const alarmCount = Number(app.alarmCount ?? 0);
+    const availability =
+      app.rate !== undefined && app.rate !== null && app.rate !== ""
+        ? formatPercent(app.rate)
+        : errorAssets + alarmCount > 0
+          ? `异常 ${errorAssets + alarmCount}`
+          : "—";
     return {
-      name: app.platformName || "未命名应用",
+      name: app.systemName || "未命名业务系统",
       status,
-      uptime: `${healthRate.toFixed(2)}%`,
-      latency,
-      latencyClass,
+      health: formatPercent(app.healthPercent),
+      availability,
     };
   });
 }
@@ -407,6 +399,7 @@ export function OverviewPanel({ pageTheme, onOpenEmployeeChat, employees }: Over
   }, []);
 
   const assetOverview = envelopeData<AssetOverviewData>(dashboard?.assetOverview);
+  const businessCockpit = envelopeData<BusinessCockpitData>(dashboard?.businessCockpit);
   const alarmTop5 = envelopeData<AlarmTop5Item[]>(dashboard?.alarmTop5);
   const workorderStats = envelopeData<WorkorderStatsData>(dashboard?.workorderStats);
   const severityTrend = envelopeData<SeverityTrendData>(dashboard?.severityTrend);
@@ -448,8 +441,8 @@ export function OverviewPanel({ pageTheme, onOpenEmployeeChat, employees }: Over
   const tickets = useMemo(() => buildTickets(workorderStats), [workorderStats]);
   const alerts = useMemo(() => buildAlerts(alarmTop5), [alarmTop5]);
   const services = useMemo(
-    () => buildServices(assetOverview?.applicationHealthList),
-    [assetOverview],
+    () => buildServices(businessCockpit?.businessSystems),
+    [businessCockpit],
   );
   const events = useMemo(() => buildEvents(alarmTop5), [alarmTop5]);
 
@@ -612,11 +605,7 @@ export function OverviewPanel({ pageTheme, onOpenEmployeeChat, employees }: Over
           </div>
           <div className="overview-ref-chart">
             {trend.dates.length === 0 ? (
-              <div className="overview-ref-service-row">
-                <div className="overview-ref-service-name">
-                  {loading ? "加载中…" : "暂无告警趋势数据"}
-                </div>
-              </div>
+              <div className="overview-ref-empty">{loading ? "加载中…" : "暂无告警趋势数据"}</div>
             ) : (
               <ReactECharts
                 option={chartOption}
@@ -637,7 +626,10 @@ export function OverviewPanel({ pageTheme, onOpenEmployeeChat, employees }: Over
           </div>
           <div className="overview-ref-alert-list">
             {alerts.map((alert) => (
-              <div key={alert.level} className="overview-ref-alert-row">
+              <div
+                key={alert.level}
+                className={`overview-ref-alert-row${alert.level === "暂无告警" ? " is-empty" : ""}`}
+              >
                 <div className="overview-ref-alert-dot" style={{ background: alert.color }} />
                 <div className="overview-ref-alert-level" style={{ color: alert.color }}>
                   {alert.level}
@@ -663,17 +655,15 @@ export function OverviewPanel({ pageTheme, onOpenEmployeeChat, employees }: Over
           </div>
           <div className="overview-ref-service-list">
             {services.length === 0 ? (
-              <div className="overview-ref-service-row">
-                <div className="overview-ref-service-name">{loading ? "加载中…" : "暂无应用健康数据"}</div>
-              </div>
+              <div className="overview-ref-empty">{loading ? "加载中…" : "暂无业务服务数据"}</div>
             ) : (
               services.map((service) => (
                 <div key={service.name} className="overview-ref-service-row">
                   <div className={`overview-ref-service-dot ${service.status}`} />
                   <div className="overview-ref-service-name">{service.name}</div>
-                  <div className="overview-ref-service-uptime">{service.uptime}</div>
-                  <div className={`overview-ref-service-latency ${service.latencyClass}`}>
-                    {service.latency}
+                  <div className="overview-ref-service-health">{service.health}</div>
+                  <div className="overview-ref-service-availability">
+                    {service.availability}
                   </div>
                 </div>
               ))

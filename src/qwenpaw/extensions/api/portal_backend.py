@@ -139,6 +139,7 @@ from qwenpaw.extensions.integrations.portal_monitoring_overview import (
     query_active_alarm_total as query_monitoring_active_alarm_total,
     query_alarm_top5 as query_monitoring_alarm_top5,
     query_asset_overview as query_monitoring_asset_overview,
+    query_business_cockpit as query_monitoring_business_cockpit,
     query_topology as query_monitoring_topology,
     query_workorder_stats as query_monitoring_workorder_stats,
     query_severity_trend as query_monitoring_severity_trend,
@@ -3843,6 +3844,7 @@ async def get_monitoring_asset_overview():
 async def get_monitoring_overview_dashboard():
     (
         asset_overview,
+        business_cockpit,
         alarm_top5,
         topology,
         workorder_stats,
@@ -3851,6 +3853,7 @@ async def get_monitoring_overview_dashboard():
         active_alarm_total,
     ) = await asyncio.gather(
         asyncio.to_thread(query_monitoring_asset_overview),
+        asyncio.to_thread(query_monitoring_business_cockpit),
         asyncio.to_thread(query_monitoring_alarm_top5),
         asyncio.to_thread(query_monitoring_topology),
         asyncio.to_thread(query_monitoring_workorder_stats),
@@ -3860,6 +3863,7 @@ async def get_monitoring_overview_dashboard():
     )
     return {
         "assetOverview": asset_overview,
+        "businessCockpit": business_cockpit,
         "alarmTop5": alarm_top5,
         "topology": topology,
         "workorderStats": workorder_stats,

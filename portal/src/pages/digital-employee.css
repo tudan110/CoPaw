@@ -11571,7 +11571,7 @@
   display: flex;
   flex-direction: column;
   gap: 18px;
-  padding: 6px 2px 24px;
+  padding: 6px 8px 24px;
   overflow-y: auto;
   scrollbar-width: thin;
 }
@@ -11589,6 +11589,7 @@
   font-size: 24px;
   font-weight: 700;
   letter-spacing: -0.03em;
+  margin-left: 6px;
 }
 
 .portal-digital-employee .overview-main-title small {
@@ -11869,6 +11870,28 @@
   margin: -2px -4px 0;
 }
 
+.portal-digital-employee .overview-ref-empty {
+  padding: 12px 0;
+  color: var(--text-secondary);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.portal-digital-employee .overview-ref-alert-row.is-empty {
+  display: flex;
+  gap: 8px;
+}
+
+.portal-digital-employee .overview-ref-alert-row.is-empty .overview-ref-alert-dot,
+.portal-digital-employee .overview-ref-alert-row.is-empty .overview-ref-alert-bar,
+.portal-digital-employee .overview-ref-alert-row.is-empty .overview-ref-alert-count {
+  display: none;
+}
+
+.portal-digital-employee .overview-ref-alert-row.is-empty .overview-ref-alert-level {
+  white-space: nowrap;
+}
+
 .portal-digital-employee .overview-ref-alert-list,
 .portal-digital-employee .overview-ref-service-list,
 .portal-digital-employee .overview-ref-event-list {
@@ -11921,22 +11944,14 @@
   color: var(--text-primary);
 }
 
-.portal-digital-employee .overview-ref-service-uptime {
+.portal-digital-employee .overview-ref-service-health {
   color: var(--text-secondary);
   text-align: right;
 }
 
-.portal-digital-employee .overview-ref-service-latency {
+.portal-digital-employee .overview-ref-service-availability {
   text-align: right;
   color: var(--text-primary);
-}
-
-.portal-digital-employee .overview-ref-service-latency.warn {
-  color: #f59e0b;
-}
-
-.portal-digital-employee .overview-ref-service-latency.bad {
-  color: #ef4444;
 }
 
 .portal-digital-employee .overview-ref-event {
@@ -12053,8 +12068,8 @@
     grid-template-columns: 10px minmax(0, 1fr);
   }
 
-  .portal-digital-employee .overview-ref-service-uptime,
-  .portal-digital-employee .overview-ref-service-latency {
+  .portal-digital-employee .overview-ref-service-health,
+  .portal-digital-employee .overview-ref-service-availability {
     text-align: left;
   }
 }

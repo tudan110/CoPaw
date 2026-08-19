@@ -21,6 +21,7 @@ ensure_working_secrets_loaded()
 ALARM_TOP5_ENDPOINT = "/resource/alarm/statistics/statResTop"
 TOPOLOGY_ENDPOINT = "/resource/monitor/overview/topology"
 ASSET_OVERVIEW_ENDPOINT = "/resource/monitor/overview/asset/overview"
+BUSINESS_COCKPIT_ENDPOINT = "/resource/monitor/overview/business/cockpit"
 REAL_ALARM_LIST_ENDPOINT = "/resource/realalarm/list"
 # Today's workorder stats live on the same INOE gateway, under the
 # inoe-ferry 工单 module (which also backs the order-workflow skill).
@@ -88,6 +89,13 @@ def _get_envelope(
 
 def query_asset_overview() -> dict[str, Any]:
     return _get_envelope(ASSET_OVERVIEW_ENDPOINT)
+
+
+def query_business_cockpit() -> dict[str, Any]:
+    return _get_envelope(
+        BUSINESS_COCKPIT_ENDPOINT,
+        {"status": -1, "name": "", "sort": "error"},
+    )
 
 
 def query_alarm_top5() -> dict[str, Any]:
@@ -215,6 +223,7 @@ def query_active_alarm_total() -> int:
 def query_monitoring_overview_dashboard() -> dict[str, Any]:
     return {
         "assetOverview": query_asset_overview(),
+        "businessCockpit": query_business_cockpit(),
         "alarmTop5": query_alarm_top5(),
         "topology": query_topology(),
         "workorderStats": query_workorder_stats(),

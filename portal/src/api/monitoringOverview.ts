@@ -29,6 +29,34 @@ export interface ApplicationHealth {
   responseTime?: number | string;
 }
 
+export interface BusinessCycleRatePoint {
+  time?: string;
+  value?: number | string;
+  success?: number;
+  total?: number;
+  failed?: number;
+}
+
+export interface BusinessSystem {
+  systemName?: string;
+  appTotal?: number;
+  alarmCount?: number;
+  errorAssets?: number;
+  status?: number | string;
+  healthPercent?: number | string;
+  rate?: number | string;
+  cycleRateList?: BusinessCycleRatePoint[];
+}
+
+export interface BusinessCockpitData {
+  businessTotal?: number;
+  errorBusiness?: number;
+  alarmCount?: number;
+  businessHealthPercent?: number | string;
+  appTotal?: number;
+  businessSystems?: BusinessSystem[];
+}
+
 export interface HostResourceItem {
   resourceName?: string;
   usageRate?: number;
@@ -81,6 +109,7 @@ export interface CmdbSummaryData {
 
 export interface MonitoringOverviewDashboardResponse {
   assetOverview: MonitoringEnvelope<AssetOverviewData>;
+  businessCockpit: MonitoringEnvelope<BusinessCockpitData>;
   alarmTop5: MonitoringEnvelope<AlarmTop5Item[]>;
   topology: MonitoringEnvelope<TopologyData>;
   workorderStats: MonitoringEnvelope<WorkorderStatsData>;
