@@ -153,6 +153,7 @@ def _looks_like_project_path(value: str) -> bool:
             ".uninstall_cmd",
         ),
         "desktop": ("qwenpaw.cli.desktop_cmd", "desktop_cmd", ".desktop_cmd"),
+        "deploy": ("qwenpaw.cli.deploy_cmd", "deploy_group", ".deploy_cmd"),
         "update": ("qwenpaw.cli.update_cmd", "update_cmd", ".update_cmd"),
         "shutdown": (
             "qwenpaw.cli.shutdown_cmd",
@@ -183,8 +184,10 @@ def _looks_like_project_path(value: str) -> bool:
 @click.pass_context
 def cli(ctx: click.Context, host: str | None, port: int | None) -> None:
     """QwenPaw CLI."""
-    # default from last run if not provided
-    last = read_last_api()
+    # Deployment synchronization is a local PVC operation. Do not load the
+    # working config to resolve a last API endpoint: config loading can run
+    # legacy migrations, which would violate sync-managed dry-run semantics.
+    last = None if ctx.invoked_subcommand == "deploy" else read_last_api()
     if host is None or port is None:
         if last:
             host = host or last[0]

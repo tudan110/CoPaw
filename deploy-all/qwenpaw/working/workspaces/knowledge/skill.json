@@ -384,33 +384,6 @@
       },
       "updated_at": "2026-04-13T00:58:45.911864Z"
     },
-    "rag-skill": {
-      "enabled": true,
-      "channels": [
-        "all"
-      ],
-      "source": "builtin",
-      "config": {},
-      "metadata": {
-        "name": "rag-skill",
-        "description": "面向本地知识库目录的检索和问答助手。核心流程：(1)分层索引导航 (2)遇到PDF/Excel时必须先读取references学习处理方法 (3)处理文件后再检索。按文件类型组合使用 grep、Read、pdfplumber、pandas 进行渐进式检索，避免整文件加载。用户问题涉及\"从知识库目录回答问题/检索信息/查资料\"时使用。",
-        "version_text": "",
-        "commit_text": "",
-        "signature": "11d24c50d15f9f64c8cfd43c3ac8e36b4b10ddc05a922cf386f04eb6b8c028b7",
-        "source": "builtin",
-        "protected": false,
-        "requirements": {
-          "require_bins": [],
-          "require_envs": []
-        },
-        "updated_at": "2026-04-13T01:58:25.451554Z"
-      },
-      "requirements": {
-        "require_bins": [],
-        "require_envs": []
-      },
-      "updated_at": "2026-04-13T01:58:25.451554Z"
-    },
     "xlsx": {
       "enabled": true,
       "channels": [

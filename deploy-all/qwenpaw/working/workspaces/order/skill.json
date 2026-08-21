@@ -202,31 +202,6 @@
       },
       "updated_at": "2026-04-13T07:37:27.826038Z"
     },
-    "fault-disposal": {
-      "enabled": false,
-      "channels": [
-        "all"
-      ],
-      "source": "builtin",
-      "metadata": {
-        "name": "fault-disposal",
-        "description": "面向工单驱动故障处置的技能。适用于 Portal 或上游系统已经整理好工单上下文，并希望在当前 CoPAW 聊天会话中完成根因分析、处置建议、动作执行和恢复验证的场景。仅当用户意图是“基于工单上下文推进故障处置闭环”时使用；如果用户只是查询实时告警列表、告警统计、告警分布或告警详情，应使用 real-alarm，而不是本技能。",
-        "version_text": "",
-        "commit_text": "",
-        "source": "builtin",
-        "protected": false,
-        "requirements": {
-          "require_bins": [],
-          "require_envs": []
-        },
-        "updated_at": "2026-04-13T07:42:50.798270Z"
-      },
-      "requirements": {
-        "require_bins": [],
-        "require_envs": []
-      },
-      "updated_at": "2026-04-13T07:42:50.798270Z"
-    },
     "file_reader": {
       "enabled": false,
       "channels": [
@@ -405,31 +380,6 @@
         "require_envs": []
       },
       "updated_at": "2026-04-13T07:37:27.833112Z"
-    },
-    "rag-skill": {
-      "enabled": false,
-      "channels": [
-        "all"
-      ],
-      "source": "builtin",
-      "metadata": {
-        "name": "rag-skill",
-        "description": "面向本地知识库目录的检索和问答助手。核心流程：(1)分层索引导航 (2)遇到PDF/Excel时必须先读取references学习处理方法 (3)处理文件后再检索。按文件类型组合使用 grep、Read、pdfplumber、pandas 进行渐进式检索，避免整文件加载。用户问题涉及\"从知识库目录回答问题/检索信息/查资料\"时使用。",
-        "version_text": "",
-        "commit_text": "",
-        "source": "builtin",
-        "protected": false,
-        "requirements": {
-          "require_bins": [],
-          "require_envs": []
-        },
-        "updated_at": "2026-04-13T07:42:50.798690Z"
-      },
-      "requirements": {
-        "require_bins": [],
-        "require_envs": []
-      },
-      "updated_at": "2026-04-13T07:42:50.798690Z"
     },
     "real-alarm": {
       "enabled": false,

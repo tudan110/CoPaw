@@ -67,7 +67,7 @@ def get_api_base_url() -> str:
     Returns:
         API 基础地址字符串
     """
-    return os.getenv("INOE_API_BASE_URL", "http://192.168.130.211:30080")
+    return os.getenv("INOE_API_BASE_URL", "").strip()
 
 
 def get_token() -> Optional[str]:
@@ -140,6 +140,8 @@ def execute(page_num: int = 1, page_size: int = 10, token: str = None, api_base_
 
     # 接口配置
     base_url = _normalize_base_url(api_base_url)
+    if not base_url:
+        return _make_error(400, "未设置 INOE_API_BASE_URL")
     url = f"{base_url}/resource/device/device/list"
     headers = {
         "Authorization": f"Bearer {normalized_token}",

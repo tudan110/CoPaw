@@ -1,4 +1,20 @@
-# 发版后 Skill 手动同步命令（纯 Shell 版）
+# 已废止：发版后 Skill 手动同步命令
+
+> **禁止执行本文后续的 Shell 同步命令。**它们引用已移除的 `/app/.working.backup`，并会对整个目录做删除判断，可能误删 PVC 中的知识库数据、用户自装 Skill 或 `skill_pool`。
+>
+> 当前发布使用 Helm `managed-seed-sync` initContainer 自动同步 `/app/share/qwenpaw-seed` 的受管文件。人工检查请使用：
+>
+> ```bash
+> qwenpaw deploy sync-managed --dry-run
+> ```
+>
+> 人工 apply 仅在明确排障时使用：
+>
+> ```bash
+> qwenpaw deploy sync-managed --apply --yes
+> ```
+>
+> 下文保留仅供追溯旧流程，不能作为当前操作指南。
 
 ## 背景
 

@@ -1,142 +1,105 @@
-# QwenPaw 镜像打包说明
+# QwenPaw 通用镜像打包说明
 
-本文档说明如何基于 `deploy-all/qwenpaw/Dockerfile` 打包 QwenPaw 镜像。
+本文档说明如何基于 [`qwenpaw/Dockerfile`](qwenpaw/Dockerfile) 构建**跨环境通用**的 QwenPaw 镜像。
 
-## 先决条件
+## 核心原则
 
-在执行 Docker 打包前，**必须先完成下面两个同步步骤**：
+通用镜像只包含：
 
-1. 执行仓库根目录的 `sync-qwenpaw-working.sh`，将 `deploy-all/qwenpaw/working` 同步到本地用户目录
-2. 再按照 `deploy-all/SYNC_GUIDE.md`，将本地用户目录下的数据同步到 `deploy-all/qwenpaw/data`
+- QwenPaw 程序与离线运行依赖；
+- 仓库维护的 Agent、Skill 和初始化模板；
+- 构建期生成的无环境工作目录 seed。
 
-只有这两步完成后，才能使用 `deploy-all/qwenpaw/Dockerfile` 正确打包。
+通用镜像不包含：
 
-## 为什么必须按这个顺序执行
+- `deploy-all/qwenpaw/data/qwenpaw/` 运行时快照；
+- `~/.qwenpaw` 中的设置数据库、知识库、会话和报告；
+- 知识库数据库、上传文件、会话、缓存和环境专属服务数据。
 
-`deploy-all/qwenpaw/Dockerfile` 在构建阶段会直接把以下内容复制进镜像：
+> **模型配置例外**：按当前发布要求，`deploy-all/qwenpaw/data/qwenpaw.secret/` 会随镜像交付，使空的 `/app/working.secret` 在首次启动时获得 `.master_key`、Provider 配置和已选模型。镜像 tar 因而属于敏感密钥材料，必须按 Secret 保护，禁止提交到 Git、公开分发或上传到无访问控制的位置。
 
-- `deploy-all/qwenpaw/data/qwenpaw/`
-- `deploy-all/qwenpaw/data/qwenpaw.secret/`
-- `deploy-all/qwenpaw/working/workspaces/*/skills`
+## 唯一维护源
 
-这意味着：
+受管的 Agent/Skill 维护在：
 
-- `deploy-all/qwenpaw/working` 是工作区技能源码来源
-- `deploy-all/qwenpaw/data` 是最终要进入镜像的工作目录数据来源
+```text
+deploy-all/qwenpaw/working/
+├── config.json
+├── universal-seed.json
+└── workspaces/
+    └── <agent-id>/
+        ├── agent.json
+        ├── skill.json
+        └── skills/
+```
 
-如果跳过同步步骤，镜像里会带上**旧数据、缺失数据或本地未更新的数据**。
+其中：
 
-## 标准打包流程
+- `workspaces/*/skills/` 是 Skill 代码唯一维护源；
+- `skill.json` 决定 Skill 是否启用、适用渠道及配置元数据；
+- `universal-seed.json` 声明废弃 Skill 和跨工作区复用的源码；
+- 不再需要将 `working`、本机用户目录或 Skill 手工同步到 `deploy-all/qwenpaw/data/` 后再打包。
 
-### 第 1 步：同步工作目录到本地用户目录
+构建时，`scripts/build_universal_seed.py` 会将这些输入生成到镜像的：
+
+```text
+/app/share/qwenpaw-seed/
+```
+
+并完成：
+
+1. 将本机 workspace 路径规范化为 `/app/working/workspaces/<agent-id>`；
+2. 根据 manifest 物化缺失的 builtin Skill；
+3. 仅过滤真实 `.env`、明确的凭据字段和生成缓存；`working` 中维护的其他文件都会保留；
+4. 生成空的 `jobs.json` 与 seed 内容哈希；
+5. 拒绝没有受管源码的有效 Skill，避免隐性依赖 data 快照。
+
+## 打包前检查
+
+打包前只需维护并检查 repository source：
+
+```bash
+python3 deploy-all/qwenpaw/scripts/build_universal_seed.py \
+  --source deploy-all/qwenpaw/working \
+  --builtin-root src/qwenpaw/agents/skills \
+  --output /tmp/qwenpaw-universal-seed \
+  --runtime-working-dir /app/working
+```
+
+成功后可以检查输出内容：
+
+```bash
+find /tmp/qwenpaw-universal-seed -type f | sort
+```
+
+临时目录可在检查后删除。该命令不会读取或改写 `~/.qwenpaw`、`data/` 或任何运行环境。
+
+## 构建镜像
 
 在仓库根目录执行：
 
 ```bash
-./sync-qwenpaw-working.sh
-```
-
-默认会同步到：
-
-```bash
-~/.qwenpaw
-```
-
-如果希望严格镜像同步，可使用：
-
-```bash
-./sync-qwenpaw-working.sh --delete
-```
-
-> 这一步的目标是先把 `deploy-all/qwenpaw/working` 中维护的工作区内容同步到本地用户目录。
-
-### 第 2 步：把本地用户目录同步到 deploy-all/qwenpaw/data
-
-然后按 `deploy-all/SYNC_GUIDE.md` 执行同步，将本地目录中的数据整理并复制到：
-
-- `deploy-all/qwenpaw/data/qwenpaw/`
-- `deploy-all/qwenpaw/data/qwenpaw.secret/`
-
-重点是把以下本地目录同步进去：
-
-- `~/.qwenpaw/` → `deploy-all/qwenpaw/data/qwenpaw/`
-- `~/.qwenpaw.secret/` → `deploy-all/qwenpaw/data/qwenpaw.secret/`
-
-请直接参考：
-
-```bash
-deploy-all/SYNC_GUIDE.md
-```
-
-> 这一步完成后，`deploy-all/qwenpaw/data` 才是 Docker 打包时真正使用的数据源。
-
-### 第 3 步：确认打包输入目录
-
-打包前建议至少确认下面目录存在且内容已更新：
-
-```bash
-deploy-all/qwenpaw/data/qwenpaw
-deploy-all/qwenpaw/data/qwenpaw.secret
-deploy-all/qwenpaw/working/workspaces
-```
-
-### 第 4 步：使用 Dockerfile 打包
-
-在项目根目录执行：
-
-```bash
 docker build -f deploy-all/qwenpaw/Dockerfile -t qwenpaw:latest .
 ```
 
-## 使用构建脚本
-
-如果需要按架构构建，也可以直接使用 `deploy-all/qwenpaw` 下的脚本。
-
-### AMD64
+按架构构建时使用现有脚本：
 
 ```bash
-cd deploy-all/qwenpaw
-./build-amd64.sh
+cd deploy-all/qwenpaw && ./build-amd64.sh
 ```
-
-### ARM64
 
 ```bash
-cd deploy-all/qwenpaw
-./build-arm64.sh
+cd deploy-all/qwenpaw && ./build-arm64.sh
 ```
 
-## 推荐执行顺序
+同一版本的 amd64 与 arm64 镜像必须使用相同镜像 tag；导出的 tar 文件名可用架构区分。
 
-```bash
-# 1. 从仓库工作目录同步到本地用户目录
-./sync-qwenpaw-working.sh
+## 首次运行行为
 
-# 2. 按指南把 ~/.qwenpaw 和 ~/.qwenpaw.secret 同步到 deploy-all/qwenpaw/data
-#    具体操作见 deploy-all/SYNC_GUIDE.md
+容器发现工作目录为空时，会把 `/app/share/qwenpaw-seed/` 初始化到运行时工作目录。随后 QwenPaw 会按既有机制创建内置 `skill_pool`、默认 Agent 和 QA Agent。
 
-# 3. 使用 Dockerfile 打包
-docker build -f deploy-all/qwenpaw/Dockerfile -t qwenpaw:latest .
-```
+镜像会在 `/app/working.secret` 为空时恢复随镜像交付的 Provider 配置，但不会覆盖非空 secret 目录。当前 `working` 不维护运行时数据库、会话或知识库上传文件，因此这些内容不会由镜像恢复；若未来将某个文件明确纳入 `working`，它会随 seed 交付。
 
-## 常见错误
+## 运行时数据与环境迁移
 
-### 直接打包，没有先同步 working
-
-后果：本地用户目录里的工作区内容不是最新，后续同步到 `deploy-all/qwenpaw/data` 的也是旧版本。
-
-### 只执行了 sync-qwenpaw-working.sh，没有同步到 deploy-all/qwenpaw/data
-
-后果：Dockerfile 仍然会读取 `deploy-all/qwenpaw/data` 的旧数据，镜像内容不会更新。
-
-### data 已同步，但 working/workspaces 下的技能没有更新
-
-后果：镜像里的工作区技能和 data 中的数据可能不一致。
-
-## 结论
-
-打包 QwenPaw 镜像时，正确顺序必须是：
-
-1. `sync-qwenpaw-working.sh`
-2. 按 `deploy-all/SYNC_GUIDE.md` 同步本地用户目录到 `deploy-all/qwenpaw/data`
-3. 使用 `deploy-all/qwenpaw/Dockerfile` 打包
+[`SYNC_GUIDE.md`](SYNC_GUIDE.md) 仅用于理解或迁移某个环境的运行时数据；它不是通用镜像构建步骤。运行时数据库、知识库文件和环境专属业务数据不得重新烘焙进通用镜像；当前唯一明确例外是受保护的 `qwenpaw.secret` 模型配置。

@@ -6,16 +6,72 @@ metadata:
     {{- include "qwenpaw.labels" . | nindent 4 }}
 spec:
   replicas: {{ .Values.replicaCount }}
+  strategy:
+    type: {{ .Values.deploymentStrategy.type }}
+    {{- if eq .Values.deploymentStrategy.type "RollingUpdate" }}
+    rollingUpdate:
+      maxSurge: {{ .Values.deploymentStrategy.rollingUpdate.maxSurge | quote }}
+      maxUnavailable: {{ .Values.deploymentStrategy.rollingUpdate.maxUnavailable | quote }}
+    {{- end }}
   selector:
     matchLabels:
       {{- include "qwenpaw.selectorLabels" . | nindent 6 }}
   template:
     metadata:
+      annotations:
+        cnos.inoe-agent/release-revision: {{ .Release.Revision | quote }}
       labels:
         {{- include "qwenpaw.selectorLabels" . | nindent 8 }}
     spec:
+      automountServiceAccountToken: false
       securityContext:
         {{- toYaml .Values.securityContext | nindent 8 }}
+      {{- if and .Values.persistence.enabled .Values.persistence.rootBootstrap.enabled }}
+      initContainers:
+        - name: pvc-layout-bootstrap
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command:
+            - sh
+            - -ec
+            - |
+              root={{ .Values.persistence.rootBootstrap.mountPath | quote }}
+              if [ -f "$root/config.json" ]; then
+                echo "PVC root contains a legacy direct working layout; migration is required before subPath deployment." >&2
+                exit 1
+              fi
+              mkdir -p "$root/working" "$root/secret"
+          volumeMounts:
+            - name: data
+              mountPath: {{ .Values.persistence.rootBootstrap.mountPath }}
+      {{- else if and .Values.skillSync.enabled .Values.persistence.enabled .Values.persistence.workingDir.enabled }}
+      initContainers:
+      {{- end }}
+      {{- if and .Values.skillSync.enabled .Values.persistence.enabled .Values.persistence.workingDir.enabled }}
+        - name: managed-seed-sync
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command:
+            - qwenpaw
+            - deploy
+            - sync-managed
+            - --apply
+            - --yes
+            - --seed
+            - {{ .Values.skillSync.seedPath | quote }}
+            - --target
+            - {{ .Values.skillSync.targetPath | quote }}
+            {{- if .Values.skillSync.reportPath }}
+            - --report
+            - {{ .Values.skillSync.reportPath | quote }}
+            {{- end }}
+          resources:
+            {{- toYaml .Values.skillSync.resources | nindent 12 }}
+          volumeMounts:
+            - name: data
+              mountPath: {{ .Values.persistence.workingDir.mountPath }}
+              subPath: {{ .Values.persistence.workingDir.subPath }}
+      {{- end }}
       containers:
         - name: {{ .Chart.Name }}
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"

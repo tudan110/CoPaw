@@ -62,3 +62,27 @@ sessions_mount_dir
 *.log
 logs
 cookbook
+
+# Universal QwenPaw seed inputs. The generic image builds these into a
+# runtime-neutral working-directory seed, so these tracked source files must
+# remain in the Docker context despite the broad rules above.
+!deploy-all/
+!deploy-all/qwenpaw/
+!deploy-all/qwenpaw/working/
+!deploy-all/qwenpaw/working/**
+!deploy-all/qwenpaw/scripts/
+!deploy-all/qwenpaw/scripts/**
+!src/qwenpaw/agents/
+!src/qwenpaw/agents/skills/
+!src/qwenpaw/agents/skills/**
+!src/qwenpaw/agents/md_files/
+!src/qwenpaw/agents/md_files/**
+# Never re-include real local credentials while unignoring working sources.
+deploy-all/qwenpaw/working/**/.env
+# Keep runtime data out of the build context. Provider configuration is an
+# explicit product decision: qwenpaw.secret is bundled with this image so a
+# fresh deployment has a ready-to-use model configuration.
+!deploy-all/qwenpaw/data/
+deploy-all/qwenpaw/data/**
+!deploy-all/qwenpaw/data/qwenpaw.secret/
+!deploy-all/qwenpaw/data/qwenpaw.secret/**

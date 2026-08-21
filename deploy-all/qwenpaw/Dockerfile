@@ -149,21 +149,22 @@ RUN uv pip install --python /app/venv/bin/python --no-cache-dir ".[ollama]" \
 # a warning but succeeds, which is the behavior we need.
 RUN /app/venv/bin/pip install --no-cache-dir "cachetools>=7"
 
-# Init working dir with default config.json and HEARTBEAT.md (build time).
-RUN qwenpaw init --defaults --accept-security
+# Build a runtime-neutral seed from repository-managed workspace sources.
+# Do not copy deploy-all/qwenpaw/data: it is an environment snapshot and may
+# contain databases, uploads, reports, credentials, or stale skill copies.
+COPY deploy-all/qwenpaw/working/ /build/qwenpaw-working/
+COPY deploy-all/qwenpaw/scripts/build_universal_seed.py \
+     /usr/local/bin/build_universal_seed.py
+RUN python3 /usr/local/bin/build_universal_seed.py \
+      --source /build/qwenpaw-working \
+      --builtin-root /app/src/qwenpaw/agents/skills \
+      --output /app/share/qwenpaw-seed \
+      --runtime-working-dir /app/working
 
-# Copy working directory data to backup (for PVC init on first start)
-COPY deploy-all/qwenpaw/data/qwenpaw/ /app/.working.backup/
-# Copy secret directory data to backup
+# Product requirement: a clean deployment must have the configured models.
+# This intentionally puts encrypted Provider configuration and its master key
+# in the image. Treat every exported image tar as secret material.
 COPY deploy-all/qwenpaw/data/qwenpaw.secret/ /app/.working.secret.backup/
-
-# The data/ seed above is git-untracked and hand-maintained, so its skill code
-# can drift behind the git-tracked source and re-introduce parsing bugs (e.g.
-# xlsx/docx mojibake). Overlay the tracked knowledge-base skill source so the
-# image ALWAYS seeds the current parser, regardless of data/ drift. working/
-# has no runtime data/ subdir, so this refreshes code only — never a DB.
-COPY deploy-all/qwenpaw/working/workspaces/knowledge/skills/knowledge-base/ \
-     /app/.working.backup/workspaces/knowledge/skills/knowledge-base/
 
 # Bake all skill-declared Python deps into the image so OFFLINE deployments
 # can parse every knowledge-base format (doc/docx/pptx/pdf/xls/xlsx/csv/
@@ -171,7 +172,7 @@ COPY deploy-all/qwenpaw/working/workspaces/knowledge/skills/knowledge-base/ \
 # it fails without internet and is lost on recreate anyway.
 RUN set -eux; \
     uv pip install --python /app/venv/bin/python --no-cache-dir "xlrd>=2.0.1"; \
-    find /app/.working.backup -name requirements.txt -print0 \
+    find /app/share/qwenpaw-seed -name requirements.txt -print0 \
       | xargs -0 -r -n1 uv pip install --python /app/venv/bin/python --no-cache-dir -r
 
 # Fail the build loudly if ANY knowledge-base runtime dependency is missing —
@@ -186,12 +187,15 @@ RUN set -eux; \
     /app/venv/bin/python -c "from fastmcp.server.server import FastMCP; print('fastmcp server support OK (per-agent memory_manager)')"; \
     /app/venv/bin/python -c "import jieba, sqlite_vec, tiktoken, pypdf, openpyxl, xlrd, pytesseract; from PIL import Image; print('knowledge-base python deps OK')"; \
     /app/venv/bin/python -c "import pypdfium2, pdfplumber, rapidocr_onnxruntime; print('multimodal deps OK')"; \
-    ( cd /app/.working.backup/workspaces/knowledge/skills/knowledge-base \
+    ( cd /app/share/qwenpaw-seed/workspaces/knowledge/skills/knowledge-base \
       && /app/venv/bin/python -c "import sys; sys.path.insert(0, '.'); from providers import ocr; e = ocr.engine_name(); print('resolved OCR engine:', e); assert e != 'none', 'no OCR engine available (rapidocr + pytesseract both failed to load)'" ); \
     command -v tesseract; \
     tesseract --list-langs 2>&1 | grep -qx chi_sim; \
     { command -v soffice || command -v libreoffice; }; \
     echo "knowledge-base system tools OK (tesseract+chi_sim, libreoffice)"
+
+# The generated seed is the only workspace content retained in the image.
+RUN rm -rf /build/qwenpaw-working /usr/local/bin/build_universal_seed.py
 
 # Create empty working directories (PVC will mount over these)
 RUN mkdir -p /app/working /app/working.secret

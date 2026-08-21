@@ -2,6 +2,8 @@
 
 一体化部署配置，包含 digital-workforce-portal 和 qwenpaw 两个子应用。
 
+> **已有 PVC 的 Agent/Skill 更新**：不要使用旧 `/app/.working.backup` 或全目录 rsync/delete 操作。当前 Helm qwenpaw chart 通过 `managed-seed-sync` initContainer 从 `/app/share/qwenpaw-seed` 自动更新受管静态内容，并保护 jobs、secret、知识库 data、运行状态和用户自装 Skill。人工检查使用 `qwenpaw deploy sync-managed --dry-run`。
+
 ## 目录结构
 
 ```
@@ -78,44 +80,46 @@ helm uninstall cnos-inoe-agent
 
 ```bash
 chmod +x deploy-offline.sh
-NAMESPACE=cnos-iomp ./deploy-offline.sh            # 导入镜像 + helm upgrade + 滚动重启
+NAMESPACE=cnos-iomp ./deploy-offline.sh            # 导入镜像 + helm upgrade（自动触发 Pod 更新）
 NAMESPACE=cnos-iomp EXTRA_VALUES=my-values.yaml ./deploy-offline.sh
-./deploy-offline.sh --skip-import                  # 镜像已导入，只升级/重启
+./deploy-offline.sh --skip-import                  # 镜像已导入，只执行 helm upgrade
 ```
 
-脚本要点（也是手工操作时的三个坑）：
+脚本要点：
 
 1. **k3s 用 containerd，不是 docker**：导入镜像必须用
    `k3s ctr images import <tar>`（脚本自动探测 k3s ctr / ctr / docker）。
    对 k3s 执行 `docker load` 看似成功，实际集群根本看不到该镜像。
-2. **镜像 tag 不变时（如 `qwenpaw:latest`），重新导入不会让 Pod 换镜像**：
-   必须 `kubectl rollout restart deployment/qwenpaw deployment/digital-workforce-portal`。
-3. **PVC 里的旧技能代码不会被新镜像覆盖**（entrypoint 仅在 working 目录为空时
-   从镜像初始化）：升级涉及技能代码时，按 `SYNC_GUIDE.md` 同步 PVC 内文件。
+2. **固定 tag 镜像必须先导入，再执行 helm upgrade**：Chart 会使用 Helm release
+   revision 更新 Pod template，自动触发新 Pod；不需要再手工执行 `kubectl rollout restart`。
+3. **已有 PVC 的受管 Agent/Skill 文件会由新 Pod 的 initContainer 自动同步**：新 Pod 从
+   `/app/share/qwenpaw-seed` 更新受管静态文件；不会覆盖 jobs、secret、知识库 data、
+   sessions、设置数据库或用户自装 Skill。不要再按 `SYNC_GUIDE.md` 或旧 Shell SOP
+   对 PVC 做全目录 rsync/delete。
 4. 多节点集群：镜像须在每个可调度节点导入，或使用内网镜像仓库。
 
-### 升级已有环境的技能代码（PVC 内热替换）
+### 升级已有环境的 Agent 与 Skill
 
-新镜像内自带最新技能种子（`/app/.working.backup`），可直接从容器内拷进 PVC，
-**只覆盖代码、不动 data/（知识库数据不丢）**。以知识库技能为例：
+新镜像中的 `managed-seed-sync` initContainer 会在新 Pod 启动前执行：
 
 ```bash
-NS=cnos-iomp
-kubectl -n $NS exec deploy/qwenpaw -- bash -c '
-  set -e
-  for base in workspaces/knowledge/skills/knowledge-base skill_pool/knowledge-base; do
-    src=/app/.working.backup/$base; dst=/app/working/$base
-    [ -d "$dst" ] || continue
-    for item in core api retrieval providers domain server.py SKILL.md requirements.txt; do
-      [ -e "$src/$item" ] && cp -rf "$src/$item" "$dst/"
-    done
-    echo "synced: $base"
-  done'
-kubectl -n $NS rollout restart deployment/qwenpaw
+qwenpaw deploy sync-managed --apply --yes \
+  --seed /app/share/qwenpaw-seed \
+  --target /app/working
 ```
 
-升级后清理工作：旧版本解析入库的乱码记录已持久化，需在门户「知识库管理」
-中用「删除」按钮清除并重新上传。
+同步器只更新 seed manifest 声明的 Agent 静态字段、workspace prompt 文件和受管
+Skill 代码；每个 Skill 在 staging 目录准备完成后原子切换。它不会触碰知识库
+`data/`、jobs、secret、settings、sessions、memory、`skill_pool` 或用户自装 Skill。
+
+需要人工检查时，在 Pod 内执行：
+
+```bash
+qwenpaw deploy sync-managed --dry-run
+```
+
+升级后若知识库中已经存在旧版本解析出的乱码记录，仍需在门户「知识库管理」中用
+「删除」按钮清除并重新上传。
 
 ## 自定义配置
 

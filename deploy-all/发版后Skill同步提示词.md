@@ -1,4 +1,10 @@
-# 发版后 Skill 同步提示词
+# 已废止：发版后 Skill 同步提示词
+
+> **不要使用下方提示词要求执行 Shell 同步。**其源路径 `/app/.working.backup` 已移除，且旧流程可能删除 PVC 运行内容。
+>
+> 当前 Helm 升级会通过 `managed-seed-sync` initContainer 自动同步受管 Agent/Skill 文件。需要人工检查时使用 `qwenpaw deploy sync-managed --dry-run`；仅在排障时显式执行 `--apply --yes`。
+>
+> 下文保留仅供追溯旧流程。
 
 ## 背景
 

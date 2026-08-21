@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # =========================================================
-# QwenPaw k3s/k8s 离线一键部署（镜像导入 + helm 升级 + 滚动重启）
+# QwenPaw k3s/k8s 离线一键部署（镜像导入 + helm 升级 + 自动更新 Pod）
 # =========================================================
 # 用法：把本脚本、两个镜像 tar、chart 包（目录或 .tgz）放在离线
 # 服务器同一目录，执行：
 #
-#   ./deploy-offline.sh                 # 导入镜像 + helm upgrade + 重启
-#   ./deploy-offline.sh --skip-import   # 镜像已导入过，只升级/重启
+#   ./deploy-offline.sh                 # 导入镜像 + helm upgrade + 自动更新 Pod
+#   ./deploy-offline.sh --skip-import   # 镜像已导入过，只升级并自动更新 Pod
 #
 # 镜像导入方式自动探测：k3s ctr > ctr(k8s.io) > docker load。
 # k3s 用 containerd 而不是 docker，`docker load` 对 k3s 不生效 ——
@@ -23,6 +23,7 @@ PORTAL_TAR="${PORTAL_TAR:-digital-workforce-portal-amd64.tar}"
 RELEASE="${RELEASE:-cnos-inoe-agent}"
 NAMESPACE="${NAMESPACE:-default}"
 EXTRA_VALUES="${EXTRA_VALUES:-}"
+HELM_TIMEOUT="${HELM_TIMEOUT:-10m}"
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$SCRIPT_DIR"
@@ -70,16 +71,12 @@ fi
 
 # --- 2. helm upgrade --install ---
 HELM_ARGS=(upgrade --install "$RELEASE" "$CHART"
-  --namespace "$NAMESPACE" --create-namespace)
+  --namespace "$NAMESPACE" --create-namespace --wait --timeout "$HELM_TIMEOUT")
 [[ -n "$EXTRA_VALUES" ]] && HELM_ARGS+=(-f "$EXTRA_VALUES")
 echo "⛵ helm ${HELM_ARGS[*]}"
 helm "${HELM_ARGS[@]}"
 
-# --- 3. 滚动重启（镜像 tag 不变时，仅重新导入不会触发 Pod 换镜像） ---
-echo "🔄 rollout restart ..."
-kubectl -n "$NAMESPACE" rollout restart deployment/qwenpaw
-kubectl -n "$NAMESPACE" rollout restart deployment/digital-workforce-portal
-
+# --- 3. 等待 Pod 更新完成 ---
 kubectl -n "$NAMESPACE" rollout status deployment/qwenpaw --timeout=300s
 kubectl -n "$NAMESPACE" rollout status deployment/digital-workforce-portal --timeout=120s
 
@@ -89,7 +86,7 @@ echo "✅ 部署完成："
 echo "   后端  http://$NODE_IP:30088"
 echo "   门户  http://$NODE_IP:30083"
 echo ""
-echo "💡 提醒：qwenpaw-data PVC 里已有的旧技能代码不会被新镜像自动覆盖"
-echo "   （entrypoint 仅在 /app/working 为空时用镜像内备份初始化）。"
-echo "   升级技能请按 deploy-all/SYNC_GUIDE.md 同步 PVC 内文件，或备份后"
-echo "   清空 PVC 的 working 子目录让其从新镜像重新初始化。"
+echo "💡 受管 Agent/Skill 会由新 Pod 的 managed-seed-sync initContainer 从"
+echo "   /app/share/qwenpaw-seed 安全同步到 PVC；不会触碰 jobs、secret、"
+echo "   knowledge-base data、sessions、设置数据库或用户自装 Skill。"
+echo "   可在 Pod 中执行 qwenpaw deploy sync-managed --dry-run 查看报告。"

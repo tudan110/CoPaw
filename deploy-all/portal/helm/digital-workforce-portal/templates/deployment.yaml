@@ -11,6 +11,8 @@ spec:
       {{- include "digital-workforce-portal.selectorLabels" . | nindent 6 }}
   template:
     metadata:
+      annotations:
+        cnos.inoe-agent/release-revision: {{ .Release.Revision | quote }}
       labels:
         {{- include "digital-workforce-portal.selectorLabels" . | nindent 8 }}
     spec:

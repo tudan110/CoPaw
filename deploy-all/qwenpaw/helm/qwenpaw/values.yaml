@@ -7,6 +7,13 @@ image:
 # 副本数
 replicaCount: 1
 
+# 本次公网测试发布应覆盖为 Recreate，避免 RWO PVC 与低内存节点上的新旧 Pod 重叠。
+deploymentStrategy:
+  type: RollingUpdate
+  rollingUpdate:
+    maxSurge: 25%
+    maxUnavailable: 25%
+
 # 容器安全上下文
 securityContext:
   runAsNonRoot: false
@@ -52,6 +59,11 @@ persistence:
   storageClass: ""
   accessMode: ReadWriteOnce
   size: 10Gi
+  # 以 PVC 根目录挂载给 bootstrap initContainer，负责创建并校验
+  # working/secret 子目录，避免 subPath 在容器启动前不存在。
+  rootBootstrap:
+    enabled: true
+    mountPath: /app/pvc-root
   # 工作目录挂载
   workingDir:
     enabled: true
@@ -62,3 +74,19 @@ persistence:
     enabled: true
     mountPath: /app/working.secret
     subPath: secret
+
+# 在 Helm 升级创建的新 Pod 中同步镜像内受管 Agent/Skill 内容到已有 PVC。
+# 同步器只处理 /app/share/qwenpaw-seed 声明的静态文件，不会触碰 secret、
+# jobs、知识库 data、sessions、设置数据库或用户自装 Skill。
+skillSync:
+  enabled: true
+  seedPath: /app/share/qwenpaw-seed
+  targetPath: /app/working
+  reportPath: ""
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 768Mi

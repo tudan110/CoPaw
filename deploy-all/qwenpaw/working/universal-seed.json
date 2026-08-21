@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "builtin_language": "zh",
+  "default_builtin_skills": [
+    "QA_source_index",
+    "browser_cdp",
+    "browser_visible",
+    "channel_message",
+    "chat_with_agent",
+    "cron",
+    "dingtalk_channel",
+    "docx",
+    "file_reader",
+    "guidance",
+    "himalaya",
+    "make_plan",
+    "multi_agent_collaboration",
+    "news",
+    "pdf",
+    "pptx",
+    "xlsx"
+  ],
+  "retired_skills": [
+    "fault-disposal",
+    "mysql-deadlock-inspector",
+    "rag-skill"
+  ],
+  "shared_skill_sources": {
+    "device-list": "resource",
+    "real-alarm": "query"
+  }
+}
