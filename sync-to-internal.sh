@@ -229,7 +229,9 @@ else
             fi
         fi
 
-        # 重写作者信息
+        # --author 只修改作者，提交者需单独设置，否则内部平台仍显示本机身份。
+        GIT_COMMITTER_NAME="$NEW_NAME" \
+        GIT_COMMITTER_EMAIL="$NEW_EMAIL" \
         git commit --amend --no-edit \
             --author="$NEW_NAME <$NEW_EMAIL>" \
             --quiet 2>/dev/null || true
