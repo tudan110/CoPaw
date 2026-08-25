@@ -87,7 +87,3 @@ tags: [order, example, demo]
 
 - 列表类：带"序号"列的表格，"工单号""流程号"必须完整
 - 创建工单：只补问缺失的必填字段
-
-## 旧脚本回退
-
-仅当 order MCP Driver 不可用时，才使用 `order-workflow` 脚本。

@@ -97,7 +97,3 @@ tags: [alarm, example, demo]
 - 列表类：先给摘要，再给表格
 - 统计类：先给结论，再给图表
 - 默认展示前 20 条，说明总数
-
-## 旧脚本回退
-
-仅当 alarm MCP Driver 不可用时，才使用 `real-alarm` 脚本。

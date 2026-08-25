@@ -64,7 +64,3 @@ tags: [cmdb, example, demo]
 - 拓扑类：输出 ```echarts 代码块
 - 统计类：1~3 句结论 + 图表
 - 多实例时列出候选，不要默认任选
-
-## 旧脚本回退
-
-仅当 cmdb-query MCP Driver 不可用时，才使用 `zgops-cmdb` 脚本。

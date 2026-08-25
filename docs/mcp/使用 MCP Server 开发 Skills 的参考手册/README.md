@@ -2,15 +2,11 @@
 
 ## 概述
 
-MCP（Model Context Protocol）是一种标准化的工具调用协议。我们的 QwenPaw 平台部署了 6 个 MCP Server，Agent 可以通过调用这些 Server 提供的 Tool 来查询/操作业务系统，无需编写脚本或手动配置 API 凭证。
+MCP（Model Context Protocol）是一种标准化的工具调用协议。平台提供了 7 个 MCP Server，共 56 个 Tool。你只需要在 Skill 的 SKILL.md 中引用这些 Tool，Agent 就能自动调用，无需关心底层 API 地址、认证方式或网络细节。
 
-### 为什么用 MCP？
+### 如何导入
 
-- **零配置**：Agent 直接调用 MCP Tool，无需 `.env` 文件或手动管理 Token
-- **安全**：增删改操作（cmdb-edit）只在特定智能体启用，权限可控
-- **统一**：所有查询走同一个入口，不再需要记住不同的脚本命令
-
----
+在平台配置中心 → MCP 管理 → 新增MCP，将下方各 Server 的导入 JSON 粘贴进去即可。现在已经导入过了，可以在 MCP 管理里面查看。每个 Server 只需导入一次，导入后该智能体即可使用其中的所有 Tool。
 
 ## MCP Server 清单
 
@@ -44,7 +40,26 @@ MCP（Model Context Protocol）是一种标准化的工具调用协议。我们�
 查 MySQL 实例 → cmdb-query__searchCiInstances(q="_type:mysql")
 查 CI 详情    → cmdb-query__getCiInstance(id=3034)
 查拓扑关系    → cmdb-query__getCiRelations(root_id=3034)
+查应用列表    → cmdb-query__searchCiInstances(q="_type:project")
 ```
+
+<details>
+<summary>导入 JSON</summary>
+
+```json
+{
+  "mcpServers": {
+    "cmdb-query": {
+      "url": "http://81.70.93.245:31080/mcp-servers/cmdb-query/sse",
+      "type": "sse",
+      "headers": {
+        "X-API-Key": "<your-api-key>"
+      }
+    }
+  }
+}
+```
+</details>
 
 ---
 
@@ -67,6 +82,24 @@ MCP（Model Context Protocol）是一种标准化的工具调用协议。我们�
 
 **适用场景**：资源导入、纳管、批量录入。
 
+<details>
+<summary>导入 JSON</summary>
+
+```json
+{
+  "mcpServers": {
+    "cmdb-edit": {
+      "url": "http://81.70.93.245:31080/mcp-servers/cmdb-edit/sse",
+      "type": "sse",
+      "headers": {
+        "X-API-Key": "<your-api-key>"
+      }
+    }
+  }
+}
+```
+</details>
+
 ---
 
 ### 3. alarm（告警查询）
@@ -85,6 +118,24 @@ MCP（Model Context Protocol）是一种标准化的工具调用协议。我们�
 查数据库告警  → alarm__queryHistoricalAlarms(alarmClassType="数据库", isClear="0")
 ```
 
+<details>
+<summary>导入 JSON</summary>
+
+```json
+{
+  "mcpServers": {
+    "alarm": {
+      "url": "http://81.70.93.245:31080/mcp-servers/alarm/sse",
+      "type": "sse",
+      "headers": {
+        "X-API-Key": "<your-api-key>"
+      }
+    }
+  }
+}
+```
+</details>
+
 ---
 
 ### 4. inspection（巡检指标）
@@ -100,6 +151,24 @@ MCP（Model Context Protocol）是一种标准化的工具调用协议。我们�
 
 **适用场景**：资源巡检、健康检查、指标阈值判定。
 
+<details>
+<summary>导入 JSON</summary>
+
+```json
+{
+  "mcpServers": {
+    "inspection": {
+      "url": "http://81.70.93.245:31080/mcp-servers/inspection/sse",
+      "type": "sse",
+      "headers": {
+        "X-API-Key": "<your-api-key>"
+      }
+    }
+  }
+}
+```
+</details>
+
 ---
 
 ### 5. order（工单）
@@ -114,6 +183,24 @@ MCP（Model Context Protocol）是一种标准化的工具调用协议。我们�
 | `createWorkOrder` | 创建工单 | alarm（告警信息）, analysis（分析结论）, ticket（工单属性） |
 
 **适用场景**：工单查询、统计、创建。
+
+<details>
+<summary>导入 JSON</summary>
+
+```json
+{
+  "mcpServers": {
+    "order": {
+      "url": "http://81.70.93.245:31080/mcp-servers/order/sse",
+      "type": "sse",
+      "headers": {
+        "X-API-Key": "<your-api-key>"
+      }
+    }
+  }
+}
+```
+</details>
 
 ---
 
@@ -133,13 +220,72 @@ MCP（Model Context Protocol）是一种标准化的工具调用协议。我们�
 
 **适用场景**：资源状态总览、性能排行、监控大屏。
 
+<details>
+<summary>导入 JSON</summary>
+
+```json
+{
+  "mcpServers": {
+    "resource": {
+      "url": "http://81.70.93.245:31080/mcp-servers/resource/sse",
+      "type": "sse",
+      "headers": {
+        "X-API-Key": "<your-api-key>"
+      }
+    }
+  }
+}
+```
+</details>
+
+---
+
+### 7. web-check-app（Web 拨测）
+
+> 14 个工具
+
+| 工具名 | 用途 |
+| --- | --- |
+| `getWebMonitorHealth` | 健康检查 |
+| `getMonitorDashboard` | 查询监测看板 |
+| `listMonitors` | 查询监测任务列表 |
+| `getMonitor` | 查询监测任务详情 |
+| `createMonitor` | 创建监测任务 |
+| `updateMonitor` | 更新监测任务 |
+| `deleteMonitor` | 删除监测任务 |
+| `publishMonitor` | 发布监测任务 |
+| `triggerMonitor` | 手工触发监测任务 |
+| `listMonitorRuns` | 查询任务执行记录 |
+| `getMonitorRun` | 查询单次执行详情 |
+| `deleteMonitorRun` | 删除单次执行记录 |
+| `batchDeleteMonitorRuns` | 批量删除执行记录 |
+| `suggestSelectors` | 生成页面元素选择器建议 |
+
+**适用场景**：网站可用性监测、拨测任务管理。
+
+<details>
+<summary>导入 JSON</summary>
+
+```json
+{
+  "mcpServers": {
+    "web-check-app": {
+      "url": "http://81.70.93.245:31080/mcp-servers/web-check-app/sse",
+      "type": "sse",
+      "headers": {
+        "X-API-Key": "<your-api-key>"
+      }
+    }
+  }
+}
+```
+</details>
+
 ---
 
 ## 在 Skill 中调用 MCP
 
 ### 命名规范
-
-在 SKILL.md 中引用 MCP Tool 时，格式为：
 
 ```
 <MCP Server 名>__<工具名>
@@ -149,34 +295,36 @@ MCP（Model Context Protocol）是一种标准化的工具调用协议。我们�
 - `cmdb-query__searchCiInstances`
 - `alarm__queryHistoricalAlarms`
 - `inspection__getMetricData`
+- `web-check-app__listMonitors`
 
-### 关键原则
+### 编写 SKILL.md
 
-1. **MCP 优先**：Agent 优先调用 MCP Tool，仅在 MCP Driver 不可用时回退脚本
-2. **Fail-fast**：MCP 返回业务错误（4xx/5xx）不回退脚本，直接报错
-3. **零配置**：不需要在 Skill 中写 `.env` 配置，MCP 自带认证
-
-### 如何判断 MCP 是否可用
-
-在 SKILL.md 中写入以下引导：
+一个完整的 Skill 只需包含以下内容：
 
 ```markdown
+---
+name: 技能名称
+description: 技能描述，写明何时触发
+---
+
 ## MCP 优先级
 
 本工作区已启用 `<MCP Server 名>` MCP Server。Agent 必须优先直接调用
-`<前缀>__<工具名>` 获取数据；不要自行使用 curl、requests、SSE 或 JSON-RPC。
+`<前缀>__<工具名>` 获取数据；不要使用 curl、requests 或脚本。
 
-仅在 MCP Driver 未加载、客户端/工具不可用或协议响应无法解析时，
-才允许回退到旧脚本路径。
+## 能力
+
+| 操作 | MCP Tool |
+| --- | --- |
+| 场景一 | `<前缀>__<工具名>` |
+| 场景二 | `<前缀>__<工具名>` |
+
+## 自然语言映射
+
+- "用户说法" → `<前缀>__<工具名>(参数)`
 ```
 
----
-
-## 完整示例：一个简单的查询类 Skill
-
-假设我们要做一个"数据库状态查询"的 Skill，只需查询资源状态总览和性能 Top。
-
-### SKILL.md
+### 完整示例
 
 ```markdown
 ---
@@ -203,10 +351,14 @@ description: 查询数据库资源状态和性能排行。当用户询问数据�
 - "数据库状态" → `resource__getDatabaseResourceStatusOverview`
 - "数据库磁盘 Top 5" → `resource__getTopMetricData(orderCode="diskRate", topNum=5)`
 - "网络设备 CPU 排行" → `resource__getTopResourceMetricData(orderKey="cpuRate", topNum=5)`
-
-## 旧脚本回退
-
-仅在 resource MCP Driver 不可用时，才执行脚本。
 ```
 
 更多完整示例见 `demos/` 目录。
+
+---
+
+## 调用规则
+
+- **MCP 优先**：Agent 优先调用 MCP Tool，不要使用 curl、requests 或 SSE
+- **零配置**：不需要在 Skill 中写 `.env` 或 API Key，MCP 自带认证
+- **参数即文档**：每个 Tool 的参数由 MCP 自动描述，Agent 知道如何传参
