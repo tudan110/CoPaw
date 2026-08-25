@@ -285,7 +285,85 @@ MCP（Model Context Protocol）是一种标准化的工具调用协议。平台�
 
 ## 在 Skill 中调用 MCP
 
+### 什么是 Skill
+
+Skill 就是一个 Markdown 文件，放在智能体的 `skills/<技能名>/SKILL.md` 路径下。它告诉 Agent 面对用户的某些问题时，应该调用哪些 MCP Tool 来获取数据。
+
+### 第一步：确定要做什么
+
+想清楚这个 Skill 要解决什么问题。比如"用户想查 CMDB 里有哪些 MySQL 实例"。
+
+### 第二步：找到对应的 MCP Tool
+
+翻阅上方 MCP Server 清单，找到能完成这个任务的 Tool。比如查 MySQL 实例需要两步：
+
+1. 先查有哪些模型类型 → `cmdb-query__listCiTypes`
+2. 再搜 MySQL 实例 → `cmdb-query__searchCiInstances`
+
+### 第三步：编写 SKILL.md
+
+创建一个文件，内容分四个部分：
+
+**① 文件头（frontmatter）**
+
+放在 `---` 之间，定义技能名称和触发条件。
+
+```markdown
+---
+name: 技能名称（英文，唯一）
+description: 技能描述，写清楚什么情况下触发
+---
+```
+
+**② MCP 优先级声明**
+
+告诉 Agent 优先用 MCP，不要用其他方式。
+
+```markdown
+## MCP 优先级
+
+本工作区已启用 `cmdb-query` MCP Server。Agent 必须优先调用以下 MCP Tools。
+```
+
+**③ 能力表格**
+
+把能力和对应的 MCP Tool 列出来。
+
+```markdown
+## 能力
+
+| 操作 | MCP Tool |
+| --- | --- |
+| 查 CI 模型列表 | `cmdb-query__listCiTypes` |
+| 查 MySQL 实例 | `cmdb-query__searchCiInstances` |
+| 查 CI 详情 | `cmdb-query__getCiInstance` |
+```
+
+**④ 自然语言映射**
+
+把用户可能说的话映射到具体调用。
+
+```markdown
+## 自然语言映射
+
+- "查一下 MySQL 实例" → 先调 `cmdb-query__listCiTypes`，再调 `cmdb-query__searchCiInstances(q="_type:mysql")`
+- "查 CI 3034 的详情" → `cmdb-query__getCiInstance(id="3034")`
+- "看看 CMDB 有哪些应用" → `cmdb-query__searchCiInstances(q="_type:project")`
+```
+
+### 第四步：部署
+
+把 SKILL.md 放到对应智能体的 skills 目录下：
+
+```
+skills/<技能名>/SKILL.md
+```
+
+Agent 会自动发现并加载这个 Skill。
+
 ### 命名规范
+
+MCP Tool 的引用格式为两个下划线连接：
 
 ```
 <MCP Server 名>__<工具名>
@@ -297,60 +375,35 @@ MCP（Model Context Protocol）是一种标准化的工具调用协议。平台�
 - `inspection__getMetricData`
 - `web-check-app__listMonitors`
 
-### 编写 SKILL.md
-
-一个完整的 Skill 只需包含以下内容：
-
-```markdown
----
-name: 技能名称
-description: 技能描述，写明何时触发
----
-
-## MCP 优先级
-
-本工作区已启用 `<MCP Server 名>` MCP Server。Agent 必须优先直接调用
-`<前缀>__<工具名>` 获取数据；不要使用 curl、requests 或脚本。
-
-## 能力
-
-| 操作 | MCP Tool |
-| --- | --- |
-| 场景一 | `<前缀>__<工具名>` |
-| 场景二 | `<前缀>__<工具名>` |
-
-## 自然语言映射
-
-- "用户说法" → `<前缀>__<工具名>(参数)`
-```
-
 ### 完整示例
 
 ```markdown
 ---
-name: database-status
-description: 查询数据库资源状态和性能排行。当用户询问数据库状态、性能 Top 时使用。
+name: cmdb-lookup
+description: 查询 CMDB 资源。当用户询问 CMDB 模型、实例、拓扑、统计时使用。
 ---
 
-# Database Status
+# CMDB 查询
 
 ## MCP 优先级
 
-本工作区已启用 `resource` MCP Server。Agent 必须优先直接调用以下 MCP Tools。
+本工作区已启用 `cmdb-query` MCP Server。Agent 必须优先调用以下 MCP Tools。
 
 ## 能力
 
 | 操作 | MCP Tool |
 | --- | --- |
-| 数据库状态总览 | `resource__getDatabaseResourceStatusOverview` |
-| 数据库性能 Top | `resource__getTopMetricData` |
-| 资源性能 Top | `resource__getTopResourceMetricData` |
+| 查 CI 模型列表 | `cmdb-query__listCiTypes` |
+| 查 CI 实例 | `cmdb-query__searchCiInstances` |
+| 查 CI 详情 | `cmdb-query__getCiInstance` |
+| 查 CI 拓扑 | `cmdb-query__getCiRelations` |
 
 ## 自然语言映射
 
-- "数据库状态" → `resource__getDatabaseResourceStatusOverview`
-- "数据库磁盘 Top 5" → `resource__getTopMetricData(orderCode="diskRate", topNum=5)`
-- "网络设备 CPU 排行" → `resource__getTopResourceMetricData(orderKey="cpuRate", topNum=5)`
+- "查一下 MySQL 实例" → 先 `cmdb-query__listCiTypes` 找到模型名，再 `cmdb-query__searchCiInstances(q="_type:mysql")`
+- "查 CI 3034 的详情" → `cmdb-query__getCiInstance(id="3034")`
+- "查 CI 3034 的拓扑" → `cmdb-query__getCiRelations(root_id="3034")`
+- "CMDB 管理了哪些应用" → `cmdb-query__searchCiInstances(q="_type:project")`
 ```
 
 更多完整示例见 `demos/` 目录。
@@ -359,6 +412,6 @@ description: 查询数据库资源状态和性能排行。当用户询问数据�
 
 ## 调用规则
 
-- **MCP 优先**：Agent 优先调用 MCP Tool，不要使用 curl、requests 或 SSE
-- **零配置**：不需要在 Skill 中写 `.env` 或 API Key，MCP 自带认证
-- **参数即文档**：每个 Tool 的参数由 MCP 自动描述，Agent 知道如何传参
+- Agent 会自动调用 MCP Tool，不需要你写 curl 或脚本
+- 每个 Tool 的参数由 MCP 自动描述，Agent 知道如何传参
+- 不需要配置 API Key 或网络地址，平台已配好
