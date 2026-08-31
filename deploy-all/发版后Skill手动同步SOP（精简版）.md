@@ -2,11 +2,11 @@
 
 > **禁止执行下方旧 SOP。**它引用 `/app/.working.backup`，并以全目录差异决定删除项，不适用于当前 `/app/share/qwenpaw-seed` 和已有 PVC。
 >
-> 新发布流程由 Helm `managed-seed-sync` initContainer 自动执行 `qwenpaw deploy sync-managed --apply --yes`。人工仅可用 `qwenpaw deploy sync-managed --dry-run` 进行检查；排障 apply 需显式确认。
+> 新发布流程由 Helm `managed-seed-sync` initContainer 自动执行镜像内的 `/usr/local/bin/sync_managed_seed.py`。人工检查可在 qwenpaw 容器内执行该脚本的无 `--apply` 模式；排障 apply 需显式确认。
 >
 > 下文保留仅供历史追溯。
 
-> 适用场景：**新镜像已发布，但沿用了旧 PVC**，需要把镜像内 Skill 同步到 `/app/working`。  
+> 适用场景：**新镜像已发布，但沿用了旧 PVC**，需要把镜像内 Skill 同步到 `/app/working`。
 > 目标：**只同步 Skill 目录**，**不覆盖 `.env`**，**不动 settings/db/log/data 等运行时数据**。
 
 ---

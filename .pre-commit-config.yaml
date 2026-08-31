@@ -10,6 +10,7 @@ repos:
         exclude: |
           (?x)^(
               meta.yaml
+              | deploy-all/.*/helm/.*/templates/.*
           )$
       - id: check-xml
         exclude: '(?x)(.*/skills/.*|^scripts/pack/|^e2e/)'

@@ -2,7 +2,7 @@
 
 > **不要使用下方提示词要求执行 Shell 同步。**其源路径 `/app/.working.backup` 已移除，且旧流程可能删除 PVC 运行内容。
 >
-> 当前 Helm 升级会通过 `managed-seed-sync` initContainer 自动同步受管 Agent/Skill 文件。需要人工检查时使用 `qwenpaw deploy sync-managed --dry-run`；仅在排障时显式执行 `--apply --yes`。
+> 当前 Helm 升级会通过 `managed-seed-sync` initContainer 自动执行镜像内的 `/usr/local/bin/sync_managed_seed.py`，同步 `workspaces` 中受管的 Agent/Skill 文件。需要人工检查时，在容器内执行该脚本的无 `--apply` 模式；仅在排障时显式执行 `--apply --yes`。
 >
 > 下文保留仅供追溯旧流程。
 
@@ -60,19 +60,19 @@
 
 ## 核心原则
 
-1. **只同步 Skill 相关目录**  
+1. **只同步 Skill 相关目录**
    不要对整个 `/app/working/` 做无差别覆盖或删除。
 
-2. **保护运行时数据**  
+2. **保护运行时数据**
    `settings.db`、日志、缓存、上传文件、数据库等内容不属于 skill 发布物，不能误删。
 
-3. **绝不覆盖 `.env`**  
+3. **绝不覆盖 `.env`**
    `.env` 属于环境差异配置，必须保留目标环境现状。
 
-4. **同步后必须复核**  
+4. **同步后必须复核**
    正式同步完成后，要再次做 diff，确保结果符合预期。
 
-5. **先预览、后执行**  
+5. **先预览、后执行**
    优先 dry-run / 差异预览，确认范围后再正式同步。
 
 ---

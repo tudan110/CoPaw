@@ -2,16 +2,23 @@
 
 > **禁止执行本文后续的 Shell 同步命令。**它们引用已移除的 `/app/.working.backup`，并会对整个目录做删除判断，可能误删 PVC 中的知识库数据、用户自装 Skill 或 `skill_pool`。
 >
-> 当前发布使用 Helm `managed-seed-sync` initContainer 自动同步 `/app/share/qwenpaw-seed` 的受管文件。人工检查请使用：
+> 当前发布使用 Helm `managed-seed-sync` initContainer 自动执行镜像内的 `/usr/local/bin/sync_managed_seed.py`。
+>
+> 人工检查命令（不带 `--apply`）：
 >
 > ```bash
-> qwenpaw deploy sync-managed --dry-run
+> python3 /usr/local/bin/sync_managed_seed.py \
+>   --seed /app/share/qwenpaw-seed \
+>   --target /app/working
 > ```
 >
 > 人工 apply 仅在明确排障时使用：
 >
 > ```bash
-> qwenpaw deploy sync-managed --apply --yes
+> python3 /usr/local/bin/sync_managed_seed.py \
+>   --apply --yes \
+>   --seed /app/share/qwenpaw-seed \
+>   --target /app/working
 > ```
 >
 > 下文保留仅供追溯旧流程，不能作为当前操作指南。
@@ -48,21 +55,21 @@
 
 ## 同步原则
 
-1. **只同步 Skill 相关目录**  
+1. **只同步 Skill 相关目录**
    仅处理：
    - `skill_pool/`
    - `workspaces/*/skills/`
 
-2. **不覆盖 `.env` 文件**  
+2. **不覆盖 `.env` 文件**
    `.env` 属于环境配置，必须保留目标环境现状。
 
-3. **保留 `.env.example`**  
+3. **保留 `.env.example`**
    `.env.example` 属于 skill 发布物的一部分，应该随镜像同步。
 
-4. **允许删除旧 Skill 残留文件**  
+4. **允许删除旧 Skill 残留文件**
    若某个 skill 文件在新镜像中已不存在，则从 PVC 对应 skill 目录中删除。
 
-5. **不处理非 Skill 数据**  
+5. **不处理非 Skill 数据**
    不改动以下内容：
    - `settings.db`
    - 知识库 data 数据
@@ -72,7 +79,7 @@
    - 数据库类持久化内容
    - 其他业务运行时文件
 
-6. **先 dry-run，再正式执行**  
+6. **先 dry-run，再正式执行**
    先看差异预览，再执行正式同步，最后再校验一次。
 
 ---

@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """Tests for the environment-independent qwenpaw image seed builder."""
 
 from __future__ import annotations

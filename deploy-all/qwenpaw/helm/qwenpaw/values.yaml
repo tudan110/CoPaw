@@ -7,9 +7,9 @@ image:
 # 副本数
 replicaCount: 1
 
-# 本次公网测试发布应覆盖为 Recreate，避免 RWO PVC 与低内存节点上的新旧 Pod 重叠。
+# RWO PVC 升级时先停止旧 Pod，避免新旧 Pod 重叠挂载。
 deploymentStrategy:
-  type: RollingUpdate
+  type: Recreate
   rollingUpdate:
     maxSurge: 25%
     maxUnavailable: 25%
@@ -34,6 +34,12 @@ env:
   # tool_guard auto_denied_rules）放在工作目录的 config.json -> "security" 段，
   # 随 PVC / 镜像内的 working 目录走，换部署方式不会丢。这里不要再固定
   # QWENPAW_*_MODE / QWENPAW_DELETE_OPS_DISABLED —— 它们只是应急覆盖开关。
+
+# 运行时凭据由目标环境 Secret 提供；Secret 不存在时不阻断基础服务启动。
+envFrom:
+  - secretRef:
+      name: qwenpaw-runtime-secrets
+      optional: true
 
 # 资源限制
 resources:

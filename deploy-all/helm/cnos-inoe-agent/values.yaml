@@ -4,8 +4,8 @@
 
 # ----- digital-workforce-portal 配置 -----
 digital-workforce-portal:
-  # 固定服务名
-  fullnameOverride: "digital-workforce-portal"
+  # 固定现场服务名，确保 portal 与 qwenpaw 的既有资源名一致。
+  fullnameOverride: "cnos-iomp-digital-workforce-portal"
 
   # 镜像
   image:
@@ -68,6 +68,13 @@ qwenpaw:
   # 副本数
   replicaCount: 1
 
+  # qwenpaw 使用 RWO PVC，升级时避免新旧 Pod 重叠挂载。
+  deploymentStrategy:
+    type: Recreate
+    rollingUpdate:
+      maxSurge: 25%
+      maxUnavailable: 25%
+
   # 容器安全上下文
   securityContext:
     runAsNonRoot: false
@@ -93,7 +100,7 @@ qwenpaw:
 
     # 智观告警平台接口
     INOE_API_BASE_URL: "http://gateway:8080"
-    INOE_API_TOKEN: "eyJhbGciOiJIUzUxMiJ9.eyJ1c2VyX2lkIjoxLCJ1c2VyX2tleSI6ImU5ZGIyMTljLTRiNmUtNGJkNS1hYmViLWExOWEyOTQ2YzQzYSIsInVzZXJuYW1lIjoieGlhb2sifQ.EpCFu6WKBPmirfqZHkBR-qPy72p9rZ8WgIPXFuDAJzg4KhH8ou88G7NvbfjwF9BN-hnRdCeh9mKJfbeuCVMetA"
+    # 凭据由目标环境的 Secret/设置页注入，不将 token 提交到交付 Chart。
     INOE_API_TIMEOUT: "60"
 
     # Portal 告警相关配置：均走「设置页 > 代码默认」解析，不在此注入。
@@ -121,6 +128,12 @@ qwenpaw:
     # QWENPAW_XINGCHEN_ORDER_NUM: "<order_num>"
     # QWENPAW_XINGCHEN_AUTHORIZATION: "<authorization>"
     # QWENPAW_XINGCHEN_MODELS: "telechat-115b"
+
+  # 运行时凭据由目标环境 Secret 提供；Secret 不存在时不阻断基础服务启动。
+  envFrom:
+    - secretRef:
+        name: qwenpaw-runtime-secrets
+        optional: true
 
   # 资源限制
   resources:

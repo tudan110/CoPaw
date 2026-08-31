@@ -2,7 +2,7 @@
 
 一体化部署配置，包含 digital-workforce-portal 和 qwenpaw 两个子应用。
 
-> **已有 PVC 的 Agent/Skill 更新**：不要使用旧 `/app/.working.backup` 或全目录 rsync/delete 操作。当前 Helm qwenpaw chart 通过 `managed-seed-sync` initContainer 从 `/app/share/qwenpaw-seed` 自动更新受管静态内容，并保护 jobs、secret、知识库 data、运行状态和用户自装 Skill。人工检查使用 `qwenpaw deploy sync-managed --dry-run`。
+> **已有 PVC 的 Agent/Skill 更新**：不要使用旧 `/app/.working.backup` 或全目录 rsync/delete 操作。当前 Helm qwenpaw chart 通过 `managed-seed-sync` initContainer 从 `/app/share/qwenpaw-seed` 自动更新 `working/workspaces` 中受管的 Agent 静态文件和 Skills，并保护 jobs、secret、知识库 data、运行状态和用户自装 Skill。同步脚本位于镜像内 `/usr/local/bin/sync_managed_seed.py`。
 
 ## 目录结构
 
@@ -53,21 +53,19 @@ deploy-all/
 ## 快速部署
 
 ```bash
-# 更新依赖（首次部署前需要执行）
-helm dependency update ./deploy-all/helm/cnos-inoe-agent
+# 生成包含两个已展开子 Chart 的完整交付包
+./deploy-all/helm/package-cnos-inoe-agent.sh
 
-# 安装
-helm install cnos-inoe-agent ./cnos-inoe-agent-1.0.0.tgz -n cnos-iomp \
-  --set-string digital-workforce-portal.env.PORTAL_APP_TITLE="智观 AI" \
-  --set-string digital-workforce-portal.env.PORTAL_SSO_ENABLED="true" \
-  --set-string digital-workforce-portal.env.PORTAL_SSO_INOE_PORT="30081"
+# 首次安装或后续升级（默认使用 qwenpaw:latest 和 portal:0.1.0）
+helm upgrade --install cnos-inoe-agent \
+  ./deploy-all/helm/cnos-inoe-agent-1.0.0.tgz \
+  -n cnos-iomp --create-namespace --wait --timeout 10m
 
-# 升级
-helm upgrade cnos-inoe-agent ./deploy-all/helm/cnos-inoe-agent
-
-# 卸载
-helm uninstall cnos-inoe-agent
+# 卸载（PVC 按 Chart 的 keep 策略保留）
+helm uninstall cnos-inoe-agent -n cnos-iomp
 ```
+
+交付包内已包含展开后的 qwenpaw 和 portal 子 Chart，离线服务器不需要访问本机仓库路径或解析软链接。
 
 ## 离线一键部署 / 升级（k3s / k8s）
 
@@ -103,19 +101,21 @@ NAMESPACE=cnos-iomp EXTRA_VALUES=my-values.yaml ./deploy-offline.sh
 新镜像中的 `managed-seed-sync` initContainer 会在新 Pod 启动前执行：
 
 ```bash
-qwenpaw deploy sync-managed --apply --yes \
+python3 /usr/local/bin/sync_managed_seed.py \
+  --apply --yes \
   --seed /app/share/qwenpaw-seed \
   --target /app/working
 ```
 
-同步器只更新 seed manifest 声明的 Agent 静态字段、workspace prompt 文件和受管
-Skill 代码；每个 Skill 在 staging 目录准备完成后原子切换。它不会触碰知识库
+同步器只更新 `workspaces` 中 seed manifest 声明的 Agent 静态字段、workspace prompt 文件和受管 Skill 代码；每个 Skill 在 staging 目录准备完成后原子切换。它不会触碰知识库
 `data/`、jobs、secret、settings、sessions、memory、`skill_pool` 或用户自装 Skill。
 
 需要人工检查时，在 Pod 内执行：
 
 ```bash
-qwenpaw deploy sync-managed --dry-run
+python3 /usr/local/bin/sync_managed_seed.py \
+  --seed /app/share/qwenpaw-seed \
+  --target /app/working
 ```
 
 升级后若知识库中已经存在旧版本解析出的乱码记录，仍需在门户「知识库管理」中用

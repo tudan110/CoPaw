@@ -155,6 +155,8 @@ RUN /app/venv/bin/pip install --no-cache-dir "cachetools>=7"
 COPY deploy-all/qwenpaw/working/ /build/qwenpaw-working/
 COPY deploy-all/qwenpaw/scripts/build_universal_seed.py \
      /usr/local/bin/build_universal_seed.py
+COPY deploy-all/qwenpaw/scripts/sync_managed_seed.py \
+     /usr/local/bin/sync_managed_seed.py
 RUN python3 /usr/local/bin/build_universal_seed.py \
       --source /build/qwenpaw-working \
       --builtin-root /app/src/qwenpaw/agents/skills \

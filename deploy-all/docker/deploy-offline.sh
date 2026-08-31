@@ -30,12 +30,12 @@ cd "$(dirname "$0")"
 # --- 1. 加载镜像 ---
 if [[ "${1:-}" != "--skip-load" ]]; then
   for tar in "$QWENPAW_TAR" "$PORTAL_TAR"; do
-    if [[ -f "$tar" ]]; then
-      echo "📦 docker load -i $tar"
-      docker load -i "$tar"
-    else
-      echo "⚠️  未找到 $tar，跳过（如镜像已在本机可忽略）"
+    if [[ ! -f "$tar" ]]; then
+      echo "❌ 未找到 $tar，无法按固定 tag 部署。" >&2
+      exit 1
     fi
+    echo "📦 docker load -i $tar"
+    docker load -i "$tar"
   done
 fi
 
@@ -75,15 +75,27 @@ docker run -d \
 
 # --- 5. 验证 ---
 echo ""
-echo "⏳ 等待后端就绪 ..."
+echo "⏳ 等待服务就绪 ..."
+backend_ready=0
+portal_ready=0
 for _ in $(seq 1 30); do
   if curl -fsS "http://127.0.0.1:$QWENPAW_HOST_PORT/" >/dev/null 2>&1; then
+    backend_ready=1
+  fi
+  if curl -fsS "http://127.0.0.1:$PORTAL_HOST_PORT/health" >/dev/null 2>&1; then
+    portal_ready=1
+  fi
+  if [[ "$backend_ready" -eq 1 && "$portal_ready" -eq 1 ]]; then
     break
   fi
   sleep 2
 done
 docker ps --filter name=qwenpaw --filter name=portal \
   --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}'
+if [[ "$backend_ready" -ne 1 || "$portal_ready" -ne 1 ]]; then
+  echo "❌ 服务健康检查失败（backend=$backend_ready portal=$portal_ready）。" >&2
+  exit 1
+fi
 echo ""
 echo "✅ 部署完成："
 echo "   后端  http://<本机IP>:$QWENPAW_HOST_PORT"

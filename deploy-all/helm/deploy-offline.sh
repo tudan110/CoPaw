@@ -21,7 +21,7 @@ set -euo pipefail
 QWENPAW_TAR="${QWENPAW_TAR:-qwenpaw-amd64.tar}"
 PORTAL_TAR="${PORTAL_TAR:-digital-workforce-portal-amd64.tar}"
 RELEASE="${RELEASE:-cnos-inoe-agent}"
-NAMESPACE="${NAMESPACE:-default}"
+NAMESPACE="${NAMESPACE:-cnos-iomp}"
 EXTRA_VALUES="${EXTRA_VALUES:-}"
 HELM_TIMEOUT="${HELM_TIMEOUT:-10m}"
 
@@ -44,8 +44,8 @@ fi
 import_image() {
   local tar="$1"
   if [[ ! -f "$tar" ]]; then
-    echo "⚠️  未找到 $tar，跳过（如镜像已在各节点可忽略）"
-    return 0
+    echo "❌ 未找到 $tar，无法按固定 tag 部署。"
+    return 1
   fi
   if command -v k3s >/dev/null 2>&1; then
     echo "📦 k3s ctr images import $tar"
@@ -78,7 +78,7 @@ helm "${HELM_ARGS[@]}"
 
 # --- 3. 等待 Pod 更新完成 ---
 kubectl -n "$NAMESPACE" rollout status deployment/qwenpaw --timeout=300s
-kubectl -n "$NAMESPACE" rollout status deployment/digital-workforce-portal --timeout=120s
+kubectl -n "$NAMESPACE" rollout status deployment/cnos-iomp-digital-workforce-portal --timeout=120s
 
 NODE_IP="$(kubectl get nodes -o jsonpath='{.items[0].status.addresses[?(@.type=="InternalIP")].address}' 2>/dev/null || echo '<节点IP>')"
 echo ""
@@ -89,4 +89,4 @@ echo ""
 echo "💡 受管 Agent/Skill 会由新 Pod 的 managed-seed-sync initContainer 从"
 echo "   /app/share/qwenpaw-seed 安全同步到 PVC；不会触碰 jobs、secret、"
 echo "   knowledge-base data、sessions、设置数据库或用户自装 Skill。"
-echo "   可在 Pod 中执行 qwenpaw deploy sync-managed --dry-run 查看报告。"
+echo "   可在 Pod 中执行 python3 /usr/local/bin/sync_managed_seed.py --seed /app/share/qwenpaw-seed --target /app/working 查看报告。"

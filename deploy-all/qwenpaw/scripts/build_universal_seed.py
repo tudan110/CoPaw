@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 """Build a minimal, environment-independent QwenPaw working-directory seed."""
 
 from __future__ import annotations
@@ -129,12 +130,12 @@ def copy_managed_tree(source: Path, destination: Path) -> None:
             shutil.copy2(path, target)
 
 
+# pylint: disable=too-many-return-statements
 def scrub_for_universal_image(value: Any, key: str = "") -> Any:
     """Drop credentials and endpoint values while preserving config shape."""
     lower_key = key.lower()
-    if (
-        lower_key in SENSITIVE_EXACT_KEYS
-        or lower_key.endswith(SENSITIVE_KEY_SUFFIXES)
+    if lower_key in SENSITIVE_EXACT_KEYS or lower_key.endswith(
+        SENSITIVE_KEY_SUFFIXES,
     ):
         if isinstance(value, list):
             return []
@@ -199,10 +200,7 @@ def materialize_missing_skills(
             copy_managed_tree(builtin_source, skills_dir / skill_name)
         elif shared_workspace is not None:
             shared_skill = (
-                source_workspaces
-                / shared_workspace
-                / "skills"
-                / skill_name
+                source_workspaces / shared_workspace / "skills" / skill_name
             )
             if not (shared_skill / "SKILL.md").is_file():
                 raise SeedError(
@@ -214,7 +212,7 @@ def materialize_missing_skills(
             raise SeedError(
                 "No source exists for managed Skill "
                 f"{workspace_id}/{skill_name}. Add it to working/workspaces "
-                "or declare a shared_skill_sources mapping."
+                "or declare a shared_skill_sources mapping.",
             )
 
     existing = skill_directories(skills_dir)
@@ -358,8 +356,10 @@ def build_sync_manifest(output: Path) -> dict[str, Any]:
             }
 
         skills_dir = workspace / "skills"
-        for skill_dir in sorted(
-            path for path in skills_dir.iterdir() if path.is_dir()
+        for skill_dir in (
+            sorted(path for path in skills_dir.iterdir() if path.is_dir())
+            if skills_dir.is_dir()
+            else []
         ):
             if not (skill_dir / "SKILL.md").is_file():
                 continue
@@ -373,7 +373,7 @@ def build_sync_manifest(output: Path) -> dict[str, Any]:
                 if (
                     skill_file.name == ".env"
                     or SYNC_SKILL_EXCLUDED_PARTS.intersection(
-                        relative_in_skill.parts
+                        relative_in_skill.parts,
                     )
                 ):
                     continue
@@ -391,8 +391,7 @@ def build_sync_manifest(output: Path) -> dict[str, Any]:
             }
 
     managed_hashes = {
-        relative: item["sha256"]
-        for relative, item in managed_files.items()
+        relative: item["sha256"] for relative, item in managed_files.items()
     }
     return {
         "schema_version": "qwenpaw-seed.v2",
@@ -417,7 +416,7 @@ def assert_universal_output(output: Path) -> None:
     if forbidden:
         raise SeedError(
             "Universal seed contains forbidden runtime data: "
-            + ", ".join(sorted(set(forbidden)))
+            + ", ".join(sorted(set(forbidden))),
         )
 
 
@@ -436,9 +435,8 @@ def build_seed(args: argparse.Namespace) -> None:
         raise SeedError("builtin_language must be zh or en")
     retired_skills = set(manifest.get("retired_skills", []))
     default_skill_names = manifest.get("default_builtin_skills", [])
-    if (
-        not isinstance(default_skill_names, list)
-        or not all(isinstance(name, str) for name in default_skill_names)
+    if not isinstance(default_skill_names, list) or not all(
+        isinstance(name, str) for name in default_skill_names
     ):
         raise SeedError("default_builtin_skills must be a list of skill names")
     shared_sources = manifest.get("shared_skill_sources", {})
