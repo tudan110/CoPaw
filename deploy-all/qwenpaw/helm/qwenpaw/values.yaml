@@ -1,3 +1,6 @@
+# 固定服务名（nginx 通过此名称访问）
+fullnameOverride: "qwenpaw"
+
 # 镜像
 image:
   repository: qwenpaw
@@ -34,6 +37,18 @@ env:
   # tool_guard auto_denied_rules）放在工作目录的 config.json -> "security" 段，
   # 随 PVC / 镜像内的 working 目录走，换部署方式不会丢。这里不要再固定
   # QWENPAW_*_MODE / QWENPAW_DELETE_OPS_DISABLED —— 它们只是应急覆盖开关。
+
+  # 知识库检索（与 dev start-qwenpaw.sh 保持一致）
+  # KNOWLEDGE_BASE_RERANKER: llm（QwenPaw active model）/ heuristic / none
+  KNOWLEDGE_BASE_RERANKER: "llm"
+  KNOWLEDGE_BASE_HYDE_ENABLED: "true"
+  KNOWLEDGE_BASE_TOP_K: "3"
+  KNOWLEDGE_BASE_LLM_RERANK_INPUT_K: "15"
+
+  # 智观告警平台接口
+  INOE_API_BASE_URL: "http://gateway:8080"
+  # 凭据由目标环境的 Secret/设置页注入，不将 token 提交到交付 Chart。
+  INOE_API_TIMEOUT: "60"
 
 # 运行时凭据由目标环境 Secret 提供；Secret 不存在时不阻断基础服务启动。
 envFrom:
