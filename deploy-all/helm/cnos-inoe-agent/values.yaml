@@ -1,3 +1,5 @@
-# ===========================================
-# CNOS Inoe Agent 总配置
-# ===========================================
+# 子 Chart 的默认配置分别维护在：
+# - deploy-all/qwenpaw/helm/qwenpaw/values.yaml
+# - deploy-all/portal/helm/digital-workforce-portal/values.yaml
+#
+# 父 Chart 不再覆盖子 Chart 配置。
